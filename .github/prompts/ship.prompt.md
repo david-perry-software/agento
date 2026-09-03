@@ -1,0 +1,89 @@
+---
+description: "Acceptance gate: audit a feature/issue against roadmap, codebase, and review, warn about gaps, then merge its PR on explicit confirmation"
+argument-hint: "Slug of the feature or issue to ship"
+agent: "🔨 Agento Builder"
+---
+
+Ship the work named by the slug in the argument. Recursively locate roadmaps whose
+parent directory is exactly `<slug>` below `features/` and `issues/`; require exactly
+one match and report every conflicting path otherwise. If no local roadmap is present,
+fall back to `origin/<type>/<slug>` using `git ls-tree` + `git show`; a remote-only
+match is a valid resolution and must not be treated as a false hard block. This prompt
+authorizes marking the PR ready, merging it through the repository ruleset, deleting
+the merged branch, and syncing `main` — after the confirmation step below.
+
+If the slug's roadmap is already `status: complete` but has unticked
+`(manual, post-ship)` steps, skip straight to step 5 (post-ship verification epilogue).
+
+Before the audit, inspect `git worktree list --porcelain` for the roadmap's branch. If
+a secondary worktree owns it, stop and direct the user to run
+`/close-session <type>/<slug>` from the primary workspace window, then rerun this
+command in that same primary window. Do not offer raw git commands as an alternative.
+Shipping requires exclusive checkout and branch cleanup; never force-remove
+the worktree or discard its state. This precondition does not apply when resuming only
+the post-ship epilogue after the work branch has already merged.
+
+1. **Audit** (read-only):
+   - Fetch; check out the work branch; integrate `origin/<branch>` if ahead.
+   - `gh pr view <n> --json mergeStateStatus,mergeable`: `BEHIND` or `CONFLICTING`
+     means `origin/main` must be merged into the branch (never rebase) before the PR
+     can be marked ready; resolve conflicts per the hotspot recipes in
+     [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md)
+     and list the touched files as an audit note.
+   - roadmap.md: list unticked steps; spot-check ticked steps against the actual
+     codebase and note falsely ticked ones (code is truth). Unticked
+    `(manual, post-ship)` steps are expected only when plan.md `## Risks` documents
+    why preview or faithful local verification was impossible or materially
+    unfaithful and records explicit user acceptance. Queue valid exceptions for step
+    5; list unjustified deferrals as gaps.
+   - review.md: present and `Verdict: approve`? Note if missing, stale (older than the
+     last code commit), or `request-changes`.
+   - Issues only: the exposing regression test passes, plan.md `## Resolution` is
+     written, and the PR body contains `Fixes #<github-issue>` so the merge closes the
+     GitHub issue.
+   - PR state and required checks via `gh pr view` / `gh pr checks`.
+2. **Warn, don't block**: present one summary of every gap found (unticked or false
+   checkboxes, missing/stale/negative review, drift, uncommitted changes). If gaps
+   exist, ask the user explicitly whether to proceed anyway — default is do not
+   proceed. Never proceed on gaps without the user's answer.
+3. **On confirmation (or a clean audit)**:
+   - Set roadmap `status: complete`; record any user-accepted gaps under a
+     `## Follow-ups (accepted at ship)` section in roadmap.md; commit and push.
+   - Mark the draft PR ready for review; wait for every required check with
+     `scripts/wait-for-checks.sh pr <n>` in the foreground (exit 2 = still pending:
+     rerun it; never use `gh pr checks --watch`, `gh run watch`, a background
+     terminal, or a VS Code task, and never end the turn to "wait").
+     Failing or pending required checks are the one hard stop — the ruleset enforces
+     them and they must not be bypassed; report them as a resumable blocker.
+   - Merge with a normal merge commit through the ruleset (no admin, no bypass),
+     delete the work branch, switch to `main`, fetch, fast-forward, and verify a clean
+     tree with zero ahead/behind.
+   - Release workflow: if the target repo's `.github/agento.json` sets
+     `checks.releaseWorkflow`, dispatch that workflow (or resolve its existing run
+     whose `headSha` exactly matches the merge commit, allowing for GitHub's short
+     run-registration delay) and watch it with bounded foreground polls via
+     `scripts/wait-for-checks.sh run <run-id>` (exit 2 = still pending: rerun it);
+     record the outcome. Otherwise skip this step. A failed, cancelled, or timed out
+     release run is a resumable hard stop; never substitute a run for another commit
+     or trigger a duplicate release.
+4. **Report** merge result, PR number, release workflow result and run URL (or that no
+   release workflow is configured), and any accepted gaps carried into Follow-ups. Do
+   not call the work shipped while its release workflow is pending.
+5. **Post-ship verification epilogue** (only if unticked `(manual, post-ship)` steps
+   remain; runs after the merge and `main` sync):
+   - After any configured release workflow succeeds (or right away when none is
+     configured), ask the user to perform each manual
+     check: give the exact verification instructions, collect the confirming
+     screenshot(s) into the slug's `evidence/` directory, tick the step with the
+     completion date and evidence links (Builder's manual step protocol rules apply —
+     no secrets visible).
+   - Land it without ceremony: from fresh `main`, create `post-ship/<slug>`, commit the
+     evidence files + roadmap tick as one commit, push, open a PR, merge it through the
+     ruleset once required checks pass (normal merge commit, no bypass), delete the
+     branch, and sync `main`. The user's /ship invocation authorizes this merge.
+   - If the user cannot verify yet, stop and report that re-running /ship with the slug
+     resumes exactly here.
+
+Never force-push, rebase, squash, amend, or create additional content commits beyond
+the roadmap status commit, a ruleset-required integration merge of `origin/main`, and
+the single post-ship evidence commit from step 5.

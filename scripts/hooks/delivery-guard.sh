@@ -134,7 +134,7 @@ def target_dir():
     if not match:
         match = re.match(r"\s*cd\s+(\S+)\s*&&", command)
     if match:
-        return match.group(1).strip("'\"")
+        return os.path.expanduser(match.group(1).strip("'\""))
     cwd = payload.get("cwd") or payload.get("workingDirectory")
     return cwd if isinstance(cwd, str) and cwd else "."
 

@@ -121,3 +121,21 @@ test("allows worktree removal with no occupants", () => {
   const missing = path.join(os.tmpdir(), `agento-no-such-worktree-${process.pid}`);
   assert.equal(decide(`git worktree remove ${missing}`).decision, "allow");
 });
+
+test("denies a main commit reached through a tilde-prefixed cd", () => {
+  const dir = fs.mkdtempSync(path.join(os.homedir(), "agento-guard-tilde-"));
+  try {
+    const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    git("init", "-b", "main");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    git("commit", "--allow-empty", "-m", "init");
+
+    const rel = path.relative(os.homedir(), dir);
+    const { decision, reason } = decide(`cd ~/${rel} && git commit --allow-empty -m x`);
+    assert.equal(decision, "deny");
+    assert.match(reason, /main/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -1,0 +1,12 @@
+{
+  "artifacts": { "features": "features", "issues": "issues" },
+  "worktrees": { "dir": null },
+  "branches": {
+    "default": "main",
+    "feature": "feature/",
+    "issue": "issue/",
+    "freehand": "changes/",
+    "postShip": "post-ship/"
+  },
+  "checks": { "releaseWorkflow": null }
+}
