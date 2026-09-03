@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "./scripts/hooks/delivery-guard.sh",
+        "timeout": 15
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+# Replay fixtures for scripts/hooks/replay-guard.sh — expected verdicts are in
+# tests/guard.test.mjs; this file is the human-readable smoke set for CI.
+git push origin main
+git push --force origin feature/widget
+gh run watch 123
+gh pr checks 5 --watch
+rm scripts/hooks/delivery-guard.sh
+git status
+git push origin feature/widget
+ls -la

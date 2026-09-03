@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        run: node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'
+      - name: Shellcheck
+        run: |
+          sudo apt-get install -y shellcheck
+          shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh
+      - name: Guard fixture replay
+        run: ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt
