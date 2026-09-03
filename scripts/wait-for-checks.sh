@@ -37,6 +37,7 @@ export GH_PAGER=cat NO_COLOR=1
 unset GH_FORCE_TTY
 
 # Prints: "<pass> <fail> <pending> <skipped> <mergeState> | <detail>" for a PR.
+# shellcheck disable=SC2016 # jq program, not shell expansion
 pr_snapshot() {
   gh pr view "$target" "${repo_args[@]}" --json statusCheckRollup,mergeStateStatus --jq '
     def bucket:
