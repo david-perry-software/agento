@@ -45,7 +45,7 @@ function makeGitRepo({ config } = {}) {
 test("denies pushes to the default branch", () => {
   const { decision, reason } = decide("git push origin main");
   assert.equal(decision, "deny");
-  assert.match(reason, /main/);
+  assert.match(reason, /main/u);
 });
 
 test("denies force-push", () => {
@@ -134,7 +134,7 @@ test("denies a main commit reached through a tilde-prefixed cd", () => {
     const rel = path.relative(os.homedir(), dir);
     const { decision, reason } = decide(`cd ~/${rel} && git commit --allow-empty -m x`);
     assert.equal(decision, "deny");
-    assert.match(reason, /main/);
+    assert.match(reason, /main/u);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
