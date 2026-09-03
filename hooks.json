@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "${PLUGIN_ROOT}/scripts/hooks/spike-context.sh",
+        "timeout": 10
+      }
+    ]
+  }
+}

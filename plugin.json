@@ -1,0 +1,13 @@
+{
+  "name": "agento",
+  "description": "Plan → build → review → ship delivery system for Copilot: slash commands, agents, hooks, and resumable roadmap artifacts.",
+  "version": "0.1.0",
+  "author": { "name": "David Perry Software" },
+  "homepage": "https://github.com/david-perry-software/agento",
+  "repository": "https://github.com/david-perry-software/agento",
+  "license": "MIT",
+  "keywords": ["copilot", "delivery", "workflow", "agents", "hooks"],
+  "agents": ".github/agents",
+  "commands": ".github/prompts",
+  "hooks": "hooks.json"
+}
