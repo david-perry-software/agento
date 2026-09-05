@@ -15,9 +15,11 @@ Plan a new **feature** from the description in the argument.
    writing anything. Run and record the full-repository lint baseline, assess
    overlap, and encode cleanup or the complete scoped gate required by the delivery
    artifact contract.
-4. Reject a slug or final branch already present locally, on origin, or anywhere below
-   `features/` or `issues/`. Create `feature/<slug>` from the planning worktree's
-   detached `origin/main` HEAD before writing artifacts. Create
+4. Reject a slug already in use: `node <agento-root>/scripts/agento.mjs find <slug>`
+   (CLI path in the session context line `Agento CLI:`) must return `status: missing`,
+   and neither `feature/<slug>` nor `origin/feature/<slug>` may exist. Create
+   `feature/<slug>` from the planning worktree's detached `origin/main` HEAD before
+   writing artifacts. Create
    `features/<current-YYYY>/<current-MM>/<slug>/plan.md` and `roadmap.md` per the
    delivery artifact format, with branch `feature/<slug>` in the roadmap header.
 5. Commit the two artifacts, push with upstream, and open a draft PR to `main`.

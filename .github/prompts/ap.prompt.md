@@ -6,11 +6,13 @@ agent: "🤖 Agento Autopilot"
 
 Run the delivery named by the argument unattended.
 
-- Accept `feature/<slug>`, `issue/<slug>`, or a bare slug; resolve exactly one
-  roadmap.md recursively below `features/` or `issues/` and treat duplicate matches as
-  an error.
-- If the argument is blank, recursively list roadmaps with `status` in-progress,
-  paused, or in-review, recommend the best candidate, and ask which to run.
+- Accept `feature/<slug>`, `issue/<slug>`, or a bare slug. Resolve it with the Agento
+  CLI (`node <agento-root>/scripts/agento.mjs resolve <type> <slug>`, or `find <slug>`
+  for a bare slug; the path is in the session context line `Agento CLI:`) and stop on
+  any `status` other than `ok`, reporting its `message`.
+- If the argument is blank, run `agento.mjs status`, list the `resumable` items with
+  their `status`, `steps`, and `nextStep`, recommend the best candidate, and ask which
+  to run.
 - Run your preflight, then the build → review → fix loop per your agent instructions:
   cycle cap 3 review rounds, pause the entire run on any `(manual)` step or auth
   failure, and stop at `Verdict: approve` — /ship and /close-session always remain the

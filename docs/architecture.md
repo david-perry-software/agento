@@ -32,13 +32,18 @@ flowchart TD
   mechanic that maintains the system itself.
 - **Instructions** (`.github/instructions/`) are always-on contracts: the artifact
   format, the skills-first policy, and the concurrent-delivery policy.
-- **Hooks** run outside the model. `session-context.sh` injects branch + resumable
-  work at session start; `delivery-guard.sh` can `allow`/`ask`/`deny` any tool call
-  (default-branch protection, force-push, open-ended watchers, hook self-protection,
-  worktree-occupant detection).
-- **Scripts** are the deterministic helpers: the config loader, the roadmap
-  resolver (local search with origin fallback and branch-header validation), the
-  bounded CI poller, and the guard replay harness.
+- **Hooks** run outside the model. `session-context.sh` injects branch, resumable
+  work, and the Agento CLI path at session start; `delivery-guard.sh` can
+  `allow`/`ask`/`deny` any tool call (default-branch protection, force-push and hook
+  bypasses, open-ended watchers, ruleset-bypassing merges, hook self-protection,
+  worktree-occupant detection). The guard is a slip guard for the model, not an
+  enforcement boundary — that is the GitHub ruleset on the default branch.
+- **Scripts** are the deterministic helpers, fronted by `scripts/agento.mjs`: the
+  config loader, the roadmap resolver (local search with origin fallback and
+  branch-header validation), the status lister, worktree path and per-slug port
+  derivation, the bounded CI poller, and the guard replay harness. Prompts call the
+  CLI rather than re-deriving these algorithms in prose, so the configured branch
+  names and artifact roots are honoured everywhere the hooks honour them.
 
 ## Where state lives
 
@@ -51,6 +56,10 @@ per-project state.
 
 | Project-specific fact | Where it lives |
 |---|---|
-| Artifact roots, worktree dir, branch names, release workflow | target repo `.github/agento.json` (read by hooks + resolver) |
+| Artifact roots, worktree dir, branch names, release workflow | target repo `.github/agento.json` (read by hooks, the resolver, and `scripts/agento.mjs`) |
 | Commands, verification strategy, shared resources, skills table | target repo `AGENTS.md` `## Agento` section (read by agents) |
 | Delivery policy and artifact format | the plugin (this repo) |
+
+Where prompt text still says `main`, `features/`, or `issues/`, read it as the
+configured `branches.default`, `artifacts.features`, and `artifacts.issues`; the
+values the model should actually use come from `agento.mjs config`.

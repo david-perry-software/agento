@@ -45,6 +45,11 @@ test("reports the branch and no work on an empty repo", () => {
   assert.match(context, /No in-progress delivery work in features\/ or issues\//);
 });
 
+test("announces the Agento CLI path", () => {
+  const context = run(makeRepo());
+  assert.match(context, new RegExp(`^Agento CLI: node ${path.join(repoRoot, "scripts", "agento.mjs").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+});
+
 test("lists resumable roadmaps and skips planned/complete ones", () => {
   const repo = makeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");

@@ -6,10 +6,16 @@ you open.
 
 ## Prerequisites
 
-- VS Code with GitHub Copilot (agent mode).
+- VS Code with GitHub Copilot (agent mode). The session model (`/start-session` opens
+  a second VS Code window on a sibling worktree) is built around the VS Code CLI
+  (`code`); the Copilot CLI can run the prompts but the window choreography is
+  VS Code-specific.
+- Linux or macOS. The hooks are Bash + `python3`; the worktree-occupant check reads
+  `/proc` and is skipped elsewhere. Windows is untested.
 - `git` and `gh` (GitHub CLI, authenticated) in the target project.
 - `python3` on PATH (the hooks use it; standard on Linux/macOS).
-- `node` ≥ 20 if you want to run Agento's own test suite.
+- `node` ≥ 20 — required: the prompts call `scripts/agento.mjs` for slug resolution
+  and config lookups, and the test suite runs on it.
 
 ## Option A — local clone (recommended for forkers)
 
@@ -51,8 +57,12 @@ Open your project and run `/agento-init`. It scaffolds `.github/agento.json`,
 
 - `/delivery-status` should respond (empty dashboard on a fresh project).
 - The Output panel channel **GitHub Copilot Chat Hooks** should list the Agento
-  SessionStart and PreToolUse hooks.
+  SessionStart and PreToolUse hooks, and a new chat's context should include an
+  `Agento CLI: node .../scripts/agento.mjs` line.
 - `git push origin main` typed by the agent is denied by the delivery guard.
+- The default branch has a GitHub ruleset (require PR, required checks, no force
+  push, no deletion) — `/agento-init` checks and offers to create one. The guard
+  alone is not protection.
 
 ## Updating
 

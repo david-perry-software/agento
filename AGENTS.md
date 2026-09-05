@@ -12,7 +12,9 @@ delivery system. Layout:
   concurrent-delivery policy.
 - `.github/hooks/` — workspace-mode hook wiring (relative `./scripts/hooks` paths)
   so Agento development is guarded by Agento itself.
-- `scripts/` — `agento-config.mjs`, `delivery-roadmap-resolver.mjs`,
+- `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,
+  close-decision, ship-preflight, paths, ports), `agento-config.mjs`,
+  `delivery-roadmap-resolver.mjs`,
   `wait-for-checks.sh`, `hooks/{delivery-guard,session-context,replay-guard}.sh`.
 - `templates/` — files `/agento-init` scaffolds into target repositories.
 - `tests/` — guard fixtures and node:test suites.

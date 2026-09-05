@@ -65,9 +65,11 @@ directories.
    `## Risks` as a concurrent-delivery risk with the mitigation (integrate
    `origin/main` before every push, or sequence after the overlapping slug ships).
 4. **Name and reserve the work.** Derive a kebab-case slug (2-5 words) from the description.
-   Search recursively below both `features/` and `issues/` for an existing directory
-   with that exact slug; if one exists anywhere, stop and report it instead of
-   creating a duplicate. New features go in `features/<current-YYYY>/<current-MM>/<slug>/`
+   Check it is unused with the Agento CLI: `node <agento-root>/scripts/agento.mjs find
+   <slug>` (path in the session context line `Agento CLI:`) must return
+   `status: missing`; anything else means the slug exists somewhere — stop and report
+   it instead of creating a duplicate. New features go in
+   `features/<current-YYYY>/<current-MM>/<slug>/`
    and new issues in `issues/<current-YYYY>/<current-MM>/<slug>/`, using the planning
    date. The creation-month path is immutable and never changes on update or completion.
    Fetch origin and require that neither the local nor remote final branch exists.

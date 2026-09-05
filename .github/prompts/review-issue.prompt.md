@@ -4,8 +4,9 @@ argument-hint: "Issue slug to review"
 agent: "🔍 Agento Reviewer"
 ---
 
-Review the **issue** fix named by the slug in the argument. Resolve exactly one roadmap
-whose parent directory is `<slug>` anywhere below `issues/`; reject duplicate matches.
+Review the **issue** fix named by the slug in the argument. Resolve its roadmap with
+the Agento CLI (`node <agento-root>/scripts/agento.mjs resolve issue <slug>`; path in
+the session context line `Agento CLI:`) and stop on any `status` other than `ok`.
 
 Follow your full procedure: confirm this worktree owns `issue/<slug>`, study the diff against
 `origin/main`, load every matching installed skill for the domains the work touches
@@ -25,5 +26,5 @@ complete scoped coverage. Audit and repair roadmap.md, and write
 top findings. On approval, end with the exact primary-window commands from the Reviewer
 procedure; on request-changes, direct the user to the Builder handoff in this window.
 
-If the argument is blank, recursively list issue roadmaps with `status: in-review` and ask
-which to review.
+If the argument is blank, run `agento.mjs status issue`, list the items with
+`status: in-review`, and ask which to review.

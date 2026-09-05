@@ -4,13 +4,15 @@ argument-hint: "Feature slug, or blank to list resumable features"
 agent: "🔨 Agento Builder"
 ---
 
-Build the **feature** named by the slug in the argument. Resolve exactly one roadmap
-whose parent directory is `<slug>` anywhere below `features/`; dated paths are
-valid, but duplicate matches are an error.
+Build the **feature** named by the slug in the argument. Resolve its roadmap with the
+Agento CLI — `node <agento-root>/scripts/agento.mjs resolve feature <slug>` (the CLI
+path is announced in the session context as `Agento CLI:`) — and act on the JSON:
+`status: ok` gives `path` and `branch`; `conflict`, `branch-mismatch`, or `missing`
+are hard stops — report the `message` verbatim.
 
-- If the argument is blank, recursively list all roadmap.md files below `features/` with their `status` and
-  `next-step`, recommend the best candidate (in-progress and paused first), and ask
-  which to work on.
+- If the argument is blank, run `agento.mjs status feature`, list each item's slug,
+  `status`, `steps`, and `nextStep`, recommend the best candidate (in-progress and
+  paused first), and ask which to work on.
 - Run the resume protocol before any implementation: fetch, verify this worktree owns
   `feature/<slug>`, integrate origin, audit ticked checkboxes against the code, repair
   drift, push the repaired roadmap. If another worktree owns the branch, stop and

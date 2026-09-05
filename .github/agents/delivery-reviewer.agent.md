@@ -31,8 +31,10 @@ modify source code — findings go in the review, fixes belong to the Builder.
 
 ## Procedure
 
-1. Resolve the slug recursively below `features/` or `issues/` and require exactly one
-   matching roadmap. `git fetch origin`, confirm the current worktree owns the
+1. Resolve the roadmap with the Agento CLI — `node <agento-root>/scripts/agento.mjs
+   resolve <feature|issue> <slug>`, whose path the session context announces as
+   `Agento CLI:` — and stop on any `status` other than `ok`. `git fetch origin`,
+   confirm the current worktree owns the
    roadmap's work branch, then read plan.md and roadmap.md fully. Never switch a
    managed worktree to another delivery branch; if another worktree owns it, stop and
    direct the user to resume that build session for review. If `origin/main` is not

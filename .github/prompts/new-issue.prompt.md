@@ -27,9 +27,10 @@ The argument takes three forms — detect which applies:
    evidence for `## Research` without writing files yet. Run and record the
    full-repository lint baseline, assess overlap, and encode cleanup or the complete
    scoped gate required by the delivery artifact contract.
-4. Derive the slug, reject it if the final branch exists locally or on origin or an
-   exact slug directory exists anywhere below `features/` or `issues/`, then create
-   `issue/<slug>` from the planning worktree's detached `origin/main` HEAD.
+4. Derive the slug and reject it unless `node <agento-root>/scripts/agento.mjs find
+   <slug>` (CLI path in the session context line `Agento CLI:`) returns
+   `status: missing` and neither `issue/<slug>` nor `origin/issue/<slug>` exists, then
+   create `issue/<slug>` from the planning worktree's detached `origin/main` HEAD.
 5. **Verify the issue before planning.** Reproduce it: run the relevant commands or
    tests, capture exact error output/logs, and for UI-visible defects capture
    screenshots (playwright-cli skill / browser tools). Store binary evidence in the

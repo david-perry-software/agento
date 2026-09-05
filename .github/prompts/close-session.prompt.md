@@ -23,11 +23,12 @@ branch.
 1. Resolve the primary worktree with `git worktree list --porcelain`; require the
    current workspace to be that primary worktree, then `git fetch origin`.
    Authentication or authorization failures halt immediately.
-2. Managed paths live under the managed worktrees directory: the `worktrees.dir` value
-   from the target repository's `.github/agento.json`, defaulting to a sibling
-   directory named `<repo-name>-worktrees/` (e.g. `../myrepo-worktrees/`), with a
-   canonical `<type>-<slug>`, `plan-<session-id>`, or `freehand-<slug>` name. Refuse
-   to remove any other path, and never remove the primary worktree.
+2. Managed paths live under the managed worktrees directory; resolve the canonical
+   path for the argument with the Agento CLI — `node <agento-root>/scripts/agento.mjs
+   paths <feature|issue|plan|freehand> <slug|session-id>` (path announced in the
+   session context as `Agento CLI:`) — which reads `worktrees.dir` from the target
+   repository's `.github/agento.json` (default: sibling `<repo-name>-worktrees/`).
+   Refuse to remove any other path, and never remove the primary worktree.
 3. Inspect the target with `git -C <path> status --short`. If tracked, untracked,
    staged, or conflicted changes exist, stop and list them. Never use `--force`.
 4. Remove with `git worktree remove <canonical-absolute-path>` using the resolved path
@@ -47,15 +48,14 @@ branch.
 
 ## Build close
 
-1. Recursively locate exactly one roadmap whose parent is `<slug>` below
-   `<type-plural>/`. If absent on the current checkout, enumerate
-   `origin/<type>/<slug>` with `git ls-tree` and read the single matching roadmap with
-   `git show`. The remote fallback is valid, but the exact `branch:` value still must
-   equal `<type>/<slug>`; otherwise report a branch mismatch and stop. If the roadmap
-   resolves only from the remote branch, treat the session as already closed unless a
-   managed secondary worktree still owns the branch.
-2. If no secondary worktree owns the branch, report that there is no build session to
-   close and stop successfully. Do not hard-fail on remote-only roadmap resolution.
+1. Run `agento.mjs close-decision <type> <slug>`. It resolves the roadmap locally with
+   an `origin/<branch>` fallback and validates the `branch:` header. `status: error`
+   (`multiple-roadmaps`, `branch-mismatch`, `no-resolvable-roadmap`) stops the close —
+   report the `message` verbatim.
+2. `reason: remote-roadmap-only` means no managed secondary worktree owns the branch:
+   report that there is no build session to close and stop successfully. Do not
+   hard-fail on remote-only roadmap resolution. `reason: managed-worktree-present`
+   continues below.
 3. Require an upstream for the branch and verify it is zero commits ahead of its
    upstream. If commits are unpushed, stop and report them.
 4. Remove the worktree. Do not delete the branch when it remains on origin or is not

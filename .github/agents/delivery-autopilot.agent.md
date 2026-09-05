@@ -31,8 +31,10 @@ Follow the target repository's AGENTS.md at its root and the artifact formats in
 
 ## Preflight
 
-1. Resolve the slug recursively below `features/` or `issues/`; require exactly one
-   roadmap.md. `git fetch origin` and confirm this worktree is on the roadmap's
+1. Resolve the slug with the Agento CLI — `node <agento-root>/scripts/agento.mjs
+   resolve <type> <slug>` (or `find <slug>` for a bare slug); its path is in the
+   session context line `Agento CLI:` — and stop on any `status` other than `ok`.
+   `git fetch origin` and confirm this worktree is on the roadmap's
    `branch:`. If another worktree owns the branch, stop and report
    `/start-session <type>/<slug> --resume`.
 2. Read roadmap.md. If `status: in-review`, skip straight to the review phase. If a
