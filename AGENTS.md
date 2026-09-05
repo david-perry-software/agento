@@ -8,8 +8,9 @@ delivery system. Layout:
 - `.github/agents/` — the five delivery agents (Planner, Builder, Reviewer,
   Autopilot, Mechanic).
 - `.github/prompts/` — the slash commands.
-- `.github/instructions/` — the artifact contract, skills-first policy, and
-  concurrent-delivery policy.
+- `.github/instructions/` — the shared delivery policy (single source of the rules;
+  agents cite `§N`), the artifact format contract, the skills-first policy, and the
+  concurrent-delivery mechanics.
 - `.github/hooks/` — workspace-mode hook wiring (relative `./scripts/hooks` paths)
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,

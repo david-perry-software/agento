@@ -8,35 +8,24 @@ clobber each other, but several backing resources may be shared. The project-spe
 facts (which resources are shared, which preview system exists) live in the target
 repository's AGENTS.md `## Agento` section; this file carries the portable policy.
 
-## Verify locally first — previews are the exception
+## Serving your branch locally
 
-A deployed branch preview usually talks to a shared staging backend and costs platform
-configuration plus a deploy wait per branch. A locally served branch has none of that
-cost, so it is the default target for user-visible verification:
+Which target a step verifies against (`local:<ports>`, `dev-stack`, `preview:
+<reason>`) is decided by [delivery-policy.instructions.md](delivery-policy.instructions.md)
+§2. The mechanics:
 
-- **Per-slug local branch (default).** Serve the branch locally on per-slug ports and
-  drive it yourself — run the relevant test spec or load the app in a browser while
-  the local processes are up. Derive stable per-slug ports once with the Agento CLI
-  and use them in every command and every roadmap `verify:` line, so a resumed
-  session reuses the same ports:
+- **Per-slug ports.** Derive them once with the Agento CLI and use them in every
+  command and every roadmap `verify:` line, so a resumed session reuses the same ports
+  and two sessions never collide:
 
   ```bash
   node <agento-root>/scripts/agento.mjs ports <slug>   # {"WEB_PORT": 31xx, "API_PORT": 41xx}
   ```
 
-- **Full local stack (auth, DB-backed flows).** If the project documents one in
-  AGENTS.md, its fixed ports make it exclusive: confirm no other session has it up
-  before starting it, and say so in your report.
-- **Deployment preview (exception).** Use it only when the step's behavior depends on
-  the deployed platform itself — build/env wiring, edge/ISR/middleware,
-  backend-integration, or the release path — and name that reason on the roadmap
-  step. Convenience is not a reason. When you do use one, follow the platform setup
-  the project's AGENTS.md documents (e.g. origin allowlists), record it on the step,
-  and undo it at ship.
-
-Planners write the target into each `verify:` line (`local:<ports>`, `dev-stack`, or
-`preview: <reason>`); Builders and Reviewers do not upgrade a local step to a preview
-on their own.
+- **Full local stack.** Its fixed ports make it exclusive: confirm no other session
+  has it up before starting it, and say so in your report.
+- **Deployment preview.** Follow the platform setup the project's AGENTS.md documents
+  (e.g. origin allowlists), record it on the step, and undo it at ship.
 
 ## Resolve your own preview, never another branch's
 

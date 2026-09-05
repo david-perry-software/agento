@@ -18,13 +18,11 @@ the original defect (per plan.md `## Evidence`), references the issue number or 
 its name or header comment, and passes; verify plan.md
 `## Resolution` is written and consistent with the diff. A missing, vacuous, or
 failing exposing test forces `Verdict: request-changes`. Score every plan.md
-acceptance checklist item with evidence, and enforce the delivery artifact contract's
-lint policy by comparing initial and final full-repository findings and auditing
-complete scoped coverage. Audit and repair roadmap.md, and write
+acceptance checklist item with evidence, and apply the lint gate from
+delivery-policy.instructions.md. Audit and repair roadmap.md, and write
 `review.md` in the resolved slug directory with an explicit `Verdict: approve` or
 `Verdict: request-changes`. Commit and push the review, then summarize the verdict and
-top findings. On approval, end with the exact primary-window commands from the Reviewer
-procedure; on request-changes, direct the user to the Builder handoff in this window.
+top findings and end with the cross-window command sequence.
 
 If the argument is blank, run `agento.mjs status issue`, list the items with
 `status: in-review`, and ask which to review.

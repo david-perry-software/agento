@@ -37,27 +37,9 @@ Required sections, in order:
 10. `## Resolution` (issues only, written by the Builder at completion) — root cause,
     what changed and why, and proof the exposing test now passes.
 
-## Lint baseline policy
-
-Every new feature or issue plan must run the full-repository lint command (documented
-in the project's AGENTS.md) during research and record the command, exit status, and
-failing findings. The Planner must assess whether each finding overlaps the files or
-behavior in scope. A red baseline is never silently waived.
-
-- If a baseline finding overlaps the delivery, the plan must make cleanup a
-   prerequisite or include the cleanup explicitly in scope.
-- If all baseline findings are demonstrably pre-existing and unrelated, the plan may
-   use a scoped gate. That gate must lint every changed or newly created lintable file,
-   run the affected package or workspace lint command when it can pass independently,
-   run focused tests for changed behavior, run the affected package or workspace
-   typecheck, and finish by rerunning full-repository lint. The plan must compare the
-   initial and final findings and permit only the documented pre-existing, unrelated
-   findings; changed-files-only lint is insufficient.
-
-Encode the selected strategy in the plan's research, approach, acceptance checklist,
-and roadmap verification steps. This policy applies to newly created plans and to
-future steps added to an active delivery. Do not rewrite historical delivery artifacts
-solely to adopt it. If scope changes, reassess whether baseline findings now overlap.
+`## Research` records the full-repository lint baseline (command, exit status,
+findings) and the overlap decision required by
+[delivery-policy.instructions.md](delivery-policy.instructions.md) §5.
 
 # roadmap.md
 
@@ -75,39 +57,17 @@ Then `## Phase N: <name>` sections containing steps:
 
 - `- [ ] N.M <imperative step description> — verify: <command or observable check>`
 - Steps must be small, independently verifiable, ordered.
-- Steps only a human can perform (external dashboards, account/vault setup, approvals,
-  physical actions) are marked with `(manual)` after the step number:
-  `- [ ] N.M (manual) <exact action for the user> — verify: <check>`. A `(manual)`
-  step may be ticked only after the user confirms completion and provides a screenshot,
-  stored as `evidence/step-N-M-<short-name>.png` inside the slug directory (features
-  and issues alike) and linked from the step line. Anything executable through an
-  available CLI (gh, git, and the project's CLIs declared in AGENTS.md) or verifiable
-  by an agent driving a browser (loading a URL, clicking through a flow, asserting
-  rendered state, capturing a screenshot) is never `(manual)` — the agent runs it
-  itself per the self-reliance rule in the target repository's AGENTS.md.
-- User-visible and deployed-behavior checks run before review against a **locally
-   served branch by default** (per-slug ports or the project's documented full local
-   stack for auth/DB-backed flows) — no platform allowlist edits are needed there.
-  Name the target in the `verify:` line (`local:<ports>`, `dev-stack`, or
-  `preview: <reason>`). Use an isolated deployment preview only when the behavior
-  depends on the deployed platform itself (build/env wiring, edge/middleware,
-  backend-integration, or the release path) and say why on the step; see
-  [concurrent-delivery.instructions.md](concurrent-delivery.instructions.md).
-  Either way the agent drives the target in the browser and collects the resulting
-  screenshots under `evidence/` on the work branch. Such a check is `(manual)` only
-  when it needs the user — human credentials, an approval, or a dashboard the agent
-  cannot reach.
-- Manual steps whose verification genuinely cannot run against a branch preview or
-  faithful local environment are marked `(manual, post-ship)`:
-  `- [ ] N.M (manual, post-ship) <exact action> — verify: <check>`. They are expected
-  to remain unticked through review and ship — they are not gaps. /ship completes them
-  after the merge in its post-ship verification epilogue and lands the evidence + tick
-  via a short-lived `<post-ship-prefix><slug>` branch and PR. Evidence rules are
-  identical to `(manual)` steps. The plan's `## Risks` must state why pre-merge
-  preview verification is unavailable or materially unfaithful. Convenience, a missing
-  preview URL, or waiting for the normal release is not enough by itself; the plan must
-  include preview-enablement work or ask the user to explicitly accept the post-ship
-  exception.
+- The `verify:` line of a user-visible or deployed-behavior step names its target:
+  `local:<ports>`, `dev-stack`, or `preview: <reason>`. Which one applies is defined
+  in [delivery-policy.instructions.md](delivery-policy.instructions.md) §2.
+- `- [ ] N.M (manual) <exact action for the user> — verify: <check>` marks a step only
+  the user can perform (policy §1). It is ticked only with a linked screenshot at
+  `evidence/step-N-M-<short-name>.png` inside the slug directory and the completion
+  date on the line (policy §3).
+- `- [ ] N.M (manual, post-ship) <exact action> — verify: <check>` marks the
+  post-ship exception (policy §4). It stays unticked through review and ship; /ship
+  completes it via a `<post-ship-prefix><slug>` PR. plan.md `## Risks` must carry the
+  justification and the user's acceptance.
 - For issues, an early step (before any fix) must add the exposing regression test and
   verify that it FAILS, demonstrating the defect; a later step verifies it passes.
   The test's name or header comment must reference the issue (`#<number>`, slug) so
