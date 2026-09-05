@@ -34,8 +34,9 @@ for rel in (".github/agento.json", "agento.json"):
     try:
         with open(candidate, encoding="utf-8") as handle:
             config = json.load(handle)
-        artifacts = config.get("artifacts", {})
-        roots = [artifacts.get("features", "features"), artifacts.get("issues", "issues")]
+        artifacts = config.get("artifacts") or {}
+        # null means "keep the default", matching scripts/agento-config.mjs.
+        roots = [artifacts.get("features") or "features", artifacts.get("issues") or "issues"]
     except (OSError, json.JSONDecodeError, AttributeError):
         pass
     break

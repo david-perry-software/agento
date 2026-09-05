@@ -28,7 +28,8 @@ function mergeConfig(base, override) {
   for (const [key, value] of Object.entries(override)) {
     if (isPlainObject(value) && isPlainObject(base[key])) {
       merged[key] = mergeConfig(base[key], value);
-    } else if (value !== undefined) {
+    } else if (value !== undefined && value !== null) {
+      // null in agento.json means "keep the default" (the template ships nulls).
       merged[key] = value;
     }
   }

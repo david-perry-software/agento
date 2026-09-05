@@ -50,6 +50,35 @@ test("a .github/agento.json overrides only the keys it sets", () => {
   assert.equal(config.checks.releaseWorkflow, "staging-release.yml");
 });
 
+test("null values in agento.json keep the defaults", () => {
+  const root = tmpRoot();
+  const configDir = path.join(root, ".github");
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(configDir, "agento.json"),
+    JSON.stringify({ worktrees: { dir: null }, branches: { default: null }, checks: null }),
+  );
+
+  const { config } = loadAgentoConfig(root);
+  assert.match(config.worktrees.dir, /-worktrees$/);
+  assert.equal(config.branches.default, "main");
+  assert.equal(config.checks.releaseWorkflow, null);
+});
+
+test("the shipped templates/agento.json loads without clobbering defaults", () => {
+  const root = tmpRoot();
+  const configDir = path.join(root, ".github");
+  fs.mkdirSync(configDir, { recursive: true });
+  const template = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "templates", "agento.json");
+  fs.copyFileSync(template, path.join(configDir, "agento.json"));
+
+  const { config } = loadAgentoConfig(root);
+  assert.equal(typeof config.worktrees.dir, "string");
+  assert.match(config.worktrees.dir, /-worktrees$/);
+  assert.equal(config.branches.default, "main");
+  assert.equal(config.artifacts.features, "features");
+});
+
 test("a root-level agento.json is accepted as a fallback location", () => {
   const root = tmpRoot();
   fs.writeFileSync(path.join(root, "agento.json"), JSON.stringify({ worktrees: { dir: "../wt" } }));
