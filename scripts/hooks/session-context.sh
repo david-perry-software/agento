@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# SessionStart context: surface the current branch and any resumable delivery work.
-# Operates on the repo from the hook input's cwd; artifact roots come from the
-# target repo's .github/agento.json (defaults: features/, issues/).
+# SessionStart context: surface the current branch, any resumable delivery work, and
+# the path of the Agento CLI (scripts/agento.mjs) so prompts can call it from the
+# target repo. Operates on the repo from the hook input's cwd; artifact roots come
+# from the target repo's .github/agento.json (defaults: features/, issues/).
 set -u
 
 input="$(cat)"
 export DELIVERY_HOOK_INPUT="$input"
+AGENTO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export AGENTO_ROOT
 
 python3 - <<'PY'
 import json, os, re, subprocess, sys
@@ -42,6 +45,9 @@ for rel in (".github/agento.json", "agento.json"):
     break
 
 lines = [f"Current git branch: {branch}"]
+agento_root = os.environ.get("AGENTO_ROOT", "")
+if agento_root and os.path.isfile(os.path.join(agento_root, "scripts", "agento.mjs")):
+    lines.append(f"Agento CLI: node {os.path.join(agento_root, 'scripts', 'agento.mjs')}")
 found = False
 for base in dict.fromkeys(roots):
     base_path = os.path.join(root, base)

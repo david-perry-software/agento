@@ -1,16 +1,20 @@
 ---
 description: "Acceptance gate: audit a feature/issue against roadmap, codebase, and review, warn about gaps, then merge its PR on explicit confirmation"
 argument-hint: "Slug of the feature or issue to ship"
-agent: "🔨 Agento Builder"
+agent: "agent"
 ---
 
-Ship the work named by the slug in the argument. Recursively locate roadmaps whose
-parent directory is exactly `<slug>` below `features/` and `issues/`; require exactly
-one match and report every conflicting path otherwise. If no local roadmap is present,
-fall back to `origin/<type>/<slug>` using `git ls-tree` + `git show`; a remote-only
-match is a valid resolution and must not be treated as a false hard block. This prompt
-authorizes marking the PR ready, merging it through the repository ruleset, deleting
-the merged branch, and syncing `main` — after the confirmation step below.
+Ship the work named by the slug in the argument. Resolve it with the Agento CLI:
+`node <agento-root>/scripts/agento.mjs find <slug>` (the CLI path is announced in the
+session context as `Agento CLI:`), then `agento.mjs ship-preflight <type> <slug>` with
+the `type` it returned. A `source: remote` resolution (no local roadmap, artifact read
+from `origin/<branch>`) is valid and must not be treated as a hard block; `conflict`,
+`branch-mismatch`, and `missing` are — report the `message` verbatim and stop. This
+prompt authorizes marking the PR ready, merging it through the repository ruleset,
+deleting the merged branch, and syncing the default branch — after the confirmation
+step below. Read the default branch and post-ship prefix from `agento.mjs config`
+(`branches.default`, `branches.postShip`); `main` below stands for the configured
+default.
 
 If the slug's roadmap is already `status: complete` but has unticked
 `(manual, post-ship)` steps, skip straight to step 5 (post-ship verification epilogue).

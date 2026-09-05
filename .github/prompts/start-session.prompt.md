@@ -20,10 +20,13 @@ arguments or unknown flags.
    require the current workspace to be that primary worktree.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately
    under the repository policy.
-3. Managed worktrees live under the managed worktrees directory: the `worktrees.dir`
-   value from the target repository's `.github/agento.json`, defaulting to a sibling
-   directory named `<repo-name>-worktrees/` (e.g. `../myrepo-worktrees/`). Refuse to
-   touch a path that exists but is not the registered worktree expected here.
+3. Managed worktrees live under the managed worktrees directory. Read it — and the
+   canonical worktree path and branch for this session — from the Agento CLI:
+   `node <agento-root>/scripts/agento.mjs paths <feature|issue|plan> <slug|session-id>`
+   (the CLI path is announced in the session context as `Agento CLI:`). It resolves
+   `worktrees.dir` from the target repository's `.github/agento.json`, defaulting to
+   a sibling `<repo-name>-worktrees/`. Refuse to touch a path that exists but is not
+   the registered worktree expected here.
 4. Unless `--no-open` was supplied, finish by running `code --new-window <path>`. The
    VS Code CLI may reuse an already-running editor session instead of visibly creating
    a second window; treat a successful worktree as a valid result, say so explicitly,
@@ -55,13 +58,12 @@ window or infer the delivery slug from the session ID.
 
 ## Build mode
 
-1. Recursively locate a roadmap whose parent directory is exactly `<slug>` below
-   `<type-plural>/`; require one match. If absent from the primary worktree, enumerate
-   `git ls-tree -r --name-only origin/<type>/<slug>`, require exactly one matching
-   `**/<slug>/roadmap.md`, and read it with `git show`. Reject missing, duplicate, and
-   type-mismatched artifacts. The branch name derived from the argument is only a
-   lookup candidate: require the roadmap's exact `branch:` value to equal it. If the
-   roadmap has `status: complete`, stop and report that no build session is needed.
+1. Resolve the roadmap with `agento.mjs resolve <type> <slug>`. It searches the
+   primary worktree first and falls back to `origin/<branch>`; `conflict`,
+   `branch-mismatch` (the roadmap's `branch:` must equal the branch derived from the
+   argument), and `missing` are hard stops — report the `message` verbatim. If the
+   resolved roadmap has `status: complete`, stop and report that no build session is
+   needed.
 2. Inspect `git worktree list --porcelain` for the roadmap branch:
    - Checked out somewhere without `--resume`: stop; one builder per slug. If it is a
      promoted `plan-<session-id>` path, note that building continues in that existing
@@ -70,12 +72,11 @@ window or infer the delivery slug from the session ID.
      must return to `main` first and is never switched automatically.
    - Owned by a secondary worktree with `--resume`: reuse that path without changing
      its branch, directory name, or files (promoted `plan-*` worktrees included).
-3. Otherwise create the worktree at `<type>-<slug>` inside the managed worktrees
-   directory (default `<repo-name>-worktrees/<type>-<slug>`) on the exact roadmap
-   branch. If the branch exists only as `origin/<branch>`, create the local tracking
-   branch as part of `git worktree add`. If it exists nowhere, stop and report that
-   the delivery planner must publish it. Never use a detached HEAD or a differently
-   named branch.
+3. Otherwise create the worktree at the `worktree` path from `agento.mjs paths <type>
+   <slug>` on the exact roadmap branch. If the branch exists only as `origin/<branch>`,
+   create the local tracking branch as part of `git worktree add`. If it exists
+   nowhere, stop and report that the delivery planner must publish it. Never use a
+   detached HEAD or a differently named branch.
 4. Report the worktree path, branch, created or resumed, and the exact next command
    for the new window: `/build-feature <slug>` or `/build-issue <slug>`.
 

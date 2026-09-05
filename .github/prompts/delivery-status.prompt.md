@@ -7,13 +7,14 @@ tools: [read, search, execute]
 
 Report the state of all delivery work, read-only. Do not modify any files or branches.
 
-1. Recursively find every `roadmap.md` below `features/` and `issues/` (respect the
-   argument as a filter). Treat its parent directory name as the slug; flag duplicate
-   slugs as anomalies. Extract: slug, artifact path, `status`, `branch`, `last-updated`,
-   `next-step`, and checkbox progress (ticked/total across all steps).
-2. Cross-reference open PRs with `gh pr list --state all --limit 50` matching
-   `feature/*` and `issue/*` branches: PR number, draft/ready, check status.
-3. Present one table sorted by status (in-progress, paused, in-review, planned,
+1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs status [feature|issue]
+   [slug]` (the CLI path is announced in the session context as `Agento CLI:`),
+   passing the argument as the filter. Its JSON gives every roadmap's `slug`, `dir`,
+   `type`, `status`, `branch`, `lastUpdated`, `nextStep`, `steps` (ticked/total),
+   `reviewVerdict`, `postShipPending`, and a `duplicates` list to flag as anomalies.
+2. Cross-reference open PRs with `gh pr list --state all --limit 50` matching the
+   configured feature/issue branch prefixes: PR number, draft/ready, check status.
+3. Present one table in the CLI's order (in-progress, paused, in-review, planned,
    complete), with a final column recommending the next command per row
    (/build-feature, /build-issue, /review-feature, /review-issue, or /ship).
 4. Flag anomalies: roadmap branch missing on origin, status in-review without review.md,

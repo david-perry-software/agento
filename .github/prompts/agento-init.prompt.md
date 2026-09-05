@@ -78,12 +78,12 @@ leave existing files untouched and report what was kept.
    ```
 
 5. Copy Agento's bounded CI poller into the project at `scripts/wait-for-checks.sh`
-   and `chmod +x` it. Preferred source, in order:
-   a. The local Agento clone, if you can locate it (check the workspace or user
-      `chat.pluginLocations` setting; common default: a sibling directory named
-      `agento`).
-   b. `curl -fsSL https://raw.githubusercontent.com/david-perry-software/agento/main/scripts/wait-for-checks.sh`
-   If neither works, tell the user to copy it manually from their Agento clone.
+   and `chmod +x` it. Source it from the local Agento clone: the session context line
+   `Agento CLI: node <agento-root>/scripts/agento.mjs` gives `<agento-root>`
+   (fallback: the workspace or user `chat.pluginLocations` setting). Never download it
+   from the network — an unpinned `curl | copy` of an executable is not acceptable;
+   if the clone cannot be located, tell the user to copy the file from their Agento
+   checkout manually.
 
 6. If `artifacts.features`/`artifacts.issues` were customized away from the defaults,
    copy Agento's `templates/project.instructions.md` to

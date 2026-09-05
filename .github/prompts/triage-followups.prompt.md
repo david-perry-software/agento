@@ -1,20 +1,21 @@
 ---
 description: "Harvest un-triaged follow-ups from shipped features/issues, file them as GitHub issues autonomously, and annotate the source artifacts"
 argument-hint: "Slug to triage, or empty to scan all shipped work"
-agent: "📋 Agento Planner"
+agent: "agent"
 ---
 
 Triage delivery follow-ups into the GitHub backlog. This invocation authorizes filing
 GitHub issues with `gh issue create`, commenting stale-code flags on open issues with
 `gh issue comment` (step 6), and merging the single annotation PR described in step 5
-through the ruleset. No clarifying questions — run autonomously end to end.
+through the ruleset. No clarifying questions — run autonomously end to end. Resolve
+artifacts with the Agento CLI (`node <agento-root>/scripts/agento.mjs`; path in the
+session context line `Agento CLI:`).
 
 **Mode** — from the argument:
-- **Slug given**: recursively resolve an exact slug parent below `features/` and
-  `issues/`, triaging it only when exactly one directory matches; otherwise report
-  every conflicting path and stop.
-- **Empty**: recursively scan every slug directory containing a roadmap below
-  `features/` and `issues/` for un-triaged follow-ups and triage them all in one run.
+- **Slug given**: `agento.mjs find <slug>`; triage only when `status` is `ok`,
+  otherwise report the `message` and stop.
+- **Empty**: `agento.mjs status` lists every slug directory; triage all of them in
+  one run.
 
 1. **Harvest.** For each slug in scope, collect bullet items from:
    - review.md `## Follow-ups` — current review only; ignore superseded reviews below

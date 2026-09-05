@@ -1,6 +1,6 @@
 {
   "name": "agento",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Plan → build → review → ship delivery system for GitHub Copilot, packaged as an agent plugin.",
   "type": "module",

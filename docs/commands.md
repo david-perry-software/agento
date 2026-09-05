@@ -16,8 +16,15 @@
 | `/finish-freehand` | default | Commit, PR, merge freehand work |
 | `/commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
 | `/delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
-| `/triage-followups` | 📋 Agento Planner | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
+| `/triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
 | `/extend-copilot` · `/fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
+
+Prompts never re-derive slug resolution or config lookups in prose; they call the
+**Agento CLI** — `node <agento-root>/scripts/agento.mjs` — whose path the SessionStart
+hook announces as `Agento CLI:`. Subcommands: `config`, `resolve <type> <slug>`,
+`find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>`,
+`ship-preflight <type> <slug>`, `paths <kind> <id>`, `ports <slug>`. Every call prints
+one JSON document; exit 0 = usable result, 3 = resolution failure, 1 = usage error.
 
 ## The standard flow
 

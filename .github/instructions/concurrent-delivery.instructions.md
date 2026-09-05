@@ -16,12 +16,12 @@ cost, so it is the default target for user-visible verification:
 
 - **Per-slug local branch (default).** Serve the branch locally on per-slug ports and
   drive it yourself — run the relevant test spec or load the app in a browser while
-  the local processes are up. Derive stable per-slug ports once and use them in every
-  command and every roadmap `verify:` line, so a resumed session reuses the same ports:
+  the local processes are up. Derive stable per-slug ports once with the Agento CLI
+  and use them in every command and every roadmap `verify:` line, so a resumed
+  session reuses the same ports:
 
   ```bash
-  off=$(( $(printf '%s' "<slug>" | cksum | cut -d' ' -f1) % 90 ))
-  echo "WEB_PORT=$((3100 + off)) API_PORT=$((4100 + off))"
+  node <agento-root>/scripts/agento.mjs ports <slug>   # {"WEB_PORT": 31xx, "API_PORT": 41xx}
   ```
 
 - **Full local stack (auth, DB-backed flows).** If the project documents one in
