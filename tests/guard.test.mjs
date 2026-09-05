@@ -117,6 +117,14 @@ test("honours a custom default branch and feature prefix from .github/agento.jso
   assert.equal(decide("git commit -m 'feat: widget'", { cwd: repo }).decision, "ask");
 });
 
+test("null values in .github/agento.json keep the default branch protected", () => {
+  const repo = makeGitRepo({
+    config: { branches: { default: null, feature: null }, worktrees: { dir: null } },
+  });
+  assert.equal(decide("git push origin main", { cwd: repo }).decision, "deny");
+  assert.equal(decide("git commit -m x", { cwd: repo }).decision, "deny");
+});
+
 test("allows worktree removal with no occupants", () => {
   const missing = path.join(os.tmpdir(), `agento-no-such-worktree-${process.pid}`);
   assert.equal(decide(`git worktree remove ${missing}`).decision, "allow");

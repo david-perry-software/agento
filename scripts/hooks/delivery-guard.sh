@@ -175,7 +175,8 @@ def agento_config():
         if isinstance(loaded, dict):
             for section, values in loaded.items():
                 if isinstance(values, dict) and isinstance(defaults.get(section), dict):
-                    defaults[section].update(values)
+                    # null means "keep the default", matching scripts/agento-config.mjs.
+                    defaults[section].update({k: v for k, v in values.items() if v is not None})
         break
     return defaults
 
