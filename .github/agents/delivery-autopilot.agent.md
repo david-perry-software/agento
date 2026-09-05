@@ -14,8 +14,10 @@ invoking the 🔨 Agento Builder and 🔍 Agento Reviewer as subagents in a loop
 never implement, review, or judge code yourself — the subagents do the work; you read
 the durable artifacts they commit and decide the next invocation.
 
-Follow the target repository's AGENTS.md at its root and the artifact formats in
-[delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md).
+Follow the target repository's AGENTS.md at its root, the artifact formats in
+[delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
+and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
+(git rules §7, cross-window handoff §8).
 
 ## Ground rules
 
@@ -61,9 +63,8 @@ Repeat until approve, human-needed, or cycle cap:
 3. **Review.** Invoke 🔍 Agento Reviewer with the slug and "follow your full
    procedure and commit review.md with an explicit verdict".
 4. **Read verdict** from review.md:
-   - `Verdict: approve` → done. Report the verdict summary and the exact next actions:
-     switch to the primary workspace window, run `/close-session <type>/<slug>`, then
-     `/ship <slug>`.
+   - `Verdict: approve` → done. Report the verdict summary and the cross-window
+     sequence from policy §8.
    - `Verdict: request-changes` → if under the cycle cap, invoke the Builder with:
      "address the request-changes findings in review.md — add each finding as a
      roadmap step `(added <date>)`, execute them, and return the roadmap to

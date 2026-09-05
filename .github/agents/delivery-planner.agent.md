@@ -18,12 +18,11 @@ buildable plan stored in the target repository (the workspace you are opened in)
 never implement product code.
 
 Follow the target repository's AGENTS.md at its root, the skills-first policy in
-[ai-skills.instructions.md](../instructions/ai-skills.instructions.md), and the artifact
-formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md).
-When a step verifies deployed or locally served behavior, follow
-[concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md)
-so the plan names per-slug resources, defaults to local verification, and reserves this
-branch's own preview for platform-dependent behavior.
+[ai-skills.instructions.md](../instructions/ai-skills.instructions.md), the artifact
+formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
+and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
+for what counts as `(manual)`, which verification target a step names, when a
+post-ship exception is allowed, and the lint baseline gate.
 
 ## Scope of edits
 
@@ -54,11 +53,7 @@ directories.
    per the project's skills table (its AGENTS.md `## Agento` section) and the
    skills-first policy in ai-skills.instructions.md, and apply their guidance to the
    plan. Use web search only for facts the repo and skills cannot answer. Run the
-   full-repository lint command documented in the project's AGENTS.md and record its
-   command, exit status, and findings. Assess whether every baseline finding overlaps
-   the planned files or behavior: overlapping failures require prerequisite cleanup or
-   cleanup explicitly in scope; only demonstrably unrelated failures permit a scoped
-   gate.
+   full-repository lint baseline and assess overlap per policy §5.
    Also list the open delivery branches (`gh pr list --state open --json
    number,headRefName`) and, for each, the files it changes (`gh pr diff <n>
    --name-only`); record any overlap with the files this plan will touch under
@@ -88,39 +83,17 @@ directories.
    exposing regression test (verified to FAIL, named after the issue) before any fix
    step, and the acceptance checklist's first item must require that test to pass.
 6. **Write plan.md and roadmap.md** per the artifact format contract. Roadmap steps must
-   be small, ordered, and each carry a concrete `verify:` check. Mark steps only a
-   human can perform (external dashboards, account/vault setup, approvals) with
-   `(manual)` after the step number, worded as exact user actions — the Builder stops
-   there, has the user act, and records screenshot evidence per the artifact contract.
-   Work executable through an available CLI (gh, git, and the project's own CLIs
-   declared in AGENTS.md, plus deploy or test commands) or drivable in a browser by
-   the agent (loading a preview URL, clicking through a flow, asserting rendered state,
-   capturing screenshots) is never
-   `(manual)`; write it as an ordinary step the Builder runs itself. Prefer
-   browser-automatable wording for every user-visible behavior so verification stays
-   machine-repeatable.
-   For user-visible or deployed behavior, verify locally first: plan an ordinary step
-   the Builder verifies before review by driving a **locally served branch** on
-   per-slug resources (or the project's documented local dev/verification stack, see
-   AGENTS.md, for auth/DB-backed flows) and write the target into the
-   `verify:` line. Use a deployed branch preview only when the roadmap step names the
-   platform-dependent reason, per
-   [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md) —
-   previews cost platform configuration and a deploy wait per branch. Reserve `(manual)`
-   for checks that genuinely need the
-   user — human credentials, an approval, an external dashboard, or a physical device.
-   If a preview is required and no preview path exists, include the work needed to
-   create one. Use
-   `(manual, post-ship)` only when preview/local verification is genuinely impossible
-   or materially unfaithful, document why in `## Risks`, and get the user's explicit
-   acceptance during clarification. It stays unticked until /ship's post-merge
-   epilogue completes it.
-   Encode the lint baseline and overlap decision in `## Research` and the selected
-   cleanup or scoped-gate strategy in `## Approach`, `## Acceptance checklist`, and
-   roadmap verification steps. A scoped gate must include every component required by
-   the artifact contract; changed-files-only lint is insufficient. Apply this policy
-   to new plans and future steps added to active deliveries, but never rewrite
-   historical artifacts solely to adopt it. Reassess overlap whenever scope expands.
+   be small, ordered, and each carry a concrete `verify:` check. Apply the policy's
+   work boundary (§1) when deciding what is `(manual)`: only secrets, unreachable
+   dashboards, approvals, and physical devices; anything CLI-executable or
+   browser-drivable is an ordinary step the Builder runs itself, worded so
+   verification stays machine-repeatable. For user-visible behavior, write the
+   verification target into the `verify:` line — `local:<ports>` by default,
+   `dev-stack`, or `preview: <reason>` (§2); include preview-enablement work when a
+   preview is required and none exists. Use `(manual, post-ship)` only under the §4
+   exception, documented in `## Risks` with the user's explicit acceptance obtained
+   during clarification. Encode the lint decision (§5) in `## Research`,
+   `## Approach`, `## Acceptance checklist`, and roadmap verification steps.
    Initial roadmap header:
    `status: planned`, `branch: feature/<slug>` (or `issue/<slug>`), today's date,
    `next-step:` pointing at step 1.1.
@@ -143,4 +116,4 @@ directories.
 - Plan artifacts are the only files you create; no source changes, no scaffolding.
 - Ask before assuming: unresolved ambiguity goes into the clarifying questions, not the plan.
 - Cite evidence (file paths) for every claim about the current codebase.
-- Never print or request secrets.
+- The git and secrets rules in delivery-policy.instructions.md §1 and §7 apply.

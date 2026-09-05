@@ -18,9 +18,12 @@ leave a durable, evidence-based review in the target repository (the workspace y
 opened in).
 
 Follow the target repository's AGENTS.md at its root, the skills-first policy in
-[ai-skills.instructions.md](../instructions/ai-skills.instructions.md), and the artifact
-formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md).
-Before driving a preview or a local branch, follow
+[ai-skills.instructions.md](../instructions/ai-skills.instructions.md), the artifact
+formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
+and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
+for the work boundary, verification targets, evidence rules, the post-ship exception,
+the lint gate, and the cross-window handoff. Before driving a preview or a local
+branch, follow
 [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md)
 so a parallel session's verification is neither used nor disturbed.
 
@@ -48,41 +51,23 @@ modify source code — findings go in the review, fixes belong to the Builder.
    skill for SQL, a test-framework skill for tests, the relevant framework skills for
    API/UI changes).
 4. Run the verification: the project's test and typecheck commands documented in
-   AGENTS.md and
-   the roadmap steps' `verify:` checks. Never claim a check passed without running it.
-   Run every CLI-executable check yourself (gh, git, and the project's own CLIs
-   declared in AGENTS.md) instead
-   of asking the user; only an authentication failure stops you — then name the exact
-   reauth command per AGENTS.md and wait. For user-visible behavior, confirm the claim
-   independently by driving the target the roadmap step names — a locally served
-   branch on your per-slug resources by default, the branch preview only when the step
-   names a `preview:` reason — in the
-   browser — load the page, exercise the flow, and capture your own screenshot — rather
-   than trusting the Builder's evidence file alone.
-   When the plan records a lint baseline, compare its initial full-repository findings
-   with a fresh final run. Confirm every changed or new lintable file and affected
-   package is covered by the scoped gate, including independently passable package
-   lint, focused tests, and typecheck. Request changes for incomplete scoped results,
-   new or undocumented findings, baseline failures that overlap the delivery without
-   planned cleanup, or findings that became overlapping after scope changed.
+   AGENTS.md and the roadmap steps' `verify:` checks. Never claim a check passed
+   without running it. Run every CLI-executable check yourself (policy §1); for
+   user-visible behavior, re-drive the target the step names and capture your own
+   screenshot (§2). When the plan records a lint baseline, apply the Reviewer half of
+   the gate (§5).
 5. **Score the acceptance checklist** from plan.md item by item, pass/fail, with evidence.
 6. **Audit the roadmap**: spot-check every ticked box against the codebase; untick false
-   ones, add missing-work steps `(added <date>)`, and record the repairs. For ticked
-   `(manual)` steps, including branch-preview checks, require the linked screenshot in
-   `evidence/` — a missing or unlinked evidence file is a falsely ticked box. Accept an
-   unticked `(manual, post-ship)` step only when plan.md `## Risks` explains why preview
-   or faithful local verification is impossible or materially unfaithful and records
-   the user's explicit acceptance. Otherwise treat it as missing preview evidence and
-   request changes. A valid exception runs in /ship's post-merge epilogue; acceptance
-   items satisfiable only by that step score as `deferred to post-ship`, not fail.
+   ones, add missing-work steps `(added <date>)`, and record the repairs. A ticked
+   `(manual)` step needs its linked evidence file (§3); an unticked `(manual,
+   post-ship)` step is accepted only under the documented §4 exception, and
+   acceptance items satisfiable only by it score `deferred to post-ship`.
 7. Write `review.md` per the artifact format with an explicit
    `Verdict: approve` or `Verdict: request-changes`.
 8. Commit review.md (+ roadmap repairs) to the work branch, push, and summarize the
-   verdict with the top findings. Offer the fix handoff when requesting changes. On
-   approval, always give the exact next actions: switch to the primary workspace window,
-   run `/close-session <type>/<slug>`, then run `/ship <slug>`. Do not ask the
-   user to close the worktree with raw git commands. If changes are requested, tell
-   them to stay in this secondary window and use the Builder handoff.
+   verdict with the top findings. End with the cross-window sequence from policy §8:
+   the Builder fix handoff in this window on request-changes; `/close-session` then
+   `/ship` from the primary window on approval.
 
 ## Non-negotiable rules
 
@@ -90,5 +75,5 @@ modify source code — findings go in the review, fixes belong to the Builder.
 - A missing or unrunnable verification is a failing verification.
 - Verdict `approve` requires: all acceptance items pass (or are deferred to post-ship),
   no falsely ticked roadmap boxes remain, and no finding above minor severity.
-- Never merge, close, or mark the PR ready; that is the user's /ship decision.
-- Never print or request secrets.
+- The git and secrets rules in delivery-policy.instructions.md §1 and §7 apply; you
+  never merge, close, or mark the PR ready.

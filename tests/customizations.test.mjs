@@ -149,6 +149,37 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
   }
 });
 
+test("policy section references (§N) point at sections that exist", () => {
+  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
+  assert.ok(sections.size >= 8, "policy file lost sections");
+  for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const [, n] of text.matchAll(/§(\d+)/g)) {
+      assert.ok(sections.has(n), `${path.relative(repoRoot, file)}: §${n} does not exist in delivery-policy.instructions.md`);
+    }
+  }
+});
+
+test("the policy file is the only place the shared rules are spelled out", () => {
+  // Phrases that used to be duplicated across agents/prompts; each may now appear in
+  // the policy file and nowhere else in the customization set.
+  const canaries = [
+    /materially unfaithful/,
+    /changed-files-only lint/i,
+    /SIGPIPE/,
+    /evidence\/step-<N-M>-<short-name>\.png/,
+    /never (?:ask|hand) .*(?:the user|to the user).*run the command/i,
+  ];
+  for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
+    if (file.endsWith("delivery-policy.instructions.md")) continue;
+    const text = fs.readFileSync(file, "utf8");
+    for (const canary of canaries) {
+      assert.doesNotMatch(text, canary, `${path.relative(repoRoot, file)} restates a policy rule (${canary}); link delivery-policy.instructions.md instead`);
+    }
+  }
+});
+
 test("every slash command is documented in README.md and docs/commands.md", () => {
   const readme = fs.readFileSync(rel("README.md"), "utf8");
   const commands = fs.readFileSync(rel("docs", "commands.md"), "utf8");

@@ -59,7 +59,8 @@ documents formats, locations, and frontmatter for every customization type.
      list every needed tool in `tools:` and subagents in `agents:`; descriptions must
      contain the trigger phrases ("Use when: ...") — they drive discovery.
    - Instructions: `.github/instructions/<name>.instructions.md` with a narrow
-     `applyTo` glob; avoid `applyTo: "**"` unless truly universal.
+     `applyTo` glob; avoid `applyTo: "**"` unless the rules must be present on every
+     turn regardless of file (as `ai-skills` and `delivery-policy` are).
    - Hooks: per-hook config in `.github/hooks/<name>.json` aggregated by the plugin's
      root `hooks.json` (hook commands use `${PLUGIN_ROOT}`), script in
      `scripts/hooks/` — executable, defensive stdin parsing, always exit 0 with a JSON
@@ -75,6 +76,9 @@ documents formats, locations, and frontmatter for every customization type.
 
 ## Known pitfalls (real bugs fixed while building this plugin — check these first)
 
+Policy lives in `.github/instructions/delivery-policy.instructions.md`; do not
+re-add rules here that belong there. These are mechanics gotchas only.
+
 - The guard matches shell *text*, so a commit message or heredoc that quotes a
   forbidden command (`git push origin main`, `gh pr merge --admin`) trips the deny.
   Write such messages to a file and use `git commit -F <file>`; do not weaken the
@@ -89,48 +93,21 @@ documents formats, locations, and frontmatter for every customization type.
   regression.
 - Heredoc + pipe: `printf | python3 - <<'PY'` loses the piped stdin (the heredoc wins);
   pass hook input via an environment variable instead.
-- The delivery guard once evaluated only the CURRENT branch, denying chained
-  `git switch -c X && git commit` on main; fixed with chain-aware branch detection —
-  keep that behavior when touching the guard.
-- The skills CLI writes `.agents/` relative to the
-  terminal cwd — always run it from the target repo root.
-- Tooling availability differs per shell/machine; verify a CLI with `command -v` (or
-  the project's documented presence check)
-  before assuming a CLI exists (agents once assumed CLIs that were missing here until
-  symlinked/installed).
-- Path/token co-occurrence false positives: the guard once denied any command merely
-  containing a hook path plus rm/mv/`>` anywhere (even reads and test harnesses);
-  destructive checks must anchor the protected path as the token's TARGET.
+- The guard evaluates commands per shell segment and tracks `git switch`/`checkout`
+  through a chain; hook-file protection is by command word against a read-only
+  allowlist, not a verb denylist. Keep both behaviors when touching the guard, and
+  add every new case to tests/guard-fixtures.txt.
+- The skills CLI writes `.agents/` relative to the terminal cwd — always run it from
+  the target repo root.
 - Prompt `name:` frontmatter overrides the filename as the slash command (Title Case
   names produced /New-Feature while all docs said /new-feature); omit `name:` so the
   command defaults to the kebab-case filename.
-- Post-deploy manual verification once forced an ad-hoc second PR per slug to land
-  evidence and tick the roadmap; `(manual, post-ship)` plus /ship's epilogue remains
-  the explicit exception path, not the default replacement for preview evidence.
-- Treating post-ship evidence as the default hid missing preview coverage and left
-  secondary sessions without an actionable handoff; deployed checks now use pre-review
-  branch previews by default, post-ship requires a documented user-accepted exception,
-  and Builder/Reviewer must name the primary-window close + ship commands.
-- Remote roadmap resolution must normalize the canonical `features/…/<slug>/roadmap.md`
-  and `issues/…/<slug>/roadmap.md` paths before falling back to origin and must reject
-  mismatched `branch:` headers as a precise, actionable blocker rather than a generic
-  missing-artifact error.
-- Bare Bash automation shells surface raw command failures as generic terminal-process
-  exits: preflight optional executables to avoid 127, avoid early-closing pipelines
-  under `pipefail` to avoid SIGPIPE 141, and capture diagnostic/build/test statuses in
-  a wrapper that reports the result while leaving the automation shell at 0.
+- One agent file with invalid frontmatter YAML (Planner `handoffs:` list items indented
+  so `agent:`/`prompt:` sat deeper than `label:`) dropped EVERY custom agent from the
+  available-agents listing, not just the broken one.
 - `code --new-window` may reuse an already-running VS Code session without opening a
   visible second window; treat this as an editor-session behavior, not evidence of a
   Git worktree conflict or branch lock.
-- Agents kept handing shell-runnable commands (e.g. database queries) to the
-  user: secrets/auth-halt rules existed but no self-reliance rule did, so `(manual)`
-  drifted to mean "any CLI"; the fix names the CLI-executable boundary in the target
-  repo's AGENTS.md,
-  the artifact contract, and each plan/build/review surface.
-- One agent file with invalid frontmatter YAML (Planner `handoffs:` list items indented
-  so `agent:`/`prompt:` sat deeper than `label:`) dropped EVERY custom agent from the
-  available-agents listing, not just the broken one — validate all frontmatter with a
-  YAML parser when agents vanish wholesale.
 - A valid remote may not cache symbolic `refs/remotes/origin/HEAD`; discover its
   default branch read-only with `git ls-remote --symref origin HEAD`, require one
   fetched matching remote-tracking ref, and never guess `main` or `master`.
@@ -138,23 +115,10 @@ documents formats, locations, and frontmatter for every customization type.
   `origin/main`; use `--no-track` when the remote ref is only the branch's starting
   point, or a plain future push can target the wrong upstream.
 - Worktree removal can leave terminals, services, or VS Code windows rooted in deleted
-  directories; gate literal `git worktree remove <absolute-path>` commands by checking
-  `/proc/*/cwd` and `code --status`, but never terminate those occupants automatically.
-- Preview-by-default verification made every branch cost a platform allowlist edit
-  plus a deploy wait;
-  local-first is now the default — the per-slug local verification stack configures
-  its own allowed origins — and previews require a named `preview: <reason>` on the step.
-- Open-ended watchers (`gh pr checks --watch`, `gh run watch`, background terminals,
-  VS Code tasks) left the deploy monitor idle until the user spoke; every CI/deploy
-  wait must be a bounded foreground poll (`scripts/wait-for-checks.sh`, exit 2 =
-  rerun). Note `gh 2.45` has no `gh pr checks --json`; poll `gh pr view --json
-  statusCheckRollup` instead.
-- Integrating `origin/main` only at resume and at /ship let the last-closed of several
-  concurrent sessions inherit every earlier merge as conflicts in the primary workspace
-  window;
-  Builder now merges `origin/main` before every push and the Reviewer/ship gate on
-  `mergeStateStatus`, with hotspot recipes (lockfile, barrel files, global stylesheets)
-  documented in concurrent-delivery.instructions.md.
+  directories; the guard checks `/proc/*/cwd` and `code --status` on a literal
+  `git worktree remove <absolute-path>` but never terminates occupants automatically.
+- `gh 2.45` has no `gh pr checks --json`; `scripts/wait-for-checks.sh` polls
+  `gh pr view --json statusCheckRollup` instead.
 
 ## Repair rules
 

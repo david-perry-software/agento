@@ -2,6 +2,14 @@
 
 ## 0.2.0 (2026-09-05)
 
+- **Single-source delivery policy.** The work boundary, verification targets,
+  manual/post-ship steps and evidence, lint gate, shell hygiene, git rules, and
+  cross-window handoff — previously restated in up to five files with drifting
+  wording — now live once in `delivery-policy.instructions.md` (`applyTo: "**"`).
+  Builder, Planner, Reviewer, Autopilot, the build/review/ship prompts, the artifact
+  contract, and concurrent-delivery cite its numbered sections. A test fails if a
+  canary phrase reappears outside the policy file or a `§N` reference dangles. The
+  Mechanic's pitfalls list drops entries that merely restated policy.
 - **New `/quick-fix` lite tier**: a small, well-understood change made end to end in
   the current window — branch, implement, verify, PR, bounded check wait, merge —
   with the same guards and ruleset but no plan/roadmap/review/second window. Refuses

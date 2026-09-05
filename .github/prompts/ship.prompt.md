@@ -36,10 +36,9 @@ the post-ship epilogue after the work branch has already merged.
      and list the touched files as an audit note.
    - roadmap.md: list unticked steps; spot-check ticked steps against the actual
      codebase and note falsely ticked ones (code is truth). Unticked
-    `(manual, post-ship)` steps are expected only when plan.md `## Risks` documents
-    why preview or faithful local verification was impossible or materially
-    unfaithful and records explicit user acceptance. Queue valid exceptions for step
-    5; list unjustified deferrals as gaps.
+     `(manual, post-ship)` steps are expected only under the documented exception in
+     delivery-policy.instructions.md §4. Queue valid exceptions for step 5; list
+     unjustified deferrals as gaps.
    - review.md: present and `Verdict: approve`? Note if missing, stale (older than the
      last code commit), or `request-changes`.
    - Issues only: the exposing regression test passes, plan.md `## Resolution` is
@@ -55,8 +54,7 @@ the post-ship epilogue after the work branch has already merged.
      `## Follow-ups (accepted at ship)` section in roadmap.md; commit and push.
    - Mark the draft PR ready for review; wait for every required check with
      `scripts/wait-for-checks.sh pr <n>` in the foreground (exit 2 = still pending:
-     rerun it; never use `gh pr checks --watch`, `gh run watch`, a background
-     terminal, or a VS Code task, and never end the turn to "wait").
+     rerun it; bounded polls only, per delivery-policy.instructions.md §6).
      Failing or pending required checks are the one hard stop — the ruleset enforces
      them and they must not be bypassed; report them as a resumable blocker.
    - Merge with a normal merge commit through the ruleset (no admin, no bypass),
@@ -76,11 +74,9 @@ the post-ship epilogue after the work branch has already merged.
 5. **Post-ship verification epilogue** (only if unticked `(manual, post-ship)` steps
    remain; runs after the merge and `main` sync):
    - After any configured release workflow succeeds (or right away when none is
-     configured), ask the user to perform each manual
-     check: give the exact verification instructions, collect the confirming
-     screenshot(s) into the slug's `evidence/` directory, tick the step with the
-     completion date and evidence links (Builder's manual step protocol rules apply —
-     no secrets visible).
+     configured), walk the user through each manual check per the manual step
+     protocol (delivery-policy.instructions.md §3): exact instructions, screenshot
+     into the slug's `evidence/`, tick with completion date and evidence link.
    - Land it without ceremony: from fresh `main`, create `post-ship/<slug>`, commit the
      evidence files + roadmap tick as one commit, push, open a PR, merge it through the
      ruleset once required checks pass (normal merge commit, no bypass), delete the
