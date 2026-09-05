@@ -24,3 +24,81 @@ allow git push -u origin feature/widget
 allow ls -la
 allow echo 'push origin main'
 allow pkill -f 'gh run watch'
+
+# Default-branch protection through chained switches and merges
+deny  git switch main; git commit -m x
+deny  git checkout main && git merge feature/x
+deny  git checkout main && git pull && git merge --no-ff feature/x
+allow git switch main && git fetch origin && git merge --ff-only origin/main
+allow git switch main && git pull --ff-only
+allow git switch main && git switch -c feature/y && git commit --allow-empty -m x
+deny  bash -c 'git push origin main'
+deny  timeout 60 git push origin main
+deny  git push origin --delete main
+deny  git push origin :main
+allow git push origin :feature/x
+allow git merge origin/main
+allow git merge --abort
+
+# Force-push spellings and hook bypasses
+deny  git push origin +feature/x
+deny  git push --force=true origin feature/x
+deny  git push origin feature/x --force-if-includes
+deny  git -c push.default=current push -f
+deny  git commit --no-verify -m x
+deny  git commit -n -m x
+deny  git push --no-verify origin feature/x
+allow git push -n origin feature/x
+ask   git commit --amend --no-edit
+ask   git rebase -i HEAD~3
+ask   git rebase origin/main
+ask   git reset --hard origin/main
+ask   git branch -D feature/x
+allow git branch -d feature/x
+allow git reset --soft HEAD~1
+
+# Ruleset bypasses on the GitHub side
+deny  gh pr merge 5 --admin
+deny  gh pr merge 5 --merge --admin --delete-branch
+ask   gh pr merge 5 --squash
+ask   gh pr merge 5 --rebase
+allow gh pr merge 5 --merge --delete-branch
+allow gh pr view 5 --json mergeStateStatus
+
+# Watchers behind prefixes
+deny  nohup gh run watch 1 &
+deny  setsid gh pr checks 5 --watch
+deny  timeout 600 gh run watch 1
+deny  cd repo && gh run watch 1
+deny  gh pr checks 5 --watch=true
+allow gh pr checks 5
+allow gh run list
+
+# Hook-file protection by command word rather than a verb denylist
+deny  cp /tmp/x scripts/hooks/delivery-guard.sh
+deny  cp scripts/hooks/delivery-guard.sh /tmp/x && cp /tmp/x scripts/hooks/delivery-guard.sh
+deny  install -m 755 /tmp/x scripts/hooks/delivery-guard.sh
+deny  truncate -s 0 scripts/hooks/delivery-guard.sh
+deny  echo x | tee scripts/hooks/delivery-guard.sh
+deny  perl -pi -e 's/deny/allow/' scripts/hooks/delivery-guard.sh
+deny  sed --in-place 's/deny/allow/' scripts/hooks/delivery-guard.sh
+deny  git checkout HEAD~1 -- scripts/hooks/delivery-guard.sh
+deny  git restore scripts/hooks/delivery-guard.sh
+deny  mv scripts/hooks/delivery-guard.sh /tmp/
+deny  ln -sf /tmp/x scripts/hooks/delivery-guard.sh
+ask   chmod -x scripts/hooks/delivery-guard.sh
+ask   chmod +x scripts/hooks/new-hook.sh
+allow cp scripts/hooks/delivery-guard.sh /tmp/backup.sh
+allow head -20 scripts/hooks/delivery-guard.sh
+allow grep -n deny scripts/hooks/delivery-guard.sh
+allow sed -n '1,10p' scripts/hooks/delivery-guard.sh
+allow perl -ne 'print' scripts/hooks/delivery-guard.sh
+allow bash scripts/hooks/session-context.sh < /dev/null
+allow ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt
+allow printf '{}' | ./scripts/hooks/delivery-guard.sh
+allow git add scripts/hooks/delivery-guard.sh
+allow git diff origin/main -- scripts/hooks/delivery-guard.sh
+allow git log --oneline -- scripts/hooks/
+allow cat scripts/hooks/delivery-guard.sh > /tmp/copy.sh
+allow code scripts/hooks/delivery-guard.sh
+allow shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh

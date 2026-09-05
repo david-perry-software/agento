@@ -90,10 +90,24 @@ leave existing files untouched and report what was kept.
    `.github/instructions/agento.instructions.md` and adjust its `applyTo:` to the
    custom roots so the artifact contract keeps loading.
 
-7. Commit the scaffold on a `changes/agento-init` branch (never on the default
-   branch), open a PR, and report: config values chosen, files created, the exact
-   next command (`/start-session` then `/new-feature <description>`), and — if the
-   plugin is not yet registered — the settings snippet:
+7. **Check the enforcement layer.** The delivery guard is a slip guard, not a
+   boundary; the default branch must be protected server-side. Run
+   `gh api repos/{owner}/{repo}/rulesets --jq '.[] | select(.target=="branch") | .name'`
+   and `gh api repos/{owner}/{repo}/branches/<default>/protection` (404 means none).
+   If neither a ruleset nor branch protection covers the default branch, ask the user
+   (with `vscode/askQuestions`) whether to create a ruleset now that: requires a pull
+   request before merging, requires the project's CI check(s) to pass, blocks force
+   pushes, and blocks deletion — `gh api -X POST repos/{owner}/{repo}/rulesets` with
+   `enforcement: active`, `conditions.ref_name.include: ["~DEFAULT_BRANCH"]`, and
+   `rules` of type `pull_request`, `required_status_checks`, `non_fast_forward`, and
+   `deletion`. Never create it without the user's yes; if declined or if `gh` lacks
+   admin scope, record the gap in the report so the user can do it in the GitHub UI.
+
+8. Commit the scaffold on a `changes/agento-init` branch (never on the default
+   branch), open a PR, and report: config values chosen, files created, whether the
+   default branch is protected server-side, the exact next command (`/start-session`
+   then `/new-feature <description>`), and — if the plugin is not yet registered —
+   the settings snippet:
 
    ```jsonc
    "chat.plugins.enabled": true,

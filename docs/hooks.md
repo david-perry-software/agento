@@ -14,17 +14,32 @@ from the hook input's `cwd` and the artifact roots from the target's
 
 ## PreToolUse — `scripts/hooks/delivery-guard.sh`
 
-Returns `allow` (silent), `ask:<reason>` (user confirmation), or `deny:<reason>`:
+**What it is:** a slip guard for an LLM operator. It pattern-matches the shell text
+and file paths of tool calls and catches the mistakes agents actually make. **What it
+is not:** an enforcement boundary — a determined command can be spelled so that no
+regex recognises it. The enforcement layer is a GitHub ruleset on the default branch
+(require a pull request, require the CI check, block force pushes, block deletions);
+`/agento-init` checks for one and offers to create it. Keep both.
+
+Returns `allow` (silent), `ask` (user confirmation with a reason), or `deny` (with a
+reason). Commands are evaluated one shell segment at a time (`&&`, `;`, `|`, `&`),
+tracking branch switches earlier in the same line.
 
 | Rule | Decision |
 |---|---|
-| Commit or push while on the configured default branch, or push targeting it | deny |
-| `git push --force` / `--force-with-lease` / `-f` | deny |
-| Open-ended watchers (`gh pr checks --watch`, `gh run watch`, `vercel --wait`) | deny — use `scripts/wait-for-checks.sh` |
-| Destructive shell change (`rm`, `mv`, `>`, `tee`, `sed -i`) targeting `.github/hooks/` or `scripts/hooks/` | deny — use an edit tool |
+| Commit, push, or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain — or a push whose refspec targets it | deny |
+| `git push --force` / `--force-with-lease` / `--force-if-includes` / `-f` / `+refspec` | deny |
+| `git push --delete <default>` / `:<default>` | deny |
+| `git commit --no-verify` / `-n`, `git push --no-verify` | deny |
+| `gh pr merge --admin` | deny |
+| `gh pr merge --squash` / `--rebase` | ask |
+| `git commit --amend`, `git rebase`, `git reset --hard`, `git branch -D` | ask |
+| Open-ended watchers (`gh pr checks --watch`, `gh run watch`, `vercel --wait`), including behind `nohup`, `setsid`, `timeout`, `&` | deny — use `scripts/wait-for-checks.sh` |
+| Any shell command whose word is not a known read-only command and that names `.github/hooks/` or `scripts/hooks/` (rm, mv, cp/install *into* it, truncate, tee, `perl -pi`, `sed -i`, `git checkout -- <hook>`, redirections) | deny — use an edit tool |
+| `chmod` / `chown` / `touch` on a hook file | ask |
 | Editing a hook file with an edit tool | ask — per-change approval |
-| Committing on a `feature/`/`issue/` branch without a staged `roadmap.md` | ask — progress may be lost on resume |
-| `git worktree remove` with live occupants (processes or an open VS Code folder) | ask |
+| Committing on a `feature/`/`issue/` branch without `roadmap.md` among the files that commit would record (index, `-a` modifications, or explicit pathspecs) | ask — progress may be lost on resume |
+| `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only) | ask |
 | Everything else | allow |
 
 Branch names, the default branch, and artifact roots come from the target repo's
