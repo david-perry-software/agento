@@ -12,6 +12,7 @@
 | `/ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
 | `/ship <slug>` | default | Acceptance gate: required checks green, merge PR, sync main, optional release workflow, post-ship epilogue |
 | `/close-session <session-id \| type/slug \| changes/slug>` | default | Remove the worktree, delete merged branches, verify state |
+| `/quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
 | `/start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
 | `/finish-freehand` | default | Commit, PR, merge freehand work |
 | `/commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
@@ -37,3 +38,11 @@ one JSON document; exit 0 = usable result, 3 = resolution failure, 1 = usage err
 /ship <slug>                   → merged, main synced, epilogue
 /close-session feature/<slug>  → worktree removed
 ```
+
+## Choosing a tier
+
+| Work | Command |
+|---|---|
+| Typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/quick-fix` — one window, verified, PR, merged |
+| Exploratory or multi-commit scratch work that still needs no plan | `/start-freehand` → `/finish-freehand` |
+| Anything with a design decision, several files, a user-facing feature, a schema/API change, or manual verification | `/start-session` → `/new-feature` / `/new-issue` |
