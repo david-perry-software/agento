@@ -1,10 +1,26 @@
-# Replay fixtures for scripts/hooks/replay-guard.sh — expected verdicts are in
-# tests/guard.test.mjs; this file is the human-readable smoke set for CI.
-git push origin main
-git push --force origin feature/widget
-gh run watch 123
-gh pr checks 5 --watch
-rm scripts/hooks/delivery-guard.sh
-git status
-git push origin feature/widget
-ls -la
+# Replay fixtures for scripts/hooks/replay-guard.sh. Each line is
+# `<expected-verdict> <command>`; the harness fails on any mismatch. Commands run in a
+# throwaway repo on feature/replay, so the "you are on main" rule is not what is tested.
+deny  git push origin main
+deny  git push origin HEAD:main
+deny  git push --force origin feature/widget
+deny  git push -f origin feature/widget
+deny  git push --force-with-lease origin feature/widget
+deny  git switch -c feature/x && git push origin main
+deny  gh run watch 123
+deny  gh pr checks 5 --watch
+deny  vercel deploy --wait
+deny  rm scripts/hooks/delivery-guard.sh
+deny  rm -rf .github/hooks/
+deny  echo x >> scripts/hooks/delivery-guard.sh
+deny  sed -i 's/deny/allow/' scripts/hooks/delivery-guard.sh
+allow cat scripts/hooks/delivery-guard.sh
+allow shellcheck scripts/hooks/delivery-guard.sh
+allow git status
+allow git log --oneline -5
+allow git diff origin/main...HEAD
+allow git push origin feature/widget
+allow git push -u origin feature/widget
+allow ls -la
+allow echo 'push origin main'
+allow pkill -f 'gh run watch'

@@ -24,9 +24,9 @@ documents formats, locations, and frontmatter for every customization type.
 1. **Reproduce first.** Get the exact symptom: which command/agent, what happened,
    what was expected. For hook bugs, replay the hook script directly:
    `echo '<tool JSON>' | ./scripts/hooks/<script>.sh` and inspect the decision, or feed
-   a file of one-command-per-line cases to `scripts/hooks/replay-guard.sh` (a test
-   harness typed inline on the command line trips the guard's own destructive-path
-   deny — keep the cases in a file).
+   a file of `<expected-verdict> <command>` lines to `scripts/hooks/replay-guard.sh`,
+   which exits 1 on mismatches (a test harness typed inline on the command line trips
+   the guard's own deny rules — keep the cases in a file).
 2. **Check the usual suspects, in order:**
    - Frontmatter: invalid YAML (unquoted colons, tabs), `name` mismatches, wrong file
      extension or directory.
