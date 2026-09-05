@@ -39,7 +39,7 @@ state alone, on any machine.
 
 ## Commands
 
-`/agento-init` · `/start-session` · `/new-feature` · `/new-issue` ·
+`/agento-init` · `/install-skills` · `/start-session` · `/new-feature` · `/new-issue` ·
 `/build-feature` · `/build-issue` · `/review-feature` · `/review-issue` ·
 `/ap` · `/ship` · `/close-session` · `/start-freehand` · `/finish-freehand` ·
 `/commit-current-changes` · `/delivery-status` · `/triage-followups` ·
