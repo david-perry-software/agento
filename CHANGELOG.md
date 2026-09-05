@@ -2,6 +2,10 @@
 
 ## 0.2.0 (2026-09-05)
 
+- **New `/quick-fix` lite tier**: a small, well-understood change made end to end in
+  the current window — branch, implement, verify, PR, bounded check wait, merge —
+  with the same guards and ruleset but no plan/roadmap/review/second window. Refuses
+  work that needs a plan and names the right command instead.
 - **New `scripts/agento.mjs` CLI** (`config`, `resolve`, `find`, `status`,
   `close-decision`, `ship-preflight`, `paths`, `ports`). Prompts and agents call it
   for slug resolution, status listings, worktree paths, and config values instead of
