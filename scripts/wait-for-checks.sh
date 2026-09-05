@@ -5,8 +5,12 @@
 # --max-seconds and reports one status line per poll.
 #
 # Usage:
-#   scripts/wait-for-checks.sh pr  <number> [--max-seconds N] [--interval N] [--repo OWNER/NAME]
+#   scripts/wait-for-checks.sh pr  <number> [--max-seconds N] [--interval N] [--repo OWNER/NAME] [--no-checks-grace N]
 #   scripts/wait-for-checks.sh run <run-id> [--max-seconds N] [--interval N] [--repo OWNER/NAME]
+#
+# A PR that reports no checks at all is treated as pending for --no-checks-grace
+# seconds (default 30, to absorb GitHub's run-registration delay) and then as success
+# with an explicit "no checks reported" note, so repositories without CI terminate.
 #
 # Exit codes:
 #   0  every check / the run completed successfully
@@ -15,14 +19,15 @@
 #   3  usage error, or gh unavailable / not authenticated (do not retry; reauth)
 set -uo pipefail
 
-usage() { sed -n '2,15p' "${BASH_SOURCE[0]}"; }
+usage() { sed -n '2,19p' "${BASH_SOURCE[0]}"; }
 
 kind="${1:-}"; target="${2:-}"; shift 2 2>/dev/null || { usage; exit 3; }
-max_seconds=300; interval=15; repo_args=()
+max_seconds=300; interval=15; no_checks_grace=30; repo_args=()
 while (($# > 0)); do
   case "$1" in
     --max-seconds) max_seconds="${2:-}"; shift 2 ;;
     --interval) interval="${2:-}"; shift 2 ;;
+    --no-checks-grace) no_checks_grace="${2:-}"; shift 2 ;;
     --repo) repo_args=(--repo "${2:-}"); shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage; exit 3 ;;
@@ -30,7 +35,7 @@ while (($# > 0)); do
 done
 [[ "$kind" == "pr" || "$kind" == "run" ]] || { usage; exit 3; }
 [[ "$target" =~ ^[0-9]+$ ]] || { echo "target must be a numeric PR number or run id" >&2; exit 3; }
-[[ "$max_seconds" =~ ^[0-9]+$ && "$interval" =~ ^[1-9][0-9]*$ ]] || { echo "--max-seconds and --interval must be integers" >&2; exit 3; }
+[[ "$max_seconds" =~ ^[0-9]+$ && "$interval" =~ ^[1-9][0-9]*$ && "$no_checks_grace" =~ ^[0-9]+$ ]] || { echo "--max-seconds, --interval, and --no-checks-grace must be integers" >&2; exit 3; }
 command -v gh >/dev/null 2>&1 || { echo "gh is not installed" >&2; exit 3; }
 
 export GH_PAGER=cat NO_COLOR=1
@@ -89,7 +94,14 @@ while :; do
     detail="${snapshot#* | }"
     echo "poll $poll pr #$target: pass=$pass fail=$fail pending=$pending skipped=$skipped merge=$merge_state${detail:+ | $detail}"
     if ((fail > 0)); then verdict=fail
-    elif ((pending > 0)) || ((pass + skipped == 0)); then verdict=pending
+    elif ((pending > 0)); then verdict=pending
+    elif ((pass + skipped == 0)); then
+      # No checks reported: either CI has not registered yet or none is configured.
+      if [[ "$merge_state" == "CLEAN" ]] || ((SECONDS >= no_checks_grace)); then
+        echo "RESULT: success (no checks reported for pr #$target after ${SECONDS}s; merge=$merge_state)"
+        exit 0
+      fi
+      verdict=pending
     else verdict=pass; fi
   else
     read -r status conclusion url <<<"$snapshot"

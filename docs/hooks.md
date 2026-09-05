@@ -34,9 +34,15 @@ secondary worktrees.
 
 ## Testing hook behavior
 
-- `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` — feed one shell
-  command per line, see the verdict for each.
+- `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` — each fixture line is
+  `<expected-verdict> <command>`; the harness replays every command against a
+  throwaway repo on a feature branch and exits 1 on any mismatch (CI runs this).
+  Lines without a verdict prefix are printed without being asserted, so you can
+  also pipe in an ad-hoc file of commands to see what the guard would decide.
 - `tests/guard.test.mjs` — the assertion suite (spins up real temp git repos).
+- `tests/session-context.test.mjs` — SessionStart output against temp repos.
+- `tests/customizations.test.mjs` — frontmatter validity and cross-reference
+  integrity for every agent, prompt, instruction, and hook wiring file.
 - VS Code: Output panel → **GitHub Copilot Chat Hooks**, or *Developer: Show Agent
   Debug Logs*.
 

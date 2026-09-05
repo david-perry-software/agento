@@ -67,7 +67,6 @@ for base in dict.fromkeys(roots):
 if not found:
     lines.append(f"No in-progress delivery work in {roots[0]}/ or {roots[-1]}/.")
 
-context = "\n".join(lines).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
-print(f'{{"hookSpecificOutput":{{"hookEventName":"SessionStart","additionalContext":"{context}"}}}}')
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(lines)}}))
 PY
 exit 0
