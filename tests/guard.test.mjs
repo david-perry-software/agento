@@ -93,6 +93,51 @@ test("asks before committing on a feature branch without a roadmap update", () =
   assert.equal(decide("git commit -m 'feat: widget'", { cwd: repo }).decision, "allow");
 });
 
+test("roadmap nudge sees -a commits and explicit pathspecs, not just the index", () => {
+  const repo = makeGitRepo();
+  execFileSync("git", ["-C", repo, "switch", "-c", "feature/widget"]);
+  fs.mkdirSync(path.join(repo, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "features", "widget", "roadmap.md"), "status: planned\n");
+  fs.writeFileSync(path.join(repo, "code.js"), "export {};\n");
+  execFileSync("git", ["-C", repo, "add", "-A"]);
+  execFileSync("git", ["-C", repo, "commit", "-q", "-m", "seed"]);
+
+  // Nothing staged, a tracked file modified: -a would commit it without the roadmap.
+  fs.writeFileSync(path.join(repo, "code.js"), "export const x = 1;\n");
+  assert.equal(decide("git commit -am 'feat: x'", { cwd: repo }).decision, "ask");
+  assert.equal(decide("git commit -m 'feat: x' code.js", { cwd: repo }).decision, "ask");
+  assert.equal(decide("git commit -m 'feat: x' code.js features/widget/roadmap.md", { cwd: repo }).decision, "allow");
+  // Only -a is denied a free pass; a plain commit with an empty index has nothing to nudge about.
+  assert.equal(decide("git commit -m 'feat: x'", { cwd: repo }).decision, "allow");
+});
+
+test("tracks a plain switch/checkout to the default branch through a chain", () => {
+  const repo = makeGitRepo();
+  execFileSync("git", ["-C", repo, "switch", "-c", "feature/widget"]);
+  assert.equal(decide("git switch main && git commit --allow-empty -m x", { cwd: repo }).decision, "deny");
+  assert.equal(decide("git checkout main; git merge feature/widget", { cwd: repo }).decision, "deny");
+  assert.equal(decide("git switch main && git merge --ff-only origin/main", { cwd: repo }).decision, "allow");
+  assert.equal(decide("git switch main && git switch -c feature/other && git commit --allow-empty -m x", { cwd: repo }).decision, "allow");
+});
+
+test("decision reasons survive colons intact", () => {
+  const { decision, reason } = decide("gh pr merge 5 --admin");
+  assert.equal(decision, "deny");
+  assert.match(reason, /bypasses the repository ruleset; wait for required checks/);
+  const denied = decide("gh run watch 1");
+  assert.match(denied.reason, /exit 2 = rerun/);
+});
+
+test("hook-file writes are judged by the command word, reads pass", () => {
+  assert.equal(decide("cp /tmp/x scripts/hooks/delivery-guard.sh").decision, "deny");
+  assert.equal(decide("cp scripts/hooks/delivery-guard.sh /tmp/x").decision, "allow");
+  assert.equal(decide("perl -pi -e 's/a/b/' scripts/hooks/delivery-guard.sh").decision, "deny");
+  assert.equal(decide("git checkout HEAD~1 -- scripts/hooks/delivery-guard.sh").decision, "deny");
+  assert.equal(decide("chmod +x scripts/hooks/new.sh").decision, "ask");
+  assert.equal(decide("shellcheck scripts/hooks/delivery-guard.sh").decision, "allow");
+  assert.equal(decide("./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt").decision, "allow");
+});
+
 test("asks before edits to protected hook files via edit tools", () => {
   const { decision } = decide(null ?? "", {
     filePath: path.join(repoRoot, "scripts", "hooks", "delivery-guard.sh"),
