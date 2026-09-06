@@ -45,6 +45,29 @@ usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
 /close-session feature/<slug>  → worktree removed
 ```
 
+## The initiative flow
+
+For a brief too large for one feature, decompose it first and then run the standard
+flow once per member:
+
+```text
+/new-initiative <brief | path>           → primary window, on main: 🏛️ Architect clarifies, decomposes,
+                                           writes brief.md + breakdown.md, publishes via a merged PR
+/next-feature <initiative-slug>          → any window, read-only: ready / blocked / in flight / complete,
+                                           the CLI's `next`, and the commands below with slugs filled in
+/start-session                           → primary window
+/new-feature initiative:<i>/<f>          → secondary window: Planner validates the member via
+                                           `agento.mjs initiative <i>`, hard-stops unless every
+                                           `Requires:` member is complete, keeps slug <f>, writes
+                                           `initiative: "<i>"` in the roadmap header
+/build-feature <f> → /review-feature <f> → /close-session feature/<f> → /ship <f>
+/next-feature <initiative-slug>          → repeat until `done: true`
+```
+
+Same-wave members that are all `ready` may be planned and built concurrently, each
+in its own session. The breakdown holds no checkboxes; progress is derived from the
+members' roadmaps.
+
 ## Choosing a tier
 
 | Work | Command |
@@ -52,3 +75,4 @@ usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
 | Typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/quick-fix` — one window, verified, PR, merged |
 | Exploratory or multi-commit scratch work that still needs no plan | `/start-freehand` → `/finish-freehand` |
 | Anything with a design decision, several files, a user-facing feature, a schema/API change, or manual verification | `/start-session` → `/new-feature` / `/new-issue` |
+| A brief too large for one feature — several dependent, independently shippable features | `/new-initiative` then `/next-feature` for each member |
