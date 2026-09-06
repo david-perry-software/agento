@@ -16,6 +16,7 @@ test("defaults derive the worktree dir from the repository directory name", () =
   assert.equal(source, null);
   assert.equal(config.artifacts.features, "features");
   assert.equal(config.artifacts.issues, "issues");
+  assert.equal(config.artifacts.initiatives, "initiatives");
   assert.equal(config.branches.default, "main");
   assert.equal(config.branches.feature, "feature/");
   assert.equal(config.branches.freehand, "changes/");
@@ -45,6 +46,7 @@ test("a .github/agento.json overrides only the keys it sets", () => {
   assert.equal(source, path.join(configDir, "agento.json"));
   assert.equal(config.artifacts.features, "planning/features");
   assert.equal(config.artifacts.issues, "issues");
+  assert.equal(config.artifacts.initiatives, "initiatives");
   assert.equal(config.branches.default, "trunk");
   assert.equal(config.branches.issue, "issue/");
   assert.equal(config.checks.releaseWorkflow, "staging-release.yml");
@@ -77,6 +79,7 @@ test("the shipped templates/agento.json loads without clobbering defaults", () =
   assert.match(config.worktrees.dir, /-worktrees$/);
   assert.equal(config.branches.default, "main");
   assert.equal(config.artifacts.features, "features");
+  assert.equal(config.artifacts.initiatives, "initiatives");
 });
 
 test("a root-level agento.json is accepted as a fallback location", () => {

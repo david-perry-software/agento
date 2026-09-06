@@ -6,7 +6,7 @@ const CONFIG_RELATIVE_PATHS = [".github/agento.json", "agento.json"];
 export function defaultConfig(rootDir) {
   const repoName = path.basename(path.resolve(rootDir));
   return {
-    artifacts: { features: "features", issues: "issues" },
+    artifacts: { features: "features", issues: "issues", initiatives: "initiatives" },
     worktrees: { dir: path.join("..", `${repoName}-worktrees`) },
     branches: {
       default: "main",

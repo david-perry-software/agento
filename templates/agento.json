@@ -1,5 +1,5 @@
 {
-  "artifacts": { "features": "features", "issues": "issues" },
+  "artifacts": { "features": "features", "issues": "issues", "initiatives": "initiatives" },
   "worktrees": { "dir": null },
   "branches": {
     "default": "main",

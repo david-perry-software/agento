@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "2.1 add artifacts.initiatives default to agento-config.mjs and templates/agento.json"
+next-step: "2.2 update agento-init prompt and AGENTS-section template for the third root"
 ```
 
 ## Phase 1: Artifact contract
@@ -12,7 +12,7 @@ next-step: "2.1 add artifacts.initiatives default to agento-config.mjs and templ
 
 ## Phase 2: Config root and scaffolding
 
-- [ ] 2.1 Add `initiatives: "initiatives"` to `defaultConfig().artifacts` in `scripts/agento-config.mjs` and to `templates/agento.json`; extend `scripts/agento-config.test.mjs` (defaults, template load, override keeps `initiatives`) — verify: `node --test scripts/agento-config.test.mjs` exits 0 and `node scripts/agento.mjs config | grep '"initiatives": "initiatives"'` matches
+- [x] 2.1 Add `initiatives: "initiatives"` to `defaultConfig().artifacts` in `scripts/agento-config.mjs` and to `templates/agento.json`; extend `scripts/agento-config.test.mjs` (defaults, template load, override keeps `initiatives`) — verify: `node --test scripts/agento-config.test.mjs` exits 0 and `node scripts/agento.mjs config | grep '"initiatives": "initiatives"'` matches
 - [ ] 2.2 Update `.github/prompts/agento-init.prompt.md`: description lists the third directory, config snippet includes `"initiatives": "initiatives"`, step 3 creates all three roots with `.gitkeep`, step 6 names the third `applyTo` entry; update `templates/AGENTS-section.md` artifact-paths sentence to include `initiatives/YYYY/MM/<slug>/` — verify: `grep -l initiatives .github/prompts/agento-init.prompt.md templates/AGENTS-section.md` lists both and `node --test tests/customizations.test.mjs` exits 0
 
 ## Phase 3: CLI — parsing and derivation
