@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiative-workflow
 last-updated: 2026-09-05
-next-step: "3.2 Document initiative:<i>/<f> in new-feature.prompt.md"
+next-step: "4.1 Extend /delivery-status with initiatives"
 ```
 
 ## Phase 1: Architect agent and /new-initiative
@@ -18,7 +18,7 @@ next-step: "3.2 Document initiative:<i>/<f> in new-feature.prompt.md"
 ## Phase 3: Planner initiative intake
 
 - [x] 3.1 Add the explicit initiative-intake step to `.github/agents/delivery-planner.agent.md` between Clarify and Research per plan.md `## Approach` §4: whole-argument pattern `initiative:<initiative-slug>/<feature-slug>` only (never by slug coincidence); `agento.mjs initiative <initiative-slug>` validation; hard stops with CLI diagnostics for `missing`, `invalid`, non-member, `state != unplanned` (name the existing roadmap), `ready == false` (list `blockedBy`, no override); `Brief:` as description baseline and `Summary:` as context; preassigned slug in step 4; `initiative: "<initiative-slug>"` in the roadmap header in step 6; breakdown link from plan.md `## Problem`; renumber later steps and their cross-references — verify: `grep -c 'initiative:' .github/agents/delivery-planner.agent.md` ≥ 3, `grep -c 'blockedBy' .github/agents/delivery-planner.agent.md` ≥ 1, `node --test tests/customizations.test.mjs` exits 0
-- [ ] 3.2 Document the `initiative:<initiative-slug>/<feature-slug>` argument form and its hard stops in `.github/prompts/new-feature.prompt.md` (one paragraph; update `argument-hint`) — verify: `grep -c 'initiative:' .github/prompts/new-feature.prompt.md` ≥ 1 and `node --test tests/customizations.test.mjs` exits 0
+- [x] 3.2 Document the `initiative:<initiative-slug>/<feature-slug>` argument form and its hard stops in `.github/prompts/new-feature.prompt.md` (one paragraph; update `argument-hint`) — verify: `grep -c 'initiative:' .github/prompts/new-feature.prompt.md` ≥ 1 and `node --test tests/customizations.test.mjs` exits 0
 
 ## Phase 4: Status and ship integration
 
