@@ -206,9 +206,24 @@ function allBreakdowns() {
 }
 
 function deriveInitiative(breakdown, roadmaps) {
-  const known = new Map(breakdown.features.map((f) => [f.slug, f]));
+  const errors = [];
+  const known = new Map();
+  for (const f of breakdown.features) {
+    if (known.has(f.slug)) errors.push(`duplicate feature block "### ${f.slug}"`);
+    else known.set(f.slug, f);
+  }
+  for (const f of breakdown.features) {
+    for (const d of f.requires) if (!known.has(d)) errors.push(`${f.slug}: Requires unknown feature "${d}"`);
+    for (const d of f.recommendedAfter) if (!known.has(d)) errors.push(`${f.slug}: Recommended after unknown feature "${d}"`);
+  }
   const roadmapBySlug = new Map();
   for (const r of roadmaps) if (!roadmapBySlug.has(r.slug)) roadmapBySlug.set(r.slug, r);
+  for (const f of known.values()) {
+    const r = roadmapBySlug.get(f.slug);
+    if (!r) continue;
+    if (!r.initiative) errors.push(`${f.slug}: roadmap ${r.roadmap} has no initiative: header (expected "${breakdown.slug}")`);
+    else if (r.initiative !== breakdown.slug) errors.push(`${f.slug}: roadmap ${r.roadmap} names initiative "${r.initiative}", expected "${breakdown.slug}"`);
+  }
 
   // Kahn's algorithm over Requires: computed wave = 1 + max(wave of requirements).
   const level = new Map();
@@ -225,6 +240,8 @@ function deriveInitiative(breakdown, roadmaps) {
       if (indegree.get(next) === 0) queue.push(next);
     }
   }
+  const cyclic = [...indegree.entries()].filter(([, n]) => n > 0).map(([slug]) => slug);
+  if (cyclic.length) errors.push(`dependency cycle among: ${cyclic.join(", ")}`);
 
   const features = breakdown.features.map((f) => {
     const roadmap = roadmapBySlug.get(f.slug) ?? null;
@@ -260,6 +277,8 @@ function deriveInitiative(breakdown, roadmaps) {
     })[0]?.slug ?? null;
 
   return {
+    status: errors.length ? "invalid" : "ok",
+    errors,
     features,
     waves: waves.map((w) => w ?? []),
     next,
@@ -367,9 +386,8 @@ switch (command) {
     if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
     const derived = deriveInitiative(breakdown, allRoadmaps("feature"));
     withExit({
-      status: "ok",
-      initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
       ...derived,
+      initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
       anomalies: [],
     });
     break;
