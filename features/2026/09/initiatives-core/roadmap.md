@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
 next-step: "1.1 extend the artifact contract with initiatives/** and the brief.md / breakdown.md sections"
