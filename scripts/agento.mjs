@@ -205,6 +205,68 @@ function allBreakdowns() {
   return [...walkBreakdowns(base)].sort().map(parseBreakdown);
 }
 
+function deriveInitiative(breakdown, roadmaps) {
+  const known = new Map(breakdown.features.map((f) => [f.slug, f]));
+  const roadmapBySlug = new Map();
+  for (const r of roadmaps) if (!roadmapBySlug.has(r.slug)) roadmapBySlug.set(r.slug, r);
+
+  // Kahn's algorithm over Requires: computed wave = 1 + max(wave of requirements).
+  const level = new Map();
+  const indegree = new Map(breakdown.features.map((f) => [f.slug, f.requires.filter((d) => known.has(d)).length]));
+  const dependents = new Map(breakdown.features.map((f) => [f.slug, []]));
+  for (const f of breakdown.features) for (const d of f.requires) if (known.has(d)) dependents.get(d).push(f.slug);
+  const queue = breakdown.features.filter((f) => indegree.get(f.slug) === 0).map((f) => f.slug);
+  for (const slug of queue) level.set(slug, 1);
+  while (queue.length) {
+    const slug = queue.shift();
+    for (const next of dependents.get(slug)) {
+      level.set(next, Math.max(level.get(next) ?? 1, level.get(slug) + 1));
+      indegree.set(next, indegree.get(next) - 1);
+      if (indegree.get(next) === 0) queue.push(next);
+    }
+  }
+
+  const features = breakdown.features.map((f) => {
+    const roadmap = roadmapBySlug.get(f.slug) ?? null;
+    const state = roadmap ? roadmap.status : "unplanned";
+    // Only `status: complete` satisfies Requires (plan Decision 3).
+    const blockedBy = f.requires.filter((d) => roadmapBySlug.get(d)?.status !== "complete");
+    return {
+      slug: f.slug,
+      state,
+      roadmap: roadmap ? roadmap.roadmap : null,
+      branch: roadmap ? roadmap.branch : `${config.branches.feature}${f.slug}`,
+      requires: f.requires,
+      recommendedAfter: f.recommendedAfter,
+      wave: f.wave,
+      computedWave: level.get(f.slug) ?? null,
+      order: f.order,
+      blockedBy,
+      ready: state === "unplanned" && blockedBy.length === 0,
+    };
+  });
+
+  const waves = [];
+  for (const f of features) {
+    if (f.computedWave === null) continue;
+    (waves[f.computedWave - 1] ??= []).push(f.slug);
+  }
+  const rank = (f) => [f.wave ?? f.computedWave ?? Number.MAX_SAFE_INTEGER, f.computedWave ?? Number.MAX_SAFE_INTEGER, f.order];
+  const next = features
+    .filter((f) => f.ready)
+    .sort((a, b) => {
+      const [ra, rb] = [rank(a), rank(b)];
+      return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2];
+    })[0]?.slug ?? null;
+
+  return {
+    features,
+    waves: waves.map((w) => w ?? []),
+    next,
+    done: features.length > 0 && features.every((f) => f.state === "complete"),
+  };
+}
+
 switch (command) {
   case "config":
     emit({
@@ -303,7 +365,13 @@ switch (command) {
     }
     const breakdown = breakdowns.find((b) => b.slug === slug);
     if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
-    withExit({ status: "ok", initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated }, features: breakdown.features });
+    const derived = deriveInitiative(breakdown, allRoadmaps("feature"));
+    withExit({
+      status: "ok",
+      initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
+      ...derived,
+      anomalies: [],
+    });
     break;
   }
 
