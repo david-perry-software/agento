@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/initiative-workflow
 last-updated: 2026-09-06
-next-step: "7.2 scope boundary, integrate main, in-review"
+next-step: "Review: /review-feature initiative-workflow"
 ```
 
 ## Phase 1: Architect agent and /new-initiative
@@ -39,4 +39,15 @@ next-step: "7.2 scope boundary, integrate main, in-review"
 ## Phase 7: Lint gate and review readiness
 
 - [x] 7.1 Full lint gate (policy §5, full — not scoped): `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` exit 0 (baseline 69 pass); `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0 (baseline 0 findings); `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; record all three exit statuses and counts on this line and compare against plan.md `## Research` — recorded 2026-09-06: node --test exit 0, 69 tests / 69 pass / 0 fail (= baseline); shellcheck exit 0, 0 findings (= baseline; `/home/david/.local/bin/shellcheck`); replay-guard exit 0, all fixtures match (= baseline) — verify: all three exit 0 and no findings beyond the baseline
-- [ ] 7.2 Confirm scope boundary: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/` or `.github/hooks/` and excludes `hooks.json` and `tests/guard-fixtures.txt`; integrate `origin/main` (`git merge origin/main`, never rebase), push, set `status: in-review`; add a `## Follow-ups` note that shipping this feature is the first use of the `/ship` stamp and the primary window's prompt may predate it — the ship operator applies the step-4.2 stamp (`## 0.3.0 (unreleased)` → `## 0.3.0 (<date -u +%Y-%m-%d>)`) inside the `status: complete` commit — verify: `gh pr view --json mergeStateStatus` is not `BEHIND`/`DIRTY` and the Follow-ups note is present
+- [x] 7.2 Confirm scope boundary: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/` or `.github/hooks/` and excludes `hooks.json` and `tests/guard-fixtures.txt`; integrate `origin/main` (`git merge origin/main`, never rebase), push, set `status: in-review`; add a `## Follow-ups` note that shipping this feature is the first use of the `/ship` stamp and the primary window's prompt may predate it — the ship operator applies the step-4.2 stamp (`## 0.3.0 (unreleased)` → `## 0.3.0 (<date -u +%Y-%m-%d>)`) inside the `status: complete` commit — verify: `gh pr view --json mergeStateStatus` is not `BEHIND`/`DIRTY` and the Follow-ups note is present
+
+## Follow-ups
+
+- **First use of the `/ship` changelog stamp is shipping this very feature.** In
+  workspace mode the primary window loads `ship.prompt.md` from `main`, which does not
+  contain the step-4.2 stamp until PR #12 merges. The ship operator must apply it by
+  hand inside the `status: complete` commit: replace the CHANGELOG.md heading
+  `## 0.3.0 (unreleased)` with `## 0.3.0 (<date -u +%Y-%m-%d>)` (UTC ship date), in
+  that same commit, immediately before marking the PR ready. If the merge later lands
+  on a different UTC date, refresh the date in one more commit before merging. Later
+  releases are covered automatically by the merged prompt.
