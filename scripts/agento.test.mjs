@@ -338,3 +338,35 @@ test("initiative header is carried by status items and the usage lists the subco
   assert.ok(usage.json.usage.some((line) => line.includes("initiative [<slug>]")), JSON.stringify(usage.json.usage));
   assert.equal(run(repo, "initiative", "Bad_Slug").code, 1);
 });
+
+test("initiative flags merged-but-not-complete members without unblocking dependents", () => {
+  const repo = makeRepo();
+  writeBreakdown(repo, "initiatives/2026/09/demo", null, chain);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "breakdown");
+  // `feature/b` lands on the temp origin's main while its roadmap still says in-review.
+  git(repo, "switch", "-q", "-c", "feature/b");
+  writeRoadmap(repo, "features/2026/09/b", 'status: in-review\nbranch: feature/b\ninitiative: "demo"\nnext-step: review');
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "b");
+  git(repo, "push", "-q", "-u", "origin", "feature/b");
+  git(repo, "switch", "-q", "main");
+  git(repo, "merge", "-q", "--ff-only", "feature/b");
+  git(repo, "push", "-q", "origin", "main");
+  git(repo, "fetch", "-q", "origin");
+
+  const { code, json } = run(repo, "initiative", "demo");
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.deepEqual(json.anomalies, [{ slug: "b", kind: "merged-but-not-complete", branch: "feature/b" }]);
+  const c = json.features.find((f) => f.slug === "c");
+  assert.equal(c.ready, false);
+  assert.deepEqual(c.blockedBy, ["b"]);
+  assert.equal(json.next, "a");
+
+  // Once the roadmap says complete the branch may still exist on origin; that is normal, not an anomaly.
+  writeRoadmap(repo, "features/2026/09/b", 'status: complete\nbranch: feature/b\ninitiative: "demo"\nnext-step: ""');
+  const after = run(repo, "initiative", "demo").json;
+  assert.deepEqual(after.anomalies, []);
+  assert.equal(after.features.find((f) => f.slug === "c").ready, true);
+});

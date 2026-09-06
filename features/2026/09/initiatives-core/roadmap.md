@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "4.3 merged-but-not-complete anomaly test"
+next-step: "5.1 reference docs"
 ```
 
 ## Phase 1: Artifact contract
@@ -28,7 +28,7 @@ next-step: "4.3 merged-but-not-complete anomaly test"
 
 - [x] 4.1 Add a `writeBreakdown(root, rel, header, features)` fixture helper to `scripts/agento.test.mjs` and tests: parse + state derivation, ready/blocked, `next` by wave then listed order, dependent becomes `next` after a `complete` roadmap with matching `initiative:` header — verify: `node --test scripts/agento.test.mjs` exits 0 with the new cases listed in its TAP output
 - [x] 4.2 Add tests: unknown `Requires` slug, cycle, duplicate `###`, missing/mismatched `initiative:` header on a member roadmap, missing initiative, list mode, `status` items carrying `initiative`, usage output including `initiative [<slug>]` — verify: `node --test scripts/agento.test.mjs` exits 0 and `grep -c "^test(\"initiative" scripts/agento.test.mjs` ≥ 8
-- [ ] 4.3 Add the anomaly test: push `feature/b` to the temp origin, merge it into `main` there, keep `b`'s roadmap `in-review`, assert `anomalies[0].kind === "merged-but-not-complete"` and `c` still blocked — verify: `node --test scripts/agento.test.mjs` exits 0
+- [x] 4.3 Add the anomaly test: push `feature/b` to the temp origin, merge it into `main` there, keep `b`'s roadmap `in-review`, assert `anomalies[0].kind === "merged-but-not-complete"` and `c` still blocked — verify: `node --test scripts/agento.test.mjs` exits 0
 
 ## Phase 5: Reference docs and dry run
 
