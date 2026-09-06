@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "3.1 add the initiative usage line and describe() initiative field"
+next-step: "3.2 implement walkBreakdowns and parseBreakdown"
 ```
 
 ## Phase 1: Artifact contract
@@ -17,7 +17,7 @@ next-step: "3.1 add the initiative usage line and describe() initiative field"
 
 ## Phase 3: CLI — parsing and derivation
 
-- [ ] 3.1 Add the `initiative [<slug>]` usage line to the `scripts/agento.mjs` header comment and widen the `usage()` slice so the full header prints; add `initiative: header(content, "initiative") || null` to `describe()` — verify: `node scripts/agento.mjs bogus | grep -c 'initiative \[<slug>\]'` prints 1 and `node scripts/agento.mjs status | grep -c '"initiative"'` ≥ 1 (existing roadmap → `null`)
+- [x] 3.1 Add the `initiative [<slug>]` usage line to the `scripts/agento.mjs` header comment and widen the `usage()` slice so the full header prints; add `initiative: header(content, "initiative") || null` to `describe()` — verify: `node scripts/agento.mjs bogus | grep -c 'initiative \[<slug>\]'` prints 1 and `node scripts/agento.mjs status | grep -c '"initiative"'` ≥ 1 (existing roadmap → `null`)
 - [ ] 3.2 Implement `walkBreakdowns(base)` over `config.artifacts.initiatives` and `parseBreakdown(content)` (yaml header `initiative`/`created`/`last-updated`; `### <slug>` blocks with `Requires`, `Recommended after`, `Wave` bullets; `none` → `[]`; listed order preserved) — verify: `node scripts/agento.mjs initiative` in a temp repo with one hand-written breakdown returns `status: "ok"` and `items[0].total` equals the number of `###` blocks
 - [ ] 3.3 Implement `deriveInitiative(breakdown, roadmaps)`: per-feature `state` (`unplanned` or the roadmap status), `blockedBy` (requires not `complete`), `ready`, computed `waves` (topological levels), `next` (explicit `Wave:` then computed level then listed order, among ready), `done`; wire `initiative <slug>` to emit `{ status: "ok", initiative, features, waves, next, done, anomalies }` via `withExit()` — verify: temp-repo 3-feature breakdown with chain `c requires b` shows `a`,`b` ready, `c.blockedBy == ["b"]`, `next == "a"`
 - [ ] 3.4 Implement validation → `status: "invalid"`, `errors[]`, exit 3: unknown slug in `Requires`/`Recommended after`, dependency cycle (Kahn's algorithm), duplicate `### <slug>`, member roadmap whose `initiative:` header is absent or names another initiative; unknown initiative slug → `status: "missing"` exit 3 — verify: temp-repo breakdowns exercising each case return the expected `status` and exit code

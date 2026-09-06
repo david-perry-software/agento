@@ -12,6 +12,7 @@
 //   node scripts/agento.mjs ship-preflight <feature|issue> <slug>
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
+//   node scripts/agento.mjs initiative [<slug>]
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
 
@@ -30,7 +31,7 @@ import {
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 16);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 17);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -127,6 +128,7 @@ function describe(file, type) {
     lastUpdated: header(content, "last-updated"),
     nextStep: header(content, "next-step"),
     githubIssue: header(content, "github-issue") || null,
+    initiative: header(content, "initiative") || null,
     steps: { ticked: steps.filter((m) => m[1] === "x").length, total: steps.length },
     postShipPending: (content.match(/^- \[ \] \d+\.\d+ \(manual, post-ship\)/gm) ?? []).length,
   };
