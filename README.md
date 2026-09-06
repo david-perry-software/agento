@@ -313,6 +313,7 @@ Mechanic.
 | `/new-feature <description>` | secondary | 📋 Planner | Clarify, research, plan, branch, draft PR |
 | `/new-issue <description \| #n \| url>` | secondary | 📋 Planner | Reproduce, file/link GitHub issue, plan around an exposing test |
 | `/new-initiative <brief \| path>` | primary | 🏛️ Architect | Decompose a large brief into member features; publish `brief.md` + `breakdown.md` via a merged PR |
+| `/next-feature <initiative-slug>` | any | default | Read-only: ready/blocked/in-flight/complete members, the recommended next feature, and the commands to plan it |
 | `/build-feature <slug>` · `/build-issue <slug>` | secondary | 🔨 Builder | Execute roadmap steps with verification; commit + push each |
 | `/review-feature <slug>` · `/review-issue <slug>` | secondary | 🔍 Reviewer | Score acceptance, audit roadmap, write verdict |
 | `/ap <slug>` | secondary | 🤖 Autopilot | Unattended build → review → fix loop; never ships |

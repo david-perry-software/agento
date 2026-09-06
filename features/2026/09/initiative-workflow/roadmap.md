@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiative-workflow
 last-updated: 2026-09-05
-next-step: "2.1 Create /next-feature prompt"
+next-step: "3.1 Planner initiative-intake step"
 ```
 
 ## Phase 1: Architect agent and /new-initiative
@@ -13,7 +13,7 @@ next-step: "2.1 Create /next-feature prompt"
 
 ## Phase 2: /next-feature
 
-- [ ] 2.1 Create `.github/prompts/next-feature.prompt.md` per plan.md `## Approach` §3 (`agent: "agent"`, `tools: [read, search, execute]`, `argument-hint: "<initiative-slug>"`; read-only; `missing`/`invalid` → print CLI diagnostics and stop; group members ready / blocked with `blockedBy` / in flight / complete, print `anomalies`; `next: null` handling for `done` vs in-flight; the four exact commands with slugs substituted — `/start-session`, `/new-feature initiative:<i>/<f>`, **Build in this worktree** or `/build-feature <f>`, `/review-feature <f>` then `/close-session feature/<f>` and `/ship <f>` from the primary window; list other `ready` members as plannable concurrently; never create worktrees, branches, or files); add the `/next-feature` rows to README.md and docs/commands.md tables — verify: `grep -c 'initiative:<\|/start-session\|/build-feature\|/review-feature\|/ship\|blockedBy\|anomalies' .github/prompts/next-feature.prompt.md` ≥ 7 and `node --test tests/customizations.test.mjs` exits 0
+- [x] 2.1 Create `.github/prompts/next-feature.prompt.md` per plan.md `## Approach` §3 (`agent: "agent"`, `tools: [read, search, execute]`, `argument-hint: "<initiative-slug>"`; read-only; `missing`/`invalid` → print CLI diagnostics and stop; group members ready / blocked with `blockedBy` / in flight / complete, print `anomalies`; `next: null` handling for `done` vs in-flight; the four exact commands with slugs substituted — `/start-session`, `/new-feature initiative:<i>/<f>`, **Build in this worktree** or `/build-feature <f>`, `/review-feature <f>` then `/close-session feature/<f>` and `/ship <f>` from the primary window; list other `ready` members as plannable concurrently; never create worktrees, branches, or files); add the `/next-feature` rows to README.md and docs/commands.md tables — verify: `grep -c 'initiative:<\|/start-session\|/build-feature\|/review-feature\|/ship\|blockedBy\|anomalies' .github/prompts/next-feature.prompt.md` ≥ 7 and `node --test tests/customizations.test.mjs` exits 0
 
 ## Phase 3: Planner initiative intake
 
