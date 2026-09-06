@@ -89,7 +89,7 @@ function header(content, key) {
   return match ? match[1].trim().replace(/^["']|["']$/g, "") : "";
 }
 
-function* walkRoadmaps(base) {
+function* walkFiles(base, name) {
   if (!fs.existsSync(base)) return;
   const stack = [base];
   while (stack.length) {
@@ -103,10 +103,13 @@ function* walkRoadmaps(base) {
     for (const entry of entries) {
       const child = path.join(current, entry.name);
       if (entry.isDirectory()) stack.push(child);
-      else if (entry.isFile() && entry.name === "roadmap.md") yield child;
+      else if (entry.isFile() && entry.name === name) yield child;
     }
   }
 }
+
+const walkRoadmaps = (base) => walkFiles(base, "roadmap.md");
+const walkBreakdowns = (base) => walkFiles(base, "breakdown.md");
 
 function describe(file, type) {
   const content = fs.readFileSync(file, "utf8");
@@ -146,6 +149,60 @@ function allRoadmaps(typeFilter) {
 
 function withExit(result) {
   emit({ ...result, root, configSource: source }, result.status === "ok" ? 0 : 3);
+}
+
+// --- initiatives -----------------------------------------------------------
+
+function slugList(value) {
+  const cleaned = value.replace(/`/g, "").trim();
+  if (!cleaned || /^none$/i.test(cleaned)) return [];
+  return cleaned.split(/[\s,]+/).filter(Boolean);
+}
+
+function parseBreakdown(file) {
+  const content = fs.readFileSync(file, "utf8");
+  const dir = path.dirname(file);
+  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  const features = [];
+  let inFeatures = false;
+  let current = null;
+  for (const line of content.split("\n")) {
+    if (/^## /.test(line)) {
+      inFeatures = /^## Features\s*$/.test(line);
+      current = null;
+      continue;
+    }
+    if (!inFeatures) continue;
+    const heading = line.match(/^### +(.+?)\s*$/);
+    if (heading) {
+      current = { slug: heading[1].replace(/`/g, ""), requires: [], recommendedAfter: [], wave: null, order: features.length };
+      features.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const bullet = line.match(/^- (Requires|Recommended after|Wave):\s*(.*)$/i);
+    if (!bullet) continue;
+    const key = bullet[1].toLowerCase();
+    const value = bullet[2];
+    if (key === "wave") {
+      const n = Number.parseInt(value.replace(/`/g, ""), 10);
+      current.wave = Number.isNaN(n) ? null : n;
+    } else if (key === "requires") current.requires = slugList(value);
+    else current.recommendedAfter = slugList(value);
+  }
+  return {
+    slug: path.basename(dir),
+    dir: rel(dir),
+    breakdown: rel(file),
+    created: header(content, "created") || null,
+    lastUpdated: header(content, "last-updated") || null,
+    features,
+  };
+}
+
+function allBreakdowns() {
+  const base = path.join(root, config.artifacts.initiatives);
+  return [...walkBreakdowns(base)].sort().map(parseBreakdown);
 }
 
 switch (command) {
@@ -234,6 +291,19 @@ switch (command) {
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
     });
+    break;
+  }
+
+  case "initiative": {
+    const slug = rest[0] ? requireSlug(rest[0]) : null;
+    const breakdowns = allBreakdowns();
+    if (!slug) {
+      const items = breakdowns.map((b) => ({ slug: b.slug, dir: b.dir, created: b.created, lastUpdated: b.lastUpdated, total: b.features.length }));
+      withExit({ status: "ok", initiativesRoot: config.artifacts.initiatives, items });
+    }
+    const breakdown = breakdowns.find((b) => b.slug === slug);
+    if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
+    withExit({ status: "ok", initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated }, features: breakdown.features });
     break;
   }
 
