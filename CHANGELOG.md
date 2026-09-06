@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+- **New 🏛️ Agento Architect and `/new-initiative <brief | path>`.** Runs in the
+  primary window on `main`: clarifies, researches, decomposes a large brief into 2–8
+  independently shippable member features with `Requires:` dependencies and waves,
+  writes `initiatives/YYYY/MM/<slug>/brief.md` (the source text verbatim under a
+  `Source:` line) and `breakdown.md`, validates the result with `agento.mjs initiative
+  <slug>`, and publishes it itself on a `changes/initiative-<slug>` branch through a
+  PR, bounded check wait, and normal merge before syncing `main`.
+- **New `/next-feature <initiative-slug>`.** Read-only: groups members as ready,
+  blocked (with `blockedBy`), in flight, and complete; surfaces anomalies; names the
+  CLI's recommended `next` and prints the exact `/start-session` → `/new-feature
+  initiative:<i>/<f>` → build → review → close → ship commands, plus the other
+  ready members that can be planned concurrently. Never creates worktrees or files.
+- **Planner initiative intake.** `/new-feature initiative:<initiative-slug>/<feature-slug>`
+  attaches a plan to an initiative explicitly — never by slug coincidence. The Planner
+  validates the member via `agento.mjs initiative`, hard-stops on missing, invalid,
+  already-planned, non-member, or blocked members (no override), uses the breakdown's
+  `Brief:`/`Summary:`, keeps the preassigned slug, writes `initiative: "<slug>"` in the
+  roadmap header, and links the breakdown from plan.md.
+- **`/delivery-status` shows initiatives**: an `Initiative` column on every delivery
+  and a second table from `agento.mjs initiative` (complete/total, in flight, ready,
+  `next`, `done`) recommending `/next-feature <slug>`; invalid breakdowns and
+  initiative anomalies join the anomaly list.
+- **`/ship` stamps the changelog.** When the shipped branch changes the plugin version
+  and `CHANGELOG.md` carries `## <version> (unreleased)`, the `status: complete` commit
+  replaces `(unreleased)` with the UTC ship date; a merge resumed on a later date
+  refreshes the stamp first.
+- **Initiative foundation** (from `initiatives-core`, previously unreleased): the
+  `initiatives/YYYY/MM/<slug>/` artifact contract (`brief.md` + `breakdown.md`, no
+  checkboxes), the `artifacts.initiatives` config root, the optional `initiative:`
+  roadmap header, and `agento.mjs initiative [<slug>]`, which derives per-member
+  state, `blockedBy`, waves, `next`, validation `errors`, and `anomalies` from the
+  member roadmaps.
+
 ## 0.2.0 (2026-09-05)
 
 - **Single-source delivery policy.** The work boundary, verification targets,

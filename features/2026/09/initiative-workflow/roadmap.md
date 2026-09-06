@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiative-workflow
 last-updated: 2026-09-06
-next-step: "6.1 version 0.3.0 and CHANGELOG entry"
+next-step: "7.1 full lint gate"
 ```
 
 ## Phase 1: Architect agent and /new-initiative
@@ -34,7 +34,7 @@ next-step: "6.1 version 0.3.0 and CHANGELOG entry"
 
 ## Phase 6: Release
 
-- [ ] 6.1 Set `"version": "0.3.0"` in `plugin.json` and `package.json`; add `## 0.3.0 (unreleased)` as the first CHANGELOG.md entry with bold-lead bullets for: 🏛️ Architect + `/new-initiative`; `/next-feature`; Planner `initiative:<i>/<f>` intake (dependency-gated, no override); `/delivery-status` initiative column and summary; `/ship` changelog date stamp; and the `initiatives-core` foundation (`initiatives/` contract with `brief.md`/`breakdown.md`, `artifacts.initiatives` root, `initiative:` roadmap header, `agento.mjs initiative`) — verify: `node -e 'const p=require("./plugin.json"),k=require("./package.json");if(p.version!=="0.3.0"||k.version!=="0.3.0")process.exit(1)'` exits 0, `sed -n '3p' CHANGELOG.md` prints `## 0.3.0 (unreleased)`, `node --test tests/customizations.test.mjs` exits 0
+- [x] 6.1 Set `"version": "0.3.0"` in `plugin.json` and `package.json`; add `## 0.3.0 (unreleased)` as the first CHANGELOG.md entry with bold-lead bullets for: 🏛️ Architect + `/new-initiative`; `/next-feature`; Planner `initiative:<i>/<f>` intake (dependency-gated, no override); `/delivery-status` initiative column and summary; `/ship` changelog date stamp; and the `initiatives-core` foundation (`initiatives/` contract with `brief.md`/`breakdown.md`, `artifacts.initiatives` root, `initiative:` roadmap header, `agento.mjs initiative`) — verify: `node -e 'const p=require("./plugin.json"),k=require("./package.json");if(p.version!=="0.3.0"||k.version!=="0.3.0")process.exit(1)'` exits 0, `sed -n '3p' CHANGELOG.md` prints `## 0.3.0 (unreleased)`, `node --test tests/customizations.test.mjs` exits 0
 
 ## Phase 7: Lint gate and review readiness
 
