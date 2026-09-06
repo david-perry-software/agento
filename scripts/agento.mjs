@@ -200,6 +200,19 @@ function parseBreakdown(file) {
   };
 }
 
+function mergedAnomalies(features) {
+  // Informational only (plan Decision 3): reflects the last fetch, never changes state or exit code.
+  const merged = new Set(
+    git(root, "branch", "-r", "--merged", `origin/${config.branches.default}`)
+      .split("\n")
+      .map((l) => l.trim().split(" ")[0])
+      .filter(Boolean),
+  );
+  return features
+    .filter((f) => f.roadmap && f.state !== "complete" && merged.has(`origin/${f.branch}`))
+    .map((f) => ({ slug: f.slug, kind: "merged-but-not-complete", branch: f.branch }));
+}
+
 function allBreakdowns() {
   const base = path.join(root, config.artifacts.initiatives);
   return [...walkBreakdowns(base)].sort().map(parseBreakdown);
@@ -388,7 +401,7 @@ switch (command) {
     withExit({
       ...derived,
       initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
-      anomalies: [],
+      anomalies: mergedAnomalies(derived.features),
     });
     break;
   }
