@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "5.3 non-merged live rehearsal"
+next-step: "6.1 full lint gate"
 ```
 
 ## Phase 1: Artifact contract
@@ -34,7 +34,7 @@ next-step: "5.3 non-merged live rehearsal"
 
 - [x] 5.1 Document the subcommand in `docs/commands.md` (CLI list + exit codes), the `artifacts.initiatives` row in `docs/project-profile.md`, and `brief.md` / `breakdown.md` rows plus the `initiatives/YYYY/MM/<slug>/` path in `docs/artifacts.md` — verify: `grep -c initiative docs/commands.md docs/project-profile.md docs/artifacts.md` prints ≥ 1 for each file
 - [x] 5.2 Dry run in a temp git repo outside this worktree: scaffold roots (`features/ issues/ initiatives/` each with `.gitkeep`, as `/agento-init` step 3 now prescribes), hand-write a 3-feature breakdown with one dependency chain, run `node <worktree>/scripts/agento.mjs initiative <slug>` and confirm wave-1 features `ready` and the dependent `blockedBy`; add a fake `status: complete` roadmap with `initiative:` header and confirm the dependent becomes `next`; save the two JSON outputs to `features/2026/09/initiatives-core/evidence/step-5-2-dry-run.md` — verify: evidence file exists and contains both `"next"` values — evidence: [evidence/step-5-2-dry-run.md](evidence/step-5-2-dry-run.md) (`next` = `csv-export` → `csv-schedule`; the other wave-1 member was given an `in-progress` roadmap so the dependent is the only ready feature)
-- [ ] 5.3 Non-merged live rehearsal in this worktree (Decision 2: nothing disposable is committed): write an uncommitted `initiatives/2026/09/rehearsal/breakdown.md` whose members are `initiatives-core` (`Requires: none`) and `initiative-workflow` (`Requires: initiatives-core`); run `node scripts/agento.mjs initiative rehearsal` and confirm `status: "invalid"` exit 3 because this feature's roadmap has no `initiative: "rehearsal"` header (the header guard works against real artifacts); rewrite the members as unplanned slugs `rehearsal-a` / `rehearsal-b` (`b` requires `a`), rerun and confirm `status: "ok"`, `next == "rehearsal-a"`, `rehearsal-b.blockedBy == ["rehearsal-a"]`; paste both outputs into `evidence/step-5-3-rehearsal.md`, then delete the rehearsal directory — verify: `git status --short | grep -c '^?? initiatives/'` prints 0 and the evidence file contains both `"status"` values
+- [x] 5.3 Non-merged live rehearsal in this worktree (Decision 2: nothing disposable is committed): write an uncommitted `initiatives/2026/09/rehearsal/breakdown.md` whose members are `initiatives-core` (`Requires: none`) and `initiative-workflow` (`Requires: initiatives-core`); run `node scripts/agento.mjs initiative rehearsal` and confirm `status: "invalid"` exit 3 because this feature's roadmap has no `initiative: "rehearsal"` header (the header guard works against real artifacts); rewrite the members as unplanned slugs `rehearsal-a` / `rehearsal-b` (`b` requires `a`), rerun and confirm `status: "ok"`, `next == "rehearsal-a"`, `rehearsal-b.blockedBy == ["rehearsal-a"]`; paste both outputs into `evidence/step-5-3-rehearsal.md`, then delete the rehearsal directory — verify: `git status --short | grep -c '^?? initiatives/'` prints 0 and the evidence file contains both `"status"` values — evidence: [evidence/step-5-3-rehearsal.md](evidence/step-5-3-rehearsal.md) (run 1 `invalid` exit 3, run 2 `ok` exit 0, `next` = `rehearsal-a`; `initiatives/` removed, 0 untracked)
 
 ## Phase 6: Lint gate and review readiness
 
