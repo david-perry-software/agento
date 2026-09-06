@@ -1,11 +1,11 @@
 ## Agento
 
 Delivery work in this repository is driven by the Agento plugin (slash commands
-/start-session, /new-feature, /new-issue, /build-feature, /build-issue,
-/review-feature, /review-issue, /ap, /ship, /close-session, /start-freehand,
-/finish-freehand). Artifacts live in `features/YYYY/MM/<slug>/`,
-`issues/YYYY/MM/<slug>/`, and `initiatives/YYYY/MM/<slug>/`; configuration is
-`.github/agento.json`.
+/start-session, /new-initiative, /next-feature, /new-feature, /new-issue,
+/build-feature, /build-issue, /review-feature, /review-issue, /ap, /ship,
+/close-session, /start-freehand, /finish-freehand). Artifacts live in
+`features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
+`initiatives/YYYY/MM/<slug>/`; configuration is `.github/agento.json`.
 
 ### Commands
 

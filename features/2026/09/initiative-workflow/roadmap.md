@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiative-workflow
 last-updated: 2026-09-06
-next-step: "5.3 templates, agento-init, soshiki profile"
+next-step: "6.1 version 0.3.0 and CHANGELOG entry"
 ```
 
 ## Phase 1: Architect agent and /new-initiative
@@ -30,7 +30,7 @@ next-step: "5.3 templates, agento-init, soshiki profile"
 
 - [x] 5.1 README.md: intro "two artifact directories" → three; Contents entry; "How it works" idea 2 lists 🏛️ Architect; new `### Initiatives — several features from one brief` block before `### Any time` showing `/new-initiative` → `/next-feature` → per-member flow with `initiative:<i>/<f>`; finalize the Command reference rows (`/new-initiative <brief | path>` primary 🏛️ Architect; `/next-feature <initiative-slug>` any default); Delivery artifacts section gains the `initiatives/2026/09/<slug>/` tree (`brief.md`, `breakdown.md`) and a sentence that progress is derived, never ticked — verify: `grep -c '/new-initiative\|/next-feature\|Architect\|breakdown.md' README.md` ≥ 8 and `node --test tests/customizations.test.mjs` exits 0
 - [x] 5.2 docs/commands.md (finalize the two rows; "Initiative flow" text block after the standard flow; tier row for a brief too large for one feature), docs/architecture.md (mermaid nodes for 🏛️ Architect and `initiatives/`, Pieces → Agents bullet, Scripts bullet mentions the initiative deriver), docs/artifacts.md (author "🏛️ Architect" for `brief.md`/`breakdown.md`; key-rule line for the `initiative:<i>/<f>` Planner intake), docs/concurrency.md (Worktrees: same-wave ready members may be planned/built concurrently in separate sessions) — verify: `grep -c Architect docs/commands.md docs/architecture.md docs/artifacts.md` ≥ 1 each, `grep -c initiative docs/concurrency.md` ≥ 1, relative-link test in `node --test tests/customizations.test.mjs` exits 0
-- [ ] 5.3 Add `/new-initiative` and `/next-feature` to the slash-command list in `templates/AGENTS-section.md` L3–6 and the embedded copy in `.github/prompts/agento-init.prompt.md` L49–51 (identical wording); update `examples/soshiki-profile.md` L12 to list `initiatives/YYYY/MM/<slug>/` alongside features and issues — verify: `grep -l '/new-initiative' templates/AGENTS-section.md .github/prompts/agento-init.prompt.md` lists both, `grep -c 'initiatives/YYYY/MM' examples/soshiki-profile.md` prints 1
+- [x] 5.3 Add `/new-initiative` and `/next-feature` to the slash-command list in `templates/AGENTS-section.md` L3–6 and the embedded copy in `.github/prompts/agento-init.prompt.md` L49–51 (identical wording); update `examples/soshiki-profile.md` L12 to list `initiatives/YYYY/MM/<slug>/` alongside features and issues — verify: `grep -l '/new-initiative' templates/AGENTS-section.md .github/prompts/agento-init.prompt.md` lists both, `grep -c 'initiatives/YYYY/MM' examples/soshiki-profile.md` prints 1
 
 ## Phase 6: Release
 

@@ -9,8 +9,8 @@ not as content to copy).
 ## Agento
 
 Delivery work in this repository is driven by the Agento plugin. Artifacts live in
-`features/YYYY/MM/<slug>/` and `issues/YYYY/MM/<slug>/`; configuration is
-`.github/agento.json`.
+`features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
+`initiatives/YYYY/MM/<slug>/`; configuration is `.github/agento.json`.
 
 ### Commands
 
