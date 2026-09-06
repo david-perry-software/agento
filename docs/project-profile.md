@@ -9,7 +9,7 @@ entirely for defaults.
 
 ```json
 {
-  "artifacts": { "features": "features", "issues": "issues" },
+  "artifacts": { "features": "features", "issues": "issues", "initiatives": "initiatives" },
   "worktrees": { "dir": null },
   "branches": {
     "default": "main",
@@ -25,6 +25,7 @@ entirely for defaults.
 | Key | Default | Effect |
 |---|---|---|
 | `artifacts.features` / `artifacts.issues` | `features` / `issues` | Where plan/roadmap/review live. If changed, also copy `templates/project.instructions.md` (done by `/agento-init`). |
+| `artifacts.initiatives` | `initiatives` | Where initiative `brief.md` + `breakdown.md` live; `agento.mjs initiative` walks this root. Same `project.instructions.md` note applies. |
 | `worktrees.dir` | `../<repo-name>-worktrees` | Managed worktree parent. `null` = derive from the repo directory name. |
 | `branches.default` | `main` | Protected branch: the guard denies direct commits/pushes to it. |
 | `branches.feature` / `branches.issue` | `feature/` / `issue/` | Branch prefixes; the roadmap nudge fires on these. Must match the `branch:` header in roadmaps. |
