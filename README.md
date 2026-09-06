@@ -13,7 +13,7 @@ resumed on another machine, or handed to a different agent from git state alone.
 hook-based guard stops the agent from committing to `main`, force-pushing, bypassing
 hooks, or idling on open-ended watchers, and a GitHub ruleset backs it up server-side.
 
-Nothing is copied into your project except a small config file, two artifact
+Nothing is copied into your project except a small config file, three artifact
 directories, an `## Agento` section in your `AGENTS.md`, and one shell script.
 
 ---
@@ -26,6 +26,7 @@ directories, an `## Agento` section in your `AGENTS.md`, and one shell script.
 - [Set up a project](#set-up-a-project)
 - [Choose a tier](#choose-a-tier)
 - [The full delivery flow](#the-full-delivery-flow)
+  - [Initiatives — several features from one brief](#initiatives--several-features-from-one-brief)
 - [Lighter tiers](#lighter-tiers)
 - [Command reference](#command-reference)
 - [Delivery artifacts](#delivery-artifacts)
@@ -46,9 +47,13 @@ Five ideas carry the whole system:
    later `review.md`. The roadmap is a checklist of small steps, each with a
    `verify:` line; a box is ticked only after its verification passes, and the tick is
    committed *with* the step's code. Resuming means reading the roadmap and auditing
-   its ticks against the codebase — code is truth.
+   its ticks against the codebase — code is truth. A brief too large for one feature
+   becomes an *initiative* (`initiatives/YYYY/MM/<slug>/`) whose `breakdown.md` names
+   the member features and their dependencies; its progress is derived from the
+   members' roadmaps, never ticked by hand.
 
-2. **One agent per stage.** 📋 Planner asks clarifying questions, researches, and
+2. **One agent per stage.** 🏛️ Architect decomposes a large brief into an
+   initiative of member features. 📋 Planner asks clarifying questions, researches, and
    writes the plan and roadmap. 🔨 Builder executes roadmap steps with verification.
    🔍 Reviewer scores the plan's acceptance checklist and writes a verdict.
    🤖 Autopilot loops Builder → Reviewer unattended. 🛠️ Mechanic repairs and extends
@@ -271,6 +276,48 @@ merges with a normal merge commit through the ruleset, deletes the branch, syncs
 `main`, optionally dispatches and waits on a release workflow, and completes any
 `(manual, post-ship)` steps in an epilogue PR.
 
+### Initiatives — several features from one brief
+
+When a brief is too large for a single feature, decompose it first — primary window,
+on `main`, clean tree:
+
+```text
+/new-initiative <brief text | path/to/brief.md>
+```
+
+The 🏛️ Architect asks 3–5 clarifying questions, researches, splits the brief into
+2–8 independently shippable features with `Requires:` dependencies and waves, and
+writes `initiatives/YYYY/MM/<slug>/brief.md` (your text verbatim) and
+`breakdown.md`. It validates the result with `agento.mjs initiative <slug>`, then
+publishes it itself: `changes/initiative-<slug>` branch, PR, bounded check wait,
+normal merge, branch delete, `main` sync. No roadmap is created yet — an initiative
+is a plan for plans.
+
+Then, any time, in any window:
+
+```text
+/next-feature <initiative-slug>
+```
+
+A read-only report: members grouped as ready / blocked (with what blocks them) /
+in flight / complete, plus anomalies, and the exact commands to plan the recommended
+next member. Each member then goes through the normal flow above, with one twist in
+step 2 — the Planner is told which member it is planning:
+
+```text
+/start-session                                    # primary
+/new-feature initiative:<initiative-slug>/<feature-slug>   # secondary
+```
+
+The Planner validates the member through the CLI and hard-stops unless every
+`Requires:` feature is `status: complete` (no override); it uses the breakdown's
+`Brief:` as the description, keeps the preassigned slug, and writes
+`initiative: "<initiative-slug>"` into the roadmap header. Build, review, close, and
+ship exactly as for any feature. Members in the same wave that are all `ready` can be
+planned and built concurrently, each in its own session. Progress is never ticked in
+the breakdown; `/next-feature` and `/delivery-status` derive it from the members'
+roadmaps.
+
 ### Any time
 
 ```text
@@ -333,10 +380,18 @@ Full descriptions: [docs/commands.md](docs/commands.md).
 ```text
 features/2026/09/csv-export/
 ├── plan.md        Problem · Decisions · Research · Approach · Risks · Out of scope · Acceptance checklist
-├── roadmap.md     YAML header (status, branch, last-updated, next-step) + phases of checkbox steps
+├── roadmap.md     YAML header (status, branch, last-updated, next-step, optional initiative) + phases of checkbox steps
 ├── review.md      Verdict + checklist scoring + roadmap audit + findings + follow-ups
 └── evidence/      step-N-M-<name>.png for manual and browser-driven checks
+
+initiatives/2026/09/reporting-suite/
+├── brief.md       Source: line + the original brief, verbatim
+└── breakdown.md   YAML header + Goal · Decisions · Research · Features (slug, Requires, Brief) · Recommended order · Risks · Definition of done
 ```
+
+An initiative holds no checkboxes: its progress (per-member state, blockers, waves,
+the recommended `next`) is derived by `agento.mjs initiative <slug>` from the member
+roadmaps that carry `initiative: "<slug>"` in their header.
 
 Roadmap header statuses: `planned → in-progress → paused → in-review → complete`.
 Step syntax:
@@ -375,7 +430,7 @@ rule table and testing notes: [docs/hooks.md](docs/hooks.md).
 
 ```json
 {
-  "artifacts": { "features": "features", "issues": "issues" },
+  "artifacts": { "features": "features", "issues": "issues", "initiatives": "initiatives" },
   "worktrees": { "dir": null },
   "branches": {
     "default": "main",
