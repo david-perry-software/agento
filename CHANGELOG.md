@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-09-06)
 
 - **New 🏛️ Agento Architect and `/new-initiative <brief | path>`.** Runs in the
   primary window on `main`: clarifies, researches, decomposes a large brief into 2–8

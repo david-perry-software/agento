@@ -1,8 +1,8 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/initiative-workflow
 last-updated: 2026-09-06
-next-step: "Review: /review-feature initiative-workflow"
+next-step: ""
 ```
 
 ## Phase 1: Architect agent and /new-initiative
