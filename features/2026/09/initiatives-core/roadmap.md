@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "3.6 complete list mode counts"
+next-step: "4.1 writeBreakdown fixture and derivation tests"
 ```
 
 ## Phase 1: Artifact contract
@@ -22,7 +22,7 @@ next-step: "3.6 complete list mode counts"
 - [x] 3.3 Implement `deriveInitiative(breakdown, roadmaps)`: per-feature `state` (`unplanned` or the roadmap status), `blockedBy` (requires not `complete`), `ready`, computed `waves` (topological levels), `next` (explicit `Wave:` then computed level then listed order, among ready), `done`; wire `initiative <slug>` to emit `{ status: "ok", initiative, features, waves, next, done, anomalies }` via `withExit()` — verify: temp-repo 3-feature breakdown with chain `c requires b` shows `a`,`b` ready, `c.blockedBy == ["b"]`, `next == "a"`
 - [x] 3.4 Implement validation → `status: "invalid"`, `errors[]`, exit 3: unknown slug in `Requires`/`Recommended after`, dependency cycle (Kahn's algorithm), duplicate `### <slug>`, member roadmap whose `initiative:` header is absent or names another initiative; unknown initiative slug → `status: "missing"` exit 3 — verify: temp-repo breakdowns exercising each case return the expected `status` and exit code
 - [x] 3.5 Implement the `merged-but-not-complete` anomaly: for members with a roadmap whose `status !== "complete"`, check `git branch -r --merged origin/<branches.default>` for `origin/<branch>` and append `{ slug, kind: "merged-but-not-complete", branch }` to `anomalies` without changing state or exit code — verify: temp repo with a merged `feature/b` branch and an `in-review` roadmap for `b` reports the anomaly while `c` stays `blockedBy: ["b"]`
-- [ ] 3.6 Implement list mode (`initiative` without slug): `items[]` with `slug`, `dir`, `created`, `lastUpdated`, `total`, `complete`, `inFlight`, `ready`, `done`, `valid` for every breakdown under the initiatives root — verify: temp repo with two breakdowns returns two items with correct counts; an empty root returns `items: []` exit 0
+- [x] 3.6 Implement list mode (`initiative` without slug): `items[]` with `slug`, `dir`, `created`, `lastUpdated`, `total`, `complete`, `inFlight`, `ready`, `done`, `valid` for every breakdown under the initiatives root — verify: temp repo with two breakdowns returns two items with correct counts; an empty root returns `items: []` exit 0
 
 ## Phase 4: Tests
 

@@ -392,7 +392,22 @@ switch (command) {
     const slug = rest[0] ? requireSlug(rest[0]) : null;
     const breakdowns = allBreakdowns();
     if (!slug) {
-      const items = breakdowns.map((b) => ({ slug: b.slug, dir: b.dir, created: b.created, lastUpdated: b.lastUpdated, total: b.features.length }));
+      const roadmaps = allRoadmaps("feature");
+      const items = breakdowns.map((b) => {
+        const d = deriveInitiative(b, roadmaps);
+        return {
+          slug: b.slug,
+          dir: b.dir,
+          created: b.created,
+          lastUpdated: b.lastUpdated,
+          total: d.features.length,
+          complete: d.features.filter((f) => f.state === "complete").length,
+          inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
+          ready: d.features.filter((f) => f.ready).length,
+          done: d.done,
+          valid: d.status === "ok",
+        };
+      });
       withExit({ status: "ok", initiativesRoot: config.artifacts.initiatives, items });
     }
     const breakdown = breakdowns.find((b) => b.slug === slug);
