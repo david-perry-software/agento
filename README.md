@@ -312,6 +312,7 @@ Mechanic.
 | `/start-session [type/slug \| id] [--resume] [--no-open]` | primary | default | Create/resume a planning or build worktree and open a window |
 | `/new-feature <description>` | secondary | 📋 Planner | Clarify, research, plan, branch, draft PR |
 | `/new-issue <description \| #n \| url>` | secondary | 📋 Planner | Reproduce, file/link GitHub issue, plan around an exposing test |
+| `/new-initiative <brief \| path>` | primary | 🏛️ Architect | Decompose a large brief into member features; publish `brief.md` + `breakdown.md` via a merged PR |
 | `/build-feature <slug>` · `/build-issue <slug>` | secondary | 🔨 Builder | Execute roadmap steps with verification; commit + push each |
 | `/review-feature <slug>` · `/review-issue <slug>` | secondary | 🔍 Reviewer | Score acceptance, audit roadmap, write verdict |
 | `/ap <slug>` | secondary | 🤖 Autopilot | Unattended build → review → fix loop; never ships |

@@ -7,6 +7,7 @@
 | `/start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
 | `/new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
 | `/new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test |
+| `/new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window |
 | `/build-feature <slug>` · `/build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
 | `/review-feature <slug>` · `/review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
 | `/ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
