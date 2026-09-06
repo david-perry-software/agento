@@ -1,8 +1,8 @@
 ```yaml
 status: in-progress
 branch: feature/initiative-workflow
-last-updated: 2026-09-05
-next-step: "4.3 rehearse the /ship changelog stamp"
+last-updated: 2026-09-06
+next-step: "5.1 README initiative docs"
 ```
 
 ## Phase 1: Architect agent and /new-initiative
@@ -24,7 +24,7 @@ next-step: "4.3 rehearse the /ship changelog stamp"
 
 - [x] 4.1 Extend `.github/prompts/delivery-status.prompt.md` per plan.md `## Approach` §5: read `initiative` from status items, add the `Initiative` column (`—` when null), add a step running `agento.mjs initiative` (list mode) plus `agento.mjs initiative <slug>` for each `valid` item to obtain `next`/`anomalies`, render the initiative table with `/next-feature <slug>` as the recommended command, fold `valid: false` items and `anomalies` into the anomaly list; keep the read-only statement — verify: `grep -c 'agento.mjs initiative\|/next-feature\|Initiative' .github/prompts/delivery-status.prompt.md` ≥ 3 and `node --test tests/customizations.test.mjs` exits 0
 - [x] 4.2 Extend `.github/prompts/ship.prompt.md` per plan.md `## Approach` §6: step 3 first bullet stamps `## <version> (unreleased)` → `## <version> (<date -u +%Y-%m-%d>)` in CHANGELOG.md in the same commit as `status: complete` when `git diff origin/main...HEAD -- plugin.json package.json` changes `"version"`; a later-date resume refreshes the stamp in one commit before the successful merge; step 1 audit reports `(unreleased)` without a version change as a gap; final restriction paragraph explicitly permits the changelog date stamp and its refresh — verify: `grep -c 'unreleased' .github/prompts/ship.prompt.md` ≥ 3, `grep -c 'date -u' .github/prompts/ship.prompt.md` ≥ 1, `node --test tests/customizations.test.mjs` exits 0
-- [ ] 4.3 Rehearse the stamp on a temp copy of CHANGELOG.md outside this worktree: prepend `## 9.9.9 (unreleased)`, apply exactly the replacement the prompt prescribes, confirm the heading reads `## 9.9.9 (<today's UTC date>)` and no other line changed (`diff` shows one changed line); record command and output in `evidence/step-4-3-ship-stamp.md` — verify: the evidence file contains `(unreleased)` before and the UTC date after
+- [x] 4.3 Rehearse the stamp on a temp copy of CHANGELOG.md outside this worktree: prepend `## 9.9.9 (unreleased)`, apply exactly the replacement the prompt prescribes, confirm the heading reads `## 9.9.9 (<today's UTC date>)` and no other line changed (`diff` shows one changed line); record command and output in [evidence/step-4-3-ship-stamp.md](evidence/step-4-3-ship-stamp.md) (done 2026-09-06) — verify: the evidence file contains `(unreleased)` before and the UTC date after
 
 ## Phase 5: Documentation
 
