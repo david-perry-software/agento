@@ -2,12 +2,12 @@
 status: in-progress
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "1.1 extend the artifact contract with initiatives/** and the brief.md / breakdown.md sections"
+next-step: "1.2 mirror the contract in templates/project.instructions.md"
 ```
 
 ## Phase 1: Artifact contract
 
-- [ ] 1.1 Extend `.github/instructions/delivery-artifacts.instructions.md`: `applyTo: "features/**,issues/**,initiatives/**"`, description mentions initiatives, optional `initiative: "<slug>"` roadmap header (features only, next to `github-issue`), new `# brief.md` and `# breakdown.md` sections with every field/section from plan.md `## Approach` and the "no checkboxes — progress is derived" rule — verify: `grep -c 'initiatives/\*\*\|# brief.md\|# breakdown.md\|^initiative:' .github/instructions/delivery-artifacts.instructions.md` prints ≥ 4 and `node --test tests/customizations.test.mjs` exits 0
+- [x] 1.1 Extend `.github/instructions/delivery-artifacts.instructions.md`: `applyTo: "features/**,issues/**,initiatives/**"`, description mentions initiatives, optional `initiative: "<slug>"` roadmap header (features only, next to `github-issue`), new `# brief.md` and `# breakdown.md` sections with every field/section from plan.md `## Approach` and the "no checkboxes — progress is derived" rule — verify: `grep -c 'initiatives/\*\*\|# brief.md\|# breakdown.md\|^initiative:' .github/instructions/delivery-artifacts.instructions.md` prints ≥ 4 and `node --test tests/customizations.test.mjs` exits 0
 - [ ] 1.2 Mirror the contract in `templates/project.instructions.md` (`applyTo` gains `initiatives/**`; the sync note names `artifacts.initiatives`) — verify: `grep -c initiatives templates/project.instructions.md` prints ≥ 2
 
 ## Phase 2: Config root and scaffolding

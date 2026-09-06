@@ -1,6 +1,6 @@
 ---
-description: "Format contract for delivery artifacts (plan.md, roadmap.md, review.md) in the artifact roots configured by .github/agento.json (default: features/ and issues/)"
-applyTo: "features/**,issues/**"
+description: "Format contract for delivery artifacts (plan.md, roadmap.md, review.md) and initiative artifacts (brief.md, breakdown.md) in the artifact roots configured by .github/agento.json (default: features/, issues/, and initiatives/)"
+applyTo: "features/**,issues/**,initiatives/**"
 ---
 
 Delivery artifacts are machine-resumed state. Keep these formats exactly; do not invent
@@ -13,6 +13,11 @@ Each delivery record has an immutable creation-month directory:
 `features/` and `issues/`). New records use the year and zero-padded month when
 planning begins. Branch names stay `<feature-prefix><slug>` and `<issue-prefix><slug>`
 (prefixes default to `feature/` and `issue/`), independent of the artifact path.
+
+Initiatives — briefs decomposed into independently shippable features — live in
+`<initiatives-root>/YYYY/MM/<slug>/` (root defaults to `initiatives/`) as `brief.md` +
+`breakdown.md`. An initiative has no branch of its own; its progress is derived by
+`agento.mjs initiative [<slug>]` from the member features' roadmaps.
 
 # plan.md
 
@@ -51,7 +56,12 @@ branch: feature/<slug> # or issue/<slug> (with the configured branch prefixes)
 last-updated: YYYY-MM-DD
 next-step: "<free-text pointer to the next unchecked step, or ''"
 github-issue: "#<number>"  # issues only; omit for features
+initiative: "<initiative-slug>"  # features that belong to an initiative only; omit otherwise
 ```
+
+The optional `initiative:` field names the breakdown the feature is a member of. The
+CLI treats a member roadmap without it, or with a different slug, as invalid delivery
+state for that initiative.
 
 Then `## Phase N: <name>` sections containing steps:
 
@@ -90,3 +100,47 @@ Required sections, in order:
 6. `## Follow-ups` — work items that should become new issues. When a follow-up is
    triaged into the backlog (via /triage-followups), its line gains a
    ` → filed as #<n>` suffix; annotated lines are never re-filed.
+
+# brief.md
+
+The initiative's intake text, kept verbatim so the decomposition can be re-derived
+later. First line: `Source: <argument|file path> — <YYYY-MM-DD>` (where the text came
+from and when it was captured), then a blank line, then the text exactly as received.
+
+# breakdown.md
+
+Starts with a fenced yaml block containing exactly these fields:
+
+```yaml
+initiative: <slug>
+created: YYYY-MM-DD
+last-updated: YYYY-MM-DD
+```
+
+Then, in order:
+
+1. `# <Title>` — one line
+2. `## Goal` — what the initiative delivers as a whole, user-visible effect
+3. `## Decisions` — clarifying questions asked and the user's answers
+4. `## Research` — findings; must include a `Skills consulted:` line
+5. `## Features` — one `### <feature-slug>` block per member feature (slugs match
+   `[a-z0-9][a-z0-9-]{1,63}` and are unique within the file), each with exactly these
+   bullets:
+   - `- Summary:` one line
+   - `- Brief:` the part of the intake text this feature covers
+   - `- Requires: <feature-slug>[, <feature-slug>…]|none` — hard dependencies that
+     must be `status: complete` before this feature is ready
+   - `- Recommended after: <feature-slug>[, …]|none` — soft ordering hints
+   - `- Wave: <n>` — explicit delivery wave (1 = first)
+   - `- Size: S|M|L`
+   - `- Independence:` why the feature is shippable on its own
+6. `## Recommended order` — waves with rationale; an optional mermaid graph
+7. `## Risks` — with mitigations
+8. `## Out of scope`
+9. `## Definition of done` — when the initiative as a whole counts as delivered
+
+No checkboxes: a breakdown never records progress. `agento.mjs initiative <slug>`
+derives each member's state from its roadmap (`unplanned` when none exists, otherwise
+the roadmap `status`), treats only `status: complete` as satisfying `Requires:`, and
+validates the graph (unknown slugs, cycles, duplicate blocks, member roadmaps whose
+`initiative:` header is absent or names another initiative).
