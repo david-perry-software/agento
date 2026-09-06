@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/initiatives-core
 last-updated: 2026-09-05
-next-step: "6.2 scope boundary, integrate origin/main, set in-review"
+next-step: ""
 ```
 
 ## Phase 1: Artifact contract
@@ -39,4 +39,4 @@ next-step: "6.2 scope boundary, integrate origin/main, set in-review"
 ## Phase 6: Lint gate and review readiness
 
 - [x] 6.1 Full lint gate (policy §5, full — not scoped): `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` exit 0; `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0 (install shellcheck first; if installation needs privileges, ask the user and record the `command -v shellcheck` result on this line); `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; compare against plan.md `## Research` baseline (59 pass, 0 findings) — verify: all three exit statuses recorded on this line and no new findings — result (2026-09-05): `node --test` exit 0 (69 tests, 69 pass, 0 fail; baseline 59 + 10 new `initiative` cases); `shellcheck` exit 0, 0 findings (installed without privileges from the official koalaman/shellcheck v0.11.0 linux.x86_64 release to `~/.local/bin/shellcheck`; `command -v shellcheck` → `/home/david/.local/bin/shellcheck`; baseline was exit 127 / not installed); `replay-guard.sh` exit 0, all fixtures match. No new findings versus baseline.
-- [ ] 6.2 Confirm scope boundary: `git diff --name-only origin/main...HEAD` lists no files under `scripts/hooks/`, `.github/hooks/`, and does not include `hooks.json`, `plugin.json`, `package.json`, `CHANGELOG.md`, or `README.md`; integrate `origin/main` (`git merge origin/main`, never rebase), push, set `status: in-review` — verify: `gh pr view --json mergeStateStatus` is not `BEHIND`/`DIRTY`
+- [x] 6.2 Confirm scope boundary: `git diff --name-only origin/main...HEAD` lists no files under `scripts/hooks/`, `.github/hooks/`, and does not include `hooks.json`, `plugin.json`, `package.json`, `CHANGELOG.md`, or `README.md`; integrate `origin/main` (`git merge origin/main`, never rebase), push, set `status: in-review` — verify: `gh pr view --json mergeStateStatus` is not `BEHIND`/`DIRTY` — result (2026-09-05): 16 changed files, none in the forbidden set; `origin/main` already an ancestor of `HEAD` (no merge needed); PR #11 `mergeStateStatus` checked after push
