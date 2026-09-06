@@ -7,6 +7,8 @@
 | `/start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
 | `/new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
 | `/new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test |
+| `/new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window |
+| `/next-feature <initiative-slug>` | default | Read-only report of an initiative's members (ready, blocked with `blockedBy`, in flight, complete, anomalies), the CLI's `next`, and the exact `/start-session` → `/new-feature initiative:<i>/<f>` commands to plan it |
 | `/build-feature <slug>` · `/build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
 | `/review-feature <slug>` · `/review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
 | `/ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
@@ -43,6 +45,29 @@ usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
 /close-session feature/<slug>  → worktree removed
 ```
 
+## The initiative flow
+
+For a brief too large for one feature, decompose it first and then run the standard
+flow once per member:
+
+```text
+/new-initiative <brief | path>           → primary window, on main: 🏛️ Architect clarifies, decomposes,
+                                           writes brief.md + breakdown.md, publishes via a merged PR
+/next-feature <initiative-slug>          → any window, read-only: ready / blocked / in flight / complete,
+                                           the CLI's `next`, and the commands below with slugs filled in
+/start-session                           → primary window
+/new-feature initiative:<i>/<f>          → secondary window: Planner validates the member via
+                                           `agento.mjs initiative <i>`, hard-stops unless every
+                                           `Requires:` member is complete, keeps slug <f>, writes
+                                           `initiative: "<i>"` in the roadmap header
+/build-feature <f> → /review-feature <f> → /close-session feature/<f> → /ship <f>
+/next-feature <initiative-slug>          → repeat until `done: true`
+```
+
+Same-wave members that are all `ready` may be planned and built concurrently, each
+in its own session. The breakdown holds no checkboxes; progress is derived from the
+members' roadmaps.
+
 ## Choosing a tier
 
 | Work | Command |
@@ -50,3 +75,4 @@ usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
 | Typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/quick-fix` — one window, verified, PR, merged |
 | Exploratory or multi-commit scratch work that still needs no plan | `/start-freehand` → `/finish-freehand` |
 | Anything with a design decision, several files, a user-facing feature, a schema/API change, or manual verification | `/start-session` → `/new-feature` / `/new-issue` |
+| A brief too large for one feature — several dependent, independently shippable features | `/new-initiative` then `/next-feature` for each member |

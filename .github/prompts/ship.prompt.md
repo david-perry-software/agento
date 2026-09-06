@@ -45,18 +45,31 @@ the post-ship epilogue after the work branch has already merged.
      written, and the PR body contains `Fixes #<github-issue>` so the merge closes the
      GitHub issue.
    - PR state and required checks via `gh pr view` / `gh pr checks`.
+   - Release entry: does `git diff origin/main...HEAD -- plugin.json package.json`
+     change `"version"`? If so, `CHANGELOG.md` should carry a `## <version>
+     (unreleased)` heading that step 3 stamps. If `CHANGELOG.md` has an
+     `(unreleased)` heading but the version is unchanged, report it as a gap (it is
+     not stamped).
 2. **Warn, don't block**: present one summary of every gap found (unticked or false
    checkboxes, missing/stale/negative review, drift, uncommitted changes). If gaps
    exist, ask the user explicitly whether to proceed anyway — default is do not
    proceed. Never proceed on gaps without the user's answer.
 3. **On confirmation (or a clean audit)**:
    - Set roadmap `status: complete`; record any user-accepted gaps under a
-     `## Follow-ups (accepted at ship)` section in roadmap.md; commit and push.
+     `## Follow-ups (accepted at ship)` section in roadmap.md. **Changelog date
+     stamp:** when the branch changes the plugin version (audit above) and
+     `CHANGELOG.md` contains the heading `## <version> (unreleased)`, replace
+     `(unreleased)` on that heading with `(<date>)` where `<date>` is the output of
+     `date -u +%Y-%m-%d` — in this same commit, immediately before checks and merge,
+     never as a manual step. Commit and push.
    - Mark the draft PR ready for review; wait for every required check with
      `scripts/wait-for-checks.sh pr <n>` in the foreground (exit 2 = still pending:
      rerun it; bounded polls only, per delivery-policy.instructions.md §6).
      Failing or pending required checks are the one hard stop — the ruleset enforces
-     them and they must not be bypassed; report them as a resumable blocker.
+     them and they must not be bypassed; report them as a resumable blocker. If
+     shipping resumes on a later UTC date after such a stop, refresh the stamped
+     heading to the new `date -u +%Y-%m-%d` in one more commit before the successful
+     merge.
    - Merge with a normal merge commit through the ruleset (no admin, no bypass),
      delete the work branch, switch to `main`, fetch, fast-forward, and verify a clean
      tree with zero ahead/behind.
@@ -85,5 +98,7 @@ the post-ship epilogue after the work branch has already merged.
      resumes exactly here.
 
 Never force-push, rebase, squash, amend, or create additional content commits beyond
-the roadmap status commit, a ruleset-required integration merge of `origin/main`, and
-the single post-ship evidence commit from step 5.
+the roadmap status commit (which carries the changelog date stamp when the plugin
+version changed), a refresh of that stamp when the merge lands on a later UTC date, a
+ruleset-required integration merge of `origin/main`, and the single post-ship
+evidence commit from step 5.

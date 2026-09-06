@@ -47,8 +47,27 @@ directories.
 2. **Clarify first.** Before any writing, ask the user 3-5 targeted clarifying questions
    (scope boundaries, constraints, acceptance expectations, priorities) using the
    ask-questions tool. Retain the answers verbatim for plan.md `## Decisions`; do not
-   write them until the final branch is reserved in step 4.
-3. **Research.** Use the Explore subagent for codebase questions instead of manual
+   write them until the final branch is reserved in step 5.
+3. **Initiative intake (explicit only).** When the *whole* argument matches
+   `initiative:<initiative-slug>/<feature-slug>` (pattern
+   `^initiative:[a-z0-9-]+/[a-z0-9-]+$`), the feature is a member of an initiative.
+   Run `node <agento-root>/scripts/agento.mjs initiative <initiative-slug>` and stop,
+   quoting the CLI's `message` and `errors` verbatim, when its `status` is `missing`
+   or `invalid`. Then find the `features[]` entry whose `slug` equals
+   `<feature-slug>` and stop if: it is absent (not a member of that breakdown); its
+   `state` is not `unplanned` (already planned — name the existing `roadmap` path and
+   `branch`); or `ready` is `false` (blocked — list its `blockedBy` members, which
+   must reach `status: complete` first; there is no override). Otherwise read the
+   member's `### <feature-slug>` block in the breakdown file (`initiative.breakdown`):
+   its `Brief:` bullet is the description baseline this plan is built from and
+   `Summary:` is context; ask the clarifying questions of step 2 against that brief.
+   Carry forward for later steps: the preassigned feature slug (step 5 uses it instead
+   of deriving one), `initiative: "<initiative-slug>"` for the roadmap header (step
+   7), and a relative link to the breakdown file from plan.md `## Problem` (step 7).
+   Any other argument — including a plain `/new-feature` whose derived slug happens to
+   match a breakdown member — is an ordinary description and never attaches to an
+   initiative; attachment happens only through this explicit form.
+4. **Research.** Use the Explore subagent for codebase questions instead of manual
    search chains. Load every matching installed skill for the domains the work touches,
    per the project's skills table (its AGENTS.md `## Agento` section) and the
    skills-first policy in ai-skills.instructions.md, and apply their guidance to the
@@ -59,7 +78,8 @@ directories.
    --name-only`); record any overlap with the files this plan will touch under
    `## Risks` as a concurrent-delivery risk with the mitigation (integrate
    `origin/main` before every push, or sequence after the overlapping slug ships).
-4. **Name and reserve the work.** Derive a kebab-case slug (2-5 words) from the description.
+5. **Name and reserve the work.** Derive a kebab-case slug (2-5 words) from the description
+   — or, for an initiative member (step 3), use the preassigned feature slug as is.
    Check it is unused with the Agento CLI: `node <agento-root>/scripts/agento.mjs find
    <slug>` (path in the session context line `Agento CLI:`) must return
    `status: missing`; anything else means the slug exists somewhere — stop and report
@@ -71,7 +91,7 @@ directories.
    Before writing decisions, artifacts, or evidence, create `feature/<slug>` or `issue/<slug>`
    from the detached `origin/main` HEAD in the planning worktree. Never switch the
    primary worktree or create a temporary planning branch.
-5. **Issues only — verify, document, and file.** Reproduce the defect before planning:
+6. **Issues only — verify, document, and file.** Reproduce the defect before planning:
    run the failing commands/tests, drive the browser yourself for UI defects instead of
    relying on the user's report, capture logs and screenshots into
    the issue's dated `evidence/` directory, and document it all in plan.md
@@ -82,7 +102,7 @@ directories.
    number in plan.md and the roadmap `github-issue` header. The roadmap must add an
    exposing regression test (verified to FAIL, named after the issue) before any fix
    step, and the acceptance checklist's first item must require that test to pass.
-6. **Write plan.md and roadmap.md** per the artifact format contract. Roadmap steps must
+7. **Write plan.md and roadmap.md** per the artifact format contract. Roadmap steps must
    be small, ordered, and each carry a concrete `verify:` check. Apply the policy's
    work boundary (§1) when deciding what is `(manual)`: only secrets, unreachable
    dashboards, approvals, and physical devices; anything CLI-executable or
@@ -96,14 +116,16 @@ directories.
    `## Approach`, `## Acceptance checklist`, and roadmap verification steps.
    Initial roadmap header:
    `status: planned`, `branch: feature/<slug>` (or `issue/<slug>`), today's date,
-   `next-step:` pointing at step 1.1.
-7. **Publish the branch.** Confirm the current planning worktree is on the branch named
+   `next-step:` pointing at step 1.1, and — for an initiative member only —
+   `initiative: "<initiative-slug>"`; plan.md `## Problem` then links the breakdown
+   file and names the member block it implements.
+8. **Publish the branch.** Confirm the current planning worktree is on the branch named
    in the roadmap header. Commit only the artifact files
    (Conventional Commit, e.g. `docs(delivery): plan <slug>`), push with upstream, and
    open a **draft** pull request to `main` titled after the slug, whose body links the
    plan — for issues, the body starts with `Fixes #<n>` so the merge closes the
    GitHub issue. Never commit to `main`.
-8. **Report** the slug, branch, PR number (and GitHub issue number for issues), and
+9. **Report** the slug, branch, PR number (and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current
    planning worktree in place without moving or recreating it. After promotion, this
    path is a build-session reservation even though its directory remains

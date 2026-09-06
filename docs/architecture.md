@@ -2,7 +2,11 @@
 
 ```mermaid
 flowchart TD
-    U[User] -->|"/start-session"| SS[worktree + new window]
+    U[User] -->|"/new-initiative"| A[🏛️ Agento Architect]
+    A -->|"brief.md + breakdown.md, merged PR"| INIT[(initiatives/)]
+    U -->|"/next-feature"| INIT
+    INIT -->|"/new-feature initiative:<i>/<f>"| P
+    U -->|"/start-session"| SS[worktree + new window]
     U -->|"/new-feature · /new-issue"| P[📋 Agento Planner]
     P -->|plan.md + roadmap.md, draft PR| B
     U -->|"/build-feature · /build-issue"| B[🔨 Agento Builder]
@@ -27,9 +31,11 @@ flowchart TD
 
 - **Prompts** (`.github/prompts/`) are the slash commands. They are thin: they set
   expectations and dispatch to an agent.
-- **Agents** (`.github/agents/`) hold the durable behavior: resume protocol, work
-  loop, verification gates, review scoring, autopilot orchestration, and the
-  mechanic that maintains the system itself.
+- **Agents** (`.github/agents/`) hold the durable behavior: the Architect's brief
+  decomposition and self-contained publish, the Planner's resume protocol and
+  dependency-gated initiative intake, the Builder's work loop and verification
+  gates, review scoring, autopilot orchestration, and the mechanic that maintains
+  the system itself.
 - **Instructions** (`.github/instructions/`) are always-on contracts. The
   **delivery policy** (`delivery-policy.instructions.md`, `applyTo: "**"`) is the
   single source for the rules every role shares — who does the work, verification
@@ -47,7 +53,9 @@ flowchart TD
   enforcement boundary — that is the GitHub ruleset on the default branch.
 - **Scripts** are the deterministic helpers, fronted by `scripts/agento.mjs`: the
   config loader, the roadmap resolver (local search with origin fallback and
-  branch-header validation), the status lister, worktree path and per-slug port
+  branch-header validation), the status lister, the initiative deriver (per-member
+  state, `blockedBy`, waves, and `next` computed from member roadmaps — the
+  breakdown itself holds no progress), worktree path and per-slug port
   derivation, the bounded CI poller, and the guard replay harness. Prompts call the
   CLI rather than re-deriving these algorithms in prose, so the configured branch
   names and artifact roots are honoured everywhere the hooks honour them.
@@ -67,6 +75,7 @@ per-project state.
 | Commands, verification strategy, shared resources, skills table | target repo `AGENTS.md` `## Agento` section (read by agents) |
 | Delivery policy and artifact format | the plugin (this repo) |
 
-Where prompt text still says `main`, `features/`, or `issues/`, read it as the
-configured `branches.default`, `artifacts.features`, and `artifacts.issues`; the
-values the model should actually use come from `agento.mjs config`.
+Where prompt text still says `main`, `features/`, `issues/`, or `initiatives/`, read
+it as the configured `branches.default`, `artifacts.features`, `artifacts.issues`,
+and `artifacts.initiatives`; the values the model should actually use come from
+`agento.mjs config`.

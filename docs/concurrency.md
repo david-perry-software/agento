@@ -16,6 +16,12 @@ Agento is built for several delivery sessions running side by side on one machin
   registered worktree; `/close-session` removes worktrees and prunes merged
   branches. The delivery guard asks before removing a worktree that still has
   processes or a VS Code window inside it.
+- Initiative members in the same wave whose `Requires:` are all complete are all
+  `ready` at once (`/next-feature <initiative-slug>` lists them); each may be planned
+  and built concurrently in its own `/start-session` → `/new-feature
+  initiative:<i>/<f>` session. The Architect publishes the breakdown from the
+  primary worktree on a short-lived `changes/initiative-<slug>` branch, so it never
+  competes with a delivery worktree.
 
 ## Verification without collisions
 
