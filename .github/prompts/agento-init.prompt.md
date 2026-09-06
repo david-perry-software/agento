@@ -1,5 +1,5 @@
 ---
-description: "Scaffold Agento in the current project: .github/agento.json, features/ and issues/ directories, an ## Agento section in AGENTS.md, and scripts/wait-for-checks.sh"
+description: "Scaffold Agento in the current project: .github/agento.json, features/, issues/, and initiatives/ directories, an ## Agento section in AGENTS.md, and scripts/wait-for-checks.sh"
 argument-hint: "[--force]"
 ---
 
@@ -18,7 +18,7 @@ leave existing files untouched and report what was kept.
 
    ```json
    {
-     "artifacts": { "features": "features", "issues": "issues" },
+     "artifacts": { "features": "features", "issues": "issues", "initiatives": "initiatives" },
      "worktrees": { "dir": null },
      "branches": {
        "default": "main",
@@ -34,8 +34,8 @@ leave existing files untouched and report what was kept.
    `worktrees.dir: null` means "a sibling directory named `<repo-name>-worktrees/`".
    Only set the keys you want to override; every key is optional.
 
-3. Create the artifact roots from the config (default `features/` and `issues/`),
-   each with a `.gitkeep`.
+3. Create the artifact roots from the config (default `features/`, `issues/`, and
+   `initiatives/`), each with a `.gitkeep`.
 
 4. Create or append to the target repository's `AGENTS.md` an `## Agento` section
    using the template below. Fill the placeholders from the project's actual files
@@ -49,8 +49,8 @@ leave existing files untouched and report what was kept.
    Delivery work in this repository is driven by the Agento plugin (slash commands
    /start-session, /new-feature, /build-feature, /review-feature, /ap, /ship,
    /close-session, /start-freehand, /finish-freehand). Artifacts live in
-   `features/YYYY/MM/<slug>/` and `issues/YYYY/MM/<slug>/`; configuration is
-   `.github/agento.json`.
+   `features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
+   `initiatives/YYYY/MM/<slug>/`; configuration is `.github/agento.json`.
 
    ### Commands
 
@@ -85,10 +85,11 @@ leave existing files untouched and report what was kept.
    if the clone cannot be located, tell the user to copy the file from their Agento
    checkout manually.
 
-6. If `artifacts.features`/`artifacts.issues` were customized away from the defaults,
-   copy Agento's `templates/project.instructions.md` to
-   `.github/instructions/agento.instructions.md` and adjust its `applyTo:` to the
-   custom roots so the artifact contract keeps loading.
+6. If `artifacts.features`/`artifacts.issues`/`artifacts.initiatives` were customized
+   away from the defaults, copy Agento's `templates/project.instructions.md` to
+   `.github/instructions/agento.instructions.md` and adjust its `applyTo:` (all three
+   entries: features, issues, initiatives) to the custom roots so the artifact
+   contract keeps loading.
 
 7. **Check the enforcement layer.** The delivery guard is a slip guard, not a
    boundary; the default branch must be protected server-side. Run

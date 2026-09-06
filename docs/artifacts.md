@@ -2,14 +2,17 @@
 
 Each planned unit of work gets an immutable creation-month directory in the target
 repository: `features/YYYY/MM/<slug>/` or `issues/YYYY/MM/<slug>/` (roots are
-configurable in `.github/agento.json`).
+configurable in `.github/agento.json`). A large brief that decomposes into several
+features gets an initiative directory, `initiatives/YYYY/MM/<slug>/`.
 
 | File | Written by | Purpose |
 |---|---|---|
 | `plan.md` | Planner | Problem, evidence (issues), decisions, research (incl. skills consulted), approach, risks, acceptance checklist |
-| `roadmap.md` | Planner, then Builder | The resumable state machine: YAML header (`status`, `branch`, `last-updated`, `next-step`) + checkbox steps with `verify:` lines |
+| `roadmap.md` | Planner, then Builder | The resumable state machine: YAML header (`status`, `branch`, `last-updated`, `next-step`, optional `github-issue`, optional `initiative`) + checkbox steps with `verify:` lines |
 | `review.md` | Reviewer | Verdict (`approve` / `request-changes`), checklist scoring, roadmap audit, findings, follow-ups |
 | `evidence/` | Builder / user | Screenshots and logs; `step-N-M-<name>.png` for `(manual)` steps |
+| `brief.md` | initiative intake | The verbatim intake text under a one-line `Source: <argument\|file path> — <date>` header |
+| `breakdown.md` | initiative intake | YAML header (`initiative`, `created`, `last-updated`) + `## Features` blocks (`### <feature-slug>` with `Requires`, `Recommended after`, `Wave`, `Size`, …), recommended order, risks, definition of done. **No checkboxes**: `agento.mjs initiative <slug>` derives progress from the member roadmaps, whose `initiative:` header must name this initiative |
 
 Key rules:
 

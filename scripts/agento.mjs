@@ -12,6 +12,7 @@
 //   node scripts/agento.mjs ship-preflight <feature|issue> <slug>
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
+//   node scripts/agento.mjs initiative [<slug>]
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
 
@@ -30,7 +31,7 @@ import {
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 16);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 17);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -88,7 +89,7 @@ function header(content, key) {
   return match ? match[1].trim().replace(/^["']|["']$/g, "") : "";
 }
 
-function* walkRoadmaps(base) {
+function* walkFiles(base, name) {
   if (!fs.existsSync(base)) return;
   const stack = [base];
   while (stack.length) {
@@ -102,10 +103,13 @@ function* walkRoadmaps(base) {
     for (const entry of entries) {
       const child = path.join(current, entry.name);
       if (entry.isDirectory()) stack.push(child);
-      else if (entry.isFile() && entry.name === "roadmap.md") yield child;
+      else if (entry.isFile() && entry.name === name) yield child;
     }
   }
 }
+
+const walkRoadmaps = (base) => walkFiles(base, "roadmap.md");
+const walkBreakdowns = (base) => walkFiles(base, "breakdown.md");
 
 function describe(file, type) {
   const content = fs.readFileSync(file, "utf8");
@@ -127,6 +131,7 @@ function describe(file, type) {
     lastUpdated: header(content, "last-updated"),
     nextStep: header(content, "next-step"),
     githubIssue: header(content, "github-issue") || null,
+    initiative: header(content, "initiative") || null,
     steps: { ticked: steps.filter((m) => m[1] === "x").length, total: steps.length },
     postShipPending: (content.match(/^- \[ \] \d+\.\d+ \(manual, post-ship\)/gm) ?? []).length,
   };
@@ -144,6 +149,154 @@ function allRoadmaps(typeFilter) {
 
 function withExit(result) {
   emit({ ...result, root, configSource: source }, result.status === "ok" ? 0 : 3);
+}
+
+// --- initiatives -----------------------------------------------------------
+
+function slugList(value) {
+  const cleaned = value.replace(/`/g, "").trim();
+  if (!cleaned || /^none$/i.test(cleaned)) return [];
+  return cleaned.split(/[\s,]+/).filter(Boolean);
+}
+
+function parseBreakdown(file) {
+  const content = fs.readFileSync(file, "utf8");
+  const dir = path.dirname(file);
+  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  const features = [];
+  let inFeatures = false;
+  let current = null;
+  for (const line of content.split("\n")) {
+    if (/^## /.test(line)) {
+      inFeatures = /^## Features\s*$/.test(line);
+      current = null;
+      continue;
+    }
+    if (!inFeatures) continue;
+    const heading = line.match(/^### +(.+?)\s*$/);
+    if (heading) {
+      current = { slug: heading[1].replace(/`/g, ""), requires: [], recommendedAfter: [], wave: null, order: features.length };
+      features.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const bullet = line.match(/^- (Requires|Recommended after|Wave):\s*(.*)$/i);
+    if (!bullet) continue;
+    const key = bullet[1].toLowerCase();
+    const value = bullet[2];
+    if (key === "wave") {
+      const n = Number.parseInt(value.replace(/`/g, ""), 10);
+      current.wave = Number.isNaN(n) ? null : n;
+    } else if (key === "requires") current.requires = slugList(value);
+    else current.recommendedAfter = slugList(value);
+  }
+  return {
+    slug: path.basename(dir),
+    dir: rel(dir),
+    breakdown: rel(file),
+    created: header(content, "created") || null,
+    lastUpdated: header(content, "last-updated") || null,
+    features,
+  };
+}
+
+function mergedAnomalies(features) {
+  // Informational only (plan Decision 3): reflects the last fetch, never changes state or exit code.
+  const merged = new Set(
+    git(root, "branch", "-r", "--merged", `origin/${config.branches.default}`)
+      .split("\n")
+      .map((l) => l.trim().split(" ")[0])
+      .filter(Boolean),
+  );
+  return features
+    .filter((f) => f.roadmap && f.state !== "complete" && merged.has(`origin/${f.branch}`))
+    .map((f) => ({ slug: f.slug, kind: "merged-but-not-complete", branch: f.branch }));
+}
+
+function allBreakdowns() {
+  const base = path.join(root, config.artifacts.initiatives);
+  return [...walkBreakdowns(base)].sort().map(parseBreakdown);
+}
+
+function deriveInitiative(breakdown, roadmaps) {
+  const errors = [];
+  const known = new Map();
+  for (const f of breakdown.features) {
+    if (known.has(f.slug)) errors.push(`duplicate feature block "### ${f.slug}"`);
+    else known.set(f.slug, f);
+  }
+  for (const f of breakdown.features) {
+    for (const d of f.requires) if (!known.has(d)) errors.push(`${f.slug}: Requires unknown feature "${d}"`);
+    for (const d of f.recommendedAfter) if (!known.has(d)) errors.push(`${f.slug}: Recommended after unknown feature "${d}"`);
+  }
+  const roadmapBySlug = new Map();
+  for (const r of roadmaps) if (!roadmapBySlug.has(r.slug)) roadmapBySlug.set(r.slug, r);
+  for (const f of known.values()) {
+    const r = roadmapBySlug.get(f.slug);
+    if (!r) continue;
+    if (!r.initiative) errors.push(`${f.slug}: roadmap ${r.roadmap} has no initiative: header (expected "${breakdown.slug}")`);
+    else if (r.initiative !== breakdown.slug) errors.push(`${f.slug}: roadmap ${r.roadmap} names initiative "${r.initiative}", expected "${breakdown.slug}"`);
+  }
+
+  // Kahn's algorithm over Requires: computed wave = 1 + max(wave of requirements).
+  const level = new Map();
+  const indegree = new Map(breakdown.features.map((f) => [f.slug, f.requires.filter((d) => known.has(d)).length]));
+  const dependents = new Map(breakdown.features.map((f) => [f.slug, []]));
+  for (const f of breakdown.features) for (const d of f.requires) if (known.has(d)) dependents.get(d).push(f.slug);
+  const queue = breakdown.features.filter((f) => indegree.get(f.slug) === 0).map((f) => f.slug);
+  for (const slug of queue) level.set(slug, 1);
+  while (queue.length) {
+    const slug = queue.shift();
+    for (const next of dependents.get(slug)) {
+      level.set(next, Math.max(level.get(next) ?? 1, level.get(slug) + 1));
+      indegree.set(next, indegree.get(next) - 1);
+      if (indegree.get(next) === 0) queue.push(next);
+    }
+  }
+  const cyclic = [...indegree.entries()].filter(([, n]) => n > 0).map(([slug]) => slug);
+  if (cyclic.length) errors.push(`dependency cycle among: ${cyclic.join(", ")}`);
+
+  const features = breakdown.features.map((f) => {
+    const roadmap = roadmapBySlug.get(f.slug) ?? null;
+    const state = roadmap ? roadmap.status : "unplanned";
+    // Only `status: complete` satisfies Requires (plan Decision 3).
+    const blockedBy = f.requires.filter((d) => roadmapBySlug.get(d)?.status !== "complete");
+    return {
+      slug: f.slug,
+      state,
+      roadmap: roadmap ? roadmap.roadmap : null,
+      branch: roadmap ? roadmap.branch : `${config.branches.feature}${f.slug}`,
+      requires: f.requires,
+      recommendedAfter: f.recommendedAfter,
+      wave: f.wave,
+      computedWave: level.get(f.slug) ?? null,
+      order: f.order,
+      blockedBy,
+      ready: state === "unplanned" && blockedBy.length === 0,
+    };
+  });
+
+  const waves = [];
+  for (const f of features) {
+    if (f.computedWave === null) continue;
+    (waves[f.computedWave - 1] ??= []).push(f.slug);
+  }
+  const rank = (f) => [f.wave ?? f.computedWave ?? Number.MAX_SAFE_INTEGER, f.computedWave ?? Number.MAX_SAFE_INTEGER, f.order];
+  const next = features
+    .filter((f) => f.ready)
+    .sort((a, b) => {
+      const [ra, rb] = [rank(a), rank(b)];
+      return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2];
+    })[0]?.slug ?? null;
+
+  return {
+    status: errors.length ? "invalid" : "ok",
+    errors,
+    features,
+    waves: waves.map((w) => w ?? []),
+    next,
+    done: features.length > 0 && features.every((f) => f.state === "complete"),
+  };
 }
 
 switch (command) {
@@ -231,6 +384,39 @@ switch (command) {
       artifactRoot: kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null,
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
+    });
+    break;
+  }
+
+  case "initiative": {
+    const slug = rest[0] ? requireSlug(rest[0]) : null;
+    const breakdowns = allBreakdowns();
+    if (!slug) {
+      const roadmaps = allRoadmaps("feature");
+      const items = breakdowns.map((b) => {
+        const d = deriveInitiative(b, roadmaps);
+        return {
+          slug: b.slug,
+          dir: b.dir,
+          created: b.created,
+          lastUpdated: b.lastUpdated,
+          total: d.features.length,
+          complete: d.features.filter((f) => f.state === "complete").length,
+          inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
+          ready: d.features.filter((f) => f.ready).length,
+          done: d.done,
+          valid: d.status === "ok",
+        };
+      });
+      withExit({ status: "ok", initiativesRoot: config.artifacts.initiatives, items });
+    }
+    const breakdown = breakdowns.find((b) => b.slug === slug);
+    if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
+    const derived = deriveInitiative(breakdown, allRoadmaps("feature"));
+    withExit({
+      ...derived,
+      initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
+      anomalies: mergedAnomalies(derived.features),
     });
     break;
   }

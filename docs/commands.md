@@ -24,8 +24,12 @@ Prompts never re-derive slug resolution or config lookups in prose; they call th
 **Agento CLI** — `node <agento-root>/scripts/agento.mjs` — whose path the SessionStart
 hook announces as `Agento CLI:`. Subcommands: `config`, `resolve <type> <slug>`,
 `find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>`,
-`ship-preflight <type> <slug>`, `paths <kind> <id>`, `ports <slug>`. Every call prints
-one JSON document; exit 0 = usable result, 3 = resolution failure, 1 = usage error.
+`ship-preflight <type> <slug>`, `paths <kind> <id>`, `ports <slug>`,
+`initiative [<slug>]` (list every breakdown with progress counts, or derive one
+initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
+`anomalies` from its member roadmaps). Every call prints one JSON document; exit 0 =
+usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
+`invalid` breakdown), 1 = usage error.
 
 ## The standard flow
 
