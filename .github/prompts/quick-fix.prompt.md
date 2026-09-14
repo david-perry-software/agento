@@ -21,8 +21,8 @@ means the configured default.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
-its current step; see step 2 for the suffix rule). Window check per §10: requires
-role `primary` on the default branch, clean.
+its current step; see step 2 for the suffix rule).
+Window check per §10: requires role `primary` on the default branch, clean.
 
 ## Refuse when the change does not fit
 

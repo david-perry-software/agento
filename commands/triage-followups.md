@@ -14,7 +14,8 @@ session context line `Agento CLI:`).
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (already-annotated follow-up lines and already-flagged issues are
-skipped).
+skipped). Window check per §10: requires role `any` (read-only / not
+window-sensitive).
 
 **Mode** — from the argument:
 - **Slug given**: `agento.mjs find <slug>`; triage only when `status` is `ok`,

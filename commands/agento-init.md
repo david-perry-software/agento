@@ -10,6 +10,7 @@ leave existing files untouched and report what was kept.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (existing files are kept unless `--force`).
+Window check per §10: requires role `any` (read-only / not window-sensitive).
 
 ## Steps
 
