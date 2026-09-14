@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/canonical-commands
 last-updated: 2026-09-13
-next-step: "2.1 — add the ## Invocation section to docs/commands.md"
+next-step: "2.2 — canonical-form note in AGENTS-section.md and the agento-init pair"
 initiative: "workflow-orchestration"
 ```
 
@@ -13,7 +13,7 @@ initiative: "workflow-orchestration"
 
 ## Phase 2: Docs and template
 
-- [ ] 2.1 Add a `## Invocation` section to `docs/commands.md` immediately before `## The standard flow` (after `## Receipts` if `command-receipts` has merged): a table with every command's canonical `/agento <name>` spelling, a row per redirected form pattern, and a one-line pointer to `.github/instructions/command-invocation.instructions.md` — verify: `grep -n '^## ' docs/commands.md` shows `## Invocation` directly above `## The standard flow`; every prompt basename appears between those headings (`sed -n '/^## Invocation/,/^## The standard flow/p' docs/commands.md | grep -c '/agento '` ≥ 22).
+- [x] 2.1 Add a `## Invocation` section to `docs/commands.md` immediately before `## The standard flow` (after `## Receipts` if `command-receipts` has merged): a table with every command's canonical `/agento <name>` spelling, a row per redirected form pattern, and a one-line pointer to `.github/instructions/command-invocation.instructions.md` — verify: `grep -n '^## ' docs/commands.md` shows `## Invocation` directly above `## The standard flow`; every prompt basename appears between those headings (`sed -n '/^## Invocation/,/^## The standard flow/p' docs/commands.md | grep -c '/agento '` ≥ 22).
 - [ ] 2.2 Add the one-sentence canonical-form note after the command list in `templates/AGENTS-section.md`, in `.github/prompts/agento-init.prompt.md` step 4's embedded template, and in `commands/agento-init.md` (byte-identical copy) — verify: `diff .github/prompts/agento-init.prompt.md commands/agento-init.md` prints nothing; `grep -c 'canonical' templates/AGENTS-section.md commands/agento-init.md` shows 1 each; `git diff --stat origin/main...HEAD -- commands .github/prompts` lists only the two `agento-init` files.
 
 ## Phase 3: Tests

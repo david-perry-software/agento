@@ -37,6 +37,46 @@ initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`,
 usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
 `invalid` breakdown), 1 = usage error.
 
+## Invocation
+
+Every command has one spelling, `/agento <name> [args]`. The canonical names are:
+
+- `/agento agento-init`
+- `/agento install-skills`
+- `/agento start-session`
+- `/agento new-feature`
+- `/agento new-issue`
+- `/agento new-initiative`
+- `/agento next-feature`
+- `/agento build-feature`
+- `/agento build-issue`
+- `/agento review-feature`
+- `/agento review-issue`
+- `/agento ap`
+- `/agento ship`
+- `/agento close-session`
+- `/agento quick-fix`
+- `/agento start-freehand`
+- `/agento finish-freehand`
+- `/agento commit-current-changes`
+- `/agento delivery-status`
+- `/agento triage-followups`
+- `/agento extend-copilot`
+- `/agento fix-copilot`
+
+Old forms are read as the canonical command — the agent says which in one sentence and
+proceeds, arguments unchanged, without asking for confirmation — per
+[command-invocation.instructions.md](../.github/instructions/command-invocation.instructions.md):
+
+| Typed | Read as |
+|---|---|
+| `/<name> [args]` | `/agento <name> [args]` |
+| `/<name>.prompt [args]` | `/agento <name> [args]` |
+| `/<name>.md [args]` | `/agento <name> [args]` |
+| `/agento <name>.prompt [args]` | `/agento <name> [args]` |
+| `/agento <name>.prompt.md [args]` | `/agento <name> [args]` |
+| `/agento <name>.md [args]` | `/agento <name> [args]` |
+
 ## The standard flow
 
 ```text
