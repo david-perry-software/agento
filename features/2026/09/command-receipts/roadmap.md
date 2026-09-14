@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/command-receipts
 last-updated: 2026-09-14
-next-step: "4.1 §9 citation in planner, builder, reviewer agents"
+next-step: "4.2 §9 citation in autopilot, architect, mechanic agents; next-step wording → §9 result line"
 initiative: "workflow-orchestration"
 ```
 
@@ -25,7 +25,7 @@ initiative: "workflow-orchestration"
 
 ## Phase 4: Agent citations
 
-- [ ] 4.1 Add the §9 citation to `delivery-planner.agent.md` (resume protocol on an existing roadmap is the new-feature/new-issue idempotency row), `delivery-builder.agent.md` (resume/audit protocol is the build-* row), `delivery-reviewer.agent.md` (verdict overwrite is the review-* row) — verify: `grep -c '§9' .github/agents/delivery-planner.agent.md .github/agents/delivery-builder.agent.md .github/agents/delivery-reviewer.agent.md` prints 1 for each
+- [x] 4.1 Add the §9 citation to `delivery-planner.agent.md` (resume protocol on an existing roadmap is the new-feature/new-issue idempotency row), `delivery-builder.agent.md` (resume/audit protocol is the build-* row), `delivery-reviewer.agent.md` (verdict overwrite is the review-* row) — verify: `grep -c '§9' .github/agents/delivery-planner.agent.md .github/agents/delivery-builder.agent.md .github/agents/delivery-reviewer.agent.md` prints 1 for each
 - [ ] 4.2 Add the §9 citation to `delivery-autopilot.agent.md`, `initiative-architect.agent.md`, `copilot-mechanic.agent.md` and make every agent's "final response ends with a next step" wording point at the §9 result line — verify: `node --test tests/customizations.test.mjs` exit 0 (all 28 files cite §9; canaries clean)
 
 ## Phase 5: Docs, changelog, gate

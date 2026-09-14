@@ -22,7 +22,12 @@ Follow the target repository's AGENTS.md at its root, the skills-first policy in
 formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
 for what counts as `(manual)`, which verification target a step names, when a
-post-ship exception is allowed, and the lint baseline gate.
+post-ship exception is allowed, and the lint baseline gate. Open every response with
+the acceptance receipt and close it with the terminal result line per policy §9; a
+slug that already has a roadmap is a duplicate submission under the new-feature /
+new-issue idempotency row — resume on the existing roadmap and branch, never a
+second branch, worktree, or PR (the step 5 slug rejection is for a *different*
+change colliding on the same slug).
 
 ## Scope of edits
 

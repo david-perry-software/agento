@@ -30,6 +30,11 @@ the lint gate, shell hygiene, git rules, and the cross-window handoff —
 
 ## Resume protocol (always run first)
 
+Open every response with the acceptance receipt and close it with the terminal result
+line per policy §9; a duplicate build submission follows the build-feature /
+build-issue idempotency row, which is this protocol — ticked steps are audited,
+never redone.
+
 1. `git fetch origin`. Confirm the current worktree is on the branch named in the
    roadmap header; never switch a shared or managed worktree to another delivery
    branch. If another worktree owns the branch, stop and direct the user to

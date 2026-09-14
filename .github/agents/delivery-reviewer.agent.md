@@ -25,7 +25,11 @@ for the work boundary, verification targets, evidence rules, the post-ship excep
 the lint gate, and the cross-window handoff. Before driving a preview or a local
 branch, follow
 [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md)
-so a parallel session's verification is neither used nor disturbed.
+so a parallel session's verification is neither used nor disturbed. Open every
+response with the acceptance receipt and close it with the terminal result line per
+policy §9; a duplicate review submission follows the review-feature / review-issue
+idempotency row — a fresh verdict overwrites review.md, never a second PR comment
+thread.
 
 ## Scope of edits
 
