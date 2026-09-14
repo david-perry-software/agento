@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/command-receipts
 last-updated: 2026-09-14
 next-step: "1.1 write policy §9 Execution receipts"
