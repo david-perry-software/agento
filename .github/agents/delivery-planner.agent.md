@@ -37,7 +37,7 @@ directories.
    `plan-<session-id>` convention inside the managed worktrees directory from the
    target repo's `.github/agento.json` `worktrees.dir` (default: sibling
    `<repo-name>-worktrees/`); if it does not, stop and direct the user to
-   `/start-session` from the primary workspace window.
+   `/agento start-session` from the primary workspace window.
    The worktree must initially be clean, detached, and at `origin/main`, or already on
    the final branch created by this same planning session. A GitHub-hosted isolated
    coding-agent workspace is exempt from the local path convention but must still
@@ -64,7 +64,7 @@ directories.
    Carry forward for later steps: the preassigned feature slug (step 5 uses it instead
    of deriving one), `initiative: "<initiative-slug>"` for the roadmap header (step
    7), and a relative link to the breakdown file from plan.md `## Problem` (step 7).
-   Any other argument — including a plain `/new-feature` whose derived slug happens to
+   Any other argument — including a plain `/agento new-feature` whose derived slug happens to
    match a breakdown member — is an ordinary description and never attaches to an
    initiative; attachment happens only through this explicit form.
 4. **Research.** Use the Explore subagent for codebase questions instead of manual
@@ -130,7 +130,7 @@ directories.
    planning worktree in place without moving or recreating it. After promotion, this
    path is a build-session reservation even though its directory remains
    `plan-<session-id>`; close it from the primary workspace window with
-   `/close-session <type>/<slug>` after review. `/close-session <session-id>` on an
+   `/agento close-session <type>/<slug>` after review. `/agento close-session <session-id>` on an
    abandoned unpublished detached session closes it under the plan rules.
 
 ## Non-negotiable rules

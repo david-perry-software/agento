@@ -6,7 +6,7 @@ you open.
 
 ## Prerequisites
 
-- VS Code with GitHub Copilot (agent mode). The session model (`/start-session` opens
+- VS Code with GitHub Copilot (agent mode). The session model (`/agento start-session` opens
   a second VS Code window on a sibling worktree) is built around the VS Code CLI
   (`code`); the Copilot CLI can run the prompts but the window choreography is
   VS Code-specific.
@@ -49,19 +49,19 @@ Plugins installed through the CLI are also discovered by VS Code.
 
 ## First run in a project
 
-Open your project and run `/agento-init`. It scaffolds `.github/agento.json`,
+Open your project and run `/agento agento-init`. It scaffolds `.github/agento.json`,
 `features/` + `issues/`, an `## Agento` section in your `AGENTS.md`, and
 `scripts/wait-for-checks.sh`, then commits them on a `changes/agento-init` branch.
 
 ## Verifying the install
 
-- `/delivery-status` should respond (empty dashboard on a fresh project).
+- `/agento delivery-status` should respond (empty dashboard on a fresh project).
 - The Output panel channel **GitHub Copilot Chat Hooks** should list the Agento
   SessionStart and PreToolUse hooks, and a new chat's context should include an
   `Agento CLI: node .../scripts/agento.mjs` line.
 - `git push origin main` typed by the agent is denied by the delivery guard.
 - The default branch has a GitHub ruleset (require PR, required checks, no force
-  push, no deletion) — `/agento-init` checks and offers to create one. The guard
+  push, no deletion) — `/agento agento-init` checks and offers to create one. The guard
   alone is not protection.
 
 ## Updating

@@ -2,25 +2,25 @@
 
 | Command | Agent | Purpose |
 |---|---|---|
-| `/agento-init` | default | Scaffold Agento into the current project (config, artifact dirs, AGENTS.md section, CI poller) |
-| `/install-skills` | default | Detect the project stack, propose matching agent skills, install approved ones, update the AGENTS.md skills table |
-| `/start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
-| `/new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
-| `/new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test |
-| `/new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window |
-| `/next-feature <initiative-slug>` | default | Read-only report of an initiative's members (ready, blocked with `blockedBy`, in flight, complete, anomalies), the CLI's `next`, and the exact `/start-session` → `/new-feature initiative:<i>/<f>` commands to plan it |
-| `/build-feature <slug>` · `/build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
-| `/review-feature <slug>` · `/review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
-| `/ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
-| `/ship <slug>` | default | Acceptance gate: required checks green, merge PR, sync main, optional release workflow, post-ship epilogue |
-| `/close-session <session-id \| type/slug \| changes/slug>` | default | Remove the worktree, delete merged branches, verify state |
-| `/quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
-| `/start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
-| `/finish-freehand` | default | Commit, PR, merge freehand work |
-| `/commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
-| `/delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
-| `/triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
-| `/extend-copilot` · `/fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
+| `/agento agento-init` | default | Scaffold Agento into the current project (config, artifact dirs, AGENTS.md section, CI poller) |
+| `/agento install-skills` | default | Detect the project stack, propose matching agent skills, install approved ones, update the AGENTS.md skills table |
+| `/agento start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
+| `/agento new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
+| `/agento new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test |
+| `/agento new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window |
+| `/agento next-feature <initiative-slug>` | default | Read-only report of an initiative's members (ready, blocked with `blockedBy`, in flight, complete, anomalies), the CLI's `next`, and the exact `/agento start-session` → `/agento new-feature initiative:<i>/<f>` commands to plan it |
+| `/agento build-feature <slug>` · `/agento build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
+| `/agento review-feature <slug>` · `/agento review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
+| `/agento ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
+| `/agento ship <slug>` | default | Acceptance gate: required checks green, merge PR, sync main, optional release workflow, post-ship epilogue |
+| `/agento close-session <session-id \| type/slug \| changes/slug>` | default | Remove the worktree, delete merged branches, verify state |
+| `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
+| `/agento start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
+| `/agento finish-freehand` | default | Commit, PR, merge freehand work |
+| `/agento commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
+| `/agento delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
+| `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
+| `/agento extend-copilot` · `/agento fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
 
 Prompts never re-derive slug resolution or config lookups in prose; they call the
 **Agento CLI** — `node <agento-root>/scripts/agento.mjs` — whose path the SessionStart
@@ -36,13 +36,13 @@ usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
 ## The standard flow
 
 ```text
-/start-session                 → plan-<id> worktree, new window
-/new-feature add export to csv → plan + roadmap + draft PR
-/handoff "Build in this worktree" or /start-session feature/<slug> from the primary window
-/build-feature <slug>          → steps executed, verified, committed, pushed
-/review-feature <slug>         → review.md verdict
-/ship <slug>                   → merged, main synced, epilogue
-/close-session feature/<slug>  → worktree removed
+/agento start-session                 → plan-<id> worktree, new window
+/agento new-feature add export to csv → plan + roadmap + draft PR
+/handoff "Build in this worktree" or /agento start-session feature/<slug> from the primary window
+/agento build-feature <slug>          → steps executed, verified, committed, pushed
+/agento review-feature <slug>         → review.md verdict
+/agento ship <slug>                   → merged, main synced, epilogue
+/agento close-session feature/<slug>  → worktree removed
 ```
 
 ## The initiative flow
@@ -51,17 +51,17 @@ For a brief too large for one feature, decompose it first and then run the stand
 flow once per member:
 
 ```text
-/new-initiative <brief | path>           → primary window, on main: 🏛️ Architect clarifies, decomposes,
+/agento new-initiative <brief | path>           → primary window, on main: 🏛️ Architect clarifies, decomposes,
                                            writes brief.md + breakdown.md, publishes via a merged PR
-/next-feature <initiative-slug>          → any window, read-only: ready / blocked / in flight / complete,
+/agento next-feature <initiative-slug>          → any window, read-only: ready / blocked / in flight / complete,
                                            the CLI's `next`, and the commands below with slugs filled in
-/start-session                           → primary window
-/new-feature initiative:<i>/<f>          → secondary window: Planner validates the member via
+/agento start-session                           → primary window
+/agento new-feature initiative:<i>/<f>          → secondary window: Planner validates the member via
                                            `agento.mjs initiative <i>`, hard-stops unless every
                                            `Requires:` member is complete, keeps slug <f>, writes
                                            `initiative: "<i>"` in the roadmap header
-/build-feature <f> → /review-feature <f> → /close-session feature/<f> → /ship <f>
-/next-feature <initiative-slug>          → repeat until `done: true`
+/agento build-feature <f> → /agento review-feature <f> → /agento close-session feature/<f> → /agento ship <f>
+/agento next-feature <initiative-slug>          → repeat until `done: true`
 ```
 
 Same-wave members that are all `ready` may be planned and built concurrently, each
@@ -72,7 +72,7 @@ members' roadmaps.
 
 | Work | Command |
 |---|---|
-| Typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/quick-fix` — one window, verified, PR, merged |
-| Exploratory or multi-commit scratch work that still needs no plan | `/start-freehand` → `/finish-freehand` |
-| Anything with a design decision, several files, a user-facing feature, a schema/API change, or manual verification | `/start-session` → `/new-feature` / `/new-issue` |
-| A brief too large for one feature — several dependent, independently shippable features | `/new-initiative` then `/next-feature` for each member |
+| Typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/agento quick-fix` — one window, verified, PR, merged |
+| Exploratory or multi-commit scratch work that still needs no plan | `/agento start-freehand` → `/agento finish-freehand` |
+| Anything with a design decision, several files, a user-facing feature, a schema/API change, or manual verification | `/agento start-session` → `/agento new-feature` / `/agento new-issue` |
+| A brief too large for one feature — several dependent, independently shippable features | `/agento new-initiative` then `/agento next-feature` for each member |

@@ -184,9 +184,31 @@ test("every slash command is documented in README.md and docs/commands.md", () =
   const readme = fs.readFileSync(rel("README.md"), "utf8");
   const commands = fs.readFileSync(rel("docs", "commands.md"), "utf8");
   for (const file of promptFiles) {
-    const command = "/" + path.basename(file, ".prompt.md");
+    const command = "/agento " + path.basename(file, ".prompt.md");
     assert.ok(readme.includes(command), `README.md does not list ${command}`);
     assert.ok(commands.includes(command), `docs/commands.md does not list ${command}`);
+  }
+});
+
+test("active guidance qualifies Agento slash commands with the plugin name", () => {
+  const commandNames = promptFiles.map((file) => path.basename(file, ".prompt.md"));
+  const bareCommand = new RegExp(`(?<![\\w.-])/(?:${commandNames.join("|")})\\b`);
+  const guidanceFiles = [
+    rel("README.md"),
+    rel("AGENTS.md"),
+    ...agentFiles,
+    ...promptFiles,
+    ...instructionFiles,
+    ...listFiles(rel("commands"), ".md"),
+    ...listFiles(rel("docs"), ".md"),
+    ...listFiles(rel("templates"), ".md"),
+  ];
+  for (const file of guidanceFiles) {
+    assert.doesNotMatch(
+      fs.readFileSync(file, "utf8"),
+      bareCommand,
+      `${path.relative(repoRoot, file)} contains an unqualified Agento command`,
+    );
   }
 });
 
@@ -194,6 +216,22 @@ test("plugin manifest and hook wiring point at existing executable files", () =>
   const plugin = JSON.parse(fs.readFileSync(rel("plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
   assert.ok(fs.existsSync(rel(plugin.commands)), `plugin.commands ${plugin.commands} missing`);
+  const pluginCommands = listFiles(rel(plugin.commands), ".md");
+  assert.ok(pluginCommands.length > 0, "plugin.commands has no .md command files");
+  assert.deepEqual(
+    pluginCommands.map((file) => path.basename(file, ".md")),
+    promptFiles.map((file) => path.basename(file, ".prompt.md")),
+    "plugin commands must mirror workspace prompts without the .prompt suffix",
+  );
+  for (const commandFile of pluginCommands) {
+    const name = path.basename(commandFile, ".md");
+    const promptFile = rel(".github", "prompts", `${name}.prompt.md`);
+    assert.equal(
+      fs.readFileSync(commandFile, "utf8"),
+      fs.readFileSync(promptFile, "utf8"),
+      `plugin command ${name}.md differs from its workspace prompt`,
+    );
+  }
   const pkg = JSON.parse(fs.readFileSync(rel("package.json"), "utf8"));
   assert.equal(plugin.version, pkg.version, "plugin.json and package.json versions differ");
 
@@ -208,7 +246,10 @@ test("plugin manifest and hook wiring point at existing executable files", () =>
       }
     }
   };
-  checkHooks(rel(plugin.hooks), (cmd) => rel(cmd.replace("${PLUGIN_ROOT}/", "")));
+  checkHooks(rel(plugin.hooks), (cmd) => {
+    assert.match(cmd, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `plugin hook must use the compatible root token: ${cmd}`);
+    return rel(cmd.replace("${CLAUDE_PLUGIN_ROOT}/", ""));
+  });
   for (const file of listFiles(rel(".github", "hooks"), ".json")) {
     checkHooks(file, (cmd) => rel(cmd.replace(/^\.\//, "")));
   }

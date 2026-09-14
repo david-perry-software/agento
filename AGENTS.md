@@ -4,7 +4,7 @@ Agento is a Copilot **agent plugin**: a portable plan → build → review → s
 delivery system. Layout:
 
 - `plugin.json` + `hooks.json` — plugin manifest and plugin-mode hook wiring
-  (`${PLUGIN_ROOT}` paths).
+  (`${CLAUDE_PLUGIN_ROOT}` paths).
 - `.github/agents/` — the five delivery agents (Planner, Builder, Reviewer,
   Autopilot, Mechanic).
 - `.github/prompts/` — the slash commands.
@@ -17,7 +17,7 @@ delivery system. Layout:
   close-decision, ship-preflight, paths, ports), `agento-config.mjs`,
   `delivery-roadmap-resolver.mjs`,
   `wait-for-checks.sh`, `hooks/{delivery-guard,session-context,replay-guard}.sh`.
-- `templates/` — files `/agento-init` scaffolds into target repositories.
+- `templates/` — files `/agento agento-init` scaffolds into target repositories.
 - `tests/` — guard fixtures and node:test suites.
 - `docs/` — user and architecture documentation.
 - `examples/` — a filled-in project profile as reference.

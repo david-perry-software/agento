@@ -33,7 +33,7 @@ the lint gate, shell hygiene, git rules, and the cross-window handoff —
 1. `git fetch origin`. Confirm the current worktree is on the branch named in the
    roadmap header; never switch a shared or managed worktree to another delivery
    branch. If another worktree owns the branch, stop and direct the user to
-   `/start-session <type>/<slug> --resume`. If `origin/<branch>` is ahead, merge
+   `/agento start-session <type>/<slug> --resume`. If `origin/<branch>` is ahead, merge
    it (never rebase). If `origin/main` advanced, merge `origin/main` into the branch.
    A managed `plan-<session-id>` worktree already on the matching published branch
    may be promoted in place through the Planner handoff; its path does not need to be
@@ -82,7 +82,7 @@ blocker if any), commit, push, and report the exact resume point.
 ## Completion
 
 When every step is ticked and verifications pass — `(manual, post-ship)` steps are
-exempt and stay unticked until /ship — fetch and confirm `origin/main` is an ancestor
+exempt and stay unticked until /agento ship — fetch and confirm `origin/main` is an ancestor
 of `HEAD` (merge it and re-verify if not), then set `status: in-review`, commit, push,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains

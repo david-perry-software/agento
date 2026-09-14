@@ -8,7 +8,7 @@ Installed AI skills live in `.agents/skills/<name>/SKILL.md` in the target repos
 the skill and follow it; record consulted skills in plan.md/review.md.
 
 The domain → skill mapping is **project-specific**: each target repository keeps its
-own table in the `## Agento` section of its AGENTS.md (scaffolded by `/agento-init`),
+own table in the `## Agento` section of its AGENTS.md (scaffolded by `/agento agento-init`),
 listing the domains that occur in that codebase and the skill that covers each one.
 If a domain has no matching skill, say `none — no matching domain` in the plan's
 `Skills consulted:` line rather than guessing.

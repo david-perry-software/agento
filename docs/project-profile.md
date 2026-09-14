@@ -24,17 +24,17 @@ entirely for defaults.
 
 | Key | Default | Effect |
 |---|---|---|
-| `artifacts.features` / `artifacts.issues` | `features` / `issues` | Where plan/roadmap/review live. If changed, also copy `templates/project.instructions.md` (done by `/agento-init`). |
+| `artifacts.features` / `artifacts.issues` | `features` / `issues` | Where plan/roadmap/review live. If changed, also copy `templates/project.instructions.md` (done by `/agento agento-init`). |
 | `artifacts.initiatives` | `initiatives` | Where initiative `brief.md` + `breakdown.md` live; `agento.mjs initiative` walks this root. Same `project.instructions.md` note applies. |
 | `worktrees.dir` | `../<repo-name>-worktrees` | Managed worktree parent. `null` = derive from the repo directory name. |
 | `branches.default` | `main` | Protected branch: the guard denies direct commits/pushes to it. |
 | `branches.feature` / `branches.issue` | `feature/` / `issue/` | Branch prefixes; the roadmap nudge fires on these. Must match the `branch:` header in roadmaps. |
 | `branches.freehand` / `branches.postShip` | `changes/` / `post-ship/` | Freehand and post-ship-epilogue branch prefixes. |
-| `checks.releaseWorkflow` | `null` | A GitHub Actions workflow file name; `/ship` watches it after merge when set. |
+| `checks.releaseWorkflow` | `null` | A GitHub Actions workflow file name; `/agento ship` watches it after merge when set. |
 
 ## `AGENTS.md` `## Agento` section — narrative
 
-Read by the agents. `/agento-init` scaffolds it from `templates/AGENTS-section.md`:
+Read by the agents. `/agento agento-init` scaffolds it from `templates/AGENTS-section.md`:
 
 - **Commands** — install / test / typecheck / lint / full verification. Agents quote
   these in plans and run them in verify steps.

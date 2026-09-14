@@ -24,7 +24,7 @@ and [delivery-policy.instructions.md](../instructions/delivery-policy.instructio
 - **Artifacts are truth, subagent messages are hints.** After every subagent run, read
   roadmap.md `status:`/`next-step` (and review.md `Verdict:`) from the working tree —
   never advance the loop on the subagent's summary alone.
-- **You never run /ship, merge, close, or mark the PR ready.** Autopilot ends at
+- **You never run /agento ship, merge, close, or mark the PR ready.** Autopilot ends at
   `Verdict: approve`.
 - **Auth failures halt the whole run** per AGENTS.md: report the exact reauth command
   a subagent surfaced and stop.
@@ -38,7 +38,7 @@ and [delivery-policy.instructions.md](../instructions/delivery-policy.instructio
    session context line `Agento CLI:` — and stop on any `status` other than `ok`.
    `git fetch origin` and confirm this worktree is on the roadmap's
    `branch:`. If another worktree owns the branch, stop and report
-   `/start-session <type>/<slug> --resume`.
+   `/agento start-session <type>/<slug> --resume`.
 2. Read roadmap.md. If `status: in-review`, skip straight to the review phase. If a
    review.md with `Verdict: request-changes` exists and is newer than the last roadmap
    update, start with the fix phase.

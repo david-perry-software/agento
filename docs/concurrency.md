@@ -12,13 +12,13 @@ Agento is built for several delivery sessions running side by side on one machin
   - `feature-<slug>` / `issue-<slug>` — build sessions
   - `freehand-<slug>` — freehand sessions on `changes/<slug>`
 - A branch's registered worktree is its reservation: one active builder per slug.
-- `/start-session` refuses to touch a path that exists but is not the expected
-  registered worktree; `/close-session` removes worktrees and prunes merged
+- `/agento start-session` refuses to touch a path that exists but is not the expected
+  registered worktree; `/agento close-session` removes worktrees and prunes merged
   branches. The delivery guard asks before removing a worktree that still has
   processes or a VS Code window inside it.
 - Initiative members in the same wave whose `Requires:` are all complete are all
-  `ready` at once (`/next-feature <initiative-slug>` lists them); each may be planned
-  and built concurrently in its own `/start-session` → `/new-feature
+  `ready` at once (`/agento next-feature <initiative-slug>` lists them); each may be planned
+  and built concurrently in its own `/agento start-session` → `/agento new-feature
   initiative:<i>/<f>` session. The Architect publishes the breakdown from the
   primary worktree on a short-lived `changes/initiative-<slug>` branch, so it never
   competes with a delivery worktree.
@@ -35,7 +35,7 @@ Full policy: `.github/instructions/concurrent-delivery.instructions.md`. Summary
    staging backends, machine-wide local services, fixed ports. Read-only sharing is
    fine; destructive operations are exclusive.
 4. **Integrate the default branch before every push** (merge, never rebase), so
-   /ship inherits no conflicts.
+   /agento ship inherits no conflicts.
 
 ## Merge-conflict recipes
 
