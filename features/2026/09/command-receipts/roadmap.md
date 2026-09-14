@@ -2,13 +2,13 @@
 status: in-progress
 branch: feature/command-receipts
 last-updated: 2026-09-14
-next-step: "1.1 write policy §9 Execution receipts"
+next-step: "1.2 bump sections.size and add receipt canaries"
 initiative: "workflow-orchestration"
 ```
 
 ## Phase 1: Policy section
 
-- [ ] 1.1 Append `## 9. Execution receipts` to `.github/instructions/delivery-policy.instructions.md` per plan.md `## Approach` item 1 (receipt and result line formats, duplicate line, rejection alternatives from the session record's `allowed[]`/`elsewhere[]`, operation ID rule with branch-name / session-id / `HEAD` fallback, idempotency table with one row per command) and add "execution receipts" to the frontmatter `description` — verify: `grep -c '^## 9\. Execution receipts' .github/instructions/delivery-policy.instructions.md` prints 1; `node --test tests/customizations.test.mjs` exit 0
+- [x] 1.1 Append `## 9. Execution receipts` to `.github/instructions/delivery-policy.instructions.md` per plan.md `## Approach` item 1 (receipt and result line formats, duplicate line, rejection alternatives from the session record's `allowed[]`/`elsewhere[]`, operation ID rule with branch-name / session-id / `HEAD` fallback, idempotency table with one row per command) and add "execution receipts" to the frontmatter `description` — verify: `grep -c '^## 9\. Execution receipts' .github/instructions/delivery-policy.instructions.md` prints 1; `node --test tests/customizations.test.mjs` exit 0
 - [ ] 1.2 Bump `sections.size >= 8` to `>= 9` in `tests/customizations.test.mjs` "policy section references" and add the canaries `/Receipt: accepted/`, `/Receipt: rejected/`, `/Result: completed/`, `/Result: failed/`, `/duplicate of <op-id>/` to the single-source test — verify: `node --test tests/customizations.test.mjs` exit 0 (no prompt or agent restates the format yet)
 
 ## Phase 2: Enforcement test
