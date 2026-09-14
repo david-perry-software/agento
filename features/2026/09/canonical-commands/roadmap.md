@@ -1,5 +1,5 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/canonical-commands
 last-updated: 2026-09-14
 next-step: ""
