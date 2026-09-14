@@ -25,17 +25,26 @@
 Prompts never re-derive slug resolution or config lookups in prose; they call the
 **Agento CLI** — `node <agento-root>/scripts/agento.mjs` — whose path the SessionStart
 hook announces as `Agento CLI:`. Subcommands: `config`, `resolve <type> <slug>`,
-`find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>`,
-`ship-preflight <type> <slug>`, `paths <kind> <id>`, `ports <slug>`,
+`find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>` and
+`ship-preflight <type> <slug>` (both report `owner` — `{ path, role, dirPrefix, id }`
+or `null` — for the delivery branch, resolved exactly from `git worktree list
+--porcelain`; `close-decision` reasons are `managed-worktree-present`,
+`primary-owns-branch` (return the primary to the default branch first — nothing to
+remove), or `remote-roadmap-only`), `paths <kind> <id>`, `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
-`unmanaged` — its worktree, the active delivery and its `lifecycle`, and the `allowed`
+`unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
+`GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
+`warnings[]` says so), `worktrees[]` with every registered checkout classified the
+same way, the active delivery and its `lifecycle`, and the `allowed`
 and `elsewhere` commands; `--pr` adds the branch's PR via `gh`, degrading to
 `pr: null` plus a warning when `gh` is absent),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps). Every call prints one JSON document; exit 0 =
 usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
-`invalid` breakdown), 1 = usage error.
+`invalid` breakdown), 1 = usage error. Every window-sensitive command runs `session`
+first and compares `role` with its `Window check per §10: requires role …` line
+(policy §10); a mismatch is a `rejected` receipt listing the record's alternatives.
 
 ## Invocation
 

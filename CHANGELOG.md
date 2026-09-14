@@ -43,6 +43,27 @@
   already-removed worktree as already closed and still deletes a merged local branch;
   `/agento quick-fix` reuses an open `changes/<slug>` PR from the same base and applies
   the `-2`, `-3` suffix only when that PR is merged or closed.
+- **Window-aware commands (policy §10).** New `## 10. Window check` in
+  `delivery-policy.instructions.md`: every command and agent carries one
+  `Window check per §10: requires role …` line, runs `agento.mjs session` before
+  reading delivery state or writing, and rejects a mismatch with the §9 `rejected`
+  receipt whose alternatives come from the record (`role: unmanaged` always rejects
+  and names the primary checkout). The roles table stays in the CLI (`deriveAllowed`).
+  `session` gains `hosted` (`true` under `CODESPACES=true` or `GITHUB_ACTIONS=true`;
+  the role is then derived from the branch alone and `warnings[]` says why — the
+  Planner's prose exemption for hosted workspaces is gone) and `worktrees[]` (every
+  registered checkout as `{ path, branch, detached, role, dirPrefix, id, isPrimary,
+  isManaged }`). `close-decision` and `ship-preflight` gain `owner`
+  (`{ path, role, dirPrefix, id } | null`); `closeBuildSessionDecision` resolves
+  ownership exactly (entry on the branch inside the realpath of `worktrees.dir`)
+  instead of a basename regex plus a `currentBranch !== default` fallback, and a
+  primary checkout sitting on the delivery branch now yields the new reason
+  `primary-owns-branch` ("return the primary to `main` first") rather than
+  `managed-worktree-present`. `git worktree list --porcelain` remains only in
+  `start-session`, `start-freehand`, `close-session`, and `ship`;
+  `tests/customizations.test.mjs` enforces the §10 citation and that allowlist.
+  `/agento commit-current-changes` now requires role `primary` on a non-default
+  branch; `/agento finish-freehand` requires role `freehand`.
 
 ## 0.3.0 (2026-09-06)
 
