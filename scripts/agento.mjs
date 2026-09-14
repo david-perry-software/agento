@@ -376,7 +376,7 @@ switch (command) {
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(evaluateShipPreflight({ type, slug, rootDir: root, currentBranch, git: gitAdapter, config }));
+    withExit(evaluateShipPreflight({ type, slug, rootDir: root, currentBranch, git: gitAdapter, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
     break;
   }
 
