@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/canonical-commands
 last-updated: 2026-09-13
 next-step: "1.1 — add the command-invocation instruction file"
