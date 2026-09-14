@@ -370,6 +370,7 @@ Mechanic.
 | `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
 | `/agento delivery-status [filter]` | any | default | Read-only dashboard |
+| `/agento doctor [--for <command>]` | any | default | Read-only environment readiness check with fallbacks |
 | `/agento triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |
 | `/agento extend-copilot` · `/agento fix-copilot` | any | 🛠️ Mechanic | Add or repair prompts, agents, instructions, hooks, skills |
 

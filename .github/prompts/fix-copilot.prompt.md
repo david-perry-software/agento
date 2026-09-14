@@ -4,6 +4,10 @@ argument-hint: "Describe the misbehavior (what you did, what happened, what you 
 agent: "🛠️ Agento Mechanic"
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Fix the customization-system bug described in the argument.
 
 Open with the acceptance receipt and close with the terminal result line per

@@ -1,5 +1,5 @@
 ---
-description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, the cross-window handoff, and execution receipts with per-command idempotency"
+description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, the cross-window handoff, execution receipts with per-command idempotency, and capability preflight"
 applyTo: "**"
 ---
 
@@ -26,9 +26,11 @@ below means the configured `branches.default` (`agento.mjs config`).
 - Authentication failure: stop, name the exact reauth command (per AGENTS.md), wait.
   Never ask the user to run the command on your behalf.
 - Never print, request, or log secrets; screenshots must not show them.
-- Before invoking a CLI not yet proven in this session, check it with `command -v` (or
-  the project's documented presence check); report a missing prerequisite instead of
-  producing exit 127.
+- Capabilities are checked before work starts, not discovered mid-command: a command
+  whose `Needs:` line includes `gh`, `code`, or `network` runs `agento.mjs doctor
+  --for <command>` before its first write (§10). For a CLI `doctor` does not cover,
+  check it with `command -v` (or the project's documented presence check) before the
+  first invocation; report a missing prerequisite instead of producing exit 127.
 
 ## 2. Verification targets
 
@@ -168,6 +170,18 @@ derived from git + roadmap state (no journal) per the table at the end of this s
   the SessionStart hook's `Session:` line): every `allowed[]` entry verbatim, then
   each `elsewhere[]` entry as `<cmd> (<window> window)`. Commands never hand-maintain
   alternative lists.
+- `Receipt: rejected — <capability>: <reason>; fallback: <fallback>` — nothing is
+  written; a *hard* need from the command's `Needs:` line is unmet (§10). There is no
+  `allowed:` list because the command is right and the environment is not; `<reason>`
+  and `<fallback>` are the `detail` and `fallback` of the failing `doctor` check, or
+  the §10 standard fallback for a chat capability.
+
+**Preflight — an optional second line, directly after an `accepted` receipt:**
+
+- `Preflight: <capability> <warn|missing> — <fallback>` — one line per unmet *soft*
+  need (§10), quoting the `doctor` check's `fallback` or the §10 standard fallback
+  verbatim. The command then proceeds using that fallback. No line is printed when
+  every need is met.
 
 **Result — the last line of the response:**
 
@@ -212,5 +226,66 @@ roadmap.
 | `/agento agento-init` | Existing files are kept unless `--force`. |
 | `/agento install-skills` | Already-installed skills are excluded from the batch. |
 | `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
-| `/agento delivery-status`, `/agento next-feature` | Read-only; a duplicate is a fresh read. |
+| `/agento delivery-status`, `/agento next-feature`, `/agento doctor` | Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks). |
 | `/agento extend-copilot`, `/agento fix-copilot` | An existing capability with the same name is modified in place, never duplicated. |
+
+## 10. Capability preflight
+
+Commands state what they need before they start and name the fallback immediately;
+a missing capability is never discovered mid-command. `agento.mjs doctor [--for
+<command>]` is the canonical presence check for everything CLI-side.
+
+**Vocabulary** — the only tokens a `Needs:` line may use:
+
+- `terminal` — a shell the agent can run commands in (Agent mode; Plan and Ask chat
+  modes have none).
+- `ask-questions` — the structured ask-questions chat tool for clarification.
+- `browser` — the integrated browser tools for driving a URL and capturing state.
+- `gh` — the GitHub CLI, installed and authenticated (`doctor` check `gh`).
+- `code` — the VS Code CLI for opening a worktree window (`doctor` check `code`).
+- `network` — the `origin` remote reachable for fetch, push, PR, and package
+  installs (`doctor` check `git-remote`).
+- `python3` — the interpreter the hooks run under (`doctor` check `python3`).
+
+**Hard versus soft.** `terminal` is hard for every command that runs anything; `gh`
+and `network` are hard for every command that pushes, opens or merges a PR, or files
+an issue. `ask-questions`, `browser`, `code`, and `python3` are soft: the command
+proceeds with the fallback. A hard need unmet → the §9 preflight rejection receipt;
+a soft need unmet → the §9 `Preflight:` line, then proceed.
+
+**Standard fallbacks** (declared once here; `Fallback:` lines cite them, never
+restate them):
+
+- `terminal` unavailable → reject: "switch to Agent mode and re-send the command";
+  no partial help in Plan or Ask mode.
+- `ask-questions` unavailable → ask the same questions as a numbered list in chat,
+  end the turn, wait for the reply, and retain the answers verbatim in the artifact.
+- `browser` unavailable → run the step's `verify:` headless (curl, CLI, tests) where
+  faithful; otherwise report the step blocked per §2 and pause. Never silently skip.
+- `code` unavailable → keep the worktree and print `code --new-window
+  <worktree-path>` for the user to run.
+- `python3` unavailable → hooks do not run (no delivery guard, no SessionStart
+  context); proceed with care and apply this policy by hand.
+- `gh` missing or unauthenticated → reject; the user installs GitHub CLI or runs
+  `gh auth login` in their own terminal (§1), then re-sends the command.
+- `network` unreachable → `doctor` reports `warn`; fetch/push/PR steps are retried
+  before the turn ends and the command pauses if they still fail.
+
+**Declaration contract.** Every prompt (`.github/prompts/*.prompt.md`) and agent
+(`.github/agents/*.agent.md`) opens its body with exactly two lines:
+
+```
+Needs: <capability>[, <capability>…]
+Fallback: <one clause per soft need naming the §10 standard fallback, or "none — every need is hard">
+```
+
+followed by a one-sentence pointer to this section. Tokens come from the vocabulary
+above; the CLI's `doctor --for <command>` table lists the same needs for every
+command, and `tests/customizations.test.mjs` fails on any disagreement.
+
+**When `doctor` runs.** A command whose `Needs:` include `gh`, `code`, or `network`
+runs `node <agento-root>/scripts/agento.mjs doctor --for <command>` before its first
+write. Overall `fail` (exit 3) → the §9 preflight rejection receipt quoting the
+failing check's `detail` and `fallback`; `warn` (exit 0) → one `Preflight:` line per
+warning check, then proceed. Terminal-only commands and `/agento doctor` itself skip
+the call; `doctor` reports and never repairs (no installs, no logins — §1).

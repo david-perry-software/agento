@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -152,7 +154,7 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
 test("policy section references (§N) point at sections that exist", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
-  assert.ok(sections.size >= 9, "policy file lost sections");
+  assert.ok(sections.size >= 10, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, n] of text.matchAll(/§(\d+)/g)) {
@@ -169,6 +171,77 @@ test("every command and agent opens and closes with the §9 receipt", () => {
   assert.deepEqual(missing, [], `files that do not cite policy §9 (execution receipts):\n${missing.join("\n")}`);
 });
 
+// The §10 vocabulary, parsed from the policy's "- `<token>` — <meaning>" bullets.
+function policyCapabilities() {
+  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m);
+  assert.ok(section, "policy has no ## 10. Capability preflight section");
+  const vocabulary = section[1].match(/\*\*Vocabulary\*\*[\s\S]*?\n\n([\s\S]*?)\n\n/);
+  assert.ok(vocabulary, "§10 has no Vocabulary list");
+  const tokens = [...vocabulary[1].matchAll(/^- `([a-z0-9-]+)` — /gm)].map((m) => m[1]);
+  assert.ok(tokens.length >= 7, `§10 vocabulary too short: ${tokens.join(", ")}`);
+  return new Set(tokens);
+}
+
+// The first two non-blank body lines: `Needs: a, b` and `Fallback: …`.
+function declarations(file) {
+  const label = path.relative(repoRoot, file);
+  const lines = splitFrontmatter(file).body.split(/\r?\n/).filter((l) => l.trim());
+  const needs = lines[0]?.match(/^Needs: (.+)$/);
+  const fallback = lines[1]?.match(/^Fallback: (.+)$/);
+  assert.ok(needs, `${label}: first body line must be "Needs: <capability>[, …]", got ${JSON.stringify(lines[0])}`);
+  assert.ok(fallback, `${label}: second body line must be "Fallback: <…>", got ${JSON.stringify(lines[1])}`);
+  assert.ok(fallback[1].trim(), `${label}: Fallback: is empty`);
+  return { label, needs: needs[1].split(",").map((s) => s.trim()), fallback: fallback[1] };
+}
+
+test("every command and agent declares Needs: and Fallback: from the §10 vocabulary", () => {
+  const vocabulary = policyCapabilities();
+  for (const file of [...promptFiles, ...agentFiles]) {
+    const { label, needs } = declarations(file);
+    assert.ok(needs.length > 0, `${label}: Needs: lists nothing`);
+    for (const token of needs) {
+      assert.ok(vocabulary.has(token), `${label}: Needs: token ${JSON.stringify(token)} is not in the §10 vocabulary`);
+    }
+    assert.equal(new Set(needs).size, needs.length, `${label}: Needs: repeats a capability`);
+  }
+});
+
+test("exactly the commands that need gh, code, or network run doctor --for themselves", () => {
+  for (const file of promptFiles) {
+    const name = path.basename(file, ".prompt.md");
+    const { label, needs } = declarations(file);
+    const body = splitFrontmatter(file).body;
+    const mustRun = needs.some((n) => ["gh", "code", "network"].includes(n));
+    const cites = new RegExp(`doctor --for ${name}\\b`).test(body);
+    assert.equal(cites, mustRun, mustRun ? `${label}: needs gh/code/network but never runs doctor --for ${name}` : `${label}: runs doctor --for but declares none of gh, code, network`);
+    const others = [...body.matchAll(/doctor --for ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name && n !== "<command>");
+    assert.deepEqual(others, [], `${label}: runs doctor --for another command`);
+  }
+});
+
+test("the CLI needs table agrees with every prompt's Needs: line", () => {
+  const cli = path.join(repoRoot, "scripts", "agento.mjs");
+  for (const file of promptFiles) {
+    const name = path.basename(file, ".prompt.md");
+    const { label, needs } = declarations(file);
+    const result = spawnSync("node", [cli, "doctor", "--for", name], { cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: restrictedBin() } });
+    assert.notEqual(result.status, 1, `${label}: agento.mjs doctor --for ${name} is a usage error (command missing from the CLI table)`);
+    const json = JSON.parse(result.stdout);
+    assert.deepEqual(json.for, { command: name, needs }, `${label}: CLI table disagrees with the prompt's Needs: line`);
+  }
+});
+
+// A PATH with node and git only, so the cross-check never probes real gh/code/python3.
+let restrictedBinDir;
+function restrictedBin() {
+  if (restrictedBinDir) return restrictedBinDir;
+  restrictedBinDir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-customizations-bin-"));
+  fs.symlinkSync(process.execPath, path.join(restrictedBinDir, "node"));
+  fs.symlinkSync(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(restrictedBinDir, "git"));
+  return restrictedBinDir;
+}
+
 test("the policy file is the only place the shared rules are spelled out", () => {
   // Phrases that used to be duplicated across agents/prompts; each may now appear in
   // the policy file and nowhere else in the customization set.
@@ -183,6 +256,9 @@ test("the policy file is the only place the shared rules are spelled out", () =>
     /Result: completed/,
     /Result: failed/,
     /duplicate of <op-id>/,
+    /^Preflight: /m,
+    /; fallback: </,
+    /switch to Agent mode/,
   ];
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     if (file.endsWith("delivery-policy.instructions.md")) continue;

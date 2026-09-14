@@ -3,6 +3,10 @@ description: "Close a clean isolated worktree — a detached planning session (s
 argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id>"
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Close the isolated session named by the argument. Run this command from the
 primary worktree of this repository after closing the session's VS Code window. This
 invocation authorizes removing the managed worktree and, when already merged, deleting

@@ -3,7 +3,7 @@
 Delivery work in this repository is driven by the Agento plugin (slash commands
 /agento start-session, /agento new-initiative, /agento next-feature, /agento new-feature, /agento new-issue,
 /agento build-feature, /agento build-issue, /agento review-feature, /agento review-issue, /agento ap, /agento ship,
-/agento close-session, /agento start-freehand, /agento finish-freehand). Artifacts live in
+/agento close-session, /agento start-freehand, /agento finish-freehand, /agento doctor). Artifacts live in
 `features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
 `initiatives/YYYY/MM/<slug>/`; configuration is `.github/agento.json`.
 Commands are always written `/agento <name>`; a bare `/<name>` or a `.prompt`/`.md`
