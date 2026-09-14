@@ -152,7 +152,7 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
 test("policy section references (§N) point at sections that exist", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
-  assert.ok(sections.size >= 9, "policy file lost sections");
+  assert.ok(sections.size >= 10, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, n] of text.matchAll(/§(\d+)/g)) {

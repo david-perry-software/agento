@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/capability-preflight
 last-updated: 2026-09-14
-next-step: "2.1 policy §9 preflight receipt forms and §1 pointer"
+next-step: "3.1 customizations tests for Needs:/Fallback: declarations"
 initiative: "workflow-orchestration"
 ```
 
@@ -14,8 +14,8 @@ initiative: "workflow-orchestration"
 
 ## Phase 2: Policy contract
 
-- [ ] 2.1 Edit `.github/instructions/delivery-policy.instructions.md`: §9 gains the preflight rejection receipt form (`rejected — <capability>: <reason>; fallback: <fallback>`), the optional `Preflight:` line after an accepted receipt for unmet soft needs, and a `/agento doctor` idempotency row (read-only); §1's `command -v` sentence points at §10; frontmatter `description` gains "capability preflight" — verify: `grep -c 'Preflight:\|fallback:' .github/instructions/delivery-policy.instructions.md` ≥ 2 and `node --test tests/customizations.test.mjs` exits 0
-- [ ] 2.2 Append `## 10. Capability preflight` to the policy: vocabulary (`terminal`, `ask-questions`, `browser`, `gh`, `code`, `network`, `python3`) as a parseable list (one `- \`<token>\` — <meaning>` bullet each), hard vs soft classification, the standard fallbacks (ask-questions → numbered questions in chat and wait; `code` → print the open command; browser → verify headless or report blocked per §2; terminal unavailable → reject naming Agent mode), the `Needs:`/`Fallback:` line contract for prompts and agents, and the rule that a command whose `Needs:` include `gh`, `code`, or `network` runs `agento.mjs doctor --for <name>` before its first write, mapping `fail` → §9 preflight rejection and `warn` → `Preflight:` line — verify: `grep -c '^## 10\. Capability preflight' .github/instructions/delivery-policy.instructions.md` prints 1; bump `sections.size >= 10` in `tests/customizations.test.mjs` and the suite passes
+- [x] 2.1 Edit `.github/instructions/delivery-policy.instructions.md`: §9 gains the preflight rejection receipt form (`rejected — <capability>: <reason>; fallback: <fallback>`), the optional `Preflight:` line after an accepted receipt for unmet soft needs, and a `/agento doctor` idempotency row (read-only); §1's `command -v` sentence points at §10; frontmatter `description` gains "capability preflight" — verify: `grep -c 'Preflight:\|fallback:' .github/instructions/delivery-policy.instructions.md` ≥ 2 and `node --test tests/customizations.test.mjs` exits 0
+- [x] 2.2 Append `## 10. Capability preflight` to the policy: vocabulary (`terminal`, `ask-questions`, `browser`, `gh`, `code`, `network`, `python3`) as a parseable list (one `- \`<token>\` — <meaning>` bullet each), hard vs soft classification, the standard fallbacks (ask-questions → numbered questions in chat and wait; `code` → print the open command; browser → verify headless or report blocked per §2; terminal unavailable → reject naming Agent mode), the `Needs:`/`Fallback:` line contract for prompts and agents, and the rule that a command whose `Needs:` include `gh`, `code`, or `network` runs `agento.mjs doctor --for <name>` before its first write, mapping `fail` → §9 preflight rejection and `warn` → `Preflight:` line — verify: `grep -c '^## 10\. Capability preflight' .github/instructions/delivery-policy.instructions.md` prints 1; bump `sections.size >= 10` in `tests/customizations.test.mjs` and the suite passes
 
 ## Phase 3: Declarations in prompts and agents
 
