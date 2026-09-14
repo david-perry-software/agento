@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/command-receipts
 last-updated: 2026-09-14
-next-step: "5.2 CHANGELOG 0.4.0 (unreleased) entry"
+next-step: "5.3 Full lint gate against the plan.md baseline"
 initiative: "workflow-orchestration"
 ```
 
@@ -31,6 +31,6 @@ initiative: "workflow-orchestration"
 ## Phase 5: Docs, changelog, gate
 
 - [x] 5.1 Update `docs/architecture.md` policy summary (L39–44) to list execution receipts and idempotency; add a short "Receipts" paragraph to `docs/commands.md` pointing at policy §9; make the AGENTS.md "concrete suggested next step" rule cite §9 — verify: `grep -n -i 'receipt' docs/architecture.md docs/commands.md AGENTS.md` has ≥ 1 hit per file; `node --test tests/customizations.test.mjs` exit 0 (bare-command scan still clean)
-- [ ] 5.2 Add a `## 0.4.0 (unreleased)` CHANGELOG.md entry for execution receipts and per-command idempotency (deterministic operation IDs, session-record alternatives, the start-session/start-freehand duplicate-resumes change, the close-session already-closed outcome, the quick-fix suffix rule) — verify: `grep -n -i 'receipt' CHANGELOG.md` has a hit under `## 0.4.0 (unreleased)`
+- [x] 5.2 Add a `## 0.4.0 (unreleased)` CHANGELOG.md entry for execution receipts and per-command idempotency (deterministic operation IDs, session-record alternatives, the start-session/start-freehand duplicate-resumes change, the close-session already-closed outcome, the quick-fix suffix rule) — verify: `grep -n -i 'receipt' CHANGELOG.md` has a hit under `## 0.4.0 (unreleased)`
 - [ ] 5.3 Full lint gate against the plan.md baseline: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` exit 0 with ≥ 99 passing; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; `git diff --stat origin/main...HEAD` lists only the files named in plan.md's last acceptance item — verify: all three exit 0 recorded here with the test count, and the diff stat contains no unexpected paths
 - [ ] 5.4 Merge `origin/main` into `feature/command-receipts`, push, set `status: in-review` — verify: `git status -sb` shows no `ahead`/`behind`; `gh pr view --json isDraft,mergeStateStatus` shows the draft PR without `CONFLICTING`
