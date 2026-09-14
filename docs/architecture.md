@@ -2,23 +2,23 @@
 
 ```mermaid
 flowchart TD
-    U[User] -->|"/new-initiative"| A[🏛️ Agento Architect]
+    U[User] -->|"/agento new-initiative"| A[🏛️ Agento Architect]
     A -->|"brief.md + breakdown.md, merged PR"| INIT[(initiatives/)]
-    U -->|"/next-feature"| INIT
-    INIT -->|"/new-feature initiative:<i>/<f>"| P
-    U -->|"/start-session"| SS[worktree + new window]
-    U -->|"/new-feature · /new-issue"| P[📋 Agento Planner]
+    U -->|"/agento next-feature"| INIT
+    INIT -->|"/agento new-feature initiative:<i>/<f>"| P
+    U -->|"/agento start-session"| SS[worktree + new window]
+    U -->|"/agento new-feature · /agento new-issue"| P[📋 Agento Planner]
     P -->|plan.md + roadmap.md, draft PR| B
-    U -->|"/build-feature · /build-issue"| B[🔨 Agento Builder]
+    U -->|"/agento build-feature · /agento build-issue"| B[🔨 Agento Builder]
     B -->|"steps + ticks + commits + pushes"| B
     B -->|handoff| R[🔍 Agento Reviewer]
-    R -->|review.md: approve| SHIP[/ship/]
+    R -->|review.md: approve| SHIP[/agento ship/]
     R -->|request-changes| B
-    U -->|"/ap"| AP[🤖 Agento Autopilot]
+    U -->|"/agento ap"| AP[🤖 Agento Autopilot]
     AP --> B
     AP --> R
     SHIP -->|merge PR, sync main, epilogue| DONE([shipped])
-    U -->|"/close-session"| CLOSE[remove worktree]
+    U -->|"/agento close-session"| CLOSE[remove worktree]
     DONE --> CLOSE
 
     subgraph hooks [Hooks — every session]

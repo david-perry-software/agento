@@ -1,9 +1,9 @@
 ## Agento
 
 Delivery work in this repository is driven by the Agento plugin (slash commands
-/start-session, /new-initiative, /next-feature, /new-feature, /new-issue,
-/build-feature, /build-issue, /review-feature, /review-issue, /ap, /ship,
-/close-session, /start-freehand, /finish-freehand). Artifacts live in
+/agento start-session, /agento new-initiative, /agento next-feature, /agento new-feature, /agento new-issue,
+/agento build-feature, /agento build-issue, /agento review-feature, /agento review-issue, /agento ap, /agento ship,
+/agento close-session, /agento start-freehand, /agento finish-freehand). Artifacts live in
 `features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
 `initiatives/YYYY/MM/<slug>/`; configuration is `.github/agento.json`.
 
@@ -13,7 +13,7 @@ Delivery work in this repository is driven by the Agento plugin (slash commands
 - Test: `<test command>`
 - Typecheck: `<typecheck command, or "none">`
 - Lint: `<lint command, or "none">`
-- Full verification: `<what /ship should expect to be green>`
+- Full verification: `<what /agento ship should expect to be green>`
 
 ### Verification strategy
 

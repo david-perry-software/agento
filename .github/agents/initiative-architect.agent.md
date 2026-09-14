@@ -38,7 +38,7 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
    worktree list --porcelain`; the current path must be the primary checkout, not a
    managed `plan-<session-id>` or `changes/*` worktree. `git fetch origin`, then
    `git status --short --branch` must show nothing and zero ahead/behind. Otherwise
-   stop and say what to do (`/close-session`, `/commit-current-changes`, or switching
+   stop and say what to do (`/agento close-session`, `/agento commit-current-changes`, or switching
    to the primary window). Authentication failures halt per AGENTS.md.
 2. **Read the brief.** The argument is exactly one of: inline text, or a
    repository-relative path to an existing file whose content is the brief. If the
@@ -93,7 +93,7 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
    fetch, fast-forward, and confirm a clean tree with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up:
-   `/next-feature <slug>` (from the primary window) to see which member to plan and
+   `/agento next-feature <slug>` (from the primary window) to see which member to plan and
    the commands that plan it.
 
 ## Non-negotiable rules
@@ -103,6 +103,6 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
 - Never commit or push to `main`; never force-push, rebase, amend, or bypass hooks or
   the ruleset. Bounded foreground polls only.
 - Never plan a member feature yourself and never create planning worktrees — that is
-  `/next-feature` followed by `/start-session` and `/new-feature
+  `/agento next-feature` followed by `/agento start-session` and `/agento new-feature
   initiative:<slug>/<feature-slug>`.
 - Never print, request, or log secrets.

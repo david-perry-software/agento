@@ -21,25 +21,25 @@ Key rules:
 - `- [ ]` ticks only after the step's verify check passes. On resume, ticked boxes
   are audited against the codebase — code is truth.
 - `(manual)` steps need the user; `(manual, post-ship)` steps stay unticked until
-  the /ship epilogue lands them via a `post-ship/<slug>` branch.
+  the /agento ship epilogue lands them via a `post-ship/<slug>` branch.
 - Issues must add an exposing regression test that **fails before** the fix and
   passes after; the test references the issue number.
 - Never delete steps: strike obsolete ones, append discovered ones with
   `(added <date>)`.
 - A feature joins an initiative only through the explicit Planner argument
-  `/new-feature initiative:<initiative-slug>/<feature-slug>`; the Planner validates
+  `/agento new-feature initiative:<initiative-slug>/<feature-slug>`; the Planner validates
   the member with `agento.mjs initiative <initiative-slug>` and hard-stops unless
   every `Requires:` member is `status: complete` (no override). A plain
-  `/new-feature` never attaches by slug coincidence. `/next-feature
+  `/agento new-feature` never attaches by slug coincidence. `/agento next-feature
   <initiative-slug>` prints the commands for the recommended next member.
 
 The exact contract — section order, YAML fields, checkbox syntax — is enforced by
 `.github/instructions/delivery-artifacts.instructions.md`, which loads for every
 file under the artifact roots. If you customize the roots, copy
 `templates/project.instructions.md` into your repo (done automatically by
-`/agento-init`) so the contract keeps applying.
+`/agento agento-init`) so the contract keeps applying.
 
 ## Freehand work
 
-`/start-freehand <slug>` creates a `changes/<slug>` worktree with **no artifacts** —
-for small ad-hoc work. `/finish-freehand` commits, PRs, and merges it.
+`/agento start-freehand <slug>` creates a `changes/<slug>` worktree with **no artifacts** —
+for small ad-hoc work. `/agento finish-freehand` commits, PRs, and merges it.

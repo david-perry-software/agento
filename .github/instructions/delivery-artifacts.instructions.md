@@ -75,7 +75,7 @@ Then `## Phase N: <name>` sections containing steps:
   `evidence/step-N-M-<short-name>.png` inside the slug directory and the completion
   date on the line (policy §3).
 - `- [ ] N.M (manual, post-ship) <exact action> — verify: <check>` marks the
-  post-ship exception (policy §4). It stays unticked through review and ship; /ship
+  post-ship exception (policy §4). It stays unticked through review and ship; /agento ship
   completes it via a `<post-ship-prefix><slug>` PR. plan.md `## Risks` must carry the
   justification and the user's acceptance.
 - For issues, an early step (before any fix) must add the exposing regression test and
@@ -98,7 +98,7 @@ Required sections, in order:
 4. `## Roadmap audit` — falsely ticked boxes, missing steps added, repairs made
 5. `## Findings` — code quality/security issues, ordered by severity, with file references
 6. `## Follow-ups` — work items that should become new issues. When a follow-up is
-   triaged into the backlog (via /triage-followups), its line gains a
+   triaged into the backlog (via /agento triage-followups), its line gains a
    ` → filed as #<n>` suffix; annotated lines are never re-filed.
 
 # brief.md

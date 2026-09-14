@@ -8,6 +8,6 @@
   "license": "MIT",
   "keywords": ["copilot", "delivery", "workflow", "agents", "hooks"],
   "agents": ".github/agents",
-  "commands": ".github/prompts",
+  "commands": "commands",
   "hooks": "hooks.json"
 }

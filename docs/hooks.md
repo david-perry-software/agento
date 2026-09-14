@@ -1,7 +1,7 @@
 # Hooks
 
 Agento ships two hooks. In plugin mode they are wired by `hooks.json` with
-`${PLUGIN_ROOT}` paths; the same scripts are wired workspace-mode in
+`${CLAUDE_PLUGIN_ROOT}` paths; the same scripts are wired workspace-mode in
 `.github/hooks/` for developing Agento itself.
 
 ## SessionStart — `scripts/hooks/session-context.sh`
@@ -19,7 +19,7 @@ and file paths of tool calls and catches the mistakes agents actually make. **Wh
 is not:** an enforcement boundary — a determined command can be spelled so that no
 regex recognises it. The enforcement layer is a GitHub ruleset on the default branch
 (require a pull request, require the CI check, block force pushes, block deletions);
-`/agento-init` checks for one and offers to create it. Keep both.
+`/agento agento-init` checks for one and offers to create it. Keep both.
 
 Returns `allow` (silent), `ask` (user confirmation with a reason), or `deny` (with a
 reason). Commands are evaluated one shell segment at a time (`&&`, `;`, `|`, `&`),

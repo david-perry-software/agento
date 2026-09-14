@@ -73,7 +73,7 @@ Five ideas carry the whole system:
 5. **Guard + ruleset.** A `PreToolUse` hook inspects every shell command and file
    edit the agent attempts and answers `allow`, `ask`, or `deny`. It is a slip guard
    for the model; the enforcement boundary is a GitHub ruleset on your default branch,
-   which `/agento-init` checks for and offers to create.
+   which `/agento agento-init` checks for and offers to create.
 
 Read more: [Architecture](docs/architecture.md).
 
@@ -124,7 +124,7 @@ Full details and the developer-mode caveat: [docs/install.md](docs/install.md).
 Open your project in VS Code and run, in a new chat:
 
 ```text
-/agento-init
+/agento agento-init
 ```
 
 It scaffolds, on a `changes/agento-init` branch with a PR:
@@ -143,7 +143,7 @@ delivery guard alone is not protection.
 Then, optionally:
 
 ```text
-/install-skills
+/agento install-skills
 ```
 
 detects your stack (Next.js, Postgres, Playwright, …), proposes matching agent
@@ -159,11 +159,11 @@ run them in `verify:` steps. See [Project profile](docs/project-profile.md) and 
 
 | The change is… | Use |
 |---|---|
-| A typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/quick-fix <what>` — one window, verified, PR, merged |
-| Exploratory or multi-commit scratch work that still needs no plan | `/start-freehand` → work → `/finish-freehand` |
+| A typo, doc fix, one-file obvious bug, config tweak, dependency bump | `/agento quick-fix <what>` — one window, verified, PR, merged |
+| Exploratory or multi-commit scratch work that still needs no plan | `/agento start-freehand` → work → `/agento finish-freehand` |
 | Anything with a design decision, several files, a user-facing feature, a schema/API change, or manual verification | The full flow below |
 
-`/quick-fix` refuses work that needs a plan and names the right command instead.
+`/agento quick-fix` refuses work that needs a plan and names the right command instead.
 
 ## The full delivery flow
 
@@ -173,7 +173,7 @@ Every step says which window you are in. "Primary" is your normal checkout on `m
 ### 1. Start a planning session — primary window
 
 ```text
-/start-session
+/agento start-session
 ```
 
 Creates a detached worktree at `../<repo>-worktrees/plan-<timestamp>` from
@@ -182,13 +182,13 @@ Creates a detached worktree at `../<repo>-worktrees/plan-<timestamp>` from
 ### 2. Plan — secondary window
 
 ```text
-/new-feature add CSV export to the reports page
+/agento new-feature add CSV export to the reports page
 ```
 
 or, for a defect:
 
 ```text
-/new-issue export button 500s when the report is empty
+/agento new-issue export button 500s when the report is empty
 ```
 
 The 📋 Planner:
@@ -213,7 +213,7 @@ The Planner ends by offering the **Build in this worktree** handoff.
 Accept the handoff, or run:
 
 ```text
-/build-feature <slug>        # or /build-issue <slug>
+/agento build-feature <slug>        # or /agento build-issue <slug>
 ```
 
 The 🔨 Builder runs its resume protocol (fetch, confirm branch ownership, integrate
@@ -231,7 +231,7 @@ together → merge `origin/main` if needed → push.
 **Unattended alternative:**
 
 ```text
-/ap <slug>
+/agento ap <slug>
 ```
 
 🤖 Autopilot drives Builder → Reviewer → fix → Reviewer for up to three review
@@ -241,7 +241,7 @@ cap. It never ships.
 ### 4. Review — secondary window
 
 ```text
-/review-feature <slug>       # or /review-issue <slug>
+/agento review-feature <slug>       # or /agento review-issue <slug>
 ```
 
 The 🔍 Reviewer reads the real diff against `origin/main`, runs the project's tests
@@ -257,7 +257,7 @@ steps and the loop repeats.
 After `Verdict: approve`, close the secondary window and switch to the primary:
 
 ```text
-/close-session feature/<slug>
+/agento close-session feature/<slug>
 ```
 
 Confirms everything is pushed, removes the worktree, and keeps the branch (it still
@@ -266,7 +266,7 @@ has an open PR).
 ### 6. Ship — primary window
 
 ```text
-/ship <slug>
+/agento ship <slug>
 ```
 
 Audits the roadmap, review, and PR; presents every gap (unticked steps, stale or
@@ -282,7 +282,7 @@ When a brief is too large for a single feature, decompose it first — primary w
 on `main`, clean tree:
 
 ```text
-/new-initiative <brief text | path/to/brief.md>
+/agento new-initiative <brief text | path/to/brief.md>
 ```
 
 The 🏛️ Architect asks 3–5 clarifying questions, researches, splits the brief into
@@ -296,7 +296,7 @@ is a plan for plans.
 Then, any time, in any window:
 
 ```text
-/next-feature <initiative-slug>
+/agento next-feature <initiative-slug>
 ```
 
 A read-only report: members grouped as ready / blocked (with what blocks them) /
@@ -305,8 +305,8 @@ next member. Each member then goes through the normal flow above, with one twist
 step 2 — the Planner is told which member it is planning:
 
 ```text
-/start-session                                    # primary
-/new-feature initiative:<initiative-slug>/<feature-slug>   # secondary
+/agento start-session                                    # primary
+/agento new-feature initiative:<initiative-slug>/<feature-slug>   # secondary
 ```
 
 The Planner validates the member through the CLI and hard-stops unless every
@@ -315,13 +315,13 @@ The Planner validates the member through the CLI and hard-stops unless every
 `initiative: "<initiative-slug>"` into the roadmap header. Build, review, close, and
 ship exactly as for any feature. Members in the same wave that are all `ready` can be
 planned and built concurrently, each in its own session. Progress is never ticked in
-the breakdown; `/next-feature` and `/delivery-status` derive it from the members'
+the breakdown; `/agento next-feature` and `/agento delivery-status` derive it from the members'
 roadmaps.
 
 ### Any time
 
 ```text
-/delivery-status
+/agento delivery-status
 ```
 
 A read-only dashboard: every roadmap's status, branch, PR state, tick progress, and
@@ -329,7 +329,7 @@ recommended next command, plus anomalies (duplicate slugs, stale work, `in-revie
 without a review).
 
 ```text
-/triage-followups
+/agento triage-followups
 ```
 
 Harvests `## Follow-ups` from shipped reviews and roadmaps, files them as GitHub
@@ -337,16 +337,16 @@ issues, and annotates the source lines so re-runs skip them.
 
 ## Lighter tiers
 
-**`/quick-fix <description>`** — primary window, on `main`, clean tree. Branches to
+**`/agento quick-fix <description>`** — primary window, on `main`, clean tree. Branches to
 `changes/<slug>`, implements, runs the project's focused verification, opens a PR,
 waits for checks, merges, syncs `main`. Refuses anything that needs a plan.
 
-**`/start-freehand [slug]`** — primary window. Creates a `changes/<slug>` worktree
+**`/agento start-freehand [slug]`** — primary window. Creates a `changes/<slug>` worktree
 and opens it. Work freely in the new window with the default agent. Then
-**`/finish-freehand`** in that window commits, PRs, waits for checks, and merges;
-**`/close-session changes/<slug>`** from the primary window removes the worktree.
+**`/agento finish-freehand`** in that window commits, PRs, waits for checks, and merges;
+**`/agento close-session changes/<slug>`** from the primary window removes the worktree.
 
-**`/commit-current-changes`** — commit whatever is in the current tree on a
+**`/agento commit-current-changes`** — commit whatever is in the current tree on a
 `changes/*` branch, PR, wait, merge. Used by Agento's own development and by the
 Mechanic.
 
@@ -354,24 +354,24 @@ Mechanic.
 
 | Command | Window | Agent | Purpose |
 |---|---|---|---|
-| `/agento-init [--force]` | primary | default | Scaffold config, artifact roots, AGENTS.md section, CI poller; check for a ruleset |
-| `/install-skills` | primary | default | Detect stack, propose skills, install approved ones, update the skills table |
-| `/start-session [type/slug \| id] [--resume] [--no-open]` | primary | default | Create/resume a planning or build worktree and open a window |
-| `/new-feature <description>` | secondary | 📋 Planner | Clarify, research, plan, branch, draft PR |
-| `/new-issue <description \| #n \| url>` | secondary | 📋 Planner | Reproduce, file/link GitHub issue, plan around an exposing test |
-| `/new-initiative <brief \| path>` | primary | 🏛️ Architect | Decompose a large brief into member features; publish `brief.md` + `breakdown.md` via a merged PR |
-| `/next-feature <initiative-slug>` | any | default | Read-only: ready/blocked/in-flight/complete members, the recommended next feature, and the commands to plan it |
-| `/build-feature <slug>` · `/build-issue <slug>` | secondary | 🔨 Builder | Execute roadmap steps with verification; commit + push each |
-| `/review-feature <slug>` · `/review-issue <slug>` | secondary | 🔍 Reviewer | Score acceptance, audit roadmap, write verdict |
-| `/ap <slug>` | secondary | 🤖 Autopilot | Unattended build → review → fix loop; never ships |
-| `/close-session <type/slug \| changes/slug \| id>` | primary | default | Remove a clean, pushed worktree |
-| `/ship <slug>` | primary | default | Audit, warn, mark ready, wait, merge, sync, release, epilogue |
-| `/quick-fix <description>` | primary | default | Plan-less small change: branch, verify, PR, merge |
-| `/start-freehand [slug]` · `/finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
-| `/commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
-| `/delivery-status [filter]` | any | default | Read-only dashboard |
-| `/triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |
-| `/extend-copilot` · `/fix-copilot` | any | 🛠️ Mechanic | Add or repair prompts, agents, instructions, hooks, skills |
+| `/agento agento-init [--force]` | primary | default | Scaffold config, artifact roots, AGENTS.md section, CI poller; check for a ruleset |
+| `/agento install-skills` | primary | default | Detect stack, propose skills, install approved ones, update the skills table |
+| `/agento start-session [type/slug \| id] [--resume] [--no-open]` | primary | default | Create/resume a planning or build worktree and open a window |
+| `/agento new-feature <description>` | secondary | 📋 Planner | Clarify, research, plan, branch, draft PR |
+| `/agento new-issue <description \| #n \| url>` | secondary | 📋 Planner | Reproduce, file/link GitHub issue, plan around an exposing test |
+| `/agento new-initiative <brief \| path>` | primary | 🏛️ Architect | Decompose a large brief into member features; publish `brief.md` + `breakdown.md` via a merged PR |
+| `/agento next-feature <initiative-slug>` | any | default | Read-only: ready/blocked/in-flight/complete members, the recommended next feature, and the commands to plan it |
+| `/agento build-feature <slug>` · `/agento build-issue <slug>` | secondary | 🔨 Builder | Execute roadmap steps with verification; commit + push each |
+| `/agento review-feature <slug>` · `/agento review-issue <slug>` | secondary | 🔍 Reviewer | Score acceptance, audit roadmap, write verdict |
+| `/agento ap <slug>` | secondary | 🤖 Autopilot | Unattended build → review → fix loop; never ships |
+| `/agento close-session <type/slug \| changes/slug \| id>` | primary | default | Remove a clean, pushed worktree |
+| `/agento ship <slug>` | primary | default | Audit, warn, mark ready, wait, merge, sync, release, epilogue |
+| `/agento quick-fix <description>` | primary | default | Plan-less small change: branch, verify, PR, merge |
+| `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
+| `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
+| `/agento delivery-status [filter]` | any | default | Read-only dashboard |
+| `/agento triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |
+| `/agento extend-copilot` · `/agento fix-copilot` | any | 🛠️ Mechanic | Add or repair prompts, agents, instructions, hooks, skills |
 
 Full descriptions: [docs/commands.md](docs/commands.md).
 
@@ -444,7 +444,7 @@ rule table and testing notes: [docs/hooks.md](docs/hooks.md).
 ```
 
 `worktrees.dir: null` means a sibling `<repo-name>-worktrees/`. Set
-`checks.releaseWorkflow` to a workflow file name and `/ship` will dispatch and wait
+`checks.releaseWorkflow` to a workflow file name and `/agento ship` will dispatch and wait
 on it after merging. Hooks, the CLI, and the prompts all read this file, so a project
 on `trunk` with `planning/features` works end to end.
 
@@ -456,7 +456,7 @@ Details: [docs/project-profile.md](docs/project-profile.md).
 
 ## Working on several things at once
 
-Run `/start-session` as many times as you like. Each session gets its own worktree
+Run `/agento start-session` as many times as you like. Each session gets its own worktree
 (`plan-<id>`, `feature-<slug>`, `issue-<slug>`, `freehand-<slug>`) under the
 worktrees directory, its own window, and stable per-slug ports
 (`node scripts/agento.mjs ports <slug>`) so two local servers never collide. A
@@ -474,11 +474,11 @@ After install, in a fresh chat in your project:
 
 - The context should include `Current git branch: …` and
   `Agento CLI: node …/scripts/agento.mjs` — the SessionStart hook is firing.
-- `/delivery-status` responds with an empty dashboard.
+- `/agento delivery-status` responds with an empty dashboard.
 - Ask the agent to run `git push origin main`; the guard denies it.
 - Output panel → **GitHub Copilot Chat Hooks** lists both hooks.
 
-If commands don't appear or route to the wrong agent, run `/fix-copilot` and
+If commands don't appear or route to the wrong agent, run `/agento fix-copilot` and
 describe the symptom — the Mechanic knows the usual causes (frontmatter, name
 mismatches, missing tools). If you are developing Agento inside its own clone, set
 `"chat.pluginLocations": { "<path>": false }` for that workspace; the repo's own

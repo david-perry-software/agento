@@ -82,7 +82,7 @@ not enough on its own.
 Such steps stay unticked through build, review, and ship — they are not gaps.
 Reviewers score acceptance items satisfiable only by that step as `deferred to
 post-ship`, not fail; an unticked `(manual, post-ship)` step *without* the documented
-justification is missing preview evidence and forces `request-changes`. /ship
+justification is missing preview evidence and forces `request-changes`. /agento ship
 completes valid exceptions after the merge in its epilogue, landing evidence + tick via
 a `<post-ship-prefix><slug>` PR. Evidence rules are identical to §3.
 
@@ -132,7 +132,7 @@ historical artifacts solely to adopt it.
   concurrent-delivery.instructions.md.
 - Commit each roadmap step together with its roadmap.md update, as a Conventional
   Commit. Small, frequent, integrated, pushed commits are the pause/resume mechanism.
-- Only the user's /ship marks a PR ready or merges it; Builder, Reviewer, and Autopilot
+- Only the user's /agento ship marks a PR ready or merges it; Builder, Reviewer, and Autopilot
   never do.
 - Keep unrelated changes out; record unrelated problems as Follow-ups in roadmap.md
   instead of fixing them.
@@ -143,9 +143,9 @@ Build and review happen in the secondary (worktree) window; close and ship happe
 the primary window. Every Builder completion, Reviewer verdict, and Autopilot stop ends
 with the exact commands:
 
-1. In this window: `/review-feature <slug>` or `/review-issue <slug>` after a build
+1. In this window: `/agento review-feature <slug>` or `/agento review-issue <slug>` after a build
    completes; the Builder fix handoff after `Verdict: request-changes`.
 2. After `Verdict: approve`, switch to the primary workspace window and run
-   `/close-session <type>/<slug>`, then `/ship <slug>`.
+   `/agento close-session <type>/<slug>`, then `/agento ship <slug>`.
 
 Never substitute raw git or worktree commands for these workflow commands.

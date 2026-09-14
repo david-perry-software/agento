@@ -1,5 +1,5 @@
 ---
-description: "Use when verifying a delivery branch or when two or more delivery sessions may run at once: local-first verification on per-slug resources, when a deployed preview is genuinely required, sharing backing resources safely, and integrating the default branch continuously so /ship never hits merge conflicts"
+description: "Use when verifying a delivery branch or when two or more delivery sessions may run at once: local-first verification on per-slug resources, when a deployed preview is genuinely required, sharing backing resources safely, and integrating the default branch continuously so /agento ship never hits merge conflicts"
 applyTo: "features/**,issues/**"
 ---
 
@@ -61,7 +61,7 @@ its own — never point them at an absolute shared path.
 ## Integrate the default branch continuously, not at ship time
 
 When several slugs ship back to back, the last ones to close carry every earlier merge
-as an unintegrated diff, and /ship — running in the primary window with no build
+as an unintegrated diff, and /agento ship — running in the primary window with no build
 context — inherits the conflicts. Keep the diff small instead (substitute the
 configured `branches.default` for `main` throughout):
 
@@ -69,7 +69,7 @@ configured `branches.default` for `main` throughout):
   not an ancestor of `HEAD` (`git merge-base --is-ancestor origin/main HEAD` fails),
   `git merge origin/main` into the branch first (never rebase), resolve conflicts with
   the step's context fresh, rerun the step's `verify:`, then push.
-- **Before setting `status: in-review`** and again **before /ship marks the PR ready**,
+- **Before setting `status: in-review`** and again **before /agento ship marks the PR ready**,
   the branch must contain `origin/main`. Check `gh pr view <n> --json
   mergeStateStatus`: `BEHIND` means merge main; `DIRTY` means conflicts to resolve
   on the branch; `BLOCKED` means required checks still pending.

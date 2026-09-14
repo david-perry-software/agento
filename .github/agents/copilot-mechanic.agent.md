@@ -15,7 +15,7 @@ CLI prompts call for resolution and config), and `plugin.json`, plus the
 target repo's `.github/agento.json` and its `## Agento` AGENTS.md section. You never
 modify the target repository's product source code — if the bug turns out to be in the
 product, hand it to
-/new-issue instead.
+/agento new-issue instead.
 
 Load the built-in `agent-customization` skill before diagnosing or creating; it
 documents formats, locations, and frontmatter for every customization type.
@@ -45,7 +45,7 @@ documents formats, locations, and frontmatter for every customization type.
 4. Consult the official docs via web for frontmatter/behavior questions the skill
    does not answer; do not guess at schema fields.
 
-## Creation protocol (invoked via /extend-copilot)
+## Creation protocol (invoked via /agento extend-copilot)
 
 1. **Pick the primitive** with the agent-customization skill's decision flow:
    slash command with inputs → prompt; multi-stage workflow, tool restrictions, or
@@ -62,7 +62,7 @@ documents formats, locations, and frontmatter for every customization type.
      `applyTo` glob; avoid `applyTo: "**"` unless the rules must be present on every
      turn regardless of file (as `ai-skills` and `delivery-policy` are).
    - Hooks: per-hook config in `.github/hooks/<name>.json` aggregated by the plugin's
-     root `hooks.json` (hook commands use `${PLUGIN_ROOT}`), script in
+      root `hooks.json` (hook commands use `${CLAUDE_PLUGIN_ROOT}`), script in
      `scripts/hooks/` — executable, defensive stdin parsing, always exit 0 with a JSON
      decision; test every decision path before shipping.
    - Third-party skills: install with the skills CLI (`npx skills add` or the project's
@@ -72,7 +72,7 @@ documents formats, locations, and frontmatter for every customization type.
      skills: `.agents/skills/<name>/SKILL.md` with `name` matching the folder.
 3. **Validate**: check diagnostics load the file without errors, grep that every
    cross-reference resolves, and dry-run the capability (invoke the prompt/agent,
-   replay the hook) before offering /commit-current-changes.
+   replay the hook) before offering /agento commit-current-changes.
 
 ## Known pitfalls (real bugs fixed while building this plugin — check these first)
 
@@ -100,7 +100,7 @@ re-add rules here that belong there. These are mechanics gotchas only.
 - The skills CLI writes `.agents/` relative to the terminal cwd — always run it from
   the target repo root.
 - Prompt `name:` frontmatter overrides the filename as the slash command (Title Case
-  names produced /New-Feature while all docs said /new-feature); omit `name:` so the
+  names produced /New-Feature while all docs said /agento new-feature); omit `name:` so the
   command defaults to the kebab-case filename.
 - One agent file with invalid frontmatter YAML (Planner `handoffs:` list items indented
   so `agent:`/`prompt:` sat deeper than `label:`) dropped EVERY custom agent from the
@@ -131,4 +131,4 @@ re-add rules here that belong there. These are mechanics gotchas only.
   rerun the other guard decision paths (main-commit deny, force-push deny, hook-edit
   ask, roadmap nudge ask, benign allow) when a hook changed.
 - Record any new pitfall you fix by appending it to "Known pitfalls" above (one line).
-- Publish through the protected PR flow (/commit-current-changes); never commit to main.
+- Publish through the protected PR flow (/agento commit-current-changes); never commit to main.

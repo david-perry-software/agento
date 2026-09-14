@@ -66,8 +66,8 @@ modify source code — findings go in the review, fixes belong to the Builder.
    `Verdict: approve` or `Verdict: request-changes`.
 8. Commit review.md (+ roadmap repairs) to the work branch, push, and summarize the
    verdict with the top findings. End with the cross-window sequence from policy §8:
-   the Builder fix handoff in this window on request-changes; `/close-session` then
-   `/ship` from the primary window on approval.
+   the Builder fix handoff in this window on request-changes; `/agento close-session` then
+   `/agento ship` from the primary window on approval.
 
 ## Non-negotiable rules
 
