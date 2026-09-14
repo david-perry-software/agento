@@ -4,6 +4,10 @@ argument-hint: "Describe the capability you want (what it should do, when it sho
 agent: "🛠️ Agento Mechanic"
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Add the new customization capability described in the argument.
 
 Open with the acceptance receipt and close with the terminal result line per

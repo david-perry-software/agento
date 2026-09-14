@@ -4,6 +4,10 @@ argument-hint: "Brief text, or a repository-relative path to a file containing i
 agent: "🏛️ Agento Architect"
 ---
 
+Needs: terminal, ask-questions, gh, network
+Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Create a new **initiative** from the brief in the argument, following the Architect's
 procedure end to end in the **current (primary) window**.
 
@@ -11,7 +15,9 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; a
 merged one is rejected naming the existing breakdown), which takes precedence over
-the slug reservation in step 5.
+the slug reservation in step 5. Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for new-initiative` and map
+`fail`/`warn` per §10.
 
 1. Require the primary worktree on `main`, clean, and synchronized.
 2. Read the brief: inline text, or a repository-relative path to an existing file.

@@ -4,6 +4,10 @@ argument-hint: "Optional context, intent, or issue reference"
 agent: "agent"
 ---
 
+Needs: terminal, gh, network
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Wrap up the freehand session in this worktree: commit the current changes, publish
 the branch, and merge it into `main` through the protected pull-request workflow. This
 invocation explicitly authorizes committing, pushing, opening and merging a pull
@@ -13,7 +17,9 @@ supplemental context, but ground the commit message in the actual diff.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 2 recovers it from repository state).
+step 2 recovers it from repository state). Before the first write, run `node
+<agento-root>/scripts/agento.mjs doctor --for finish-freehand` and map `fail`/`warn`
+per §10.
 
 1. Require the current workspace to be a managed freehand worktree: resolve
    `git worktree list --porcelain` and confirm this is a secondary worktree named

@@ -3,13 +3,19 @@ description: "Scaffold Agento in the current project: .github/agento.json, featu
 argument-hint: "[--force]"
 ---
 
+Needs: terminal, ask-questions, gh, network
+Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Initialize the current workspace (the **target repository**, not the Agento clone)
 for Agento delivery work. `--force` rewrites files that already exist; without it,
 leave existing files untouched and report what was kept.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (existing files are kept unless `--force`).
+idempotency row (existing files are kept unless `--force`). Before the first write,
+run `node <agento-root>/scripts/agento.mjs doctor --for agento-init` and map
+`fail`/`warn` per §10.
 
 ## Steps
 
@@ -44,8 +50,9 @@ idempotency row (existing files are kept unless `--force`).
 4. Create or append to the target repository's `AGENTS.md` an `## Agento` section
    using the template below. Fill the placeholders from the project's actual files
    (package.json scripts, README, existing tooling); ask the user for anything you
-   cannot infer, using `vscode/askQuestions`. If AGENTS.md already has an `## Agento`
-   section, leave it alone unless `--force` was given.
+   cannot infer, with the ask-questions tool (or its declared fallback, §10). If
+   AGENTS.md already has an `## Agento` section, leave it alone unless `--force` was
+   given.
 
    ```markdown
    ## Agento
@@ -103,7 +110,8 @@ idempotency row (existing files are kept unless `--force`).
    `gh api repos/{owner}/{repo}/rulesets --jq '.[] | select(.target=="branch") | .name'`
    and `gh api repos/{owner}/{repo}/branches/<default>/protection` (404 means none).
    If neither a ruleset nor branch protection covers the default branch, ask the user
-   (with `vscode/askQuestions`) whether to create a ruleset now that: requires a pull
+   (with the ask-questions tool or its declared fallback, §10) whether to create a
+   ruleset now that: requires a pull
    request before merging, requires the project's CI check(s) to pass, blocks force
    pushes, and blocks deletion — `gh api -X POST repos/{owner}/{repo}/rulesets` with
    `enforcement: active`, `conditions.ref_name.include: ["~DEFAULT_BRANCH"]`, and

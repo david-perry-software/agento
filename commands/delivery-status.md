@@ -5,6 +5,10 @@ agent: "agent"
 tools: [read, search, execute]
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Report the state of all delivery work, read-only. Do not modify any files or branches.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9

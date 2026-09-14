@@ -4,6 +4,10 @@ argument-hint: "Slug of the feature or issue to ship"
 agent: "agent"
 ---
 
+Needs: terminal, gh, network
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Ship the work named by the slug in the argument. Resolve it with the Agento CLI:
 `node <agento-root>/scripts/agento.mjs find <slug>` (the CLI path is announced in the
 session context as `Agento CLI:`), then `agento.mjs ship-preflight <type> <slug>` with
@@ -20,7 +24,9 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: a roadmap already `status: complete` with unticked
 `(manual, post-ship)` steps skips straight to step 5 (post-ship verification
-epilogue), and an already-merged PR only syncs `main` and reports it.
+epilogue), and an already-merged PR only syncs `main` and reports it. Before the
+first write, run `node <agento-root>/scripts/agento.mjs doctor --for ship` and map
+`fail`/`warn` per §10.
 
 Before the audit, inspect `git worktree list --porcelain` for the roadmap's branch. If
 a secondary worktree owns it, stop and direct the user to run
