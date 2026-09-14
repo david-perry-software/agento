@@ -18,7 +18,11 @@ product, hand it to
 /agento new-issue instead.
 
 Load the built-in `agent-customization` skill before diagnosing or creating; it
-documents formats, locations, and frontmatter for every customization type.
+documents formats, locations, and frontmatter for every customization type. Open
+every response with the acceptance receipt and close it with the terminal result line
+per delivery-policy.instructions.md §9; a duplicate `/agento extend-copilot` or
+`/agento fix-copilot` submission follows its §9 idempotency row — an existing
+capability with the same name is modified in place, never duplicated.
 
 ## Diagnosis protocol
 
@@ -132,3 +136,4 @@ re-add rules here that belong there. These are mechanics gotchas only.
   ask, roadmap nudge ask, benign allow) when a hook changed.
 - Record any new pitfall you fix by appending it to "Known pitfalls" above (one line).
 - Publish through the protected PR flow (/agento commit-current-changes); never commit to main.
+  That command is the `next:` of your §9 result line.

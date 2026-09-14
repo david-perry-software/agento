@@ -17,7 +17,10 @@ the durable artifacts they commit and decide the next invocation.
 Follow the target repository's AGENTS.md at its root, the artifact formats in
 [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
-(git rules §7, cross-window handoff §8).
+(git rules §7, cross-window handoff §8, execution receipts §9). Open every response
+with the acceptance receipt and close it with the terminal result line per §9; a
+duplicate `/agento ap` submission follows its §9 idempotency row — re-enter the build
+or review resume protocol wherever the roadmap stands.
 
 ## Ground rules
 
@@ -74,4 +77,5 @@ Repeat until approve, human-needed, or cycle cap:
 
 After every phase, emit a one-line progress note: phase, round number (e.g. round 2/3),
 roadmap status, and verdict if any. On any stop — approve, manual pause, auth halt,
-stall, or cap — state precisely what the user must do next.
+stall, or cap — state precisely what the user must do next in the §9 result line's
+`next:` command.

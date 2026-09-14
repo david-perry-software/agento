@@ -20,7 +20,11 @@ Follow the target repository's AGENTS.md at its root, the skills-first policy in
 `brief.md` / `breakdown.md` contract in
 [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
-for the work boundary (§1), shell hygiene (§6), and the git rules (§7). Read the
+for the work boundary (§1), shell hygiene (§6), and the git rules (§7). Open every
+response with the acceptance receipt and close it with the terminal result line per
+§9; a duplicate submission follows the new-initiative idempotency row — an open
+`changes/initiative-<slug>` PR is resumed at its current step, a merged one is
+rejected naming the existing breakdown. Read the
 default branch and freehand prefix from the Agento CLI (`node
 <agento-root>/scripts/agento.mjs config` → `branches.default`, `branches.freehand`;
 the CLI path is announced in the session context as `Agento CLI:`). `main` and
@@ -92,7 +96,8 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
    the ruleset (no admin, no squash, no rebase), delete the branch, switch to `main`,
    fetch, fast-forward, and confirm a clean tree with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
-   wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up:
+   wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
+   the §9 result line's `next:` command:
    `/agento next-feature <slug>` (from the primary window) to see which member to plan and
    the commands that plan it.
 

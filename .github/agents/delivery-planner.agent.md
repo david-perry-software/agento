@@ -132,7 +132,8 @@ directories.
    GitHub issue. Never commit to `main`.
 9. **Report** the slug, branch, PR number (and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current
-   planning worktree in place without moving or recreating it. After promotion, this
+   planning worktree in place without moving or recreating it; that handoff (or
+   `/agento build-<type> <slug>`) is the `next:` of the §9 result line. After promotion, this
    path is a build-session reservation even though its directory remains
    `plan-<session-id>`; close it from the primary workspace window with
    `/agento close-session <type>/<slug>` after review. `/agento close-session <session-id>` on an
