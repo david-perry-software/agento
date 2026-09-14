@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/session-state-cli
 last-updated: 2026-09-13
-next-step: "2.2 implement --pr with gh guard and integration tests in scripts/agento.test.mjs"
+next-step: "2.3 edit scripts/hooks/session-context.sh to emit the Session: line (approval-gated)"
 initiative: "workflow-orchestration"
 ```
 
@@ -15,7 +15,7 @@ initiative: "workflow-orchestration"
 ## Phase 2: CLI subcommand and hook
 
 - [x] 2.1 Wire `session [--pr]` into `scripts/agento.mjs`: extend `parseArgs` with `--pr`, add the usage-header line, compose the Phase 1 helpers with `git worktree list --porcelain`, `allRoadmaps()`, and `cwd = options.root ?? process.cwd()` (pre-normalisation), emitting the JSON shape from plan.md with `status: "ok"`, exit 0 — verify: `node scripts/agento.mjs session` in this worktree prints `role: "build"` (promoted plan worktree on `feature/session-state-cli`), `delivery.slug: "session-state-cli"`, `lifecycle: "planned"`; `node scripts/agento.mjs` usage lists `session [--pr]` (verified 2026-09-13: lifecycle observed `building` because this roadmap is already `in-progress`; `worktrees.dir` is resolved against the primary worktree so secondary checkouts find the right sibling directory)
-- [ ] 2.2 Implement `--pr`: guard with `command -v gh` equivalent (`execFileSync("gh", ["--version"])` in try/catch), run `gh pr view <branch> --json number,state,isDraft,mergeStateStatus,url`, map failures to `pr: null` plus a `warnings[]` string; never invoke `gh` without `--pr` — verify: integration tests in `scripts/agento.test.mjs` — primary/no-delivery, managed build worktree with an in-progress roadmap, promoted plan worktree, and `--pr` with `PATH` stripped of `gh` (→ `pr: null`, one warning); a stub `gh` on `PATH` that exits 99 proves no invocation without `--pr`; `node --test scripts/agento.test.mjs` passes
+- [x] 2.2 Implement `--pr`: guard with `command -v gh` equivalent (`execFileSync("gh", ["--version"])` in try/catch), run `gh pr view <branch> --json number,state,isDraft,mergeStateStatus,url`, map failures to `pr: null` plus a `warnings[]` string; never invoke `gh` without `--pr` — verify: integration tests in `scripts/agento.test.mjs` — primary/no-delivery, managed build worktree with an in-progress roadmap, promoted plan worktree, and `--pr` with `PATH` stripped of `gh` (→ `pr: null`, one warning); a stub `gh` on `PATH` that exits 99 proves no invocation without `--pr`; `node --test scripts/agento.test.mjs` passes
 - [ ] 2.3 Edit `scripts/hooks/session-context.sh` (approval-gated; request the guard's approval once and note the date on this line) so the Python block appends exactly one `Session: role=… worktree=… branch=… delivery=… lifecycle=… allowed=[…] elsewhere=[…]` line after `Agento CLI:` when `shutil.which("node")` succeeds and the CLI runs within `timeout=5` and returns valid JSON; every failure path leaves today's output unchanged — verify: `shellcheck scripts/hooks/session-context.sh` exit 0; `node --test tests/session-context.test.mjs` passes new tests for `role=primary` on a plain repo, `role=build` from a managed worktree, and byte-identical fallback when `PATH` excludes `node`; `time bash scripts/hooks/session-context.sh <<< '{"cwd":"'$PWD'"}'` under 1 s
 - [ ] 2.4 Integrate `origin/main` by merge, run the full gate, push — verify: `git merge origin/main` clean; `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0
 

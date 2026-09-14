@@ -154,6 +154,24 @@ function withExit(result) {
   emit({ ...result, root, configSource: source }, result.status === "ok" ? 0 : 3);
 }
 
+// Only `session --pr` reaches this; every failure is a warning, never an exit code.
+function lookupPullRequest(branch) {
+  if (!branch) return { pr: null, warnings: ["pr: no branch to look up (detached HEAD)"] };
+  const opts = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
+  try {
+    execFileSync("gh", ["--version"], opts);
+  } catch {
+    return { pr: null, warnings: ["pr: gh CLI not found on PATH; install GitHub CLI to include pull request state"] };
+  }
+  try {
+    const out = execFileSync("gh", ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"], opts);
+    return { pr: JSON.parse(out), warnings: [] };
+  } catch (error) {
+    const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
+    return { pr: null, warnings: [`pr: gh pr view ${branch} failed: ${stderr}`] };
+  }
+}
+
 // --- initiatives -----------------------------------------------------------
 
 function slugList(value) {
@@ -435,10 +453,10 @@ switch (command) {
     const sessionWorktreesDir = path.resolve(primaryRoot, primaryConfig.worktrees.dir);
     const { role, worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config });
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
-    const pr = null;
+    const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(delivery?.branch ?? worktree.branch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
-    emit({ status: "ok", role, worktree, delivery, pr, lifecycle, allowed, elsewhere, warnings, root, configSource: source });
+    emit({ status: "ok", role, worktree, delivery, pr, lifecycle, allowed, elsewhere, warnings: [...prWarnings, ...warnings], root, configSource: source });
     break;
   }
 
