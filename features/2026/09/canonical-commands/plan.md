@@ -297,8 +297,10 @@ is served, so no `local:`/`dev-stack`/`preview:` target applies.
   `/agento agento-init.prompt` defect — verify: `grep -n 'command-invocation'
   docs/architecture.md CHANGELOG.md` shows both.
 - [ ] Full gate green at the final commit: `node --test 'scripts/**/*.test.mjs'
-  'tests/**/*.test.mjs'` exit 0 with ≥ 102 tests passing (98 baseline + at least 4
-  new or tightened assertions; count may be higher once #16 merges), `shellcheck
+  'tests/**/*.test.mjs'` exit 0 with ≥ 100 tests passing (98 baseline + 2 new tests
+  (i) and (iv); (ii) and (iii) tighten existing tests and add no count — corrected by
+  the Builder 2026-09-13 from the original "≥ 102", which counted all four
+  assertions as new tests; count may be higher once #16 merges), `shellcheck
   scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0, `./scripts/hooks/replay-guard.sh
   < tests/guard-fixtures.txt` exit 0 — verify: rerun all three and compare with the
   `## Research` baseline (no findings either time).
