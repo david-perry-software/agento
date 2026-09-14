@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/capability-preflight
 last-updated: 2026-09-14
-next-step: "4.3 Scope boundary and publish"
+next-step: "/agento review-feature capability-preflight"
 initiative: "workflow-orchestration"
 ```
 
@@ -28,4 +28,4 @@ initiative: "workflow-orchestration"
 
 - [x] 4.1 Update docs: `docs/commands.md` (table row for `/agento doctor`, `## Invocation` entry, CLI paragraph gains `doctor [--for <command>]` with exit codes, a "Preflight" paragraph after "Receipts"), `README.md` command reference row, `AGENTS.md` scripts bullet lists `doctor`, `docs/architecture.md` policy summary gains capability preflight, `templates/AGENTS-section.md` and the `agento-init` step-4 echo list `/agento doctor` (re-mirror `commands/agento-init.md`), `CHANGELOG.md` `## 0.4.0 (unreleased)` gains a **New `agento.mjs doctor` and per-command preflight** entry — verify: `grep -n "doctor" docs/commands.md README.md AGENTS.md docs/architecture.md templates/AGENTS-section.md CHANGELOG.md` has a hit in each and `node --test tests/customizations.test.mjs` exits 0. Done 2026-09-14: hits 6/1/1/1/1/3; customizations 15 pass / 0 fail.
 - [x] 4.2 Full lint gate (policy §5, full — not scoped), each as a separate shell command: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` exit 0 with ≥ 102 pass; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; compare against plan.md `## Research` (101 pass, 0 findings) — verify: all three exit statuses and the test count recorded on this line, no new findings. Done 2026-09-14: node --test exit 0 (109 pass / 0 fail, baseline 101); replay-guard exit 0; shellcheck exit 0 (0 findings, baseline 0); no new findings.
-- [ ] 4.3 Scope boundary and publish: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/hooks/` or `.github/hooks/` and none of `hooks.json`, `plugin.json`, `package.json`, `scripts/session-state.mjs`, `scripts/delivery-roadmap-resolver.mjs`; `git merge origin/main` (never rebase), push, set `status: in-review` — verify: `gh pr view --json mergeStateStatus` is not `BEHIND`/`DIRTY`
+- [x] 4.3 Scope boundary and publish: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/hooks/` or `.github/hooks/` and none of `hooks.json`, `plugin.json`, `package.json`, `scripts/session-state.mjs`, `scripts/delivery-roadmap-resolver.mjs`; `git merge origin/main` (never rebase), push, set `status: in-review` — verify: `gh pr view --json mergeStateStatus` is not `BEHIND`/`DIRTY`. Done 2026-09-14: 65 changed files, 0 forbidden paths; `git merge origin/main` already up to date; PR #18 `mergeStateStatus: CLEAN` (draft, base `main`).
