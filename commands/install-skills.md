@@ -7,6 +7,10 @@ Install agent skills matched to the current workspace (the **target repository**
 not the Agento clone). Skills inject instructions into agent sessions, so nothing
 is installed without explicit per-skill approval.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (already-installed skills are excluded from the batch, step 3).
+
 **Preconditions:**
 
 1. The workspace root is a git repository and contains an `AGENTS.md` with an

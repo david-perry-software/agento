@@ -8,6 +8,10 @@ Review the **issue** fix named by the slug in the argument. Resolve its roadmap 
 the Agento CLI (`node <agento-root>/scripts/agento.mjs resolve issue <slug>`; path in
 the session context line `Agento CLI:`) and stop on any `status` other than `ok`.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (a fresh verdict overwrites review.md; no second PR comment thread).
+
 Follow your full procedure: confirm this worktree owns `issue/<slug>`, study the diff against
 `origin/main`, load every matching installed skill for the domains the work touches
 (per the project's skills table — its AGENTS.md `## Agento` section — and the

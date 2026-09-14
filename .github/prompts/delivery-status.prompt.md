@@ -6,6 +6,9 @@ tools: [read, search, execute]
 ---
 
 Report the state of all delivery work, read-only. Do not modify any files or branches.
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (read-only: a fresh read).
 
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs session --pr` (the CLI
    path is announced in the session context as `Agento CLI:`). Present a short

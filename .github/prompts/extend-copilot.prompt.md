@@ -6,6 +6,11 @@ agent: "🛠️ Agento Mechanic"
 
 Add the new customization capability described in the argument.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (an existing capability with the same name is modified in place,
+never duplicated).
+
 Follow your creation protocol: load the `agent-customization` skill, pick the right
 primitive with its decision flow, interview me for anything ambiguous (trigger
 conditions, inputs, tool needs, workspace vs user scope), then scaffold the file(s)

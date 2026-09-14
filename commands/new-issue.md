@@ -7,6 +7,11 @@ agent: "📋 Agento Planner"
 Plan a new **issue** (bug or defect) from the argument. This invocation authorizes
 creating one GitHub issue with `gh issue create` (unless importing an existing one).
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (a slug that already has a roadmap enters your resume protocol — no
+second branch, worktree, or PR; an existing GitHub issue is linked, not duplicated).
+
 The argument takes three forms — detect which applies:
 - **Free text**: a new defect description; you will file the GitHub issue in step 6.
 - **GitHub issue** (`#<n>` or issue URL): import it — `gh issue view <n>` supplies the

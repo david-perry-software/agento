@@ -7,6 +7,12 @@ agent: "🏛️ Agento Architect"
 Create a new **initiative** from the brief in the argument, following the Architect's
 procedure end to end in the **current (primary) window**.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; a
+merged one is rejected naming the existing breakdown), which takes precedence over
+the slug reservation in step 5.
+
 1. Require the primary worktree on `main`, clean, and synchronized.
 2. Read the brief: inline text, or a repository-relative path to an existing file.
    Record the original argument or path in `brief.md`'s `Source:` line and preserve
