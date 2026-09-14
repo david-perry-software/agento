@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { deriveRole, parseWorktreeList } from "./session-state.mjs";
+import { LIFECYCLES, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -154,4 +154,111 @@ test("empty worktree list still classifies by directory", () => {
   assert.equal(r.worktree.branch, null);
   assert.equal(r.worktree.dirPrefix, "feature");
   assert.equal(r.worktree.path, path.join(l.worktreesDir, "feature-widget"));
+});
+
+// Shape of agento.mjs describe() output.
+function roadmapRecord(type, slug, overrides = {}) {
+  return {
+    type,
+    slug,
+    dir: `${type}s/2026/09/${slug}`,
+    roadmap: `${type}s/2026/09/${slug}/roadmap.md`,
+    plan: `${type}s/2026/09/${slug}/plan.md`,
+    review: null,
+    reviewVerdict: null,
+    status: "planned",
+    branch: `${type}/${slug}`,
+    lastUpdated: "2026-09-13",
+    nextStep: "1.1",
+    githubIssue: null,
+    initiative: null,
+    steps: { ticked: 0, total: 3 },
+    postShipPending: 0,
+    ...overrides,
+  };
+}
+
+test("deriveDelivery: branch prefix decides type/slug and merges the matching roadmap", () => {
+  const roadmaps = [roadmapRecord("feature", "widget", { status: "in-progress" }), roadmapRecord("issue", "widget", { status: "paused", githubIssue: "#7" })];
+  const feature = deriveDelivery({ branch: "feature/widget", dirPrefix: "plan", id: "x", roadmaps, config });
+  assert.equal(feature.type, "feature");
+  assert.equal(feature.slug, "widget");
+  assert.equal(feature.status, "in-progress");
+  assert.equal(feature.roadmap, "features/2026/09/widget/roadmap.md");
+  assert.deepEqual(feature.steps, { ticked: 0, total: 3 });
+  const issue = deriveDelivery({ branch: "issue/widget", dirPrefix: null, id: null, roadmaps, config });
+  assert.equal(issue.type, "issue");
+  assert.equal(issue.status, "paused");
+  assert.equal(issue.githubIssue, "#7");
+});
+
+test("deriveDelivery: no roadmap yet yields null roadmap fields; non-delivery branches yield null", () => {
+  const fresh = deriveDelivery({ branch: "feature/new-thing", dirPrefix: "plan", id: "s", roadmaps: [], config });
+  assert.equal(fresh.type, "feature");
+  assert.equal(fresh.slug, "new-thing");
+  assert.equal(fresh.branch, "feature/new-thing");
+  assert.equal(fresh.roadmap, null);
+  assert.equal(fresh.status, null);
+  assert.equal(fresh.steps, null);
+  assert.equal(fresh.postShipPending, 0);
+  assert.equal(deriveDelivery({ branch: "main", dirPrefix: null, id: null, roadmaps: [], config }), null);
+  assert.equal(deriveDelivery({ branch: "changes/tidy", dirPrefix: "freehand", id: "tidy", roadmaps: [], config }), null);
+  assert.equal(deriveDelivery({ branch: "feature/", dirPrefix: null, id: null, roadmaps: [], config }), null);
+  assert.equal(deriveDelivery({ branch: null, dirPrefix: "plan", id: "20260914", roadmaps: [], config }), null);
+});
+
+test("deriveDelivery: detached feature-/issue- directories fall back to the directory name", () => {
+  const roadmaps = [roadmapRecord("issue", "bug", { status: "in-review" })];
+  const d = deriveDelivery({ branch: null, dirPrefix: "issue", id: "bug", roadmaps, config });
+  assert.equal(d.type, "issue");
+  assert.equal(d.slug, "bug");
+  assert.equal(d.status, "in-review");
+  assert.equal(d.branch, "issue/bug");
+});
+
+test("deriveDelivery honours custom branch prefixes", () => {
+  const custom = { branches: { ...config.branches, feature: "feat/", issue: "fix/" } };
+  assert.equal(deriveDelivery({ branch: "feat/x", roadmaps: [], config: custom }).type, "feature");
+  assert.equal(deriveDelivery({ branch: "fix/x", roadmaps: [], config: custom }).type, "issue");
+  assert.equal(deriveDelivery({ branch: "feature/x", roadmaps: [], config: custom }), null);
+  assert.equal(deriveDelivery({ branch: null, dirPrefix: "feature", id: "x", roadmaps: [], config: custom }).branch, "feat/x");
+});
+
+test("deriveLifecycle: every lifecycle value from its roadmap/review inputs", () => {
+  const d = (overrides) => roadmapRecord("feature", "widget", overrides);
+  const table = [
+    [{ delivery: null }, "no-delivery"],
+    [{ delivery: { type: "feature", slug: "w", roadmap: null, status: null } }, "no-delivery"],
+    [{ delivery: d({ status: "planned" }) }, "planned"],
+    [{ delivery: d({ status: "in-progress" }) }, "building"],
+    [{ delivery: d({ status: "paused" }) }, "paused"],
+    [{ delivery: d({ status: "in-review", reviewVerdict: null }) }, "in-review"],
+    [{ delivery: d({ status: "in-review", reviewVerdict: "request-changes" }) }, "in-review"],
+    [{ delivery: d({ status: "in-review", reviewVerdict: "approve" }) }, "approved"],
+    [{ delivery: d({ status: "complete", postShipPending: 0 }) }, "shipped"],
+    [{ delivery: d({ status: "complete", postShipPending: 2 }) }, "post-ship-pending"],
+  ];
+  const produced = new Set();
+  for (const [input, expected] of table) {
+    const { lifecycle, warnings } = deriveLifecycle({ ...input, pr: null });
+    assert.equal(lifecycle, expected, JSON.stringify(input));
+    assert.deepEqual(warnings, []);
+    produced.add(lifecycle);
+  }
+  assert.deepEqual([...produced].sort(), [...LIFECYCLES].sort());
+});
+
+test("deriveLifecycle: PR state only warns and never changes the lifecycle", () => {
+  const d = roadmapRecord("feature", "widget", { status: "in-progress" });
+  const merged = deriveLifecycle({ delivery: d, pr: { number: 15, state: "MERGED" } });
+  assert.equal(merged.lifecycle, "building");
+  assert.equal(merged.warnings.length, 1);
+  assert.match(merged.warnings[0], /^merged-but-not-complete: PR #15 for feature\/widget/);
+  const open = deriveLifecycle({ delivery: d, pr: { number: 15, state: "OPEN" } });
+  assert.deepEqual(open, { lifecycle: "building", warnings: [] });
+  const complete = deriveLifecycle({ delivery: roadmapRecord("feature", "widget", { status: "complete" }), pr: { number: 15, state: "MERGED" } });
+  assert.deepEqual(complete, { lifecycle: "shipped", warnings: [] });
+  const unknown = deriveLifecycle({ delivery: roadmapRecord("feature", "widget", { status: "weird" }), pr: null });
+  assert.equal(unknown.lifecycle, "no-delivery");
+  assert.match(unknown.warnings[0], /^unknown-roadmap-status/);
 });

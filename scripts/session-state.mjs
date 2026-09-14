@@ -85,3 +85,67 @@ export function deriveRole({ cwd, worktrees, worktreesDir, config }) {
 
   return { role: "unmanaged", worktree };
 }
+
+const ROADMAP_FIELDS = ["dir", "roadmap", "plan", "review", "reviewVerdict", "status", "lastUpdated", "nextStep", "githubIssue", "initiative", "steps"];
+
+// Type/slug come from the branch prefix; a detached managed `feature-`/`issue-`
+// worktree falls back to its directory name. Roadmap fields are null until one exists.
+export function deriveDelivery({ branch, dirPrefix, id, roadmaps, config }) {
+  const prefixes = { feature: config.branches.feature, issue: config.branches.issue };
+  let type = null;
+  let slug = null;
+  for (const [t, prefix] of Object.entries(prefixes)) {
+    if (branch && branch.startsWith(prefix) && branch.length > prefix.length) {
+      type = t;
+      slug = branch.slice(prefix.length);
+      break;
+    }
+  }
+  if (!type && !branch && (dirPrefix === "feature" || dirPrefix === "issue") && id) {
+    type = dirPrefix;
+    slug = id;
+  }
+  if (!type) return null;
+  const roadmap = (roadmaps ?? []).find((r) => r.type === type && r.slug === slug) ?? null;
+  const fields = Object.fromEntries(ROADMAP_FIELDS.map((k) => [k, roadmap ? roadmap[k] : null]));
+  return {
+    type,
+    slug,
+    branch: roadmap?.branch || `${prefixes[type]}${slug}`,
+    ...fields,
+    postShipPending: roadmap?.postShipPending ?? 0,
+  };
+}
+
+export const LIFECYCLES = ["no-delivery", "planned", "building", "paused", "in-review", "approved", "shipped", "post-ship-pending"];
+
+// PR state never changes the lifecycle; a merged PR on a non-complete roadmap only warns.
+export function deriveLifecycle({ delivery, pr }) {
+  const warnings = [];
+  if (!delivery || !delivery.roadmap) return { lifecycle: "no-delivery", warnings };
+  let lifecycle;
+  switch (delivery.status) {
+    case "planned":
+      lifecycle = "planned";
+      break;
+    case "in-progress":
+      lifecycle = "building";
+      break;
+    case "paused":
+      lifecycle = "paused";
+      break;
+    case "in-review":
+      lifecycle = delivery.reviewVerdict === "approve" ? "approved" : "in-review";
+      break;
+    case "complete":
+      lifecycle = delivery.postShipPending > 0 ? "post-ship-pending" : "shipped";
+      break;
+    default:
+      lifecycle = "no-delivery";
+      warnings.push(`unknown-roadmap-status: ${delivery.roadmap} has status ${JSON.stringify(delivery.status ?? "")}`);
+  }
+  if (pr && pr.state === "MERGED" && delivery.status !== "complete") {
+    warnings.push(`merged-but-not-complete: PR #${pr.number} for ${delivery.branch} is merged but ${delivery.roadmap} has status ${delivery.status}`);
+  }
+  return { lifecycle, warnings };
+}
