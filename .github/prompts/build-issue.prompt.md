@@ -13,15 +13,17 @@ are hard stops — report the `message` verbatim.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (the Builder resume/audit protocol below — ticked steps are audited,
-never redone).
+never redone). Window check per §10: requires role `build` with `delivery.slug` equal
+to the argument.
 
 - If the argument is blank, run `agento.mjs status issue`, list each item's slug,
   `status`, `steps`, and `nextStep`, recommend the best candidate (in-progress and
   paused first), and ask which to work on.
-- Run the resume protocol before any implementation: fetch, verify this worktree owns
-  `issue/<slug>`, integrate origin, audit ticked checkboxes against the code, repair
-  drift, push the repaired roadmap. If another worktree owns the branch, stop and
-  report `/agento start-session issue/<slug> --resume`.
+- Run the resume protocol before any implementation: fetch, confirm from the session
+  record that `worktree.branch` is `issue/<slug>`, integrate origin, audit ticked
+  checkboxes against the code, repair drift, push the repaired roadmap. If the
+  record's `worktrees[]` shows another entry on the branch, stop and report the
+  record's alternatives (`/agento start-session issue/<slug> --resume`).
 - Execute roadmap steps in order: skill-first, implement, run the step's `verify:`
   check, tick the box, commit (step + roadmap together), push. Ensure a draft PR
   exists whose body starts with `Fixes #<github-issue>` from the roadmap header.

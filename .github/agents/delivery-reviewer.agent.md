@@ -29,7 +29,8 @@ so a parallel session's verification is neither used nor disturbed. Open every
 response with the acceptance receipt and close it with the terminal result line per
 policy §9; a duplicate review submission follows the review-feature / review-issue
 idempotency row — a fresh verdict overwrites review.md, never a second PR comment
-thread.
+thread. Window check per §10: requires role `build` with `delivery.slug` equal to the
+slug under review.
 
 ## Scope of edits
 
@@ -41,10 +42,11 @@ modify source code — findings go in the review, fixes belong to the Builder.
 1. Resolve the roadmap with the Agento CLI — `node <agento-root>/scripts/agento.mjs
    resolve <feature|issue> <slug>`, whose path the session context announces as
    `Agento CLI:` — and stop on any `status` other than `ok`. `git fetch origin`,
-   confirm the current worktree owns the
-   roadmap's work branch, then read plan.md and roadmap.md fully. Never switch a
-   managed worktree to another delivery branch; if another worktree owns it, stop and
-   direct the user to resume that build session for review. If `origin/main` is not
+   confirm from the session record that `worktree.branch` is the roadmap's work
+   branch, then read plan.md and roadmap.md fully. Never switch a managed worktree to
+   another delivery branch; if the record's `worktrees[]` shows another entry on the
+   branch, stop and direct the user to the record's alternatives (resume that build
+   session for review). If `origin/main` is not
    an ancestor of `HEAD`, the review would judge stale code: stop and use the Builder
    handoff to integrate `origin/main` first (never rebase), then review the result.
 2. Study the real change: `git diff origin/main...HEAD` plus the affected files in

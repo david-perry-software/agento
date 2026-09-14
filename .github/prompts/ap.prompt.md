@@ -9,7 +9,8 @@ Run the delivery named by the argument unattended.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (re-enter the build or review resume protocol wherever the roadmap
-stands).
+stands). Window check per §10: requires role `build` with `delivery.slug` equal to
+the argument.
 
 - Accept `feature/<slug>`, `issue/<slug>`, or a bare slug. Resolve it with the Agento
   CLI (`node <agento-root>/scripts/agento.mjs resolve <type> <slug>`, or `find <slug>`
