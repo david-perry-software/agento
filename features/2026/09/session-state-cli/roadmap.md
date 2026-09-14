@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/session-state-cli
 last-updated: 2026-09-13
-next-step: "3.3 final gate against the baseline, integrate origin/main, push, set status: in-review"
+next-step: "/agento review-feature session-state-cli"
 initiative: "workflow-orchestration"
 ```
 
@@ -23,4 +23,4 @@ initiative: "workflow-orchestration"
 
 - [x] 3.1 Add a new step 1 to `commands/delivery-status.md` and `.github/prompts/delivery-status.prompt.md` (byte-identical): run `node <agento-root>/scripts/agento.mjs session --pr` and present a **Session** section (role, worktree path/branch, delivery, lifecycle, `allowed` one per line, `elsewhere` with window, `warnings` verbatim); renumber existing steps 2–6 unchanged in content — verify: `diff commands/delivery-status.md .github/prompts/delivery-status.prompt.md` empty; `node --test tests/customizations.test.mjs` passes
 - [x] 3.2 Update docs: `docs/commands.md` subcommand list gains `session [--pr]` with a one-line description; `AGENTS.md` scripts bullet lists `session`; `docs/hooks.md` SessionStart paragraph and `README.md` "The delivery guard" SessionStart bullet mention the `Session:` line and the Node fallback; `CHANGELOG.md` gains a `## 0.4.0 (unreleased)` heading above `0.3.0` with a **New `agento.mjs session`** entry (no version bump in `plugin.json`/`package.json`) — verify: `grep -n "session" docs/commands.md AGENTS.md docs/hooks.md README.md CHANGELOG.md` shows each file; `node --test tests/customizations.test.mjs` passes
-- [ ] 3.3 Final gate against the baseline in plan.md `## Research`, integrate `origin/main`, push, set `status: in-review` — verify: `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures and total > 70; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `git diff --stat origin/main` touches only the files listed in plan.md `## Approach` "Files touched"
+- [x] 3.3 Final gate against the baseline in plan.md `## Research`, integrate `origin/main`, push, set `status: in-review` — verify: `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures and total > 70; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `git diff --stat origin/main` touches only the files listed in plan.md `## Approach` "Files touched" (2026-09-13: shellcheck 0; 98 pass / 0 fail vs 70 baseline; replay 0; diff = the 13 listed files plus this delivery's plan.md and roadmap.md)
