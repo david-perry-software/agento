@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# SessionStart context: surface the current branch, any resumable delivery work, and
-# the path of the Agento CLI (scripts/agento.mjs) so prompts can call it from the
-# target repo. Operates on the repo from the hook input's cwd; artifact roots come
-# from the target repo's .github/agento.json (defaults: features/, issues/).
+# SessionStart context: surface the current branch, any resumable delivery work, the
+# path of the Agento CLI (scripts/agento.mjs) so prompts can call it from the target
+# repo, and a one-line `Session:` summary from `agento.mjs session` (role, worktree,
+# delivery, lifecycle, allowed commands) when Node is available. Operates on the repo
+# from the hook input's cwd; artifact roots come from the target repo's
+# .github/agento.json (defaults: features/, issues/).
 set -u
 
 input="$(cat)"
@@ -11,7 +13,7 @@ AGENTO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export AGENTO_ROOT
 
 python3 - <<'PY'
-import json, os, re, subprocess, sys
+import json, os, re, shutil, subprocess, sys
 
 try:
     payload = json.loads(os.environ.get("DELIVERY_HOOK_INPUT") or "{}")
@@ -28,6 +30,37 @@ def git(*args):
 
 root = git("rev-parse", "--show-toplevel") or cwd
 branch = git("branch", "--show-current") or "unknown"
+
+
+def session_summary(cli):
+    # One `Session:` line from `agento.mjs session`; any failure (no node, nonzero
+    # exit, timeout, bad JSON) returns None so the output stays exactly as before.
+    node = shutil.which("node")
+    if not node:
+        return None
+    try:
+        result = subprocess.run([node, cli, "session", "--root", cwd], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+    except Exception:
+        return None
+    if not isinstance(data, dict) or data.get("status") != "ok":
+        return None
+    worktree = data.get("worktree") or {}
+    delivery = data.get("delivery")
+    delivery_text = "none"
+    if isinstance(delivery, dict) and delivery.get("slug"):
+        delivery_text = f"{delivery.get('type')}/{delivery.get('slug')}"
+    allowed = "; ".join(str(c) for c in (data.get("allowed") or []))
+    elsewhere = "; ".join(
+        f"{e.get('command')}@{e.get('window')}" for e in (data.get("elsewhere") or []) if isinstance(e, dict)
+    )
+    return (
+        f"Session: role={data.get('role')} worktree={worktree.get('path')} "
+        f"branch={worktree.get('branch') or 'detached'} delivery={delivery_text} "
+        f"lifecycle={data.get('lifecycle')} allowed=[{allowed}] elsewhere=[{elsewhere}]"
+    )
 
 roots = ["features", "issues"]
 for rel in (".github/agento.json", "agento.json"):
@@ -47,7 +80,11 @@ for rel in (".github/agento.json", "agento.json"):
 lines = [f"Current git branch: {branch}"]
 agento_root = os.environ.get("AGENTO_ROOT", "")
 if agento_root and os.path.isfile(os.path.join(agento_root, "scripts", "agento.mjs")):
-    lines.append(f"Agento CLI: node {os.path.join(agento_root, 'scripts', 'agento.mjs')}")
+    cli = os.path.join(agento_root, "scripts", "agento.mjs")
+    lines.append(f"Agento CLI: node {cli}")
+    session_line = session_summary(cli)
+    if session_line:
+        lines.append(session_line)
 found = False
 for base in dict.fromkeys(roots):
     base_path = os.path.join(root, base)
