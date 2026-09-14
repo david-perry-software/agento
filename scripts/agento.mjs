@@ -256,6 +256,51 @@ const DOCTOR_CHECKS = {
 
 const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
 
+// Capability vocabulary (delivery-policy §10) in canonical order, each mapped to the
+// doctor checks that prove it. Chat-tool capabilities have no CLI-side check.
+const CAPABILITY_CHECKS = {
+  terminal: ["node", "python3", "worktrees-dir"],
+  "ask-questions": [],
+  browser: [],
+  gh: ["gh"],
+  code: ["code"],
+  network: ["git-remote"],
+  python3: ["python3"],
+};
+
+// What each slash command declares on its `Needs:` line; the customizations test
+// keeps this table and the prompt bodies in agreement.
+const COMMAND_NEEDS = {
+  "agento-init": ["terminal", "ask-questions", "gh", "network"],
+  ap: ["terminal", "browser", "gh", "network"],
+  "build-feature": ["terminal", "browser", "gh", "network"],
+  "build-issue": ["terminal", "browser", "gh", "network"],
+  "close-session": ["terminal"],
+  "commit-current-changes": ["terminal", "gh", "network"],
+  "delivery-status": ["terminal"],
+  doctor: ["terminal"],
+  "extend-copilot": ["terminal"],
+  "finish-freehand": ["terminal", "gh", "network"],
+  "fix-copilot": ["terminal"],
+  "install-skills": ["terminal", "ask-questions", "network"],
+  "new-feature": ["terminal", "ask-questions", "gh", "network"],
+  "new-initiative": ["terminal", "ask-questions", "gh", "network"],
+  "new-issue": ["terminal", "ask-questions", "gh", "network"],
+  "next-feature": ["terminal"],
+  "quick-fix": ["terminal", "gh", "network"],
+  "review-feature": ["terminal", "browser", "gh", "network"],
+  "review-issue": ["terminal", "browser", "gh", "network"],
+  ship: ["terminal", "gh", "network"],
+  "start-freehand": ["terminal", "code"],
+  "start-session": ["terminal", "code"],
+  "triage-followups": ["terminal", "gh", "network"],
+};
+
+function checksFor(needs) {
+  const ids = new Set(needs.flatMap((n) => CAPABILITY_CHECKS[n]));
+  return Object.keys(DOCTOR_CHECKS).filter((id) => ids.has(id));
+}
+
 function runDoctor(ids) {
   const checks = ids.map((id) => {
     try {
@@ -553,9 +598,11 @@ switch (command) {
 
   case "doctor": {
     if (rest.length) usage(`doctor takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    const { status, checks } = runDoctor(Object.keys(DOCTOR_CHECKS));
+    const needs = options.for ? COMMAND_NEEDS[options.for] : null;
+    if (options.for && !needs) usage(`--for: unknown command ${options.for}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+    const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
     // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
-    emit({ status, for: null, checks, root, configSource: source }, status === "fail" ? 3 : 0);
+    emit({ status, for: needs ? { command: options.for, needs } : null, checks, root, configSource: source }, status === "fail" ? 3 : 0);
     break;
   }
 
