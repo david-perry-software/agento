@@ -16,6 +16,19 @@
   to 0.3.0.
 - **`/agento delivery-status` opens with a Session section** (role, worktree, delivery,
   lifecycle, allowed and elsewhere commands, warnings) from `session --pr`.
+- **Canonical command invocation.** New
+  `.github/instructions/command-invocation.instructions.md` (`applyTo: "**"`) fixes
+  the one spelling `/agento <name> [args]`, lists every command, and tells the agent to
+  read the six old forms (`/<name>`, `/<name>.prompt`, `/<name>.md`,
+  `/agento <name>.prompt`, `/agento <name>.prompt.md`, `/agento <name>.md`, with or
+  without arguments) as the canonical command — say which in one sentence and
+  proceed, no confirmation — so `/agento agento-init.prompt` is never again treated as
+  prose. `docs/commands.md` gains an `## Invocation` section; the scaffolded AGENTS.md
+  section carries the canonical-form note. `tests/customizations.test.mjs` now rejects
+  a `.prompt`/`.md` suffix after a command name in guidance, requires suffix-less
+  `<name>.md` files in the plugin `commands` directory, requires every command in the
+  `## Invocation` section, and pins the instruction file to `applyTo: "**"` and the
+  exact prompt list.
 - **Execution receipts and per-command idempotency (policy §9).** Every `/agento …`
   command and agent response opens with exactly one `Receipt:` line and closes with
   exactly one `Result:` line; the formats live only in

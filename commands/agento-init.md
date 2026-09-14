@@ -56,6 +56,8 @@ idempotency row (existing files are kept unless `--force`).
    /agento close-session, /agento start-freehand, /agento finish-freehand). Artifacts live in
    `features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
    `initiatives/YYYY/MM/<slug>/`; configuration is `.github/agento.json`.
+   Commands are always written `/agento <name>`; a bare `/<name>` or a `.prompt`/`.md`
+   suffix is read as the canonical command and proceeds without confirmation.
 
    ### Commands
 

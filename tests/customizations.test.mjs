@@ -196,26 +196,30 @@ test("the policy file is the only place the shared rules are spelled out", () =>
 test("every slash command is documented in README.md and docs/commands.md", () => {
   const readme = fs.readFileSync(rel("README.md"), "utf8");
   const commands = fs.readFileSync(rel("docs", "commands.md"), "utf8");
+  const invocation = commands.match(/^## Invocation\r?\n([\s\S]*?)(?=^## )/m);
+  assert.ok(invocation, "docs/commands.md has no ## Invocation section");
   for (const file of promptFiles) {
     const command = "/agento " + path.basename(file, ".prompt.md");
     assert.ok(readme.includes(command), `README.md does not list ${command}`);
     assert.ok(commands.includes(command), `docs/commands.md does not list ${command}`);
+    assert.ok(invocation[1].includes(command), `docs/commands.md ## Invocation does not list ${command}`);
   }
 });
 
+const commandNames = promptFiles.map((file) => path.basename(file, ".prompt.md"));
+const guidanceFiles = [
+  rel("README.md"),
+  rel("AGENTS.md"),
+  ...agentFiles,
+  ...promptFiles,
+  ...instructionFiles,
+  ...listFiles(rel("commands"), ".md"),
+  ...listFiles(rel("docs"), ".md"),
+  ...listFiles(rel("templates"), ".md"),
+];
+
 test("active guidance qualifies Agento slash commands with the plugin name", () => {
-  const commandNames = promptFiles.map((file) => path.basename(file, ".prompt.md"));
   const bareCommand = new RegExp(`(?<![\\w.-])/(?:${commandNames.join("|")})\\b`);
-  const guidanceFiles = [
-    rel("README.md"),
-    rel("AGENTS.md"),
-    ...agentFiles,
-    ...promptFiles,
-    ...instructionFiles,
-    ...listFiles(rel("commands"), ".md"),
-    ...listFiles(rel("docs"), ".md"),
-    ...listFiles(rel("templates"), ".md"),
-  ];
   for (const file of guidanceFiles) {
     assert.doesNotMatch(
       fs.readFileSync(file, "utf8"),
@@ -225,10 +229,43 @@ test("active guidance qualifies Agento slash commands with the plugin name", () 
   }
 });
 
-test("plugin manifest and hook wiring point at existing executable files", () => {
+test("guidance never writes a command with a .prompt or .md suffix (agento-init.prompt defect)", () => {
+  // `/agento agento-init.prompt` was once exported with the wrong path and suffix and
+  // then treated as prose. Only the invocation instruction file may quote the bad
+  // forms (as redirect examples) and CHANGELOG.md records them as history.
+  const suffixedCommand = new RegExp(
+    `(?:/agento\\s+|(?<![\\w.-])/)(?:${commandNames.join("|")})\\.(?:prompt\\.md|prompt|md)\\b`,
+  );
+  const allowlist = new Set(["CHANGELOG.md", ".github/instructions/command-invocation.instructions.md"]);
+  for (const file of [...guidanceFiles, rel("CHANGELOG.md")]) {
+    const label = path.relative(repoRoot, file);
+    if (allowlist.has(label)) continue;
+    const hit = fs.readFileSync(file, "utf8").match(suffixedCommand);
+    assert.equal(hit, null, `${label} writes a suffixed command ${JSON.stringify(hit?.[0])}; use /agento <name>`);
+  }
+});
+
+test("command-invocation instructions apply everywhere and list every command", () => {
+  const file = rel(".github", "instructions", "command-invocation.instructions.md");
+  const label = path.relative(repoRoot, file);
+  const { frontmatter, body } = splitFrontmatter(file);
+  assert.equal(parseFrontmatter(frontmatter, label).applyTo, "**", `${label}: applyTo must be "**"`);
+  for (const name of commandNames) {
+    assert.ok(body.includes(`/agento ${name}`), `${label} does not list /agento ${name}`);
+  }
+  const known = new Set(commandNames);
+  for (const [, token] of body.matchAll(/\/agento ([a-z0-9-]+)\b/g)) {
+    assert.ok(known.has(token), `${label} lists /agento ${token}, which has no .github/prompts/${token}.prompt.md`);
+  }
+});
+
+test("plugin manifest uses suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel("plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
   assert.ok(fs.existsSync(rel(plugin.commands)), `plugin.commands ${plugin.commands} missing`);
+  for (const name of fs.readdirSync(rel(plugin.commands))) {
+    assert.match(name, /^[a-z0-9-]+\.md$/, `${plugin.commands}/${name}: command files are <name>.md only (no .prompt suffix)`);
+  }
   const pluginCommands = listFiles(rel(plugin.commands), ".md");
   assert.ok(pluginCommands.length > 0, "plugin.commands has no .md command files");
   assert.deepEqual(
