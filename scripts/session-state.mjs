@@ -149,3 +149,70 @@ export function deriveLifecycle({ delivery, pr }) {
   }
   return { lifecycle, warnings };
 }
+
+export const ROLES = ["primary", "build", "plan", "freehand", "unmanaged"];
+
+const STATUS = "/agento delivery-status";
+const START = "/agento start-session";
+const CREATE = [START, "/agento new-feature", "/agento new-issue", "/agento new-initiative", STATUS];
+const RESUME = `${START} <type>/<slug> --resume`;
+const BUILD = "/agento build-<type> <slug>";
+const REVIEW = "/agento review-<type> <slug>";
+const CLOSE = "/agento close-session <type>/<slug>";
+const SHIP = "/agento ship <slug>";
+
+const secondary = (command, reason) => ({ command, window: "secondary", reason });
+const primary = (command, reason) => ({ command, window: "primary", reason });
+const SHIP_LATER = [
+  primary(CLOSE, "after Verdict: approve, close the session from the primary window"),
+  primary(SHIP, "after Verdict: approve, ship from the primary window"),
+];
+const SHIP_NOW = [primary(CLOSE, "close the session from the primary window"), primary(SHIP, "ship from the primary window")];
+
+// Policy §8 as data: build/review in the secondary window, close/ship in the primary.
+const TABLE = {
+  primary: {
+    "no-delivery": { allowed: CREATE, elsewhere: [] },
+    planned: { allowed: [`${START} <type>/<slug>`, STATUS], elsewhere: [secondary(BUILD, "builds run in the secondary worktree window")] },
+    building: { allowed: [RESUME, STATUS], elsewhere: [secondary(BUILD, "builds run in the secondary worktree window")] },
+    paused: { allowed: [RESUME, STATUS], elsewhere: [secondary(BUILD, "builds resume in the secondary worktree window")] },
+    "in-review": { allowed: [RESUME, STATUS], elsewhere: [secondary(REVIEW, "reviews run in the secondary worktree window")] },
+    approved: { allowed: [CLOSE, SHIP, STATUS], elsewhere: [] },
+    shipped: { allowed: CREATE, elsewhere: [] },
+    "post-ship-pending": { allowed: [SHIP, STATUS], elsewhere: [] },
+  },
+  build: {
+    "no-delivery": { allowed: [STATUS], elsewhere: [primary(START, "no roadmap for this branch yet; plan or start a session from the primary window")] },
+    planned: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
+    building: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
+    paused: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
+    "in-review": { allowed: [REVIEW, STATUS], elsewhere: SHIP_LATER },
+    approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
+    shipped: { allowed: [STATUS], elsewhere: [primary(CLOSE, "the delivery is complete; close this worktree from the primary window")] },
+    "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
+  },
+  plan: {
+    "no-delivery": { allowed: ["/agento new-feature", "/agento new-issue", STATUS], elsewhere: [] },
+    planned: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
+    building: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
+    paused: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
+    "in-review": { allowed: [REVIEW, STATUS], elsewhere: SHIP_LATER },
+    approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
+    shipped: { allowed: [STATUS], elsewhere: [primary(CLOSE, "the delivery is complete; close this worktree from the primary window")] },
+    "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
+  },
+};
+const FREEHAND = { allowed: ["/agento finish-freehand <slug>", "/agento commit-current-changes"], elsewhere: [] };
+const UNMANAGED = { allowed: [], elsewhere: [primary(START, "this directory is neither the primary worktree nor a managed Agento worktree")] };
+
+export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
+  const row = role === "freehand" ? FREEHAND : role === "unmanaged" ? UNMANAGED : TABLE[role]?.[lifecycle];
+  if (!row) return { allowed: [], elsewhere: [] };
+  const slug = delivery?.slug ?? worktree?.id ?? "<slug>";
+  const type = delivery?.type ?? "<type>";
+  const fill = (s) => s.replace(/<type>/g, type).replace(/<slug>/g, slug);
+  return {
+    allowed: row.allowed.map(fill),
+    elsewhere: row.elsewhere.map((e) => ({ ...e, command: fill(e.command) })),
+  };
+}

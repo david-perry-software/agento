@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { LIFECYCLES, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
+import { LIFECYCLES, ROLES, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -261,4 +261,102 @@ test("deriveLifecycle: PR state only warns and never changes the lifecycle", () 
   const unknown = deriveLifecycle({ delivery: roadmapRecord("feature", "widget", { status: "weird" }), pr: null });
   assert.equal(unknown.lifecycle, "no-delivery");
   assert.match(unknown.warnings[0], /^unknown-roadmap-status/);
+});
+
+const widget = { type: "feature", slug: "widget" };
+const bug = { type: "issue", slug: "bug" };
+
+test("deriveAllowed: one row per role × lifecycle, concrete commands, no placeholders", () => {
+  for (const role of ROLES) {
+    for (const lifecycle of LIFECYCLES) {
+      const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery: widget, worktree: { id: "x" } });
+      assert.ok(Array.isArray(allowed) && Array.isArray(elsewhere), `${role}/${lifecycle}`);
+      assert.ok(allowed.length + elsewhere.length > 0, `${role}/${lifecycle} has no commands`);
+      for (const cmd of allowed) assert.match(cmd, /^\/agento [a-z-]+/, `${role}/${lifecycle}: ${cmd}`);
+      for (const cmd of [...allowed, ...elsewhere.map((e) => e.command)]) assert.doesNotMatch(cmd, /<type>|<slug>/, `${role}/${lifecycle}: ${cmd}`);
+      for (const e of elsewhere) {
+        assert.ok(["primary", "secondary"].includes(e.window), `${role}/${lifecycle}: ${e.window}`);
+        assert.ok(typeof e.reason === "string" && e.reason.length > 0);
+      }
+    }
+  }
+});
+
+test("deriveAllowed: primary window rows", () => {
+  const none = deriveAllowed({ role: "primary", lifecycle: "no-delivery", delivery: null, worktree: {} });
+  assert.ok(none.allowed.includes("/agento start-session"));
+  assert.ok(none.allowed.includes("/agento new-feature"));
+  assert.ok(none.allowed.includes("/agento new-issue"));
+  assert.ok(none.allowed.includes("/agento new-initiative"));
+  assert.ok(none.allowed.includes("/agento delivery-status"));
+  assert.deepEqual(none.elsewhere, []);
+
+  const planned = deriveAllowed({ role: "primary", lifecycle: "planned", delivery: widget });
+  assert.ok(planned.allowed.includes("/agento start-session feature/widget"));
+  assert.deepEqual(planned.elsewhere.map((e) => [e.command, e.window]), [["/agento build-feature widget", "secondary"]]);
+
+  const building = deriveAllowed({ role: "primary", lifecycle: "building", delivery: bug });
+  assert.ok(building.allowed.includes("/agento start-session issue/bug --resume"));
+  assert.deepEqual(building.elsewhere.map((e) => e.command), ["/agento build-issue bug"]);
+
+  const review = deriveAllowed({ role: "primary", lifecycle: "in-review", delivery: widget });
+  assert.deepEqual(review.elsewhere.map((e) => [e.command, e.window]), [["/agento review-feature widget", "secondary"]]);
+
+  const approved = deriveAllowed({ role: "primary", lifecycle: "approved", delivery: widget });
+  assert.deepEqual(approved.allowed, ["/agento close-session feature/widget", "/agento ship widget", "/agento delivery-status"]);
+  assert.deepEqual(approved.elsewhere, []);
+
+  assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "shipped", delivery: widget }).allowed, none.allowed);
+  assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "post-ship-pending", delivery: widget }).allowed, ["/agento ship widget", "/agento delivery-status"]);
+});
+
+test("deriveAllowed: build worktree rows send close/ship to the primary window", () => {
+  const building = deriveAllowed({ role: "build", lifecycle: "building", delivery: widget, worktree: { id: "20260914" } });
+  assert.ok(building.allowed.includes("/agento build-feature widget"));
+  assert.ok(building.allowed.includes("/agento delivery-status"));
+  const ship = building.elsewhere.find((e) => e.command === "/agento ship widget");
+  assert.equal(ship.window, "primary");
+  const close = building.elsewhere.find((e) => e.command === "/agento close-session feature/widget");
+  assert.equal(close.window, "primary");
+
+  assert.ok(deriveAllowed({ role: "build", lifecycle: "planned", delivery: widget }).allowed.includes("/agento build-feature widget"));
+  assert.ok(deriveAllowed({ role: "build", lifecycle: "paused", delivery: bug }).allowed.includes("/agento build-issue bug"));
+
+  const review = deriveAllowed({ role: "build", lifecycle: "in-review", delivery: bug });
+  assert.ok(review.allowed.includes("/agento review-issue bug"));
+  assert.doesNotMatch(review.allowed.join(" "), /build-issue/);
+
+  const approved = deriveAllowed({ role: "build", lifecycle: "approved", delivery: widget });
+  assert.deepEqual(approved.allowed, ["/agento delivery-status"]);
+  assert.deepEqual(approved.elsewhere.map((e) => [e.command, e.window]), [
+    ["/agento close-session feature/widget", "primary"],
+    ["/agento ship widget", "primary"],
+  ]);
+
+  const none = deriveAllowed({ role: "build", lifecycle: "no-delivery", delivery: { type: "feature", slug: "fresh" } });
+  assert.deepEqual(none.allowed, ["/agento delivery-status"]);
+  assert.equal(none.elsewhere[0].window, "primary");
+
+  assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "shipped", delivery: widget }).elsewhere.map((e) => e.command), ["/agento close-session feature/widget"]);
+  assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "post-ship-pending", delivery: widget }).elsewhere.map((e) => e.command), ["/agento ship widget"]);
+});
+
+test("deriveAllowed: plan worktree offers the planners; freehand and unmanaged are fixed", () => {
+  const plan = deriveAllowed({ role: "plan", lifecycle: "no-delivery", delivery: null, worktree: { id: "20260914-015913" } });
+  assert.deepEqual(plan.allowed, ["/agento new-feature", "/agento new-issue", "/agento delivery-status"]);
+  assert.deepEqual(plan.elsewhere, []);
+
+  for (const lifecycle of LIFECYCLES) {
+    const freehand = deriveAllowed({ role: "freehand", lifecycle, delivery: null, worktree: { id: "tidy" } });
+    assert.deepEqual(freehand, { allowed: ["/agento finish-freehand tidy", "/agento commit-current-changes"], elsewhere: [] });
+
+    const unmanaged = deriveAllowed({ role: "unmanaged", lifecycle, delivery: widget, worktree: { id: null } });
+    assert.deepEqual(unmanaged.allowed, []);
+    assert.deepEqual(unmanaged.elsewhere.map((e) => [e.command, e.window]), [["/agento start-session", "primary"]]);
+  }
+});
+
+test("deriveAllowed: unknown role or lifecycle yields empty lists", () => {
+  assert.deepEqual(deriveAllowed({ role: "mystery", lifecycle: "building", delivery: widget }), { allowed: [], elsewhere: [] });
+  assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "mystery", delivery: widget }), { allowed: [], elsewhere: [] });
 });
