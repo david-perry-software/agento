@@ -1,5 +1,5 @@
 ---
-description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, and the cross-window handoff"
+description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, the cross-window handoff, and execution receipts with per-command idempotency"
 applyTo: "**"
 ---
 
@@ -149,3 +149,68 @@ with the exact commands:
    `/agento close-session <type>/<slug>`, then `/agento ship <slug>`.
 
 Never substitute raw git or worktree commands for these workflow commands.
+
+## 9. Execution receipts
+
+Every `/agento …` command and every agent response opens with exactly one receipt
+line and closes with exactly one result line, in the spellings below and nowhere else
+restated. Re-sending any command is safe by construction: duplicate behaviour is
+derived from git + roadmap state (no journal) per the table at the end of this section.
+
+**Receipt — the first line of the response:**
+
+- `Receipt: accepted <op-id>` — work starts.
+- `Receipt: accepted <op-id> (duplicate of <op-id>; resuming)` — the same operation
+  was already submitted; the command resumes per its idempotency row and creates
+  nothing a second time.
+- `Receipt: rejected — <reason>; allowed: <cmd>[, <cmd>…]` — nothing is written. The
+  alternatives are copied from the session record (`agento.mjs session`, echoed by
+  the SessionStart hook's `Session:` line): every `allowed[]` entry verbatim, then
+  each `elsewhere[]` entry as `<cmd> (<window> window)`. Commands never hand-maintain
+  alternative lists.
+
+**Result — the last line of the response:**
+
+- `Result: completed — <resulting state>; next: <command>` — state names the branch,
+  PR, roadmap `status`, or lifecycle as applicable; `next:` is the concrete next
+  command and is how the AGENTS.md "ends with a concrete suggested next step" rule is
+  satisfied.
+- `Result: failed — <retry-safe explanation>` — what was done, what was not, and that
+  re-sending the same command resumes from git + roadmap state (or what must change
+  first). A pause (Builder pause protocol, manual step awaiting the user) is a
+  `completed` result whose state is `paused` and whose `next:` names the resume
+  command, not a failure.
+
+**Operation ID** — `<command>:<subject>:<short-sha>`:
+
+- `<command>` is the suffix-less command name (`new-feature`, `ship`, `ap`).
+- `<subject>` is the slug when the command takes one; else the session id of a
+  managed worktree (`plan-<id>`); else the current branch name (`git branch
+  --show-current`, e.g. `delivery-status:main:e0bbddf`); else, detached and unmanaged,
+  the literal `HEAD`.
+- `<short-sha>` is `git rev-parse --short HEAD` at acceptance.
+
+The ID is deterministic: the same command on the same subject at the same HEAD is a
+duplicate submission and receives the duplicate receipt. Nothing is persisted; the
+command recognises the duplicate from what the first submission left in git and the
+roadmap.
+
+**Idempotency table** — what a duplicate submission does, per command:
+
+| Command | Duplicate submission |
+| --- | --- |
+| `/agento new-feature`, `/agento new-issue` | An existing roadmap for the slug enters the Planner resume protocol; no second branch, worktree, or PR. An existing GitHub issue is linked, not duplicated. |
+| `/agento build-feature`, `/agento build-issue` | The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone. |
+| `/agento review-feature`, `/agento review-issue` | A fresh verdict overwrites review.md; no second PR comment thread. |
+| `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; an already-merged PR only syncs the default branch and reports it. |
+| `/agento ap` | Re-enters the build or review resume protocol wherever the roadmap stands. |
+| `/agento start-session`, `/agento start-freehand` | A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened. |
+| `/agento close-session` | A worktree already removed is reported as already closed; a merged local branch is still deleted and worktrees pruned. |
+| `/agento finish-freehand`, `/agento commit-current-changes` | The existing commit, PR, or check-wait phase is reused; never a second commit or PR for the same changes. |
+| `/agento quick-fix` | An open PR on `changes/<slug>` from the same base is resumed; the `-2`, `-3` suffix applies only when that branch's PR is merged or closed. |
+| `/agento new-initiative` | An open `changes/initiative-<slug>` PR is resumed; a merged one is rejected naming the existing breakdown. |
+| `/agento agento-init` | Existing files are kept unless `--force`. |
+| `/agento install-skills` | Already-installed skills are excluded from the batch. |
+| `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
+| `/agento delivery-status`, `/agento next-feature` | Read-only; a duplicate is a fresh read. |
+| `/agento extend-copilot`, `/agento fix-copilot` | An existing capability with the same name is modified in place, never duplicated. |

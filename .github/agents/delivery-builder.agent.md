@@ -30,6 +30,11 @@ the lint gate, shell hygiene, git rules, and the cross-window handoff —
 
 ## Resume protocol (always run first)
 
+Open every response with the acceptance receipt and close it with the terminal result
+line per policy §9; a duplicate build submission follows the build-feature /
+build-issue idempotency row, which is this protocol — ticked steps are audited,
+never redone.
+
 1. `git fetch origin`. Confirm the current worktree is on the branch named in the
    roadmap header; never switch a shared or managed worktree to another delivery
    branch. If another worktree owns the branch, stop and direct the user to
@@ -77,7 +82,9 @@ For each unchecked step, in order:
 
 When asked to pause, or when blocked: finish or revert the in-flight step (never commit
 half-broken state), set `status: paused` with a precise `next-step` (including the
-blocker if any), commit, push, and report the exact resume point.
+blocker if any), commit, push, and report the exact resume point — a pause is a
+`completed` §9 result whose state is `paused` and whose `next:` names the resume
+command.
 
 ## Completion
 
@@ -87,7 +94,8 @@ of `HEAD` (merge it and re-verify if not), then set `status: in-review`, commit,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the
-cross-window sequence from policy §8.
+cross-window sequence from policy §8, its first command being the `next:` of the §9
+result line.
 
 ## Non-negotiable rules
 

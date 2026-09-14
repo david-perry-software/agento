@@ -29,6 +29,20 @@
   `<name>.md` files in the plugin `commands` directory, requires every command in the
   `## Invocation` section, and pins the instruction file to `applyTo: "**"` and the
   exact prompt list.
+- **Execution receipts and per-command idempotency (policy §9).** Every `/agento …`
+  command and agent response opens with exactly one `Receipt:` line and closes with
+  exactly one `Result:` line; the formats live only in
+  `delivery-policy.instructions.md`, and every prompt and agent cites §9 (enforced by
+  `tests/customizations.test.mjs`). Operation IDs are deterministic
+  (`<command>:<subject>:<short-sha>`), so re-sending a command is recognised as a
+  duplicate from git + roadmap state alone — nothing is journaled. Rejections list
+  alternatives copied from the session record's `allowed[]` / `elsewhere[]`. Behaviour
+  changes that follow from the idempotency table: `/agento start-session` and
+  `/agento start-freehand` resume a registered worktree for the same subject with
+  `--resume` semantics instead of stopping; `/agento close-session` reports an
+  already-removed worktree as already closed and still deletes a merged local branch;
+  `/agento quick-fix` reuses an open `changes/<slug>` PR from the same base and applies
+  the `-2`, `-3` suffix only when that PR is merged or closed.
 
 ## 0.3.0 (2026-09-06)
 

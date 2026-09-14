@@ -77,6 +77,16 @@ proceeds, arguments unchanged, without asking for confirmation — per
 | `/agento <name>.prompt.md [args]` | `/agento <name> [args]` |
 | `/agento <name>.md [args]` | `/agento <name> [args]` |
 
+## Receipts
+
+Every command opens with one receipt line and closes with one result line, in the
+fixed spellings defined once in `delivery-policy.instructions.md` §9 (execution
+receipts). The receipt names a deterministic operation ID
+(`<command>:<subject>:<short-sha>`); a rejection lists the alternatives from
+`agento.mjs session`; the result names the resulting state and the concrete next
+command. Re-sending any command is safe: §9's idempotency table says, per command,
+what a duplicate submission does, all derived from git + roadmap state.
+
 ## The standard flow
 
 ```text

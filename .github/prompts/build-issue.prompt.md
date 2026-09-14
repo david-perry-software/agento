@@ -10,6 +10,11 @@ path is announced in the session context as `Agento CLI:`) — and act on the JS
 `status: ok` gives `path` and `branch`; `conflict`, `branch-mismatch`, or `missing`
 are hard stops — report the `message` verbatim.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (the Builder resume/audit protocol below — ticked steps are audited,
+never redone).
+
 - If the argument is blank, run `agento.mjs status issue`, list each item's slug,
   `status`, `steps`, and `nextStep`, recommend the best candidate (in-progress and
   paused first), and ask which to work on.

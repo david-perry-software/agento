@@ -6,6 +6,12 @@ agent: "📋 Agento Planner"
 
 Plan a new **feature** from the description in the argument.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (a slug that already has a roadmap enters your resume protocol — no
+second branch, worktree, or PR; the slug rejection in step 4 is for a different
+feature colliding on the same slug).
+
 **Initiative member intake.** When the whole argument has the form
 `initiative:<initiative-slug>/<feature-slug>`, plan that member of an existing
 initiative: run `node <agento-root>/scripts/agento.mjs initiative <initiative-slug>`

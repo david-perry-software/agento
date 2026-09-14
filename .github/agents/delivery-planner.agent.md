@@ -22,7 +22,12 @@ Follow the target repository's AGENTS.md at its root, the skills-first policy in
 formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
 for what counts as `(manual)`, which verification target a step names, when a
-post-ship exception is allowed, and the lint baseline gate.
+post-ship exception is allowed, and the lint baseline gate. Open every response with
+the acceptance receipt and close it with the terminal result line per policy §9; a
+slug that already has a roadmap is a duplicate submission under the new-feature /
+new-issue idempotency row — resume on the existing roadmap and branch, never a
+second branch, worktree, or PR (the step 5 slug rejection is for a *different*
+change colliding on the same slug).
 
 ## Scope of edits
 
@@ -127,7 +132,8 @@ directories.
    GitHub issue. Never commit to `main`.
 9. **Report** the slug, branch, PR number (and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current
-   planning worktree in place without moving or recreating it. After promotion, this
+   planning worktree in place without moving or recreating it; that handoff (or
+   `/agento build-<type> <slug>`) is the `next:` of the §9 result line. After promotion, this
    path is a build-session reservation even though its directory remains
    `plan-<session-id>`; close it from the primary workspace window with
    `/agento close-session <type>/<slug>` after review. `/agento close-session <session-id>` on an

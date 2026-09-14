@@ -7,6 +7,10 @@ Initialize the current workspace (the **target repository**, not the Agento clon
 for Agento delivery work. `--force` rewrites files that already exist; without it,
 leave existing files untouched and report what was kept.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (existing files are kept unless `--force`).
+
 ## Steps
 
 1. Confirm the workspace root is a git repository and is **not** the Agento plugin
