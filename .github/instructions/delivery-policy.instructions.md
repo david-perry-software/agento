@@ -1,5 +1,5 @@
 ---
-description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, the cross-window handoff, and execution receipts with per-command idempotency"
+description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, the cross-window handoff, execution receipts with per-command idempotency, and the window check every command runs against the session record"
 applyTo: "**"
 ---
 
@@ -214,3 +214,41 @@ roadmap.
 | `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
 | `/agento delivery-status`, `/agento next-feature` | Read-only; a duplicate is a fresh read. |
 | `/agento extend-copilot`, `/agento fix-copilot` | An existing capability with the same name is modified in place, never duplicated. |
+
+## 10. Window check
+
+Which window a command runs in is data, not prose. Every command and agent carries one
+line of the form `Window check per §10: requires role <roles>` and applies this
+procedure before reading delivery state or writing anything; the roles table itself
+lives in the CLI (`deriveAllowed`), never here or in a prompt.
+
+1. Run `node <agento-root>/scripts/agento.mjs session` (the SessionStart hook's
+   `Session:` line is a hint; the CLI call is the check). The record carries `role`
+   (`primary` | `plan` | `build` | `freehand` | `unmanaged`), `hosted`, `worktree`
+   (`path`, `branch`, `detached`, `isPrimary`, `isManaged`, `dirPrefix`, `id`),
+   `worktrees[]` (every registered checkout classified the same way), `delivery`,
+   `lifecycle`, `allowed[]`, `elsewhere[]`, and `warnings[]`.
+2. Compare `role` with the roles the command's line names. Match → proceed; from here
+   on the record's `worktree`, `delivery`, and `worktrees[]` replace any further
+   worktree inspection. Only commands that create or remove worktrees
+   (`/agento start-session`, `/agento start-freehand`, `/agento close-session` — and
+   `/agento ship` while it still depends on the worktree being gone) may additionally
+   read `git worktree list --porcelain`, and only for that mutation. Ownership of a
+   delivery branch comes from `worktrees[]` or from `close-decision` /
+   `ship-preflight` `owner` (`{ path, role, dirPrefix, id } | null`; reasons
+   `managed-worktree-present`, `primary-owns-branch`, `remote-roadmap-only`).
+3. Mismatch → the §9 `rejected` receipt with reason `wrong window: role=<role>
+   (<worktree.path>, branch <worktree.branch|detached>)` and the alternatives copied
+   from the record per §9. `role: unmanaged` always rejects delivery commands
+   (its `allowed[]` is empty by design) and the rejection adds the fix: open the
+   primary checkout at `worktrees[0].path`, or one of the managed entries in
+   `worktrees[]`. Never carve out an exception for being on `main`.
+4. `hosted: true` (Codespaces, Actions, the coding agent) is not an exemption anyone
+   remembers: the record has already derived `role` from the branch alone and said
+   so in `warnings[]`; commands treat a hosted record like any other.
+5. A requirement with a branch condition — `primary` on a non-default branch
+   (`/agento commit-current-changes`); `primary` on the default branch, clean
+   (`/agento quick-fix`, `/agento new-initiative`, `/agento start-session`,
+   `/agento start-freehand`); build-window commands whose `delivery.slug` must equal
+   the argument — states it on the same line and checks it from the record's
+   `worktree.branch` and `delivery`, never from a fresh `git branch` reading.

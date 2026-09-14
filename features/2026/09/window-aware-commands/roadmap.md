@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/window-aware-commands
 last-updated: 2026-09-14
-next-step: "2.1 add ## 10. Window check to delivery-policy.instructions.md"
+next-step: "2.2 extend tests/customizations.test.mjs with the two §10 enforcement tests"
 initiative: "workflow-orchestration"
 ```
 
@@ -15,7 +15,7 @@ initiative: "workflow-orchestration"
 
 ## Phase 2: Policy §10 and enforcement tests
 
-- [ ] 2.1 Add `## 10. Window check` to `.github/instructions/delivery-policy.instructions.md` (next free number if `origin/main` already has a §10 — record the number on this line) with the five-point procedure from plan.md Approach §3 (run `agento.mjs session`; compare `role` to the command's `requires role` line; mismatch → the §9 `rejected` form with the record's alternatives; `unmanaged` always rejects and names the primary checkout from `worktrees[0].path`; `hosted` needs no special handling; branch conditions read `worktree.branch`) and no roles table; extend the frontmatter `description` — verify: the section contains no `allowed:` table; `node --test tests/customizations.test.mjs` passes (canaries, §N exists)
+- [x] 2.1 Add `## 10. Window check` to `.github/instructions/delivery-policy.instructions.md` (next free number if `origin/main` already has a §10 — record the number on this line: **§10**, `origin/main` had none) with the five-point procedure from plan.md Approach §3 (run `agento.mjs session`; compare `role` to the command's `requires role` line; mismatch → the §9 `rejected` form with the record's alternatives; `unmanaged` always rejects and names the primary checkout from `worktrees[0].path`; `hosted` needs no special handling; branch conditions read `worktree.branch`) and no roles table; extend the frontmatter `description` — verify: the section contains no `allowed:` table; `node --test tests/customizations.test.mjs` passes (canaries, §N exists)
 - [ ] 2.2 Extend `tests/customizations.test.mjs`: bump `sections.size >= 9` to `>= 10` (or the new count); add "every command and agent declares its window check (§10)" asserting `/Window check per .*§10.*requires role/` over `promptFiles` + `agentFiles`; add "only worktree-mutating commands inspect `git worktree list --porcelain`" over prompts, `commands/`, and agents with the allowlist `start-session`, `start-freehand`, `close-session`, `ship` (comment: `ship-audit-first` removes `ship`) — verify: `node --test tests/customizations.test.mjs` now FAILS on exactly the two new tests (every file lacks the line; non-allowlisted files still contain the literal), proving the assertions bite; record the failing file counts on this line
 
 ## Phase 3: Consumers — prompts, mirrors, agents
