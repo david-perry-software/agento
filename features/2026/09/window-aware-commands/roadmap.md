@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/window-aware-commands
 last-updated: 2026-09-14
-next-step: "4.2 final gate, merge origin/main, status in-review"
+next-step: ""
 initiative: "workflow-orchestration"
 ```
 
@@ -31,7 +31,7 @@ initiative: "workflow-orchestration"
 ## Phase 4: Docs, changelog, final gate
 
 - [x] 4.1 Update `docs/commands.md` (CLI paragraph: `session` gains `hosted`, `worktrees[]`; `close-decision`/`ship-preflight` gain `owner` and the `primary-owns-branch` reason), `docs/architecture.md` (policy summary adds the window check §10), `docs/hooks.md` and `README.md` (`hosted` flag on the record), and `CHANGELOG.md` under `## 0.4.0 (unreleased)` with a **Window-aware commands (policy §10)** entry; no version bump — verify: `grep -n "hosted\|owner\|Window check\|§10" docs/commands.md docs/architecture.md docs/hooks.md README.md CHANGELOG.md` shows each file; `git diff origin/main -- plugin.json package.json` empty; `node --test tests/customizations.test.mjs` passes
-- [ ] 4.2 Final gate against the baseline in plan.md `## Research` (101 pass / 0 fail; shellcheck 0; replay 0), integrate `origin/main` by merge (keep both CHANGELOG entries and renumber §10 → §11 if `capability-preflight` landed), push, set `status: in-review` — verify: `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures and total > 101; `bash scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `git diff --stat origin/main` touches only the files in plan.md Approach "Files touched"; `node scripts/agento.mjs session` here reports `lifecycle: "in-review"`
+- [x] 4.2 Final gate against the baseline in plan.md `## Research` (101 pass / 0 fail; shellcheck 0; replay 0), integrate `origin/main` by merge (keep both CHANGELOG entries and renumber §10 → §11 if `capability-preflight` landed), push, set `status: in-review` — verify: `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures and total > 101; `bash scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `git diff --stat origin/main` touches only the files in plan.md Approach "Files touched"; `node scripts/agento.mjs session` here reports `lifecycle: "in-review"` — done 2026-09-14: shellcheck exit 0; tests 112 pass / 0 fail (baseline 101/0, no pre-existing findings to carry); replay-guard exit 0; `origin/main` still at `3d2bac3` and already an ancestor (`capability-preflight` not landed, section stays §10, single CHANGELOG entry); diff vs `origin/main` touches 65 files, all within "Files touched" (no `scripts/hooks/*`, `AGENTS.md`, `plugin.json`, `package.json`)
 
 ## Follow-ups
 
