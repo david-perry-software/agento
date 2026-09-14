@@ -44,7 +44,9 @@ flowchart TD
   (`§2`) instead of restating them, and a test fails if a rule is spelled out twice.
   The **artifact contract** holds only formats; **concurrent-delivery** holds only
   mechanics (ports, previews, shared resources, integration recipes); **ai-skills**
-  is the skills-first policy.
+  is the skills-first policy; **command-invocation** is the canonical spelling and
+  redirect rule for slash commands (`/agento <name>`; old forms are read as the
+  canonical command and proceed without confirmation).
 - **Hooks** run outside the model. `session-context.sh` injects branch, resumable
   work, and the Agento CLI path at session start; `delivery-guard.sh` can
   `allow`/`ask`/`deny` any tool call (default-branch protection, force-push and hook

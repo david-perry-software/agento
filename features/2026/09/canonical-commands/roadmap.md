@@ -2,14 +2,14 @@
 status: in-progress
 branch: feature/canonical-commands
 last-updated: 2026-09-13
-next-step: "1.2 — name command-invocation in docs/architecture.md"
+next-step: "2.1 — add the ## Invocation section to docs/commands.md"
 initiative: "workflow-orchestration"
 ```
 
 ## Phase 1: Instruction file
 
 - [x] 1.1 Create `.github/instructions/command-invocation.instructions.md` with frontmatter `description` and `applyTo: "**"`; body states the canonical form `/agento <name> [args]`, lists every `.github/prompts/*.prompt.md` basename as `/agento <name>` (one per line), states the six redirected forms (`/<name>`, `/<name>.prompt`, `/<name>.md`, `/agento <name>.prompt`, `/agento <name>.prompt.md`, `/agento <name>.md`, with or without trailing arguments) and the rule "name the canonical command in one sentence and proceed with it, arguments unchanged, no confirmation", plus the guidance rule that repository prose writes only the canonical form and this file alone may quote the old forms; no legacy-name table — verify: `ls .github/prompts/*.prompt.md | xargs -n1 basename | sed 's/\.prompt\.md$//' | while read n; do grep -q "/agento $n\b" .github/instructions/command-invocation.instructions.md || echo "missing $n"; done` prints nothing; `node --test tests/customizations.test.mjs` exit 0 (existing frontmatter and §N tests still pass).
-- [ ] 1.2 Add one sentence to the Instructions bullet of `docs/architecture.md` (L39–47) naming **command-invocation** as the canonical spelling and redirect rule for slash commands — verify: `grep -n 'command-invocation' docs/architecture.md` shows the line; `node --test tests/customizations.test.mjs` exit 0.
+- [x] 1.2 Add one sentence to the Instructions bullet of `docs/architecture.md` (L39–47) naming **command-invocation** as the canonical spelling and redirect rule for slash commands — verify: `grep -n 'command-invocation' docs/architecture.md` shows the line; `node --test tests/customizations.test.mjs` exit 0.
 
 ## Phase 2: Docs and template
 
