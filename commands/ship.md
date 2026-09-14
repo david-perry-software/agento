@@ -16,8 +16,11 @@ step below. Read the default branch and post-ship prefix from `agento.mjs config
 (`branches.default`, `branches.postShip`); `main` below stands for the configured
 default.
 
-If the slug's roadmap is already `status: complete` but has unticked
-`(manual, post-ship)` steps, skip straight to step 5 (post-ship verification epilogue).
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row: a roadmap already `status: complete` with unticked
+`(manual, post-ship)` steps skips straight to step 5 (post-ship verification
+epilogue), and an already-merged PR only syncs `main` and reports it.
 
 Before the audit, inspect `git worktree list --porcelain` for the roadmap's branch. If
 a secondary worktree owns it, stop and direct the user to run
@@ -95,7 +98,7 @@ the post-ship epilogue after the work branch has already merged.
      ruleset once required checks pass (normal merge commit, no bypass), delete the
      branch, and sync `main`. The user's /agento ship invocation authorizes this merge.
    - If the user cannot verify yet, stop and report that re-running /agento ship with the slug
-     resumes exactly here.
+     resumes exactly here (the duplicate-submission rule cited above).
 
 Never force-push, rebase, squash, amend, or create additional content commits beyond
 the roadmap status commit (which carries the changelog date stamp when the plugin

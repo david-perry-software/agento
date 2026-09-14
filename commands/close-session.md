@@ -9,6 +9,10 @@ invocation authorizes removing the managed worktree and, when already merged, de
 its local branch. It does not authorize discarding changes or deleting an unmerged
 branch.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (shared rule 6 below).
+
 **Dispatch on the argument:**
 
 - `feature/<slug>` or `issue/<slug>` → **build close**.
@@ -38,6 +42,10 @@ branch.
 5. Do not kill processes or close windows automatically. When the guard reports active
    occupants, show its details and wait for the user's decision; recommend closing the
    listed terminal/process or VS Code window, then rerunning the removal command.
+6. Worktree already removed (the canonical path is neither registered nor present):
+   report the session as already closed and stop successfully — but still delete the
+   local branch when it is merged (remote branch gone and an ancestor of
+   `origin/main`, `git branch -d`) and run `git worktree prune`.
 
 ## Plan close
 
