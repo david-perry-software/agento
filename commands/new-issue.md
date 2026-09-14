@@ -11,6 +11,8 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (a slug that already has a roadmap enters your resume protocol — no
 second branch, worktree, or PR; an existing GitHub issue is linked, not duplicated).
+Window check per §10: requires role `plan` — or `build` when resuming this slug's
+promoted planning worktree.
 
 The argument takes three forms — detect which applies:
 - **Free text**: a new defect description; you will file the GitHub issue in step 6.
@@ -21,7 +23,8 @@ The argument takes three forms — detect which applies:
   affected releases, and a sample event into `## Evidence`, then continue as free text
   (a GitHub issue is still filed, linking the Sentry issue).
 
-1. Require a managed isolated planning worktree per the Planner's isolation protocol.
+1. Require a managed isolated planning worktree per the Planner's isolation protocol
+   (the session record's `worktree.isManaged` with `dirPrefix: "plan"`).
 2. Ask your clarifying questions first (include reproduction steps and observed vs
    expected behavior); retain answers verbatim for plan.md `## Decisions` without
    writing files yet.
