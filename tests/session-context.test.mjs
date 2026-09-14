@@ -104,19 +104,19 @@ test("emits exactly one Session: line with role=primary on a plain repo, right a
 });
 
 test("reports role=build with the delivery and lifecycle from a managed worktree", () => {
-  const repo = makeRepo({ branch: "main", config: { worktrees: { dir: "../wt" } } });
+  const worktreesDir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-wt-"));
+  const repo = makeRepo({ branch: "main", config: { worktrees: { dir: worktreesDir } } });
   const git = (...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" });
   git("add", "-A");
   git("commit", "-q", "-m", "config");
-  const build = path.join(path.dirname(repo), "wt", "feature-widget");
-  fs.mkdirSync(path.dirname(build), { recursive: true });
+  const build = path.join(worktreesDir, "feature-widget");
   git("worktree", "add", "-q", "-b", "feature/widget", build);
   writeRoadmap(build, "features/2026/09/widget", 'status: in-progress\nbranch: feature/widget\nnext-step: "1.1 step"');
 
   const context = run(build);
   assert.match(context, /^Current git branch: feature\/widget$/m);
   const session = context.split("\n").find((l) => l.startsWith("Session: "));
-  assert.match(session, /^Session: role=build worktree=\S+\/wt\/feature-widget branch=feature\/widget delivery=feature\/widget lifecycle=building allowed=\[\/agento build-feature widget; \/agento delivery-status\] elsewhere=\[\/agento close-session feature\/widget@primary; \/agento ship widget@primary\]$/);
+  assert.match(session, /^Session: role=build worktree=\S+\/feature-widget branch=feature\/widget delivery=feature\/widget lifecycle=building allowed=\[\/agento build-feature widget; \/agento delivery-status\] elsewhere=\[\/agento close-session feature\/widget@primary; \/agento ship widget@primary\]$/);
   assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
 });
 
