@@ -11,6 +11,11 @@ through the ruleset. No clarifying questions — run autonomously end to end. Re
 artifacts with the Agento CLI (`node <agento-root>/scripts/agento.mjs`; path in the
 session context line `Agento CLI:`).
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (already-annotated follow-up lines and already-flagged issues are
+skipped).
+
 **Mode** — from the argument:
 - **Slug given**: `agento.mjs find <slug>`; triage only when `status` is `ok`,
   otherwise report the `message` and stop.

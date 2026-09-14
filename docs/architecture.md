@@ -40,7 +40,10 @@ flowchart TD
   **delivery policy** (`delivery-policy.instructions.md`, `applyTo: "**"`) is the
   single source for the rules every role shares — who does the work, verification
   targets, manual/post-ship steps and evidence, the lint gate, shell hygiene, git
-  rules, the cross-window handoff; agents and prompts cite its numbered sections
+  rules, the cross-window handoff, and execution receipts with per-command
+  idempotency (every command opens with a receipt line carrying a deterministic
+  operation ID and closes with a result line; a duplicate submission resumes from git
+  + roadmap state); agents and prompts cite its numbered sections
   (`§2`) instead of restating them, and a test fails if a rule is spelled out twice.
   The **artifact contract** holds only formats; **concurrent-delivery** holds only
   mechanics (ports, previews, shared resources, integration recipes); **ai-skills**

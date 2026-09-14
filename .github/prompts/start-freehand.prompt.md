@@ -16,6 +16,11 @@ flags. Reject an argument containing `/` and direct `feature/<slug>` or
 `issue/<slug>` to `/agento start-session` instead — freehand sessions never carry a delivery
 slug.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row: a registered worktree for the same slug is resumed with `--resume`
+semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
+
 **Preconditions:**
 
 1. Resolve the primary repository worktree with `git worktree list --porcelain` and
@@ -35,8 +40,9 @@ slug.
 2. The managed path is `freehand-<slug>` inside the managed worktrees directory
    (default `<repo-name>-worktrees/freehand-<slug>`) and the branch is
    `changes/<slug>`:
-   - Registered without `--resume`: stop and report that the session already exists.
-   - Registered with `--resume`: reuse it without changing its branch, HEAD, or files.
+   - Registered (with or without `--resume`): a duplicate submission per §9 — reuse it
+     without changing its branch, HEAD, or files, and say the session already exists
+     and was resumed.
    - If the path is free but `changes/<slug>` is already checked out elsewhere, stop;
      one session per branch.
 3. For a new session, run

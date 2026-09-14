@@ -42,4 +42,5 @@ delivery system. Layout:
   always gated behind user approval by the guard itself.
 - Never print, request, or log secrets.
 - Bounded waits only: `scripts/wait-for-checks.sh`, never `--watch`/`--wait`.
-- Every agent's final response ends with a concrete suggested next step.
+- Every agent's final response ends with a concrete suggested next step — the
+  `next:` of the execution receipt's result line (delivery-policy §9).

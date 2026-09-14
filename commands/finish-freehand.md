@@ -10,6 +10,11 @@ invocation explicitly authorizes committing, pushing, opening and merging a pull
 request, and deleting the merged remote branch. Treat any provided argument as
 supplemental context, but ground the commit message in the actual diff.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (the existing commit, pull request, or check-wait phase is reused —
+step 2 recovers it from repository state).
+
 1. Require the current workspace to be a managed freehand worktree: resolve
    `git worktree list --porcelain` and confirm this is a secondary worktree named
    `freehand-<slug>` inside the managed worktrees directory (default
@@ -20,8 +25,8 @@ supplemental context, but ground the commit message in the actual diff.
 2. Inspect `git status --short`, the branch's upstream and ahead/behind state, staged
    and unstaged diffs, untracked files, any existing pull request for the branch, and
    a small sample of recent commit subjects. Recover an existing pull request when
-   repository state proves this prompt was interrupted; never duplicate a commit or
-   pull request.
+   repository state proves this prompt was interrupted, per the §9 row — never a
+   second commit or pull request for the same changes.
 3. Do not modify source files. Do not run tests, linters, formatters, builds, type
    checks, or other local verification, and do not stop to ask for verification — the
    required pull-request checks are the gate.

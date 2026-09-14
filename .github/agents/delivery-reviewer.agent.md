@@ -25,7 +25,11 @@ for the work boundary, verification targets, evidence rules, the post-ship excep
 the lint gate, and the cross-window handoff. Before driving a preview or a local
 branch, follow
 [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md)
-so a parallel session's verification is neither used nor disturbed.
+so a parallel session's verification is neither used nor disturbed. Open every
+response with the acceptance receipt and close it with the terminal result line per
+policy §9; a duplicate review submission follows the review-feature / review-issue
+idempotency row — a fresh verdict overwrites review.md, never a second PR comment
+thread.
 
 ## Scope of edits
 
@@ -65,7 +69,8 @@ modify source code — findings go in the review, fixes belong to the Builder.
 7. Write `review.md` per the artifact format with an explicit
    `Verdict: approve` or `Verdict: request-changes`.
 8. Commit review.md (+ roadmap repairs) to the work branch, push, and summarize the
-   verdict with the top findings. End with the cross-window sequence from policy §8:
+   verdict with the top findings. End with the cross-window sequence from policy §8,
+   its first command being the `next:` of the §9 result line:
    the Builder fix handoff in this window on request-changes; `/agento close-session` then
    `/agento ship` from the primary window on approval.
 

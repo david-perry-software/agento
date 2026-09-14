@@ -10,6 +10,10 @@ commands that plan its next member feature. This command is **read-only**: never
 create worktrees, branches, or files, and never hand off to another agent —
 orchestration stays explicit in the primary window.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (read-only: a fresh read).
+
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs initiative <slug>` (the
    CLI path is announced in the session context as `Agento CLI:`). If `status` is
    `missing` or `invalid`, print its `message` and every entry of `errors` verbatim

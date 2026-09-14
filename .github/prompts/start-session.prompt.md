@@ -9,6 +9,11 @@ not authorize creating a delivery branch, deleting a branch, or changing deliver
 artifacts. Optional flags for both modes are `--resume` and `--no-open`; reject extra
 arguments or unknown flags.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row: a registered worktree for the same subject is resumed with `--resume`
+semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
+
 **Dispatch on the argument:**
 
 - `feature/<slug>` or `issue/<slug>` → **build mode**.
@@ -43,10 +48,10 @@ Session IDs identify worktrees only and never determine the eventual delivery sl
    `--resume` requires an explicit session ID.
 2. Set the managed path to `plan-<session-id>` inside the managed worktrees directory
    (default `<repo-name>-worktrees/plan-<session-id>`):
-   - Registered without `--resume`: stop and report the session already exists.
-   - Registered with `--resume`: reuse it without changing its HEAD, branch, or files.
-     This supports both an untouched detached session and one whose planner already
-     created its final delivery branch.
+   - Registered (with or without `--resume`): a duplicate submission per §9 — reuse it
+     without changing its HEAD, branch, or files, and say the session already exists
+     and was resumed. This supports both an untouched detached session and one whose
+     planner already created its final delivery branch.
 3. For a new session, run `git worktree add --detach <path> origin/main` and verify it
    is clean, detached, and exactly at `origin/main`. Never create a temporary branch.
 4. Report the path, created or resumed, its branch or detached state, and the exact
@@ -65,13 +70,12 @@ window or infer the delivery slug from the session ID.
    resolved roadmap has `status: complete`, stop and report that no build session is
    needed.
 2. Inspect `git worktree list --porcelain` for the roadmap branch:
-   - Checked out somewhere without `--resume`: stop; one builder per slug. If it is a
-     promoted `plan-<session-id>` path, note that building continues in that existing
-     window; do not open a second one.
    - Owned by the primary worktree: stop even with `--resume`; the primary worktree
      must return to `main` first and is never switched automatically.
-   - Owned by a secondary worktree with `--resume`: reuse that path without changing
-     its branch, directory name, or files (promoted `plan-*` worktrees included).
+   - Owned by a secondary worktree (with or without `--resume`): a duplicate
+     submission per §9 — reuse that path without changing its branch, directory name,
+     or files (promoted `plan-*` worktrees included); one builder per slug, so note
+     that building continues in that existing window and do not open a second one.
 3. Otherwise create the worktree at the `worktree` path from `agento.mjs paths <type>
    <slug>` on the exact roadmap branch. If the branch exists only as `origin/<branch>`,
    create the local tracking branch as part of `git worktree add`. If it exists
