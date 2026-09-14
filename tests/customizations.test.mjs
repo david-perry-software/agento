@@ -229,10 +229,13 @@ test("guidance never writes a command with a .prompt or .md suffix (agento-init.
   }
 });
 
-test("plugin manifest and hook wiring point at existing executable files", () => {
+test("plugin manifest uses suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel("plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
   assert.ok(fs.existsSync(rel(plugin.commands)), `plugin.commands ${plugin.commands} missing`);
+  for (const name of fs.readdirSync(rel(plugin.commands))) {
+    assert.match(name, /^[a-z0-9-]+\.md$/, `${plugin.commands}/${name}: command files are <name>.md only (no .prompt suffix)`);
+  }
   const pluginCommands = listFiles(rel(plugin.commands), ".md");
   assert.ok(pluginCommands.length > 0, "plugin.commands has no .md command files");
   assert.deepEqual(

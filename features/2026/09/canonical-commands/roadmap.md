@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/canonical-commands
 last-updated: 2026-09-13
-next-step: "3.2 — tighten the plugin manifest test to suffix-less command names"
+next-step: "3.3 — assert every command appears in the docs/commands.md Invocation section"
 initiative: "workflow-orchestration"
 ```
 
@@ -19,7 +19,7 @@ initiative: "workflow-orchestration"
 ## Phase 3: Tests
 
 - [x] 3.1 Add test (i) to `tests/customizations.test.mjs` named after the `agento-init.prompt` defect: regex `(?:\/agento\s+|(?<![\w.-])\/)(?:<names>)\.(?:prompt\.md|prompt|md)\b` over the existing `guidanceFiles` list plus `CHANGELOG.md`, skipping an explicit allowlist of exactly `CHANGELOG.md` and `.github/instructions/command-invocation.instructions.md`; run it first without the allowlist to confirm the only hits are in those two files — verify: `node --test tests/customizations.test.mjs` exit 0; then insert `/agento ship.prompt` into `README.md`, rerun, observe a failure whose message contains `README.md`, and `git checkout -- README.md`.
-- [ ] 3.2 Tighten the manifest test: rename it to mention suffix-less command names, iterate `fs.readdirSync(rel(plugin.commands))` and `assert.match(name, /^[a-z0-9-]+\.md$/)` for every entry before the existing `deepEqual` — verify: `node --test tests/customizations.test.mjs` exit 0; `touch commands/zz.prompt.md`, rerun, observe failure naming `zz.prompt.md`, `rm commands/zz.prompt.md`.
+- [x] 3.2 Tighten the manifest test: rename it to mention suffix-less command names, iterate `fs.readdirSync(rel(plugin.commands))` and `assert.match(name, /^[a-z0-9-]+\.md$/)` for every entry before the existing `deepEqual` — verify: `node --test tests/customizations.test.mjs` exit 0; `touch commands/zz.prompt.md`, rerun, observe failure naming `zz.prompt.md`, `rm commands/zz.prompt.md`.
 - [ ] 3.3 Extend "every slash command is documented…" with (iii): extract the `## Invocation` section of `docs/commands.md` (heading to next `^## `) and assert `/agento <name>` for every prompt appears inside it — verify: `node --test tests/customizations.test.mjs` exit 0; temporarily delete one row from the Invocation table, rerun, observe the failure naming the command, `git checkout -- docs/commands.md`.
 - [ ] 3.4 Add test (iv) "command-invocation instructions apply everywhere and list every command": `splitFrontmatter` + `parseFrontmatter` on the new file, assert `applyTo === "**"`, assert the body contains `/agento <name>` for every prompt basename, and assert every `/agento <token>` in the body is a known prompt name — verify: `node --test tests/customizations.test.mjs` exit 0; append `/agento nonexistent` to the instruction file, rerun, observe the failure naming `nonexistent`, `git checkout -- .github/instructions/command-invocation.instructions.md`.
 
