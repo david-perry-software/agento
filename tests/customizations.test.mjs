@@ -183,10 +183,13 @@ test("the policy file is the only place the shared rules are spelled out", () =>
 test("every slash command is documented in README.md and docs/commands.md", () => {
   const readme = fs.readFileSync(rel("README.md"), "utf8");
   const commands = fs.readFileSync(rel("docs", "commands.md"), "utf8");
+  const invocation = commands.match(/^## Invocation\r?\n([\s\S]*?)(?=^## )/m);
+  assert.ok(invocation, "docs/commands.md has no ## Invocation section");
   for (const file of promptFiles) {
     const command = "/agento " + path.basename(file, ".prompt.md");
     assert.ok(readme.includes(command), `README.md does not list ${command}`);
     assert.ok(commands.includes(command), `docs/commands.md does not list ${command}`);
+    assert.ok(invocation[1].includes(command), `docs/commands.md ## Invocation does not list ${command}`);
   }
 });
 
