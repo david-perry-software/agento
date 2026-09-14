@@ -4,6 +4,10 @@ argument-hint: "[slug] [--resume] [--no-open]"
 agent: "agent"
 ---
 
+Needs: terminal, code
+Fallback: code → §10 standard fallback (keep the worktree; print the open command)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Start an isolated freehand session: a sibling worktree on its own work branch where
 changes are made directly with the default VS Code agent and whatever tools are
 enabled, bypassing the plan/build/review delivery pipeline. This invocation authorizes
@@ -20,6 +24,9 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: a registered worktree for the same slug is resumed with `--resume`
 semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
+Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for start-freehand` and map
+`fail`/`warn` per §10.
 
 **Preconditions:**
 
@@ -55,8 +62,7 @@ semantics whether or not the flag was given, leaving HEAD, branch, and files unt
    VS Code CLI may reuse an already-running editor session instead of visibly creating
    a second window; treat a successful worktree as a valid result, say so explicitly,
    and never infer a Git worktree lock or branch conflict from that behavior. If the
-   `code` CLI is unavailable or opening fails, keep the worktree and report the manual
-   open command.
+   `code` CLI is unavailable or opening fails, apply the declared `code` fallback (§10).
 
 Do not create plan.md, roadmap.md, review.md, or any `features/`/`issues/` directory,
 and do not start the work in this primary window. Do not install dependencies

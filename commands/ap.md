@@ -4,12 +4,17 @@ argument-hint: "<feature|issue>/<slug> or bare slug"
 agent: "🤖 Agento Autopilot"
 ---
 
+Needs: terminal, browser, gh, network
+Fallback: browser → §10 standard fallback (headless verify or report blocked)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Run the delivery named by the argument unattended.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (re-enter the build or review resume protocol wherever the roadmap
-stands).
+stands). Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for ap` and map `fail`/`warn` per §10.
 
 - Accept `feature/<slug>`, `issue/<slug>`, or a bare slug. Resolve it with the Agento
   CLI (`node <agento-root>/scripts/agento.mjs resolve <type> <slug>`, or `find <slug>`

@@ -184,7 +184,126 @@ test("usage errors exit 1 and never throw", () => {
   assert.equal(run(repo).code, 1);
   assert.equal(run(repo, "status", "--bogus").code, 1);
   assert.equal(run(repo, "session", "extra").code, 1);
+  assert.equal(run(repo, "doctor", "--for", "Bad_Name").code, 1);
+  assert.equal(run(repo, "doctor", "--for").code, 1);
+  assert.equal(run(repo, "doctor", "extra").code, 1);
   assert.match(run(repo).json.usage.join("\n"), /session \[--pr\]/);
+  assert.match(run(repo).json.usage.join("\n"), /doctor \[--for <command>\]/);
+});
+
+const okStubs = {
+  gh: "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\nif [ \"$1\" = \"auth\" ]; then echo 'Logged in' >&2; exit 0; fi\nexit 1\n",
+  code: "#!/bin/sh\necho 1.99.0\n",
+  python3: "#!/bin/sh\necho 'Python 3.12.0'\n",
+};
+
+const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
+
+test("doctor reports six ok checks with exit 0 when every capability is present", () => {
+  const repo = makeRepo();
+  const { env } = restrictedPath(okStubs);
+  const { code, json } = runWith({ cwd: repo, env }, "doctor");
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.equal(json.for, null);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir"]);
+  for (const check of json.checks) {
+    assert.equal(check.status, "ok", JSON.stringify(check));
+    assert.equal(typeof check.detail, "string");
+    assert.equal(check.fallback, null);
+  }
+  const checks = byId(json);
+  assert.match(checks.gh.detail, /gh version 9\.9\.9; authenticated/);
+  assert.match(checks["git-remote"].detail, /main reachable/);
+  assert.match(checks["worktrees-dir"].detail, /project-worktrees absent; .* writable, it will be created/);
+});
+
+test("doctor fails with exit 3 and the install or reauth fallback when gh is missing or unauthenticated", () => {
+  const repo = makeRepo();
+  const { env, bin } = restrictedPath({ code: okStubs.code, python3: okStubs.python3 });
+
+  const missing = runWith({ cwd: repo, env }, "doctor");
+  assert.equal(missing.code, 3);
+  assert.equal(missing.json.status, "fail");
+  const gh = byId(missing.json).gh;
+  assert.equal(gh.status, "fail");
+  assert.match(gh.detail, /gh CLI not found on PATH/);
+  assert.match(gh.fallback, /install GitHub CLI/);
+  // Every other check is unaffected by the failing one.
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok"]);
+
+  fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
+  const unauth = runWith({ cwd: repo, env }, "doctor");
+  assert.equal(unauth.code, 3);
+  const auth = byId(unauth.json).gh;
+  assert.equal(auth.status, "fail");
+  assert.match(auth.detail, /gh auth status failed: You are not logged into any GitHub hosts/);
+  assert.match(auth.fallback, /`gh auth login`/);
+});
+
+test("doctor warns (exit 0) when code or python3 is missing and reports their fallbacks", () => {
+  const repo = makeRepo();
+  const { env } = restrictedPath({ gh: okStubs.gh });
+  const { code, json } = runWith({ cwd: repo, env }, "doctor");
+  assert.equal(code, 0);
+  assert.equal(json.status, "warn");
+  const checks = byId(json);
+  assert.equal(checks.code.status, "warn");
+  assert.match(checks.code.detail, /code CLI not found/);
+  assert.match(checks.code.fallback, /code --new-window <worktree-path>/);
+  assert.equal(checks.python3.status, "warn");
+  assert.match(checks.python3.detail, /python3 not found/);
+  assert.match(checks.python3.fallback, /hooks do not run/);
+  assert.equal(checks.gh.status, "ok");
+});
+
+test("doctor fails without an origin remote and warns when origin is unreachable", () => {
+  const repo = makeRepo();
+  const { env } = restrictedPath(okStubs);
+
+  git(repo, "remote", "set-url", "origin", path.join(path.dirname(repo), "does-not-exist.git"));
+  const unreachable = runWith({ cwd: repo, env }, "doctor");
+  assert.equal(unreachable.code, 0);
+  assert.equal(unreachable.json.status, "warn");
+  const remote = byId(unreachable.json)["git-remote"];
+  assert.equal(remote.status, "warn");
+  assert.match(remote.detail, /^origin .*does-not-exist\.git unreachable: /);
+  assert.match(remote.fallback, /work offline/);
+
+  git(repo, "remote", "remove", "origin");
+  const none = runWith({ cwd: repo, env }, "doctor");
+  assert.equal(none.code, 3);
+  assert.equal(none.json.status, "fail");
+  const missing = byId(none.json)["git-remote"];
+  assert.equal(missing.status, "fail");
+  assert.match(missing.detail, /no `origin` remote/);
+  assert.match(missing.fallback, /git remote add origin/);
+});
+
+test("doctor --for runs only the command's declared checks and reports its needs", () => {
+  const repo = makeRepo();
+  const marker = path.join(path.dirname(repo), "gh-invoked");
+  const { env } = restrictedPath({
+    ...okStubs,
+    gh: `#!/bin/sh\necho "$@" >> ${JSON.stringify(marker)}\n${okStubs.gh.replace("#!/bin/sh\n", "")}`,
+  });
+
+  const local = runWith({ cwd: repo, env }, "doctor", "--for", "close-session");
+  assert.equal(local.code, 0);
+  assert.deepEqual(local.json.for, { command: "close-session", needs: ["terminal"] });
+  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir"]);
+  assert.ok(!fs.existsSync(marker), "gh was invoked for a terminal-only command");
+
+  const ship = runWith({ cwd: repo, env }, "doctor", "--for", "ship");
+  assert.equal(ship.code, 0);
+  assert.deepEqual(ship.json.for, { command: "ship", needs: ["terminal", "gh", "network"] });
+  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir"]);
+  assert.match(fs.readFileSync(marker, "utf8"), /auth status/);
+
+  const unknown = runWith({ cwd: repo, env }, "doctor", "--for", "nope");
+  assert.equal(unknown.code, 1);
+  assert.equal(unknown.json.status, "usage-error");
+  assert.match(unknown.json.message, /unknown command nope/);
 });
 
 // Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).

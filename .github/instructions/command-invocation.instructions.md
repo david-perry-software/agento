@@ -13,6 +13,7 @@ values are the basenames of `.github/prompts/*.prompt.md`:
 - `/agento close-session`
 - `/agento commit-current-changes`
 - `/agento delivery-status`
+- `/agento doctor`
 - `/agento extend-copilot`
 - `/agento finish-freehand`
 - `/agento fix-copilot`
