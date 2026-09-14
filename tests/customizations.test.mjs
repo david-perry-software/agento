@@ -190,25 +190,42 @@ test("every slash command is documented in README.md and docs/commands.md", () =
   }
 });
 
+const commandNames = promptFiles.map((file) => path.basename(file, ".prompt.md"));
+const guidanceFiles = [
+  rel("README.md"),
+  rel("AGENTS.md"),
+  ...agentFiles,
+  ...promptFiles,
+  ...instructionFiles,
+  ...listFiles(rel("commands"), ".md"),
+  ...listFiles(rel("docs"), ".md"),
+  ...listFiles(rel("templates"), ".md"),
+];
+
 test("active guidance qualifies Agento slash commands with the plugin name", () => {
-  const commandNames = promptFiles.map((file) => path.basename(file, ".prompt.md"));
   const bareCommand = new RegExp(`(?<![\\w.-])/(?:${commandNames.join("|")})\\b`);
-  const guidanceFiles = [
-    rel("README.md"),
-    rel("AGENTS.md"),
-    ...agentFiles,
-    ...promptFiles,
-    ...instructionFiles,
-    ...listFiles(rel("commands"), ".md"),
-    ...listFiles(rel("docs"), ".md"),
-    ...listFiles(rel("templates"), ".md"),
-  ];
   for (const file of guidanceFiles) {
     assert.doesNotMatch(
       fs.readFileSync(file, "utf8"),
       bareCommand,
       `${path.relative(repoRoot, file)} contains an unqualified Agento command`,
     );
+  }
+});
+
+test("guidance never writes a command with a .prompt or .md suffix (agento-init.prompt defect)", () => {
+  // `/agento agento-init.prompt` was once exported with the wrong path and suffix and
+  // then treated as prose. Only the invocation instruction file may quote the bad
+  // forms (as redirect examples) and CHANGELOG.md records them as history.
+  const suffixedCommand = new RegExp(
+    `(?:/agento\\s+|(?<![\\w.-])/)(?:${commandNames.join("|")})\\.(?:prompt\\.md|prompt|md)\\b`,
+  );
+  const allowlist = new Set(["CHANGELOG.md", ".github/instructions/command-invocation.instructions.md"]);
+  for (const file of [...guidanceFiles, rel("CHANGELOG.md")]) {
+    const label = path.relative(repoRoot, file);
+    if (allowlist.has(label)) continue;
+    const hit = fs.readFileSync(file, "utf8").match(suffixedCommand);
+    assert.equal(hit, null, `${label} writes a suffixed command ${JSON.stringify(hit?.[0])}; use /agento <name>`);
   }
 });
 
