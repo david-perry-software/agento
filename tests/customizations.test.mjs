@@ -152,7 +152,7 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
 test("policy section references (§N) point at sections that exist", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
-  assert.ok(sections.size >= 8, "policy file lost sections");
+  assert.ok(sections.size >= 9, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, n] of text.matchAll(/§(\d+)/g)) {
@@ -170,6 +170,11 @@ test("the policy file is the only place the shared rules are spelled out", () =>
     /SIGPIPE/,
     /evidence\/step-<N-M>-<short-name>\.png/,
     /never (?:ask|hand) .*(?:the user|to the user).*run the command/i,
+    /Receipt: accepted/,
+    /Receipt: rejected/,
+    /Result: completed/,
+    /Result: failed/,
+    /duplicate of <op-id>/,
   ];
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     if (file.endsWith("delivery-policy.instructions.md")) continue;
