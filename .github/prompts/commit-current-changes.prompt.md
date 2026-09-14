@@ -11,11 +11,17 @@ committing, pushing, opening and merging a pull request, and synchronizing `main
 Treat any provided argument as supplemental context, but ground the message in the
 actual diff.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (the existing commit, pull request, or check-wait phase is reused —
+step 1 recovers it from repository state).
+
 1. Inspect `git status --short`, the current branch and its upstream/ahead-behind
 	state, staged and unstaged diffs, untracked files, any pull request for the
 	current branch, and a small sample of recent commit subjects. Recover an existing
 	publication branch or pull request when repository state proves this prompt was
-	interrupted; do not duplicate its commit or pull request.
+	interrupted, per the §9 row — never a second commit or pull request for the same
+	changes.
 2. Do not modify source files. Do not run tests, linters, formatters, builds, type
 	checks, or other local verification. Do not stop to ask for verification.
 3. If there is no unfinished publication state and no change to commit, say so and

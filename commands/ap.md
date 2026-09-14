@@ -6,6 +6,11 @@ agent: "🤖 Agento Autopilot"
 
 Run the delivery named by the argument unattended.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (re-enter the build or review resume protocol wherever the roadmap
+stands).
+
 - Accept `feature/<slug>`, `issue/<slug>`, or a bare slug. Resolve it with the Agento
   CLI (`node <agento-root>/scripts/agento.mjs resolve <type> <slug>`, or `find <slug>`
   for a bare slug; the path is in the session context line `Agento CLI:`) and stop on

@@ -18,6 +18,11 @@ Read the default branch and freehand prefix from the Agento CLI (`node
 the CLI path is announced in the session context as `Agento CLI:`). `main` below
 means the configured default.
 
+Open with the acceptance receipt and close with the terminal result line per
+delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
+its current step; see step 2 for the suffix rule).
+
 ## Refuse when the change does not fit
 
 Stop and name the right command instead of proceeding if any of these hold:
@@ -37,7 +42,9 @@ Stop and name the right command instead of proceeding if any of these hold:
    origin` then `git status --short --branch` shows nothing and zero ahead/behind.
    Authentication failures halt per the target repository's AGENTS.md.
 2. Derive a kebab-case slug (2-4 words) and `git switch -c changes/<slug>`. If the
-   branch already exists locally or on origin, append `-2`, `-3`, ….
+   branch already exists locally or on origin with an open PR from the same base,
+   that is the §9 duplicate — switch to it and resume; append `-2`, `-3`, … only
+   when that branch's PR is merged or closed.
 3. Read the target repository's AGENTS.md for its test, lint, and typecheck commands
    and load the matching installed skill for the domain touched, per its skills table.
 4. Implement the change minimally. Keep unrelated fixes out.
