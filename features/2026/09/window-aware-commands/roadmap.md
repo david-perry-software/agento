@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/window-aware-commands
 last-updated: 2026-09-14
 next-step: "1.1 deriveRole hosted flag + classifyWorktrees/findOwner in scripts/session-state.mjs"
