@@ -27,6 +27,10 @@ Prompts never re-derive slug resolution or config lookups in prose; they call th
 hook announces as `Agento CLI:`. Subcommands: `config`, `resolve <type> <slug>`,
 `find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>`,
 `ship-preflight <type> <slug>`, `paths <kind> <id>`, `ports <slug>`,
+`session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
+`unmanaged` — its worktree, the active delivery and its `lifecycle`, and the `allowed`
+and `elsewhere` commands; `--pr` adds the branch's PR via `gh`, degrading to
+`pr: null` plus a warning when `gh` is absent),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps). Every call prints one JSON document; exit 0 =

@@ -55,7 +55,11 @@ function writeBreakdown(root, rel, header, features) {
 }
 
 function run(cwd, ...args) {
-  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8" });
+  return runWith({ cwd }, ...args);
+}
+
+function runWith({ cwd, env }, ...args) {
+  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? process.env });
   let json;
   try {
     json = JSON.parse(result.stdout);
@@ -63,6 +67,15 @@ function run(cwd, ...args) {
     assert.fail(`non-JSON output: ${result.stdout}\n${result.stderr}`);
   }
   return { code: result.status, json };
+}
+
+// A PATH holding only node and git (plus any extra executables), so gh lookups are deterministic.
+function restrictedPath(extra = {}) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-bin-"));
+  fs.symlinkSync(process.execPath, path.join(bin, "node"));
+  fs.symlinkSync(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(bin, "git"));
+  for (const [name, script] of Object.entries(extra)) fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
+  return { bin, env: { ...process.env, PATH: bin } };
 }
 
 test("config resolves the template's null worktrees.dir to an absolute sibling path", () => {
@@ -170,6 +183,151 @@ test("usage errors exit 1 and never throw", () => {
   assert.equal(run(repo, "resolve", "feature", "Bad_Slug").code, 1);
   assert.equal(run(repo).code, 1);
   assert.equal(run(repo, "status", "--bogus").code, 1);
+  assert.equal(run(repo, "session", "extra").code, 1);
+  assert.match(run(repo).json.usage.join("\n"), /session \[--pr\]/);
+});
+
+// Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).
+function makeWorktreeRepo() {
+  const repo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
+  const wt = path.join(path.dirname(repo), "wt");
+  fs.mkdirSync(wt);
+  return { repo, wt };
+}
+
+test("session from the primary worktree reports role primary and no delivery", () => {
+  const { repo } = makeWorktreeRepo();
+  const { code, json } = run(repo, "session");
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.equal(json.role, "primary");
+  assert.equal(json.worktree.isPrimary, true);
+  assert.equal(json.worktree.branch, "main");
+  assert.equal(json.delivery, null);
+  assert.equal(json.pr, null);
+  assert.equal(json.lifecycle, "no-delivery");
+  assert.ok(json.allowed.includes("/agento start-session"));
+  assert.deepEqual(json.elsewhere, []);
+  assert.deepEqual(json.warnings, []);
+
+  const sub = path.join(repo, "src", "nested");
+  fs.mkdirSync(sub, { recursive: true });
+  assert.equal(run(sub, "session").json.role, "primary");
+  assert.equal(run(repo, "session", "--root", sub).json.worktree.path, repo);
+});
+
+test("session from a managed build worktree reports the delivery, lifecycle, and commands", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nlast-updated: 2026-09-13\nnext-step: \"1.2 todo\"");
+
+  const { code, json } = run(build, "session");
+  assert.equal(code, 0);
+  assert.equal(json.role, "build");
+  assert.deepEqual(json.worktree, { path: build, branch: "feature/widget", detached: false, isPrimary: false, isManaged: true, dirPrefix: "feature", id: "widget" });
+  assert.equal(json.delivery.type, "feature");
+  assert.equal(json.delivery.slug, "widget");
+  assert.equal(json.delivery.status, "in-progress");
+  assert.equal(json.delivery.roadmap, "features/2026/09/widget/roadmap.md");
+  assert.deepEqual(json.delivery.steps, { ticked: 1, total: 2 });
+  assert.equal(json.lifecycle, "building");
+  assert.ok(json.allowed.includes("/agento build-feature widget"));
+  const ship = json.elsewhere.find((e) => e.command === "/agento ship widget");
+  assert.equal(ship.window, "primary");
+
+  // From the primary, the same branch is only visible via its worktree, not the cwd.
+  assert.equal(run(repo, "session").json.role, "primary");
+
+  // An unmanaged sibling worktree on a delivery branch.
+  const stray = path.join(path.dirname(repo), "stray");
+  git(repo, "worktree", "add", "-q", "-b", "issue/bug", stray);
+  const unmanaged = run(stray, "session").json;
+  assert.equal(unmanaged.role, "unmanaged");
+  assert.equal(unmanaged.delivery.slug, "bug");
+  assert.deepEqual(unmanaged.allowed, []);
+  assert.equal(unmanaged.elsewhere[0].window, "primary");
+});
+
+test("session promotes a plan-* worktree to build once it is on a delivery branch", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const plan = path.join(wt, "plan-20260914-015913");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+
+  const detached = run(plan, "session").json;
+  assert.equal(detached.role, "plan");
+  assert.equal(detached.worktree.detached, true);
+  assert.equal(detached.worktree.branch, null);
+  assert.equal(detached.delivery, null);
+  assert.equal(detached.lifecycle, "no-delivery");
+  assert.ok(detached.allowed.includes("/agento new-feature"));
+
+  git(plan, "switch", "-q", "-c", "feature/thing");
+  const promoted = run(plan, "session").json;
+  assert.equal(promoted.role, "build");
+  assert.equal(promoted.worktree.dirPrefix, "plan");
+  assert.equal(promoted.worktree.id, "20260914-015913");
+  assert.equal(promoted.delivery.slug, "thing");
+  assert.equal(promoted.delivery.roadmap, null);
+  assert.equal(promoted.lifecycle, "no-delivery");
+
+  writeRoadmap(plan, "features/2026/09/thing", "status: planned\nbranch: feature/thing\nnext-step: 1.1");
+  const planned = run(plan, "session").json;
+  assert.equal(planned.lifecycle, "planned");
+  assert.ok(planned.allowed.includes("/agento build-feature thing"));
+});
+
+test("session --pr degrades to pr: null with one warning when gh is missing", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: x");
+  const { env } = restrictedPath();
+
+  const { code, json } = runWith({ cwd: build, env }, "session", "--pr");
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.equal(json.pr, null);
+  assert.equal(json.warnings.length, 1);
+  assert.match(json.warnings[0], /gh CLI not found/);
+  assert.equal(json.lifecycle, "building");
+});
+
+test("session never invokes gh without --pr and reads its JSON with --pr", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  const marker = path.join(wt, "gh-invoked");
+  const { env, bin } = restrictedPath({
+    gh: `#!/bin/sh\necho "$@" >> ${JSON.stringify(marker)}\nif [ "$1" = "--version" ]; then echo gh version 0; exit 0; fi\necho '{"number":15,"state":"OPEN","isDraft":true,"mergeStateStatus":"CLEAN","url":"https://example.test/pr/15"}'\n`,
+  });
+
+  const plain = runWith({ cwd: build, env }, "session");
+  assert.equal(plain.code, 0);
+  assert.equal(plain.json.pr, null);
+  assert.deepEqual(plain.json.warnings, []);
+  assert.ok(!fs.existsSync(marker), "gh was invoked without --pr");
+
+  const withPr = runWith({ cwd: build, env }, "session", "--pr");
+  assert.equal(withPr.code, 0);
+  assert.deepEqual(withPr.json.pr, { number: 15, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+  assert.deepEqual(withPr.json.warnings, []);
+  assert.match(fs.readFileSync(marker, "utf8"), /pr view feature\/widget --json number,state,isDraft,mergeStateStatus,url/);
+
+  // A gh that fails (exit 99) is reported as a warning, not an error.
+  fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\necho 'no pull requests found for branch' >&2\nexit 99\n", { mode: 0o755 });
+  const failing = runWith({ cwd: build, env }, "session", "--pr");
+  assert.equal(failing.code, 0);
+  assert.equal(failing.json.pr, null);
+  assert.deepEqual(failing.json.warnings.length, 1);
+  assert.match(failing.json.warnings[0], /gh pr view feature\/widget failed: no pull requests found/);
+
+  // A merged PR on a non-complete roadmap warns without changing the lifecycle.
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: x");
+  fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\necho '{\"number\":15,\"state\":\"MERGED\",\"isDraft\":false,\"mergeStateStatus\":\"UNKNOWN\",\"url\":\"u\"}'\n", { mode: 0o755 });
+  const merged = runWith({ cwd: build, env }, "session", "--pr");
+  assert.equal(merged.json.lifecycle, "building");
+  assert.match(merged.json.warnings[0], /^merged-but-not-complete: PR #15/);
 });
 
 const chain = [{ slug: "a" }, { slug: "b", recommendedAfter: ["a"] }, { slug: "c", requires: ["b"] }];

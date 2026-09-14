@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+- **New `agento.mjs session [--pr]`.** One JSON record answering "where am I, what is
+  active, what may I run next": the window `role` (`primary`, `plan`, `build`,
+  `freehand`, `unmanaged` — a promoted `plan-*` worktree on a delivery branch reports
+  `build`), the `worktree`, the active `delivery` with its roadmap fields, a derived
+  `lifecycle` (`no-delivery | planned | building | paused | in-review | approved |
+  shipped | post-ship-pending`), and the `allowed` / `elsewhere` command table that
+  encodes the build-and-review-in-the-secondary, close-and-ship-in-the-primary policy.
+  `--pr` adds the branch's PR via `gh`, degrading to `pr: null` plus a warning when
+  `gh` is absent or unauthenticated. Pure helpers live in `scripts/session-state.mjs`.
+- **SessionStart hook emits a `Session:` line** built from `agento.mjs session` after
+  `Agento CLI:`; when `node` is missing or the CLI fails, the output is byte-identical
+  to 0.3.0.
+- **`/agento delivery-status` opens with a Session section** (role, worktree, delivery,
+  lifecycle, allowed and elsewhere commands, warnings) from `session --pr`.
+
 ## 0.3.0 (2026-09-06)
 
 - **New 🏛️ Agento Architect and `/new-initiative <brief | path>`.** Runs in the

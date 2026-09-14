@@ -6,11 +6,15 @@ Agento ships two hooks. In plugin mode they are wired by `hooks.json` with
 
 ## SessionStart — `scripts/hooks/session-context.sh`
 
-Injects `Current git branch: <branch>` plus one line per in-progress / paused /
-in-review roadmap (`status:` and `next-step:` from the YAML header) into every new
-chat session via `hookSpecificOutput.additionalContext`. It reads the repository
-from the hook input's `cwd` and the artifact roots from the target's
-`.github/agento.json` — it never assumes the plugin's own directory.
+Injects `Current git branch: <branch>`, the `Agento CLI:` path, one
+`Session: role=… worktree=… branch=… delivery=… lifecycle=… allowed=[…] elsewhere=[…]`
+line (the output of `agento.mjs session` without `--pr`), plus one line per
+in-progress / paused / in-review roadmap (`status:` and `next-step:` from the YAML
+header) into every new chat session via `hookSpecificOutput.additionalContext`. It
+reads the repository from the hook input's `cwd` and the artifact roots from the
+target's `.github/agento.json` — it never assumes the plugin's own directory. The
+`Session:` line needs `node` on `PATH`; when it is missing, or the CLI fails or
+exceeds its 5 s timeout, the line is omitted and the rest of the output is unchanged.
 
 ## PreToolUse — `scripts/hooks/delivery-guard.sh`
 
