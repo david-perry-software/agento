@@ -1,8 +1,8 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/command-receipts
 last-updated: 2026-09-14
-next-step: "Review: /agento review-feature command-receipts"
+next-step: ""
 initiative: "workflow-orchestration"
 ```
 
