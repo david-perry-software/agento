@@ -14,6 +14,7 @@
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, delivery, lifecycle, allowed)
+//   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
 
@@ -33,7 +34,7 @@ import { deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktr
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 18);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 19);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -57,7 +58,10 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--root") options.root = argv[++i];
     else if (arg === "--pr") options.pr = true;
-    else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
+    else if (arg === "--for") {
+      options.for = argv[++i];
+      if (!options.for || !/^[a-z0-9-]+$/.test(options.for)) usage(`--for takes a command name matching [a-z0-9-]+, got ${JSON.stringify(options.for ?? "")}`);
+    } else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
     else positional.push(arg);
   }
   return { positional, options };
@@ -170,6 +174,98 @@ function lookupPullRequest(branch) {
     const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
     return { pr: null, warnings: [`pr: gh pr view ${branch} failed: ${stderr}`] };
   }
+}
+
+// worktrees.dir is relative to the primary checkout; resolving it against a
+// secondary worktree's own basename would name the wrong sibling directory.
+function primaryWorktreesDir(worktrees) {
+  const primaryRoot = worktrees[0]?.path ?? root;
+  const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
+  return path.resolve(primaryRoot, primaryConfig.worktrees.dir);
+}
+
+// --- doctor ----------------------------------------------------------------
+
+// Every probe is bounded and never throws: a missing binary, a nonzero exit, and a
+// timeout all become a result the caller maps to ok | warn | fail.
+function probe(cmd, args) {
+  const opts = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } };
+  try {
+    return { ok: true, out: execFileSync(cmd, args, opts).trim().split("\n")[0] ?? "" };
+  } catch (error) {
+    const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0];
+    const stdout = (error?.stdout ?? "").toString().trim().split("\n")[0];
+    const timedOut = error?.code === "ETIMEDOUT" || (error?.signal && !error?.status);
+    return {
+      ok: false,
+      missing: error?.code === "ENOENT",
+      timedOut,
+      detail: timedOut ? `${cmd} timed out after 10 s` : stderr || stdout || error?.message || "unknown error",
+    };
+  }
+}
+
+const DOCTOR_CHECKS = {
+  node() {
+    const version = process.versions.node;
+    const major = Number.parseInt(version.split(".")[0], 10);
+    return major >= 20
+      ? { status: "ok", detail: `node v${version}`, fallback: null }
+      : { status: "fail", detail: `node v${version} is below the required 20`, fallback: "install Node >= 20 (AGENTS.md); the Agento CLI and its tests need it" };
+  },
+  "git-remote"() {
+    const url = git(root, "remote", "get-url", "origin");
+    if (!url) return { status: "fail", detail: "no `origin` remote", fallback: "add the remote (`git remote add origin <url>`) or work in a clone; push and PR steps need origin" };
+    const reach = probe("git", ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default]);
+    return reach.ok
+      ? { status: "ok", detail: `origin ${url}, ${config.branches.default} reachable`, fallback: null }
+      : { status: "warn", detail: `origin ${url} unreachable: ${reach.detail}`, fallback: "work offline; fetch, push, and PR steps will fail until the network is back — retry them before ending the turn" };
+  },
+  gh() {
+    const version = probe("gh", ["--version"]);
+    if (!version.ok) return { status: "fail", detail: version.missing ? "gh CLI not found on PATH" : `gh --version failed: ${version.detail}`, fallback: "install GitHub CLI (https://cli.github.com) — the user installs it; the agent does not" };
+    const auth = probe("gh", ["auth", "status"]);
+    return auth.ok
+      ? { status: "ok", detail: `${version.out}; authenticated`, fallback: null }
+      : { status: "fail", detail: `gh auth status failed: ${auth.detail}`, fallback: "stop; the user runs `gh auth login` in their own terminal, then re-sends the command (policy §1: never run it on their behalf)" };
+  },
+  code() {
+    const version = probe("code", ["--version"]);
+    return version.ok
+      ? { status: "ok", detail: `code ${version.out}`, fallback: null }
+      : { status: "warn", detail: version.missing ? "code CLI not found on PATH" : `code --version failed: ${version.detail}`, fallback: "keep the worktree and print `code --new-window <worktree-path>` for the user to run" };
+  },
+  python3() {
+    const version = probe("python3", ["--version"]);
+    return version.ok
+      ? { status: "ok", detail: version.out, fallback: null }
+      : { status: "warn", detail: version.missing ? "python3 not found on PATH" : `python3 --version failed: ${version.detail}`, fallback: "hooks do not run: the delivery guard and SessionStart context are unavailable — proceed with care and apply the policy by hand" };
+  },
+  "worktrees-dir"() {
+    const dir = primaryWorktreesDir(parseWorktreeList(git(root, "worktree", "list", "--porcelain")));
+    let existing = dir;
+    while (!fs.existsSync(existing) && path.dirname(existing) !== existing) existing = path.dirname(existing);
+    try {
+      fs.accessSync(existing, fs.constants.W_OK);
+      return { status: "ok", detail: existing === dir ? `${dir} writable` : `${dir} absent; ${existing} writable, it will be created`, fallback: null };
+    } catch {
+      return { status: "fail", detail: `${dir} not writable (${existing} denies write)`, fallback: "create the directory with write permission or change worktrees.dir in .github/agento.json" };
+    }
+  },
+};
+
+const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
+
+function runDoctor(ids) {
+  const checks = ids.map((id) => {
+    try {
+      return { id, ...DOCTOR_CHECKS[id]() };
+    } catch (error) {
+      return { id, status: "fail", detail: `check threw: ${error?.message ?? error}`, fallback: "report this as an Agento bug; run the probe by hand" };
+    }
+  });
+  const status = checks.reduce((worst, c) => (STATUS_RANK[c.status] > STATUS_RANK[worst] ? c.status : worst), "ok");
+  return { status, checks };
 }
 
 // --- initiatives -----------------------------------------------------------
@@ -446,17 +542,20 @@ switch (command) {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
     // startDir (not root): a subdirectory inside a worktree resolves to that worktree's entry.
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
-    // worktrees.dir is relative to the primary checkout; resolving it against a
-    // secondary worktree's own basename would name the wrong sibling directory.
-    const primaryRoot = worktrees[0]?.path ?? root;
-    const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
-    const sessionWorktreesDir = path.resolve(primaryRoot, primaryConfig.worktrees.dir);
-    const { role, worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config });
+    const { role, worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: primaryWorktreesDir(worktrees), config });
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(delivery?.branch ?? worktree.branch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
     emit({ status: "ok", role, worktree, delivery, pr, lifecycle, allowed, elsewhere, warnings: [...prWarnings, ...warnings], root, configSource: source });
+    break;
+  }
+
+  case "doctor": {
+    if (rest.length) usage(`doctor takes no positional arguments, got ${JSON.stringify(rest[0])}`);
+    const { status, checks } = runDoctor(Object.keys(DOCTOR_CHECKS));
+    // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
+    emit({ status, for: null, checks, root, configSource: source }, status === "fail" ? 3 : 0);
     break;
   }
 
