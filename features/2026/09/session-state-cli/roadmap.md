@@ -2,13 +2,13 @@
 status: in-progress
 branch: feature/session-state-cli
 last-updated: 2026-09-13
-next-step: "1.1 create scripts/session-state.mjs with parseWorktreeList and deriveRole"
+next-step: "1.2 add deriveDelivery and deriveLifecycle to scripts/session-state.mjs"
 initiative: "workflow-orchestration"
 ```
 
 ## Phase 1: Session-state module (pure functions + unit tests)
 
-- [ ] 1.1 Create `scripts/session-state.mjs` exporting `parseWorktreeList(porcelain)` and `deriveRole({ cwd, worktrees, worktreesDir, config })` implementing the role rules in plan.md `## Approach` §1 (primary → managed prefix `plan|feature|issue|freehand` → `unmanaged`; branch prefix promotes `plan-*` to `build`; realpath comparison) — verify: `node --test scripts/session-state.test.mjs` passes new tests covering primary, `plan-` detached, promoted `plan-` on `feature/x`, `feature-x`, `freehand-x`, unmanaged sibling, cwd in a subdirectory, and a symlinked worktree path
+- [x] 1.1 Create `scripts/session-state.mjs` exporting `parseWorktreeList(porcelain)` and `deriveRole({ cwd, worktrees, worktreesDir, config })` implementing the role rules in plan.md `## Approach` §1 (primary → managed prefix `plan|feature|issue|freehand` → `unmanaged`; branch prefix promotes `plan-*` to `build`; realpath comparison) — verify: `node --test scripts/session-state.test.mjs` passes new tests covering primary, `plan-` detached, promoted `plan-` on `feature/x`, `feature-x`, `freehand-x`, unmanaged sibling, cwd in a subdirectory, and a symlinked worktree path
 - [ ] 1.2 Add `deriveDelivery({ branch, dirPrefix, id, roadmaps, config })` and `deriveLifecycle({ delivery, pr })` to `scripts/session-state.mjs` per the lifecycle mapping in plan.md — verify: `node --test scripts/session-state.test.mjs` includes a table test producing every value of `no-delivery | planned | building | paused | in-review | approved | shipped | post-ship-pending` and the `merged-but-not-complete` warning
 - [ ] 1.3 Add `deriveAllowed({ role, lifecycle, delivery })` returning `{ allowed, elsewhere }` from a data table (role × lifecycle), with the fixed `freehand` list and the empty `unmanaged` list from plan.md Decision Q4 — verify: `node --test scripts/session-state.test.mjs` asserts one row per role × lifecycle, including `/agento build-feature <slug>` in `build`/`building`, `/agento ship <slug>` in `elsewhere@primary` from a build worktree, and `/agento start-session` in `primary`/`no-delivery`
 
