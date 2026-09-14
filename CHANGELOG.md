@@ -2,6 +2,18 @@
 
 ## 0.4.0 (unreleased)
 
+- **New `agento.mjs doctor` and per-command preflight.** `doctor [--for <command>]`
+  runs six environment checks (`node` ≥ 20, `git-remote`, `gh` installed and
+  authenticated, `code` CLI, `python3`, writable `worktrees-dir`), each reported as
+  `{ id, status, detail, fallback }`, overall `ok | warn | fail` (exit 3 on `fail`);
+  `--for` limits the run to the named command's needs. Every prompt and agent now
+  opens with `Needs:` / `Fallback:` lines from the §10 vocabulary; commands needing
+  `gh`, `code`, or `network` run `doctor --for <name>` before their first write and
+  map `fail` to a `Receipt: rejected — <capability>: …; fallback: …` receipt and
+  `warn` to a `Preflight:` line. New `/agento doctor` command reports the checks and
+  fixes nothing. Policy gains `## 10. Capability preflight`; the customizations test
+  cross-checks vocabulary, prompts, and the CLI table.
+
 - **New `agento.mjs session [--pr]`.** One JSON record answering "where am I, what is
   active, what may I run next": the window `role` (`primary`, `plan`, `build`,
   `freehand`, `unmanaged` — a promoted `plan-*` worktree on a delivery branch reports
