@@ -1,8 +1,8 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/capability-preflight
 last-updated: 2026-09-14
-next-step: "/agento review-feature capability-preflight"
+next-step: ""
 initiative: "workflow-orchestration"
 ```
 
