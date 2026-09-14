@@ -13,7 +13,7 @@
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
 //   node scripts/agento.mjs initiative [<slug>]
-//   node scripts/agento.mjs session [--pr]             (role, worktree, delivery, lifecycle, allowed)
+//   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, delivery, lifecycle, allowed; hosted flag)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
 
@@ -28,7 +28,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -451,12 +451,27 @@ switch (command) {
     const primaryRoot = worktrees[0]?.path ?? root;
     const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
     const sessionWorktreesDir = path.resolve(primaryRoot, primaryConfig.worktrees.dir);
-    const { role, worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config });
+    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env });
+    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config });
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(delivery?.branch ?? worktree.branch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
-    emit({ status: "ok", role, worktree, delivery, pr, lifecycle, allowed, elsewhere, warnings: [...prWarnings, ...warnings], root, configSource: source });
+    emit({
+      status: "ok",
+      role,
+      hosted,
+      worktree,
+      worktrees: classified,
+      delivery,
+      pr,
+      lifecycle,
+      allowed,
+      elsewhere,
+      warnings: [...(hostedReason ? [hostedReason] : []), ...prWarnings, ...warnings],
+      root,
+      configSource: source,
+    });
     break;
   }
 
