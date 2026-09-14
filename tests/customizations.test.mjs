@@ -232,6 +232,20 @@ test("guidance never writes a command with a .prompt or .md suffix (agento-init.
   }
 });
 
+test("command-invocation instructions apply everywhere and list every command", () => {
+  const file = rel(".github", "instructions", "command-invocation.instructions.md");
+  const label = path.relative(repoRoot, file);
+  const { frontmatter, body } = splitFrontmatter(file);
+  assert.equal(parseFrontmatter(frontmatter, label).applyTo, "**", `${label}: applyTo must be "**"`);
+  for (const name of commandNames) {
+    assert.ok(body.includes(`/agento ${name}`), `${label} does not list /agento ${name}`);
+  }
+  const known = new Set(commandNames);
+  for (const [, token] of body.matchAll(/\/agento ([a-z0-9-]+)\b/g)) {
+    assert.ok(known.has(token), `${label} lists /agento ${token}, which has no .github/prompts/${token}.prompt.md`);
+  }
+});
+
 test("plugin manifest uses suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel("plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
