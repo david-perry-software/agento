@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/capability-preflight
 last-updated: 2026-09-14
 next-step: "1.1 doctor checks and --for parsing in agento.mjs"
