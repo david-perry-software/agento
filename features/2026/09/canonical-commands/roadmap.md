@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/canonical-commands
-last-updated: 2026-09-13
-next-step: "4.3 — confirm initiative wiring, set in-review, hand off"
+last-updated: 2026-09-14
+next-step: ""
 initiative: "workflow-orchestration"
 ```
 
@@ -27,4 +27,4 @@ initiative: "workflow-orchestration"
 
 - [x] 4.1 Add one bullet under `## 0.4.0 (unreleased)` in `CHANGELOG.md` describing the instruction file, the redirect rule, the `## Invocation` table, and the four test assertions, quoting `/agento agento-init.prompt` as the motivating defect — verify: `grep -n 'agento-init.prompt' CHANGELOG.md` shows the bullet; `node --test tests/customizations.test.mjs` exit 0 (CHANGELOG is allowlisted in test (i)).
 - [x] 4.2 Merge `origin/main` (policy §7), then run the full gate and compare with the plan.md `## Research` baseline: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` (exit 0, ≥ 102 pass, 0 fail), `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` (exit 0), `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` (exit 0); record the three exit codes and the test count in the commit message — verify: all three exit 0 and no findings that were absent at baseline. (Count corrected 2026-09-13: the four assertions are 2 new tests (i, iv) plus 2 tightened existing tests (ii, iii), so the bound is ≥ 100 node tests; result 100/100, origin/main `e0bbddf` already an ancestor, exits 0/0/0.)
-- [ ] 4.3 Confirm initiative wiring and hand off: `node scripts/agento.mjs initiative workflow-orchestration` reports `canonical-commands` with `state: in-progress` (or `in-review` after the header update) and `errors: []`; set roadmap `status: in-review`, push, and mark ready for `/agento review-feature canonical-commands` — verify: CLI output has no `errors`; `git status` clean; `git log origin/feature/canonical-commands -1` equals local HEAD.
+- [x] 4.3 Confirm initiative wiring and hand off: `node scripts/agento.mjs initiative workflow-orchestration` reports `canonical-commands` with `state: in-progress` (or `in-review` after the header update) and `errors: []`; set roadmap `status: in-review`, push, and mark ready for `/agento review-feature canonical-commands` — verify: CLI output has no `errors`; `git status` clean; `git log origin/feature/canonical-commands -1` equals local HEAD.
