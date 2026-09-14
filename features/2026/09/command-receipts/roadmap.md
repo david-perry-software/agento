@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/command-receipts
 last-updated: 2026-09-14
-next-step: "3.5 confirm no prompt restates a format word; commands/ byte-identical"
+next-step: "4.1 §9 citation in planner, builder, reviewer agents"
 initiative: "workflow-orchestration"
 ```
 
@@ -21,7 +21,7 @@ initiative: "workflow-orchestration"
 - [x] 3.2 In `start-session.prompt.md` (L46–48, L68–73) and `start-freehand.prompt.md` (L38–40) replace the "registered without `--resume`: stop and report the session already exists" rule with the §9 duplicate rule (a registered worktree for the same subject is a duplicate submission and is resumed with `--resume` semantics — HEAD, branch, and files untouched) and add the §9 citation; mirror into `commands/` — verify: `grep -n 'already exists' .github/prompts/start-session.prompt.md .github/prompts/start-freehand.prompt.md` shows no "stop" wording; `node --test tests/customizations.test.mjs` byte-identity passes
 - [x] 3.3 In `close-session.prompt.md` add the "worktree already removed → report already closed, still delete a merged local branch and prune" outcome and the §9 citation; in `ship.prompt.md` (L19–20, L28, L97–98) defer the `status: complete` → epilogue and merged-PR resume wording to §9 and add the citation; mirror into `commands/` — verify: `grep -n '§9' .github/prompts/close-session.prompt.md .github/prompts/ship.prompt.md` shows one hit each; byte-identity passes
 - [x] 3.4 In `build-feature.prompt.md`, `build-issue.prompt.md`, `ap.prompt.md`, `quick-fix.prompt.md` (L40 `-2` suffix rule → applies only when the existing `changes/<slug>` PR is merged or closed; an open PR from the same base is resumed), `finish-freehand.prompt.md`, `commit-current-changes.prompt.md`, `start-freehand.prompt.md` if not done in 3.2 — add the §9 citation and reword existing duplicate prose to defer to the §9 row; mirror into `commands/` — verify: `node --test tests/customizations.test.mjs` failure list contains only the 6 agents
-- [ ] 3.5 Confirm no prompt restates a receipt format word and all 22 `commands/*.md` equal their prompts — verify: `for f in .github/prompts/*.prompt.md; do cmp -s "$f" "commands/$(basename "$f" .prompt.md).md" || echo "DIFF $f"; done` prints nothing; the canary test passes
+- [x] 3.5 Confirm no prompt restates a receipt format word and all 22 `commands/*.md` equal their prompts — verify: `for f in .github/prompts/*.prompt.md; do cmp -s "$f" "commands/$(basename "$f" .prompt.md).md" || echo "DIFF $f"; done` prints nothing; the canary test passes
 
 ## Phase 4: Agent citations
 
