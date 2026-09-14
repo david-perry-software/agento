@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/command-receipts
 last-updated: 2026-09-14
-next-step: "2.1 add §9 citation enforcement test"
+next-step: "3.1 add §9 citation to the 12 prompts without duplicate prose"
 initiative: "workflow-orchestration"
 ```
 
@@ -13,7 +13,7 @@ initiative: "workflow-orchestration"
 
 ## Phase 2: Enforcement test
 
-- [ ] 2.1 Add test "every command and agent opens and closes with the §9 receipt" to `tests/customizations.test.mjs`: for every file in `promptFiles` and `agentFiles`, `splitFrontmatter(file).body` must match `/§9\b/`, failing with the relative path — verify: `node --test tests/customizations.test.mjs` exit 1 and the failure lists all 22 prompts and 6 agents (record the count in the commit message)
+- [x] 2.1 Add test "every command and agent opens and closes with the §9 receipt" to `tests/customizations.test.mjs`: for every file in `promptFiles` and `agentFiles`, `splitFrontmatter(file).body` must match `/§9\b/`, failing with the relative path — verify: `node --test tests/customizations.test.mjs` exit 1 and the failure lists all 22 prompts and 6 agents (record the count in the commit message)
 
 ## Phase 3: Prompt citations
 

@@ -161,6 +161,14 @@ test("policy section references (§N) point at sections that exist", () => {
   }
 });
 
+test("every command and agent opens and closes with the §9 receipt", () => {
+  const missing = [];
+  for (const file of [...promptFiles, ...agentFiles]) {
+    if (!/§9\b/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
+  }
+  assert.deepEqual(missing, [], `files that do not cite policy §9 (execution receipts):\n${missing.join("\n")}`);
+});
+
 test("the policy file is the only place the shared rules are spelled out", () => {
   // Phrases that used to be duplicated across agents/prompts; each may now appear in
   // the policy file and nowhere else in the customization set.
