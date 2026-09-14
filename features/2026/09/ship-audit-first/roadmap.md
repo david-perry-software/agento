@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/ship-audit-first
 last-updated: 2026-09-14
 next-step: "1.1 Gate on window-aware-commands (PR #19) being merged and integrated"
