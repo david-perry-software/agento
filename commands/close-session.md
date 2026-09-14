@@ -11,7 +11,7 @@ branch.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (shared rule 6 below).
+idempotency row (shared rule 6 below). Window check per §10: requires role `primary`.
 
 **Dispatch on the argument:**
 
@@ -24,9 +24,9 @@ idempotency row (shared rule 6 below).
 
 **Shared rules:**
 
-1. Resolve the primary worktree with `git worktree list --porcelain`; require the
-   current workspace to be that primary worktree, then `git fetch origin`.
-   Authentication or authorization failures halt immediately.
+1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
+   `role: "primary"`; otherwise reject per §10 with the record's alternatives. Then
+   `git fetch origin`. Authentication or authorization failures halt immediately.
 2. Managed paths live under the managed worktrees directory; resolve the canonical
    path for the argument with the Agento CLI — `node <agento-root>/scripts/agento.mjs
    paths <feature|issue|plan|freehand> <slug|session-id>` (path announced in the
@@ -42,10 +42,11 @@ idempotency row (shared rule 6 below).
 5. Do not kill processes or close windows automatically. When the guard reports active
    occupants, show its details and wait for the user's decision; recommend closing the
    listed terminal/process or VS Code window, then rerunning the removal command.
-6. Worktree already removed (the canonical path is neither registered nor present):
-   report the session as already closed and stop successfully — but still delete the
-   local branch when it is merged (remote branch gone and an ancestor of
-   `origin/main`, `git branch -d`) and run `git worktree prune`.
+6. Worktree already removed (the canonical path is neither registered per
+   `git worktree list --porcelain` nor present on disk): report the session as already
+   closed and stop successfully — but still delete the local branch when it is merged
+   (remote branch gone and an ancestor of `origin/main`, `git branch -d`) and run
+   `git worktree prune`.
 
 ## Plan close
 
@@ -60,10 +61,16 @@ idempotency row (shared rule 6 below).
    an `origin/<branch>` fallback and validates the `branch:` header. `status: error`
    (`multiple-roadmaps`, `branch-mismatch`, `no-resolvable-roadmap`) stops the close —
    report the `message` verbatim.
-2. `reason: remote-roadmap-only` means no managed secondary worktree owns the branch:
-   report that there is no build session to close and stop successfully. Do not
-   hard-fail on remote-only roadmap resolution. `reason: managed-worktree-present`
-   continues below.
+2. Read `owner` (`{ path, role, dirPrefix, id } | null`) and `reason` from the decision:
+   - `reason: managed-worktree-present` — `owner` is the managed worktree on the
+     branch; continue below with `owner.path` as the target.
+   - `reason: primary-owns-branch` — the primary worktree itself is on the delivery
+     branch. Stop: return the primary to `main` first (`git switch main`), nothing to
+     remove.
+   - `reason: remote-roadmap-only` (`owner: null`) — no worktree owns the branch:
+     report that the build session is already closed (or never opened) and stop
+     successfully per shared rule 6. Do not hard-fail on remote-only roadmap
+     resolution.
 3. Require an upstream for the branch and verify it is zero commits ahead of its
    upstream. If commits are unpushed, stop and report them.
 4. Remove the worktree. Do not delete the branch when it remains on origin or is not
