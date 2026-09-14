@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/session-state-cli
 last-updated: 2026-09-13
 next-step: "1.1 create scripts/session-state.mjs with parseWorktreeList and deriveRole"
