@@ -13,6 +13,7 @@
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
 //   node scripts/agento.mjs initiative [<slug>]
+//   node scripts/agento.mjs session [--pr]             (role, worktree, delivery, lifecycle, allowed)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
 
@@ -27,11 +28,12 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
+import { deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 17);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 18);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -54,6 +56,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--root") options.root = argv[++i];
+    else if (arg === "--pr") options.pr = true;
     else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
     else positional.push(arg);
   }
@@ -418,6 +421,24 @@ switch (command) {
       initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
       anomalies: mergedAnomalies(derived.features),
     });
+    break;
+  }
+
+  case "session": {
+    if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
+    // startDir (not root): a subdirectory inside a worktree resolves to that worktree's entry.
+    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    // worktrees.dir is relative to the primary checkout; resolving it against a
+    // secondary worktree's own basename would name the wrong sibling directory.
+    const primaryRoot = worktrees[0]?.path ?? root;
+    const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
+    const sessionWorktreesDir = path.resolve(primaryRoot, primaryConfig.worktrees.dir);
+    const { role, worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config });
+    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
+    const pr = null;
+    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
+    const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
+    emit({ status: "ok", role, worktree, delivery, pr, lifecycle, allowed, elsewhere, warnings, root, configSource: source });
     break;
   }
 
