@@ -14,14 +14,20 @@ actual diff.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 1 recovers it from repository state).
+step 1 recovers it from repository state). Window check per §10: requires role
+`primary` on a non-default branch.
 
-1. Inspect `git status --short`, the current branch and its upstream/ahead-behind
-	state, staged and unstaged diffs, untracked files, any pull request for the
-	current branch, and a small sample of recent commit subjects. Recover an existing
-	publication branch or pull request when repository state proves this prompt was
-	interrupted, per the §9 row — never a second commit or pull request for the same
-	changes.
+1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must
+	report `role: "primary"` with `worktree.branch` different from the configured
+	default branch (a stray primary-window change). A `plan`, `build`, or `freehand`
+	role is rejected per §10 with the record's alternatives — they already name the
+	handoff or `/agento finish-freehand` for that worktree; never hand-maintain that
+	list. Then inspect `git status --short`, the current branch and its
+	upstream/ahead-behind state, staged and unstaged diffs, untracked files, any pull
+	request for the current branch, and a small sample of recent commit subjects.
+	Recover an existing publication branch or pull request when repository state
+	proves this prompt was interrupted, per the §9 row — never a second commit or
+	pull request for the same changes.
 2. Do not modify source files. Do not run tests, linters, formatters, builds, type
 	checks, or other local verification. Do not stop to ask for verification.
 3. If there is no unfinished publication state and no change to commit, say so and
