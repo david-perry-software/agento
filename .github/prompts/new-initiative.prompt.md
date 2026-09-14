@@ -11,9 +11,12 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; a
 merged one is rejected naming the existing breakdown), which takes precedence over
-the slug reservation in step 5.
+the slug reservation in step 5. Window check per §10: requires role `primary` on the
+default branch, clean.
 
-1. Require the primary worktree on `main`, clean, and synchronized.
+1. Apply the window check (`agento.mjs session` → `role: "primary"`, `worktree.branch`
+   = `main`; otherwise reject per §10 with the record's alternatives), then require
+   the tree clean and synchronized.
 2. Read the brief: inline text, or a repository-relative path to an existing file.
    Record the original argument or path in `brief.md`'s `Source:` line and preserve
    the text verbatim.

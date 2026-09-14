@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/window-aware-commands
 last-updated: 2026-09-14
-next-step: "3.1 primary-window prompts (start-session, start-freehand, quick-fix, new-initiative) and the Architect gain the §10 line"
+next-step: "3.2 close-session reads owner (managed-worktree-present / primary-owns-branch / remote-roadmap-only)"
 initiative: "workflow-orchestration"
 ```
 
@@ -20,7 +20,7 @@ initiative: "workflow-orchestration"
 
 ## Phase 3: Consumers — prompts, mirrors, agents
 
-- [ ] 3.1 Primary-window prompts: `start-session` (shared precondition 1 → §10 line `requires role primary`; build mode step 2 keeps the ownership scan but decides from `worktrees[]`: primary owner → stop; managed owner → resume), `start-freehand`, `quick-fix`, `new-initiative` (primary on the default branch, clean), and the Architect agent (L41–43 → §10 line) — verify: `grep -c "worktree list --porcelain" .github/prompts/{quick-fix,new-initiative}.prompt.md .github/agents/initiative-architect.agent.md` all 0; each file has the §10 line; `for f in start-session start-freehand quick-fix new-initiative; do diff commands/$f.md .github/prompts/$f.prompt.md; done` empty
+- [x] 3.1 Primary-window prompts: `start-session` (shared precondition 1 → §10 line `requires role primary`; build mode step 2 keeps the ownership scan but decides from `worktrees[]`: primary owner → stop; managed owner → resume), `start-freehand`, `quick-fix`, `new-initiative` (primary on the default branch, clean), and the Architect agent (L41–43 → §10 line) — verify: `grep -c "worktree list --porcelain" .github/prompts/{quick-fix,new-initiative}.prompt.md .github/agents/initiative-architect.agent.md` all 0; each file has the §10 line; `for f in start-session start-freehand quick-fix new-initiative; do diff commands/$f.md .github/prompts/$f.prompt.md; done` empty
 - [ ] 3.2 `close-session`: shared rule 1 → §10 `requires role primary`; build close reads `owner` — `managed-worktree-present` → continue, `primary-owns-branch` → stop with "return the primary to `main` first, nothing to remove", `remote-roadmap-only` → already closed; shared rule 6 keeps `git worktree list --porcelain` for the registration check — verify: `grep -n "primary-owns-branch\|owner" .github/prompts/close-session.prompt.md` shows the three reasons; `diff commands/close-session.md .github/prompts/close-session.prompt.md` empty
 - [ ] 3.3 `ship`: §10 `requires role primary`; rewrite only the L25–31 precondition paragraph to read `ship-preflight.owner` (managed → stop with `/agento close-session <type>/<slug>`; `primary-owns-branch` → stop, return the primary to `main`; `null` → proceed); leave the rest untouched for `ship-audit-first` — verify: `git diff origin/main -- .github/prompts/ship.prompt.md` touches only the receipt paragraph and the precondition paragraph; `diff commands/ship.md .github/prompts/ship.prompt.md` empty
 - [ ] 3.4 Build-window prompts and agents: `build-feature`, `build-issue`, `review-feature`, `review-issue`, `ap` (§10 `requires role build`, delivery slug must equal the argument) and the Builder, Reviewer, Autopilot agents ("if another worktree owns the branch" → compare `delivery.slug` / `worktree.branch` and read the other owner from `worktrees[]`; the rejection's alternatives come from the record) — verify: each of the 8 files has the §10 line and none contains `worktree list --porcelain`; `for f in build-feature build-issue review-feature review-issue ap; do diff commands/$f.md .github/prompts/$f.prompt.md; done` empty

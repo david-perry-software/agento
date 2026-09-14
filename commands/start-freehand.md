@@ -20,11 +20,13 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: a registered worktree for the same slug is resumed with `--resume`
 semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
+Window check per §10: requires role `primary` on the default branch, clean.
 
 **Preconditions:**
 
-1. Resolve the primary repository worktree with `git worktree list --porcelain` and
-   require the current workspace to be that primary worktree.
+1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
+   `role: "primary"` with `worktree.branch` equal to the configured default branch;
+   otherwise reject per §10 with the record's alternatives.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately
    under the repository policy.
 3. Managed worktrees live under the managed worktrees directory: the `worktrees.dir`
@@ -43,8 +45,10 @@ semantics whether or not the flag was given, leaving HEAD, branch, and files unt
    - Registered (with or without `--resume`): a duplicate submission per §9 — reuse it
      without changing its branch, HEAD, or files, and say the session already exists
      and was resumed.
-   - If the path is free but `changes/<slug>` is already checked out elsewhere, stop;
-     one session per branch.
+   - If the path is free but `changes/<slug>` is already checked out elsewhere (an
+     entry on that branch in the record's `worktrees[]`, confirmed with
+     `git worktree list --porcelain` — permitted here because this command creates
+     worktrees), stop; one session per branch.
 3. For a new session, run
    `git worktree add --no-track -b changes/<slug> <path> origin/main`. `origin/main`
    is only the starting point, so `--no-track` is required to keep the branch from
