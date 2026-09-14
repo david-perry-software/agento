@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/capability-preflight
 last-updated: 2026-09-14
-next-step: "1.3 doctor tests in agento.test.mjs"
+next-step: "2.1 policy §9 preflight receipt forms and §1 pointer"
 initiative: "workflow-orchestration"
 ```
 
@@ -10,7 +10,7 @@ initiative: "workflow-orchestration"
 
 - [x] 1.1 Add `doctor [--for <command>]` to the `scripts/agento.mjs` usage header (widen the `usage()` slice so the new line prints), extend `parseArgs` with `--for <name>` (validate `^[a-z0-9-]+$`, usage error otherwise), and implement the six checks (`node`, `git-remote`, `gh`, `code`, `python3`, `worktrees-dir`) as `{ id, status, detail, fallback }` with try/catch around every probe and a 10 s timeout; overall `status` = worst check; `worktrees.dir` resolved against the primary worktree exactly as the `session` case does; exit 0 for ok/warn, 3 for fail — verify: `node scripts/agento.mjs doctor` in this worktree prints six checks and `node scripts/agento.mjs bogus | grep -c 'doctor \[--for'` prints 1
 - [x] 1.2 Add the static per-command needs table to `scripts/agento.mjs` (23 command names → capability list, matching plan.md `## Research` "Command inventory") and wire `--for <command>`: unknown name → usage error exit 1; known name → run only that command's checks and emit `for: { command, needs }` — verify: `node scripts/agento.mjs doctor --for close-session` lists only `node`, `python3`, `worktrees-dir`; `node scripts/agento.mjs doctor --for ship` includes `gh` and `git-remote`; `node scripts/agento.mjs doctor --for nope` exits 1
-- [ ] 1.3 Tests in `scripts/agento.test.mjs` using `restrictedPath()` stubs: all-ok (stub `gh` answering `--version` and `auth status` with exit 0, stub `code`, stub `python3`); `gh` absent → `fail` with install fallback and exit 3; `gh` present but `auth status` exit 1 → `fail` with the reauth fallback; `code` absent → `warn`, exit 0; `python3` absent → `warn`; repo without `origin` → `git-remote` `fail`; origin URL pointing at a nonexistent path → `warn`; `--for close-session` never invokes the `gh` stub (marker file); usage lists `doctor`; extend the existing "usage errors exit 1" test with `doctor --for Bad_Name` — verify: `node --test scripts/agento.test.mjs` exits 0 and `grep -c '^test("doctor' scripts/agento.test.mjs` ≥ 4
+- [x] 1.3 Tests in `scripts/agento.test.mjs` using `restrictedPath()` stubs: all-ok (stub `gh` answering `--version` and `auth status` with exit 0, stub `code`, stub `python3`); `gh` absent → `fail` with install fallback and exit 3; `gh` present but `auth status` exit 1 → `fail` with the reauth fallback; `code` absent → `warn`, exit 0; `python3` absent → `warn`; repo without `origin` → `git-remote` `fail`; origin URL pointing at a nonexistent path → `warn`; `--for close-session` never invokes the `gh` stub (marker file); usage lists `doctor`; extend the existing "usage errors exit 1" test with `doctor --for Bad_Name` — verify: `node --test scripts/agento.test.mjs` exits 0 and `grep -c '^test("doctor' scripts/agento.test.mjs` ≥ 4
 
 ## Phase 2: Policy contract
 
