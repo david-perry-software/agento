@@ -1,8 +1,9 @@
 # Hooks
 
-Agento ships two hooks. In plugin mode they are wired by `hooks.json` with
-`${CLAUDE_PLUGIN_ROOT}` paths; the same scripts are wired workspace-mode in
-`.github/hooks/` for developing Agento itself.
+Agento ships two hooks. In plugin mode they are wired by `hooks/hooks.json` (the
+Claude-format layout next to `.claude-plugin/plugin.json`) with `${CLAUDE_PLUGIN_ROOT}`
+paths; the same scripts are wired workspace-mode in `.github/hooks/` for developing
+Agento itself.
 
 ## SessionStart — `scripts/hooks/session-context.sh`
 

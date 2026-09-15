@@ -3,8 +3,9 @@
 Agento is a Copilot **agent plugin**: a portable plan → build → review → ship
 delivery system. Layout:
 
-- `plugin.json` + `hooks.json` — plugin manifest and plugin-mode hook wiring
-  (`${CLAUDE_PLUGIN_ROOT}` paths).
+- `.claude-plugin/plugin.json` + `hooks/hooks.json` — plugin manifest and plugin-mode
+  hook wiring (`${CLAUDE_PLUGIN_ROOT}` paths; this Claude-format layout is the one VS
+  Code expands the token for).
 - `.github/agents/` — the five delivery agents (Planner, Builder, Reviewer,
   Autopilot, Mechanic).
 - `.github/prompts/` — the slash commands (`/agento continue` performs the one

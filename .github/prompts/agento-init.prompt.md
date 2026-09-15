@@ -21,7 +21,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 ## Steps
 
 1. Confirm the workspace root is a git repository and is **not** the Agento plugin
-   clone itself (no `plugin.json` with `"name": "agento"` at its root).
+   clone itself (no `.claude-plugin/plugin.json` with `"name": "agento"`).
 
 2. Create `.github/agento.json` with the defaults below if absent. If the project
    uses a different default branch (check `git remote show origin`), set
@@ -97,7 +97,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 5. Copy Agento's bounded CI poller into the project at `scripts/wait-for-checks.sh`
    and `chmod +x` it. Source it from the local Agento clone: the session context line
    `Agento CLI: node <agento-root>/scripts/agento.mjs` gives `<agento-root>`
-   (fallback: the workspace or user `chat.pluginLocations` setting). Never download it
+   (fallback: the user-level `chat.pluginLocations` setting — it is machine-scoped, so
+   only user settings carry it). Never download it
    from the network — an unpinned `curl | copy` of an executable is not acceptable;
    if the clone cannot be located, tell the user to copy the file from their Agento
    checkout manually.

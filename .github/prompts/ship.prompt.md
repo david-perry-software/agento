@@ -80,7 +80,7 @@ Ownership does not apply when resuming only the post-ship epilogue.
      written, and the PR body contains `Fixes #<github-issue>` so the merge closes the
      GitHub issue.
    - PR state and required checks via `gh pr view` / `gh pr checks`.
-   - Release entry: does `git diff origin/main...origin/<branch> -- plugin.json
+   - Release entry: does `git diff origin/main...origin/<branch> -- .claude-plugin/plugin.json
      package.json` change `"version"`? If so, `CHANGELOG.md` should carry a
      `## <version> (unreleased)` heading that step 3 stamps. If `CHANGELOG.md` has an
      `(unreleased)` heading but the version is unchanged, report it as a gap (it is
