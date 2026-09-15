@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: paused
 branch: issue/plugin-hooks-layout
 last-updated: 2026-09-15
-next-step: "5.1 — full gate (shellcheck, node --test, guard smoke) against the recorded baseline"
+next-step: "3.1 (manual) — awaiting the user: register this worktree in user settings.json chat.pluginLocations, reload, run a chat in a non-Agento repo, then report repo + time so the Builder captures evidence/step-3-1-runtime-hooks.md; then 5.2"
 github-issue: "#36"
 ```
 
@@ -28,7 +28,7 @@ github-issue: "#36"
 
 ## Phase 5: Gate and publish
 
-- [ ] 5.1 Full gate against the recorded baseline (shellcheck exit 0 / 0 findings; 140 tests pass; guard smoke exit 0): `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh`, `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`, `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` — verify: shellcheck exit 0 with no findings; tests report `# fail 0` with `# pass` ≥ 141; guard smoke exit 0; record all three results on this line
+- [x] 5.1 Full gate against the recorded baseline (shellcheck exit 0 / 0 findings; 140 tests pass; guard smoke exit 0): `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh`, `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`, `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` — verify: shellcheck exit 0 with no findings; tests report `# fail 0` with `# pass` ≥ 141; guard smoke exit 0; record all three results on this line — results (2026-09-15, a938abd): shellcheck exit 0, no findings; node --test `# tests 141`, `# pass 141`, `# fail 0` (baseline 140 + the #36 test); guard smoke exit 0
 - [ ] 5.2 Scope boundary and publish: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/hooks/` or `.github/hooks/` and lists both `.claude-plugin/plugin.json` and `hooks/hooks.json` while `plugin.json` and `hooks.json` are deletions (`git diff --diff-filter=D --name-only origin/main...HEAD`); `git merge origin/main` (never rebase); push; set `status: in-review` — verify: `gh pr view --json mergeStateStatus --jq .mergeStateStatus` is not `BEHIND`/`DIRTY`; PR body starts with `Fixes #36`
 
 ## Follow-ups
