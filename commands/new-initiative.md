@@ -18,8 +18,11 @@ merged one is rejected naming the existing breakdown), which takes precedence ov
 the slug reservation in step 5. Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for new-initiative` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `primary` on the default branch, clean.
 
-1. Require the primary worktree on `main`, clean, and synchronized.
+1. Apply the window check (`agento.mjs session` → `role: "primary"`, `worktree.branch`
+   = `main`; otherwise reject per §11 with the record's alternatives), then require
+   the tree clean and synchronized.
 2. Read the brief: inline text, or a repository-relative path to an existing file.
    Record the original argument or path in `brief.md`'s `Source:` line and preserve
    the text verbatim.

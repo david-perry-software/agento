@@ -31,7 +31,8 @@ the acceptance receipt and close it with the terminal result line per policy §9
 slug that already has a roadmap is a duplicate submission under the new-feature /
 new-issue idempotency row — resume on the existing roadmap and branch, never a
 second branch, worktree, or PR (the step 5 slug rejection is for a *different*
-change colliding on the same slug).
+change colliding on the same slug). Window check per §11: requires role `plan` — or
+`build` when resuming this slug's promoted planning worktree.
 
 ## Scope of edits
 
@@ -41,18 +42,19 @@ directories.
 
 ## Procedure
 
-1. **Require isolation.** For local interactive work, inspect `git worktree list
-   --porcelain` before asking questions. Require the current path to match the managed
-   `plan-<session-id>` convention inside the managed worktrees directory from the
-   target repo's `.github/agento.json` `worktrees.dir` (default: sibling
-   `<repo-name>-worktrees/`); if it does not, stop and direct the user to
-   `/agento start-session` from the primary workspace window.
+1. **Require isolation.** Before asking questions, run `node
+   <agento-root>/scripts/agento.mjs session` and require `worktree.isManaged` with
+   `worktree.dirPrefix: "plan"` (a managed planning worktree inside `worktrees.dir`);
+   `role` must be `plan`, or `build` only when the same worktree was already promoted
+   onto this slug's branch. Anything else is rejected per §11 with the record's
+   alternatives (normally `/agento start-session` from the primary workspace window).
    The worktree must initially be clean, detached, and at `origin/main`, or already on
-   the final branch created by this same planning session. A GitHub-hosted isolated
-   coding-agent workspace is exempt from the local path convention but must still
-   start from synchronized `main`. A `code --new-window` call may reuse an already-open
-   VS Code session instead of visibly creating a second window; do not blame Git or
-   another worktree for that behavior.
+   the final branch created by this same planning session. Hosted workspaces
+   (Codespaces, Actions, the coding agent) are handled by the record's `hosted` flag
+   — no local path convention to remember — but must still start from synchronized
+   `main`. A `code --new-window` call may reuse an already-open VS Code session
+   instead of visibly creating a second window; do not blame Git or another worktree
+   for that behavior.
 2. **Clarify first.** Before any writing, ask the user 3-5 targeted clarifying questions
    (scope boundaries, constraints, acceptance expectations, priorities) using the
    ask-questions tool or its declared fallback (§10). Retain the answers verbatim for
@@ -129,8 +131,8 @@ directories.
    `next-step:` pointing at step 1.1, and — for an initiative member only —
    `initiative: "<initiative-slug>"`; plan.md `## Problem` then links the breakdown
    file and names the member block it implements.
-8. **Publish the branch.** Confirm the current planning worktree is on the branch named
-   in the roadmap header. Commit only the artifact files
+8. **Publish the branch.** Confirm from the session record that `worktree.branch` is
+   the branch named in the roadmap header. Commit only the artifact files
    (Conventional Commit, e.g. `docs(delivery): plan <slug>`), push with upstream, and
    open a **draft** pull request to `main` titled after the slug, whose body links the
    plan — for issues, the body starts with `Fixes #<n>` so the merge closes the
@@ -138,9 +140,10 @@ directories.
 9. **Report** the slug, branch, PR number (and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current
    planning worktree in place without moving or recreating it; that handoff (or
-   `/agento build-<type> <slug>`) is the `next:` of the §9 result line. After promotion, this
-   path is a build-session reservation even though its directory remains
-   `plan-<session-id>`; close it from the primary workspace window with
+   `/agento build-<type> <slug>`) is the `next:` of the §9 result line. After promotion, the
+   record reports this worktree as `role: build` (its `dirPrefix` stays `plan`) — a
+   build-session reservation even though the directory is unchanged; close it from
+   the primary workspace window with
    `/agento close-session <type>/<slug>` after review. `/agento close-session <session-id>` on an
    abandoned unpublished detached session closes it under the plan rules.
 

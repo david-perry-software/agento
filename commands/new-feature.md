@@ -17,6 +17,7 @@ second branch, worktree, or PR; the slug rejection in step 4 is for a different
 feature colliding on the same slug). Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for new-feature` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 
 **Initiative member intake.** When the whole argument has the form
 `initiative:<initiative-slug>/<feature-slug>`, plan that member of an existing
@@ -31,7 +32,8 @@ no override). Otherwise use the member's `Brief:` as the description baseline an
 an initiative by slug coincidence — use `/agento next-feature <initiative-slug>` to get the
 exact argument.
 
-1. Require a managed isolated planning worktree per the Planner's isolation protocol.
+1. Require a managed isolated planning worktree per the Planner's isolation protocol
+   (the session record's `worktree.isManaged` with `dirPrefix: "plan"`).
 2. Ask your clarifying questions first; retain answers verbatim for plan.md
    `## Decisions` without writing files yet.
 3. Research the codebase (Explore subagent) and load every matching installed skill

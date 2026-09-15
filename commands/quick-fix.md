@@ -28,6 +28,7 @@ idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
 its current step; see step 2 for the suffix rule). Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for quick-fix` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `primary` on the default branch, clean.
 
 ## Refuse when the change does not fit
 
@@ -44,7 +45,9 @@ Stop and name the right command instead of proceeding if any of these hold:
 
 ## Steps
 
-1. Require the primary worktree on `main`, clean, and synchronized: `git fetch
+1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
+   `role: "primary"` with `worktree.branch` equal to `main`, otherwise reject per §11
+   with the record's alternatives. Then require clean and synchronized: `git fetch
    origin` then `git status --short --branch` shows nothing and zero ahead/behind.
    Authentication failures halt per the target repository's AGENTS.md.
 2. Derive a kebab-case slug (2-4 words) and `git switch -c changes/<slug>`. If the

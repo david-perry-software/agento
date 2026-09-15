@@ -415,7 +415,9 @@ Two hooks run outside the model on every session:
 - **SessionStart** injects the current branch, any resumable roadmaps with their
   `next-step`, the path of the Agento CLI, and a one-line `Session:` summary from
   `agento.mjs session` (window role, worktree, active delivery, lifecycle, and the
-  commands allowed here versus elsewhere); without `node` on `PATH` the `Session:`
+  commands allowed here versus elsewhere; the full record also carries a `hosted`
+  flag for Codespaces/Actions and `worktrees[]`, which every window-sensitive
+  command checks per policy §11); without `node` on `PATH` the `Session:`
   line is simply omitted.
 - **PreToolUse** inspects each shell command and file edit and returns `allow`,
   `ask`, or `deny`. It denies commits/pushes/merges on the default branch (including

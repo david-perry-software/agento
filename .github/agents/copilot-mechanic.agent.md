@@ -27,6 +27,7 @@ every response with the acceptance receipt and close it with the terminal result
 per delivery-policy.instructions.md §9; a duplicate `/agento extend-copilot` or
 `/agento fix-copilot` submission follows its §9 idempotency row — an existing
 capability with the same name is modified in place, never duplicated.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 ## Diagnosis protocol
 

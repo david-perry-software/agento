@@ -25,6 +25,8 @@ and [delivery-policy.instructions.md](../instructions/delivery-policy.instructio
 with the acceptance receipt and close it with the terminal result line per §9; a
 duplicate `/agento ap` submission follows its §9 idempotency row — re-enter the build
 or review resume protocol wherever the roadmap stands.
+Window check per §11: requires role `build` with `delivery.slug` equal to the slug
+being run.
 
 ## Ground rules
 
@@ -43,9 +45,10 @@ or review resume protocol wherever the roadmap stands.
 1. Resolve the slug with the Agento CLI — `node <agento-root>/scripts/agento.mjs
    resolve <type> <slug>` (or `find <slug>` for a bare slug); its path is in the
    session context line `Agento CLI:` — and stop on any `status` other than `ok`.
-   `git fetch origin` and confirm this worktree is on the roadmap's
-   `branch:`. If another worktree owns the branch, stop and report
-   `/agento start-session <type>/<slug> --resume`.
+   `git fetch origin` and confirm from the session record that `worktree.branch` is
+   the roadmap's `branch:`. If the record's `worktrees[]` shows another entry on the
+   branch, stop and report the record's alternatives
+   (`/agento start-session <type>/<slug> --resume`).
 2. Read roadmap.md. If `status: in-review`, skip straight to the review phase. If a
    review.md with `Verdict: request-changes` exists and is newer than the last roadmap
    update, start with the fix phase.

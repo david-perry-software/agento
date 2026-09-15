@@ -22,6 +22,7 @@ semantics whether or not the flag was given, leaving HEAD, branch, and files unt
 Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for start-session` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `primary` on the default branch, clean.
 
 **Dispatch on the argument:**
 
@@ -30,8 +31,10 @@ Before the first write, run
 
 **Shared preconditions:**
 
-1. Resolve the primary repository worktree with `git worktree list --porcelain` and
-   require the current workspace to be that primary worktree.
+1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
+   `role: "primary"` with `worktree.branch` equal to the configured default branch;
+   otherwise reject per §11 with the record's alternatives. The record's `worktrees[]`
+   is the ownership source for build mode step 2.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately
    under the repository policy.
 3. Managed worktrees live under the managed worktrees directory. Read it — and the
@@ -77,10 +80,12 @@ window or infer the delivery slug from the session ID.
    argument), and `missing` are hard stops — report the `message` verbatim. If the
    resolved roadmap has `status: complete`, stop and report that no build session is
    needed.
-2. Inspect `git worktree list --porcelain` for the roadmap branch:
-   - Owned by the primary worktree: stop even with `--resume`; the primary worktree
+2. Find the roadmap branch's owner in the session record's `worktrees[]` (the entry
+   whose `branch` equals it; this command creates worktrees, so it may confirm the
+   registration with `git worktree list --porcelain` before step 3):
+   - Owner with `isPrimary: true`: stop even with `--resume`; the primary worktree
      must return to `main` first and is never switched automatically.
-   - Owned by a secondary worktree (with or without `--resume`): a duplicate
+   - Owner with `isManaged: true` (with or without `--resume`): a duplicate
      submission per §9 — reuse that path without changing its branch, directory name,
      or files (promoted `plan-*` worktrees included); one builder per slug, so note
      that building continues in that existing window and do not open a second one.

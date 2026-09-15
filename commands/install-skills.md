@@ -17,6 +17,7 @@ idempotency row (already-installed skills are excluded from the batch, step 3).
 Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for install-skills` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Preconditions:**
 

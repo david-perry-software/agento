@@ -21,6 +21,7 @@ idempotency row (already-annotated follow-up lines and already-flagged issues ar
 skipped). Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for triage-followups` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Mode** — from the argument:
 - **Slug given**: `agento.mjs find <slug>`; triage only when `status` is `ok`,

@@ -58,8 +58,14 @@ function run(cwd, ...args) {
   return runWith({ cwd }, ...args);
 }
 
+// CI itself runs under GITHUB_ACTIONS=true; strip the hosted markers so the
+// path-based role assertions hold everywhere, and inject them only on purpose.
+const baseEnv = { ...process.env };
+delete baseEnv.CODESPACES;
+delete baseEnv.GITHUB_ACTIONS;
+
 function runWith({ cwd, env }, ...args) {
-  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? process.env });
+  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
   let json;
   try {
     json = JSON.parse(result.stdout);
@@ -75,7 +81,7 @@ function restrictedPath(extra = {}) {
   fs.symlinkSync(process.execPath, path.join(bin, "node"));
   fs.symlinkSync(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(bin, "git"));
   for (const [name, script] of Object.entries(extra)) fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
-  return { bin, env: { ...process.env, PATH: bin } };
+  return { bin, env: { ...baseEnv, PATH: bin } };
 }
 
 test("config resolves the template's null worktrees.dir to an absolute sibling path", () => {
@@ -188,6 +194,7 @@ test("usage errors exit 1 and never throw", () => {
   assert.equal(run(repo, "doctor", "--for").code, 1);
   assert.equal(run(repo, "doctor", "extra").code, 1);
   assert.match(run(repo).json.usage.join("\n"), /session \[--pr\]/);
+  assert.match(run(repo).json.usage.join("\n"), /worktrees/);
   assert.match(run(repo).json.usage.join("\n"), /doctor \[--for <command>\]/);
 });
 
@@ -328,6 +335,8 @@ test("session from the primary worktree reports role primary and no delivery", (
   assert.ok(json.allowed.includes("/agento start-session"));
   assert.deepEqual(json.elsewhere, []);
   assert.deepEqual(json.warnings, []);
+  assert.equal(json.hosted, false);
+  assert.deepEqual(json.worktrees, [{ path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false }]);
 
   const sub = path.join(repo, "src", "nested");
   fs.mkdirSync(sub, { recursive: true });
@@ -366,6 +375,52 @@ test("session from a managed build worktree reports the delivery, lifecycle, and
   assert.equal(unmanaged.delivery.slug, "bug");
   assert.deepEqual(unmanaged.allowed, []);
   assert.equal(unmanaged.elsewhere[0].window, "primary");
+
+  // worktrees[] classifies every registered entry the same way from any cwd
+  // (git lists linked worktrees in no guaranteed order).
+  const byPath = (list) => [...list].sort((a, b) => a.path.localeCompare(b.path));
+  const expected = byPath([
+    { path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false },
+    { path: build, branch: "feature/widget", detached: false, role: "build", dirPrefix: "feature", id: "widget", isPrimary: false, isManaged: true },
+    { path: stray, branch: "issue/bug", detached: false, role: "unmanaged", dirPrefix: null, id: null, isPrimary: false, isManaged: false },
+  ]);
+  assert.equal(unmanaged.worktrees[0].path, repo, "primary first");
+  assert.deepEqual(byPath(unmanaged.worktrees), expected);
+  assert.deepEqual(byPath(run(repo, "session").json.worktrees), expected);
+  assert.deepEqual(byPath(run(build, "session").json.worktrees), expected);
+});
+
+test("session: hosted workspaces derive the role from the branch and warn once", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const stray = path.join(path.dirname(repo), "stray");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", stray);
+  const plan = path.join(wt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+
+  assert.equal(run(stray, "session").json.hosted, false);
+  assert.equal(run(stray, "session").json.role, "unmanaged");
+
+  const actions = runWith({ cwd: stray, env: { ...baseEnv, GITHUB_ACTIONS: "true" } }, "session").json;
+  assert.equal(actions.status, "ok");
+  assert.equal(actions.hosted, true);
+  assert.equal(actions.role, "build");
+  assert.equal(actions.delivery.slug, "widget");
+  assert.deepEqual(actions.warnings, ["hosted-workspace: role derived from the branch (GITHUB_ACTIONS=true)"]);
+  // The build row applies: no roadmap yet, so only delivery-status here and start-session elsewhere.
+  assert.equal(actions.lifecycle, "no-delivery");
+  assert.deepEqual(actions.allowed, ["/agento delivery-status"]);
+  assert.equal(actions.elsewhere[0].window, "primary");
+  // worktrees[] still describes the on-disk checkouts by path.
+  assert.equal(actions.worktrees.find((w) => w.path === stray).role, "unmanaged");
+
+  const codespaces = runWith({ cwd: repo, env: { ...baseEnv, CODESPACES: "true" } }, "session").json;
+  assert.equal(codespaces.hosted, true);
+  assert.equal(codespaces.role, "primary");
+  assert.deepEqual(codespaces.warnings, ["hosted-workspace: role derived from the branch (CODESPACES=true)"]);
+
+  // Detached plan worktree: `plan` by path, `primary` under hosted rules.
+  assert.equal(run(plan, "session").json.role, "plan");
+  assert.equal(runWith({ cwd: plan, env: { ...baseEnv, CODESPACES: "true" } }, "session").json.role, "primary");
 });
 
 test("session promotes a plan-* worktree to build once it is on a delivery branch", () => {

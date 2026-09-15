@@ -13,7 +13,8 @@ Fix the customization-system bug described in the argument.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (an existing capability with the same name is modified in place,
-never duplicated).
+never duplicated). Window check per §11: requires role `any` (read-only / not
+window-sensitive).
 
 Follow your full diagnosis protocol: reproduce the symptom, check the usual suspects
 and known pitfalls, apply the minimal fix, prove it with the failing reproduction now
