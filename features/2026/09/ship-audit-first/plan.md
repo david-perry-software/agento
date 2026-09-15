@@ -125,6 +125,20 @@ Still green; the full gate applies unchanged. Note: after the merge the policy's
 window check is `§11` (capability preflight is `§10`); references below to "§10" for
 the window-check text mean the section that now holds it.
 
+Final run on the integrated branch at `d6a4b25` (roadmap step 4.4; `origin/main`
+`e32d872` is an ancestor of `HEAD`, no further `main` movement since step 1.2):
+
+| Command | Exit | Findings |
+| --- | --- | --- |
+| `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` | 0 | 124 tests, 124 pass, 0 fail |
+| `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` | 0 | none |
+| `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` | 0 | all fixtures match, 0 mismatches |
+
+Comparison against the baseline: no new findings. The test count rose from 120 to
+124 by design — the three `evaluateShipPreflight` ownership tests (step 2.1) and the
+close-before-ship guidance guard (step 2.2); the session-state assertions (step 2.3)
+changed existing tests in place. No shell file changed in this delivery.
+
 Baseline is green; there is nothing to overlap or scope. The full gate applies:
 every roadmap step that changes a tested file reruns the whole suite and shellcheck
 stays green (no shell files change here). No `local:`/`dev-stack`/`preview` target
