@@ -130,7 +130,7 @@ No finding above minor severity.
   either compare the prompts' `Needs:` lines against an exported/`--dry-run` view of
   `COMMAND_NEEDS` or point `--root` at a temp repo whose `origin` is a local bare
   clone (as `scripts/agento.test.mjs` `makeRepo()` does), so the unit suite never
-  depends on GitHub reachability.
+  depends on GitHub reachability. → filed as #25
 - Update plan.md `## Research` "Command inventory" (and the Decision 2 wording) to
   say `install-skills` runs `doctor --for install-skills`, so the historical plan and
   §10 agree; roadmap 3.2 already records the deviation, so this is documentation

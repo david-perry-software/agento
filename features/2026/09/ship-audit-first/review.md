@@ -195,4 +195,4 @@ No blocking or major findings.
 
 - Policy §9: state explicitly that a `Result: failed` line may carry a `; next:
   <command>` segment (ship's hard-reject uses it) so prompts and policy agree
-  letter-for-letter.
+  letter-for-letter. → filed as #32

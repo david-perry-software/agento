@@ -81,6 +81,6 @@ prints only paths, branch names and command strings, and never elevates or write
 ## Follow-ups
 
 - Reword the `gh --version` probe failure message to "gh CLI not usable on PATH"
-  (see Findings). Trivial; could ride along with `window-aware-commands`.
+  (see Findings). Trivial; could ride along with `window-aware-commands`. → filed as #31
 - `window-aware-commands` (initiative member) should replace the regex heuristic in
   `closeBuildSessionDecision()` with `deriveRole`, as the plan hands off.

@@ -36,4 +36,4 @@ initiative: "workflow-orchestration"
 
 ## Follow-ups
 
-- The `FREEHAND` row of `deriveAllowed` (`scripts/session-state.mjs`) still lists `/agento commit-current-changes` as allowed in a freehand worktree, while the command's §10 line now requires role `primary` on a non-default branch (Decision Q1). Changing table rows is out of scope here; a follow-up should drop it from the `FREEHAND` row so the record's alternatives match the command's requirement.
+- The `FREEHAND` row of `deriveAllowed` (`scripts/session-state.mjs`) still lists `/agento commit-current-changes` as allowed in a freehand worktree, while the command's §10 line now requires role `primary` on a non-default branch (Decision Q1). Changing table rows is out of scope here; a follow-up should drop it from the `FREEHAND` row so the record's alternatives match the command's requirement. → filed as #33

@@ -118,4 +118,4 @@ No falsely ticked boxes; no missing-work steps added; no repairs made.
 - Tighten the wording of the `## Guidance rule` sentence to mention that
   `CHANGELOG.md` is also exempt (historical record), or drop CHANGELOG from the
   allowlist once the 0.4.0 entry is the only quoter and rephrase it — either keeps
-  the instruction file and the test allowlist self-consistent.
+  the instruction file and the test allowlist self-consistent. → filed as #24
