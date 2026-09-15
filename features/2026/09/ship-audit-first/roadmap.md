@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/ship-audit-first
 last-updated: 2026-09-14
-next-step: "2.2 Add the close-before-ship guard test to tests/customizations.test.mjs"
+next-step: "2.3 Update scripts/session-state.test.mjs for the ship-first order"
 initiative: "workflow-orchestration"
 ```
 
@@ -14,7 +14,7 @@ initiative: "workflow-orchestration"
 ## Phase 2: Tests first
 
 - [x] 2.1 Add `evaluateShipPreflight` ownership tests to `scripts/delivery-roadmap-resolver.test.mjs`: managed worktree on `feature/widget` inside `config.worktrees.dir` → `owner.path` equals that entry and `owner.role === "build"`; promoted `plan-<id>` worktree on the branch → `owner.dirPrefix === "plan"`; call without `worktreeList` → `owner === null`; `status` is `ok` in all three — verify: `node --test scripts/delivery-roadmap-resolver.test.mjs` exits 0 with the three new tests listed as passing
-- [ ] 2.2 Add the guard test "guidance never sequences close-session before ship (ship-audit-first)" to `tests/customizations.test.mjs`: over `guidanceFiles`, split into blank-line paragraphs and reject `/\/agento close-session\b[^\n]*?(→|\bthen\b|and then)[^\n]*?\/agento ship\b/` and `/\/agento ship\b[^\n]*?\bafter\b[^\n]*?\/agento close-session\b/`; allowlist `CHANGELOG.md`; add canary `paused at teardown` (present in the ship prompt only) to the single-source test — verify: `node --test tests/customizations.test.mjs` FAILS on the current prose (at least `delivery-policy.instructions.md`, `commands/next-feature.md`, `docs/commands.md`, `delivery-reviewer.agent.md` reported), recorded in the commit message
+- [x] 2.2 Add the guard test "guidance never sequences close-session before ship (ship-audit-first)" to `tests/customizations.test.mjs`: over `guidanceFiles`, split into blank-line paragraphs and reject `/\/agento close-session\b[^\n]*?(→|\bthen\b|and then)[^\n]*?\/agento ship\b/` and `/\/agento ship\b[^\n]*?\bafter\b[^\n]*?\/agento close-session\b/`; allowlist `CHANGELOG.md`; add canary `paused at teardown` (present in the ship prompt only) to the single-source test — verify: `node --test tests/customizations.test.mjs` FAILS on the current prose (at least `delivery-policy.instructions.md`, `commands/next-feature.md`, `docs/commands.md`, `delivery-reviewer.agent.md` reported), recorded in the commit message
 - [ ] 2.3 Update `scripts/session-state.test.mjs` for the new §8-as-data order: `primary × approved` `allowed` is `[ship, close-session, delivery-status]`; `build × approved` and `plan × approved` `elsewhere` name ship first with a reason containing `tears`; `build × shipped` `elsewhere` names ship first (resume at teardown) then close-session — verify: `node --test scripts/session-state.test.mjs` FAILS on the current table (order assertions), recorded in the commit message
 
 ## Phase 3: Code and policy

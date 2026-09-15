@@ -287,6 +287,14 @@ test("the policy file is the only place the shared rules are spelled out", () =>
       assert.doesNotMatch(text, canary, `${path.relative(repoRoot, file)} restates a policy rule (${canary}); link delivery-policy.instructions.md instead`);
     }
   }
+  // The ship prompt owns its teardown pause wording (ship-audit-first); nothing else
+  // in the customization set restates it.
+  const teardownPause = /paused at teardown/;
+  for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
+    const text = fs.readFileSync(file, "utf8");
+    if (file.endsWith("ship.prompt.md")) assert.match(text, teardownPause, "ship.prompt.md lost its teardown pause result line");
+    else assert.doesNotMatch(text, teardownPause, `${path.relative(repoRoot, file)} restates the ship teardown pause; only ship.prompt.md spells it out`);
+  }
 });
 
 test("every slash command is documented in README.md and docs/commands.md", () => {
@@ -339,6 +347,27 @@ test("guidance never writes a command with a .prompt or .md suffix (agento-init.
     const hit = fs.readFileSync(file, "utf8").match(suffixedCommand);
     assert.equal(hit, null, `${label} writes a suffixed command ${JSON.stringify(hit?.[0])}; use /agento <name>`);
   }
+});
+
+test("guidance never sequences close-session before ship (ship-audit-first)", () => {
+  // `/agento ship` audits while the build worktree is open and tears it down after
+  // the merge, so no guidance may tell the user to close the session first. Only
+  // CHANGELOG.md records the old order as history.
+  const closeThenShip = /\/agento close-session\b[^\n]*?(→|\bthen\b|and then)[^\n]*?\/agento ship\b/;
+  const shipAfterClose = /\/agento ship\b[^\n]*?\bafter\b[^\n]*?\/agento close-session\b/;
+  const allowlist = new Set(["CHANGELOG.md"]);
+  const offenders = [];
+  for (const file of guidanceFiles) {
+    const label = path.relative(repoRoot, file);
+    if (allowlist.has(label)) continue;
+    for (const raw of fs.readFileSync(file, "utf8").split(/\r?\n\s*\r?\n/)) {
+      // Paragraphs wrap; the order is judged on the unwrapped text.
+      const paragraph = raw.replace(/\s+/g, " ");
+      const hit = paragraph.match(closeThenShip) ?? paragraph.match(shipAfterClose);
+      if (hit) offenders.push(`${label}: ${JSON.stringify(hit[0])}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `guidance that sequences close-session before ship:\n${offenders.join("\n")}`);
 });
 
 test("command-invocation instructions apply everywhere and list every command", () => {
