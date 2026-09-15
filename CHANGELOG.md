@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1 (unreleased)
+
+- **Fixed: plugin hooks never ran (#36).** The manifest moved from a root
+  `plugin.json` to `.claude-plugin/plugin.json` and the hook wiring from a root
+  `hooks.json` to `hooks/hooks.json` (content unchanged). VS Code parses the root-level
+  Copilot layout without expanding `${CLAUDE_PLUGIN_ROOT}`, so every SessionStart and
+  PreToolUse hook spawned as `/scripts/hooks/…: not found` and installed plugins had no
+  `Session:`/`Agento CLI:` context and no delivery guard; the Claude-format layout is the
+  one VS Code substitutes the token for, so both hooks now execute. A regression test
+  (`tests/customizations.test.mjs`) pins the layout. The dev-clone advice in README.md,
+  docs/install.md, and AGENTS.md no longer suggests a workspace
+  `"chat.pluginLocations": { "<path>": false }` toggle (the setting is machine-scoped, so
+  a workspace value is ignored): do not register the dev clone at all, or disable the
+  plugin per workspace from the Extensions view → *Agent Plugins – Installed*.
+
 ## 0.4.0 (2026-09-15)
 
 - **New `/agento continue [<slug>]` and `agento.mjs next [<slug>]`.** `next` is a
