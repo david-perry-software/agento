@@ -392,21 +392,22 @@ test("deriveAllowed: primary window rows", () => {
   assert.deepEqual(review.elsewhere.map((e) => [e.command, e.window]), [["/agento review-feature widget", "secondary"]]);
 
   const approved = deriveAllowed({ role: "primary", lifecycle: "approved", delivery: widget });
-  assert.deepEqual(approved.allowed, ["/agento close-session feature/widget", "/agento ship widget", "/agento delivery-status"]);
+  // Ship first: it audits the open worktree and tears it down after the merge (§8);
+  // close-session stays allowed for abandoning the build.
+  assert.deepEqual(approved.allowed, ["/agento ship widget", "/agento close-session feature/widget", "/agento delivery-status"]);
   assert.deepEqual(approved.elsewhere, []);
 
   assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "shipped", delivery: widget }).allowed, none.allowed);
   assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "post-ship-pending", delivery: widget }).allowed, ["/agento ship widget", "/agento delivery-status"]);
 });
 
-test("deriveAllowed: build worktree rows send close/ship to the primary window", () => {
+test("deriveAllowed: build worktree rows send ship (then close) to the primary window", () => {
   const building = deriveAllowed({ role: "build", lifecycle: "building", delivery: widget, worktree: { id: "20260914" } });
   assert.ok(building.allowed.includes("/agento build-feature widget"));
   assert.ok(building.allowed.includes("/agento delivery-status"));
-  const ship = building.elsewhere.find((e) => e.command === "/agento ship widget");
-  assert.equal(ship.window, "primary");
-  const close = building.elsewhere.find((e) => e.command === "/agento close-session feature/widget");
-  assert.equal(close.window, "primary");
+  assert.equal(building.elsewhere[0].command, "/agento ship widget");
+  assert.equal(building.elsewhere[0].window, "primary");
+  assert.match(building.elsewhere[0].reason, /tears/);
 
   assert.ok(deriveAllowed({ role: "build", lifecycle: "planned", delivery: widget }).allowed.includes("/agento build-feature widget"));
   assert.ok(deriveAllowed({ role: "build", lifecycle: "paused", delivery: bug }).allowed.includes("/agento build-issue bug"));
@@ -417,16 +418,24 @@ test("deriveAllowed: build worktree rows send close/ship to the primary window",
 
   const approved = deriveAllowed({ role: "build", lifecycle: "approved", delivery: widget });
   assert.deepEqual(approved.allowed, ["/agento delivery-status"]);
-  assert.deepEqual(approved.elsewhere.map((e) => [e.command, e.window]), [
-    ["/agento close-session feature/widget", "primary"],
-    ["/agento ship widget", "primary"],
-  ]);
+  assert.equal(approved.elsewhere[0].command, "/agento ship widget");
+  assert.equal(approved.elsewhere[0].window, "primary");
+  assert.match(approved.elsewhere[0].reason, /tears/);
+  assert.doesNotMatch(approved.elsewhere.map((e) => e.command).join(" "), /close-session/, "close-session is not the normal next step for an approved build");
+
+  const planApproved = deriveAllowed({ role: "plan", lifecycle: "approved", delivery: widget });
+  assert.equal(planApproved.elsewhere[0].command, "/agento ship widget");
+  assert.match(planApproved.elsewhere[0].reason, /tears/);
 
   const none = deriveAllowed({ role: "build", lifecycle: "no-delivery", delivery: { type: "feature", slug: "fresh" } });
   assert.deepEqual(none.allowed, ["/agento delivery-status"]);
   assert.equal(none.elsewhere[0].window, "primary");
 
-  assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "shipped", delivery: widget }).elsewhere.map((e) => e.command), ["/agento close-session feature/widget"]);
+  // Shipped with the worktree still present: re-sending ship resumes at teardown
+  // (§9 ship row); close-session remains for manual cleanup.
+  const shipped = deriveAllowed({ role: "build", lifecycle: "shipped", delivery: widget });
+  assert.deepEqual(shipped.elsewhere.map((e) => e.command), ["/agento ship widget", "/agento close-session feature/widget"]);
+  assert.match(shipped.elsewhere[0].reason, /tear/);
   assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "post-ship-pending", delivery: widget }).elsewhere.map((e) => e.command), ["/agento ship widget"]);
 });
 
