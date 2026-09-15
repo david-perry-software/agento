@@ -1,8 +1,8 @@
 ```yaml
-status: paused
+status: in-progress
 branch: feature/ship-audit-first
 last-updated: 2026-09-14
-next-step: "1.1 Gate on window-aware-commands — blocked: PR #19 (feature/window-aware-commands) is still OPEN with no merge commit; resume at 1.1 once PR #19 merges (origin/main 42d111c already integrated)"
+next-step: "1.1 Integrate origin/main and confirm PR #19 merge commit e32d872 is an ancestor"
 initiative: "workflow-orchestration"
 ```
 
