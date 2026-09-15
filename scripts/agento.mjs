@@ -752,7 +752,7 @@ switch (command) {
       seen.add(c.slug);
       candidates.push(c);
     };
-    for (const r of roadmaps) if (r.status !== "complete") add(toCandidate(r, "local"));
+    for (const r of roadmaps) if (r.status !== "complete" || r.postShipPending > 0) add(toCandidate(r, "local"));
     for (const w of classified) {
       if (!w.isManaged || w.role !== "build") continue;
       const d = deriveDelivery({ branch: w.branch, dirPrefix: w.dirPrefix, id: w.id, roadmaps, config });
@@ -818,7 +818,7 @@ switch (command) {
         candidates: result.candidates,
         reviewFresh: targetFresh,
         dispatch: dispatchFor(result.next?.command),
-        warnings,
+        warnings: [...new Set(warnings)],
         reason: result.reason,
         root,
         configSource: source,
