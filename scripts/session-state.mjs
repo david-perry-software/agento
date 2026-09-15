@@ -270,3 +270,156 @@ export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
     elsewhere: row.elsewhere.map((e) => ({ ...e, command: fill(e.command) })),
   };
 }
+
+// --- next: the one legal transition -----------------------------------------
+
+export const NEXT_STATUSES = ["ok", "none", "ambiguous", "blocked", "unsupported", "missing"];
+
+const CONTINUE = "/agento continue";
+
+function transition(command, args, window, reason, then = null) {
+  return { command, args, invocation: [`/agento ${command}`, ...args].join(" "), window, then, reason };
+}
+
+function summarizeCandidate(c) {
+  return {
+    kind: c.kind,
+    slug: c.slug,
+    type: c.type ?? "feature",
+    status: c.kind === "delivery" ? (c.status ?? null) : "unplanned",
+    initiative: c.initiative ?? null,
+    owner: c.owner ?? null,
+    invocation: `${CONTINUE} ${c.slug}`,
+  };
+}
+
+// Build/plan window with an active delivery: the lifecycle alone picks the command;
+// review freshness decides between re-review, fix handoff, and ship.
+function activeTransition({ delivery, lifecycle, reviewFresh }) {
+  const { type, slug, status, reviewVerdict } = delivery;
+  switch (lifecycle) {
+    case "planned":
+    case "building":
+    case "paused":
+      return transition(`build-${type}`, [slug], "here", `roadmap status ${status}: the Builder continues in this window`);
+    case "in-review":
+      if (reviewVerdict === "request-changes" && reviewFresh !== false) {
+        return transition(`build-${type}`, [slug], "here", "review.md says request-changes and is current: the Builder fix handoff runs in this window");
+      }
+      return transition(
+        `review-${type}`,
+        [slug],
+        "here",
+        reviewVerdict ? "review.md is older than the last code commit: the Reviewer re-reviews in this window" : "status in-review with no verdict yet: the Reviewer runs in this window",
+      );
+    case "approved":
+      if (reviewFresh === false) return transition(`review-${type}`, [slug], "here", "Verdict: approve predates the last code commit: re-review before shipping");
+      return transition("ship", [slug], "primary", "Verdict: approve is current: ship from the primary window; it audits this worktree first and tears it down after the merge");
+    case "shipped":
+      return transition("ship", [slug], "primary", "the delivery is merged: re-send ship from the primary window to tear this worktree down");
+    case "post-ship-pending":
+      return transition("ship", [slug], "primary", "post-ship steps remain: ship completes them from the primary window");
+    default:
+      return null;
+  }
+}
+
+// Primary window acting on one resolved candidate (a delivery seen from main or
+// owned by a registered worktree, or a ready initiative member).
+function primaryTransition({ target, owner, reviewFresh, config }) {
+  if (target.kind === "initiative-member") {
+    return {
+      status: "ok",
+      next: transition("start-session", [], "here", `${target.slug} is the ready member of initiative ${target.initiative}: open a plan window, then continue there`, `${CONTINUE} ${target.slug}`),
+    };
+  }
+  const targetOwner = target.owner ?? owner ?? null;
+  const fresh = target.reviewFresh ?? reviewFresh;
+  if (targetOwner?.role === "primary") {
+    return { status: "blocked", reason: `the primary checkout sits on ${target.branch}; return it to ${config.branches.default} before continuing ${target.slug}` };
+  }
+  const { lifecycle } = deriveLifecycle({
+    delivery: { roadmap: target.roadmap ?? "roadmap.md", status: target.status, reviewVerdict: target.reviewVerdict ?? null, postShipPending: target.postShipPending ?? 0 },
+    pr: null,
+  });
+  const resume = targetOwner ? ["--resume"] : [];
+  const open = (why) => ({
+    status: "ok",
+    next: transition("start-session", [`${target.type}/${target.slug}`, ...resume], "here", why, `${CONTINUE} ${target.slug}`),
+  });
+  const ship = (why) => ({ status: "ok", next: transition("ship", [target.slug], "here", why) });
+  switch (lifecycle) {
+    case "planned":
+    case "building":
+    case "paused":
+    case "in-review":
+      return open(`${target.type}/${target.slug} is ${target.status}: ${targetOwner ? "reopen its worktree window" : "open its worktree window"}, then continue there`);
+    case "approved":
+      if (fresh === false) return open(`Verdict: approve predates the last code commit on ${target.branch}: reopen the worktree window and re-review`);
+      return ship(`Verdict: approve is current: ship from here (audits the worktree first, tears it down after the merge)`);
+    case "post-ship-pending":
+      return ship(`post-ship steps remain for ${target.slug}: ship resumes at its epilogue`);
+    case "shipped":
+      if (targetOwner) return ship(`${target.slug} is complete but ${targetOwner.path} still owns ${target.branch}: ship resumes at teardown`);
+      return { status: "none", reason: `${target.slug} is complete and no worktree owns ${target.branch}; nothing to continue` };
+    default:
+      return { status: "blocked", reason: `roadmap for ${target.slug} has an unknown status ${JSON.stringify(target.status ?? "")}; repair the header first` };
+  }
+}
+
+// Pure transition function behind `agento.mjs next [<slug>]`. Inputs are plain data
+// assembled by the CLI; `candidates` carry `kind: "delivery"` (type, slug, branch,
+// status, reviewVerdict, postShipPending, owner, reviewFresh) or
+// `kind: "initiative-member"` (slug, initiative). Never emits `/agento ap`.
+export function deriveNext({ role, worktree, delivery, lifecycle, owner = null, reviewFresh = null, candidates = [], requestedSlug = null, config }) {
+  const finish = (status, reason, list = []) => ({ status, next: null, candidates: list.map(summarizeCandidate), reason });
+  const ok = (next) => ({ status: "ok", next, candidates: [], reason: next.reason });
+
+  if (role === "freehand" || role === "unmanaged") {
+    return finish("unsupported", `role ${role} has no delivery lifecycle to continue; use the session record's allowed commands`);
+  }
+
+  if (role === "build" || role === "plan") {
+    if (delivery && lifecycle !== "no-delivery") {
+      if (requestedSlug && requestedSlug !== delivery.slug) {
+        return finish("blocked", `wrong window for ${requestedSlug}: this worktree owns ${delivery.type}/${delivery.slug}; continue ${requestedSlug} from the primary window or its own worktree`);
+      }
+      const next = activeTransition({ delivery, lifecycle, reviewFresh });
+      return next ? ok(next) : finish("blocked", `no transition for lifecycle ${lifecycle} in a ${role} window`);
+    }
+    if (role === "build") {
+      return finish("blocked", `branch ${worktree?.branch ?? "(detached)"} has no roadmap yet; plan it first (/agento new-feature or /agento new-issue in a plan window)`);
+    }
+    const members = candidates.filter((c) => c.kind === "initiative-member");
+    const newFeature = (m) => ok(transition("new-feature", [`initiative:${m.initiative}/${m.slug}`], "here", `${m.slug} is a ready member of initiative ${m.initiative}: the Planner runs in this window`));
+    if (requestedSlug) {
+      const member = members.find((c) => c.slug === requestedSlug);
+      if (member) return newFeature(member);
+      const other = candidates.find((c) => c.slug === requestedSlug);
+      return other
+        ? finish("blocked", `${requestedSlug} is an existing ${other.type ?? "feature"} delivery (${other.status}); continue it from the primary window or its own worktree`)
+        : finish("missing", `no ready initiative member named ${requestedSlug}`);
+    }
+    if (members.length === 0) return finish("none", "no ready initiative member; describe the work yourself with /agento new-feature <description> or /agento new-issue");
+    if (members.length > 1) return finish("ambiguous", `${members.length} initiative members are ready; pick one`, members);
+    return newFeature(members[0]);
+  }
+
+  // primary
+  if (delivery) {
+    return finish("blocked", `the primary checkout is on ${worktree?.branch ?? delivery.branch}; return it to ${config.branches.default} before continuing`);
+  }
+  let target;
+  if (requestedSlug) {
+    target = candidates.find((c) => c.slug === requestedSlug);
+    if (!target) return finish("missing", `no roadmap or ready initiative member for slug ${requestedSlug}`);
+  } else {
+    if (candidates.length === 0) {
+      return finish("none", "nothing is in flight and no initiative member is ready; start with /agento new-feature <description>, /agento new-issue, or /agento new-initiative");
+    }
+    if (candidates.length > 1) return finish("ambiguous", `${candidates.length} candidates could continue; pick one`, candidates);
+    target = candidates[0];
+  }
+  const result = primaryTransition({ target, owner, reviewFresh, config });
+  return result.status === "ok" ? ok(result.next) : finish(result.status, result.reason);
+}

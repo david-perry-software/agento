@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, findOwner, parseWorktreeList } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, parseWorktreeList } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -457,4 +458,246 @@ test("deriveAllowed: plan worktree offers the planners; freehand and unmanaged a
 test("deriveAllowed: unknown role or lifecycle yields empty lists", () => {
   assert.deepEqual(deriveAllowed({ role: "mystery", lifecycle: "building", delivery: widget }), { allowed: [], elsewhere: [] });
   assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "mystery", delivery: widget }), { allowed: [], elsewhere: [] });
+});
+
+// --- deriveNext -------------------------------------------------------------
+
+const promptNames = new Set(
+  fs
+    .readdirSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", ".github", "prompts"))
+    .filter((f) => f.endsWith(".prompt.md"))
+    .map((f) => f.replace(/\.prompt\.md$/, "")),
+);
+
+const emitted = [];
+function next(input) {
+  const result = deriveNext({ config, ...input });
+  assert.ok(NEXT_STATUSES.includes(result.status), `status ${result.status}`);
+  assert.ok(Array.isArray(result.candidates));
+  assert.equal(typeof result.reason, "string");
+  if (result.status === "ok") {
+    const n = result.next;
+    assert.ok(n, "ok without next");
+    assert.ok(promptNames.has(n.command), `${n.command} is not a .github/prompts/ basename`);
+    assert.notEqual(n.command, "ap", "/agento ap is never chosen");
+    assert.ok(["here", "primary", "secondary"].includes(n.window), n.window);
+    assert.equal(n.invocation, [`/agento ${n.command}`, ...n.args].join(" "));
+    assert.ok(n.then === null || /^\/agento continue [a-z0-9-]+$/.test(n.then), `then: ${n.then}`);
+    assert.equal(result.reason, n.reason);
+    emitted.push(n.command);
+  } else {
+    assert.equal(result.next, null);
+  }
+  return result;
+}
+
+const activeDelivery = (type, slug, status, reviewVerdict = null, postShipPending = 0) =>
+  roadmapRecord(type, slug, { status, reviewVerdict, review: reviewVerdict ? `${type}s/2026/09/${slug}/review.md` : null, postShipPending });
+const lifecycleOf = (d) => deriveLifecycle({ delivery: d, pr: null }).lifecycle;
+
+// Every role × lifecycle × reviewFresh cell for a window that owns a delivery.
+const activeTable = [
+  // [status, verdict, postShip, reviewFresh, expected command, window]
+  ["planned", null, 0, null, "build-<type>", "here"],
+  ["in-progress", null, 0, null, "build-<type>", "here"],
+  ["paused", null, 0, null, "build-<type>", "here"],
+  ["in-review", null, 0, null, "review-<type>", "here"],
+  ["in-review", "request-changes", 0, true, "build-<type>", "here"],
+  ["in-review", "request-changes", 0, null, "build-<type>", "here"],
+  ["in-review", "request-changes", 0, false, "review-<type>", "here"],
+  ["in-review", "approve", 0, true, "ship", "primary"],
+  ["in-review", "approve", 0, null, "ship", "primary"],
+  ["in-review", "approve", 0, false, "review-<type>", "here"],
+  ["complete", "approve", 0, true, "ship", "primary"],
+  ["complete", "approve", 2, true, "ship", "primary"],
+];
+
+for (const role of ["build", "plan"]) {
+  test(`deriveNext: ${role} window with an active delivery, every lifecycle × reviewFresh cell`, () => {
+    const seen = new Set();
+    for (const [type, slug] of [["feature", "widget"], ["issue", "bug"]]) {
+      for (const [status, verdict, postShip, reviewFresh, command, window] of activeTable) {
+        const delivery = activeDelivery(type, slug, status, verdict, postShip);
+        const lifecycle = lifecycleOf(delivery);
+        seen.add(lifecycle);
+        const label = `${role}/${type}/${status}/${verdict}/${postShip}/${reviewFresh}`;
+        const r = next({ role, worktree: { branch: delivery.branch, dirPrefix: role, id: "x" }, delivery, lifecycle, reviewFresh });
+        assert.equal(r.status, "ok", label);
+        assert.equal(r.next.command, command.replace("<type>", type), label);
+        assert.deepEqual(r.next.args, [slug], label);
+        assert.equal(r.next.window, window, label);
+        assert.equal(r.next.then, null, label);
+        // The same slug as an explicit argument changes nothing.
+        assert.deepEqual(next({ role, worktree: { branch: delivery.branch }, delivery, lifecycle, reviewFresh, requestedSlug: slug }), r, label);
+      }
+    }
+    assert.deepEqual([...seen].sort(), LIFECYCLES.filter((l) => l !== "no-delivery").sort(), "every delivery lifecycle covered");
+  });
+}
+
+test("deriveNext: build/plan window given another slug is blocked; build without a roadmap is blocked", () => {
+  const delivery = activeDelivery("feature", "widget", "in-progress");
+  for (const role of ["build", "plan"]) {
+    const r = next({ role, worktree: { branch: "feature/widget" }, delivery, lifecycle: "building", requestedSlug: "other" });
+    assert.equal(r.status, "blocked");
+    assert.match(r.reason, /wrong window for other/);
+    assert.match(r.reason, /feature\/widget/);
+  }
+  const fresh = next({ role: "build", worktree: { branch: "feature/fresh", dirPrefix: "plan", id: "s" }, delivery: { type: "feature", slug: "fresh", roadmap: null, status: null }, lifecycle: "no-delivery" });
+  assert.equal(fresh.status, "blocked");
+  assert.match(fresh.reason, /no roadmap yet/);
+  const detachedBuild = next({ role: "build", worktree: { branch: null, dirPrefix: "feature", id: "w" }, delivery: null, lifecycle: "no-delivery" });
+  assert.equal(detachedBuild.status, "blocked");
+});
+
+const member = (slug, initiative = "orchestration") => ({ kind: "initiative-member", slug, type: "feature", initiative, branch: `feature/${slug}` });
+const deliveryCandidate = (type, slug, status, extra = {}) => ({
+  kind: "delivery",
+  type,
+  slug,
+  branch: `${type}/${slug}`,
+  roadmap: `${type}s/2026/09/${slug}/roadmap.md`,
+  status,
+  reviewVerdict: null,
+  postShipPending: 0,
+  owner: null,
+  reviewFresh: null,
+  ...extra,
+});
+const managedOwner = { path: "/wt/feature-widget", role: "build", dirPrefix: "feature", id: "widget" };
+const primaryOwner = { path: "/project", role: "primary", dirPrefix: null, id: null };
+
+test("deriveNext: detached plan window drives the Planner from ready initiative members", () => {
+  const plan = { role: "plan", worktree: { branch: null, detached: true, dirPrefix: "plan", id: "fresh" }, delivery: null, lifecycle: "no-delivery" };
+  const one = next({ ...plan, candidates: [member("continue-command")] });
+  assert.equal(one.status, "ok");
+  assert.equal(one.next.command, "new-feature");
+  assert.deepEqual(one.next.args, ["initiative:orchestration/continue-command"]);
+  assert.equal(one.next.window, "here");
+  assert.equal(one.next.then, null);
+
+  const none = next({ ...plan, candidates: [] });
+  assert.equal(none.status, "none");
+  assert.match(none.reason, /\/agento new-feature <description>/);
+  // Deliveries in flight elsewhere are not the plan window's business.
+  assert.equal(next({ ...plan, candidates: [deliveryCandidate("feature", "widget", "in-progress")] }).status, "none");
+
+  const many = next({ ...plan, candidates: [member("a"), member("b", "other")] });
+  assert.equal(many.status, "ambiguous");
+  assert.deepEqual(many.candidates.map((c) => [c.slug, c.initiative, c.invocation]), [["a", "orchestration", "/agento continue a"], ["b", "other", "/agento continue b"]]);
+
+  const picked = next({ ...plan, candidates: [member("a"), member("b", "other")], requestedSlug: "b" });
+  assert.equal(picked.status, "ok");
+  assert.deepEqual(picked.next.args, ["initiative:other/b"]);
+  const isDelivery = next({ ...plan, candidates: [member("a"), deliveryCandidate("feature", "widget", "in-progress")], requestedSlug: "widget" });
+  assert.equal(isDelivery.status, "blocked");
+  assert.match(isDelivery.reason, /existing feature delivery/);
+  assert.equal(next({ ...plan, candidates: [member("a")], requestedSlug: "zzz" }).status, "missing");
+});
+
+test("deriveNext: freehand and unmanaged windows are unsupported for every lifecycle", () => {
+  for (const role of ["freehand", "unmanaged"]) {
+    for (const lifecycle of LIFECYCLES) {
+      const r = next({ role, worktree: { branch: "changes/tidy", id: "tidy" }, delivery: null, lifecycle, candidates: [member("a")], requestedSlug: "a" });
+      assert.equal(r.status, "unsupported", `${role}/${lifecycle}`);
+      assert.match(r.reason, new RegExp(`role ${role}`));
+    }
+  }
+});
+
+const primaryWindow = { role: "primary", worktree: { branch: "main", isPrimary: true }, delivery: null, lifecycle: "no-delivery" };
+
+test("deriveNext: primary window, one delivery candidate, every lifecycle × owner × reviewFresh cell", () => {
+  const table = [
+    // [status, verdict, postShip, owner, reviewFresh, expected command, args suffix, then?]
+    ["planned", null, 0, null, null, "start-session", ["feature/widget"], true],
+    ["planned", null, 0, managedOwner, null, "start-session", ["feature/widget", "--resume"], true],
+    ["in-progress", null, 0, null, null, "start-session", ["feature/widget"], true],
+    ["in-progress", null, 0, managedOwner, null, "start-session", ["feature/widget", "--resume"], true],
+    ["paused", null, 0, managedOwner, null, "start-session", ["feature/widget", "--resume"], true],
+    ["in-review", null, 0, managedOwner, null, "start-session", ["feature/widget", "--resume"], true],
+    ["in-review", "request-changes", 0, managedOwner, true, "start-session", ["feature/widget", "--resume"], true],
+    ["in-review", "request-changes", 0, null, false, "start-session", ["feature/widget"], true],
+    ["in-review", "approve", 0, managedOwner, true, "ship", ["widget"], false],
+    ["in-review", "approve", 0, null, true, "ship", ["widget"], false],
+    ["in-review", "approve", 0, managedOwner, null, "ship", ["widget"], false],
+    ["in-review", "approve", 0, managedOwner, false, "start-session", ["feature/widget", "--resume"], true],
+    ["in-review", "approve", 0, null, false, "start-session", ["feature/widget"], true],
+    ["complete", "approve", 2, managedOwner, true, "ship", ["widget"], false],
+    ["complete", "approve", 2, null, true, "ship", ["widget"], false],
+    ["complete", "approve", 0, managedOwner, true, "ship", ["widget"], false],
+  ];
+  const seen = new Set();
+  for (const [status, verdict, postShip, owner, reviewFresh, command, args, hasThen] of table) {
+    const candidate = deliveryCandidate("feature", "widget", status, { reviewVerdict: verdict, postShipPending: postShip, owner, reviewFresh });
+    seen.add(lifecycleOf({ roadmap: "r", status, reviewVerdict: verdict, postShipPending: postShip }));
+    const label = `${status}/${verdict}/${postShip}/${owner?.role ?? "none"}/${reviewFresh}`;
+    const r = next({ ...primaryWindow, candidates: [candidate] });
+    assert.equal(r.status, "ok", label);
+    assert.equal(r.next.command, command, label);
+    assert.deepEqual(r.next.args, args, label);
+    assert.equal(r.next.window, "here", label);
+    assert.equal(r.next.then, hasThen ? "/agento continue widget" : null, label);
+    // The slug argument selects the same candidate; owner/reviewFresh may also arrive top-level.
+    const top = next({ ...primaryWindow, candidates: [{ ...candidate, owner: undefined, reviewFresh: undefined }], owner, reviewFresh, requestedSlug: "widget" });
+    assert.deepEqual(top, r, `${label} (top-level owner/reviewFresh)`);
+  }
+  assert.deepEqual([...seen].sort(), LIFECYCLES.filter((l) => l !== "no-delivery").sort());
+
+  // complete with no owner: shipped, nothing to continue.
+  const gone = next({ ...primaryWindow, candidates: [deliveryCandidate("feature", "widget", "complete", { reviewVerdict: "approve", owner: null, reviewFresh: true })] });
+  assert.equal(gone.status, "none");
+  assert.match(gone.reason, /complete/);
+  // Issue deliveries use the issue prefix in start-session's argument.
+  const issue = next({ ...primaryWindow, candidates: [deliveryCandidate("issue", "bug", "in-progress", { owner: { ...managedOwner, id: "bug" } })] });
+  assert.deepEqual(issue.next.args, ["issue/bug", "--resume"]);
+  assert.equal(issue.next.then, "/agento continue bug");
+});
+
+test("deriveNext: primary window blocked when the primary itself owns the branch or is on one", () => {
+  const owned = next({ ...primaryWindow, candidates: [deliveryCandidate("feature", "widget", "in-progress", { owner: primaryOwner })] });
+  assert.equal(owned.status, "blocked");
+  assert.match(owned.reason, /return it to main/);
+  const onBranch = next({ role: "primary", worktree: { branch: "feature/widget", isPrimary: true }, delivery: activeDelivery("feature", "widget", "in-progress"), lifecycle: "building", candidates: [] });
+  assert.equal(onBranch.status, "blocked");
+  assert.match(onBranch.reason, /primary checkout is on feature\/widget/);
+  const unknownStatus = next({ ...primaryWindow, candidates: [deliveryCandidate("feature", "widget", "weird")] });
+  assert.equal(unknownStatus.status, "blocked");
+  assert.match(unknownStatus.reason, /unknown status "weird"/);
+});
+
+test("deriveNext: primary window with no slug — none, one initiative member, ambiguous; with a slug — missing", () => {
+  const none = next({ ...primaryWindow, candidates: [] });
+  assert.equal(none.status, "none");
+  assert.match(none.reason, /\/agento new-feature <description>, \/agento new-issue, or \/agento new-initiative/);
+
+  const ready = next({ ...primaryWindow, candidates: [member("continue-command", "workflow-orchestration")] });
+  assert.equal(ready.status, "ok");
+  assert.equal(ready.next.command, "start-session");
+  assert.deepEqual(ready.next.args, []);
+  assert.equal(ready.next.window, "here");
+  assert.equal(ready.next.then, "/agento continue continue-command");
+  assert.match(ready.next.reason, /workflow-orchestration/);
+
+  const two = next({ ...primaryWindow, candidates: [deliveryCandidate("feature", "widget", "in-progress", { owner: managedOwner }), member("other")] });
+  assert.equal(two.status, "ambiguous");
+  assert.equal(two.next, null);
+  assert.deepEqual(two.candidates, [
+    { kind: "delivery", slug: "widget", type: "feature", status: "in-progress", initiative: null, owner: managedOwner, invocation: "/agento continue widget" },
+    { kind: "initiative-member", slug: "other", type: "feature", status: "unplanned", initiative: "orchestration", owner: null, invocation: "/agento continue other" },
+  ]);
+  const chosen = next({ ...primaryWindow, candidates: two.candidates.length ? [deliveryCandidate("feature", "widget", "in-progress", { owner: managedOwner }), member("other")] : [], requestedSlug: "other" });
+  assert.equal(chosen.status, "ok");
+  assert.equal(chosen.next.then, "/agento continue other");
+
+  const missing = next({ ...primaryWindow, candidates: [member("other")], requestedSlug: "nope" });
+  assert.equal(missing.status, "missing");
+  assert.match(missing.reason, /slug nope/);
+});
+
+test("deriveNext: every command it ever emitted exists as a prompt and is never ap", () => {
+  const distinct = [...new Set(emitted)].sort();
+  assert.deepEqual(distinct, ["build-feature", "build-issue", "new-feature", "review-feature", "review-issue", "ship", "start-session"]);
+  for (const c of distinct) assert.ok(promptNames.has(c), c);
+  assert.ok(!distinct.includes("ap"));
 });
