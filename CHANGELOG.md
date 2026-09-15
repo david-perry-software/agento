@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-09-15)
 
 - **New `/agento continue [<slug>]` and `agento.mjs next [<slug>]`.** `next` is a
   pure, unit-tested transition function (`deriveNext` in `scripts/session-state.mjs`)
