@@ -2,7 +2,7 @@
 status: in-progress
 branch: issue/plugin-hooks-layout
 last-updated: 2026-09-15
-next-step: "2.1 — git mv plugin.json .claude-plugin/plugin.json and set hooks to ./hooks/hooks.json"
+next-step: "2.2 — git mv hooks.json hooks/hooks.json with no content change"
 github-issue: "#36"
 ```
 
@@ -12,7 +12,7 @@ github-issue: "#36"
 
 ## Phase 2: Move the manifest and hook wiring
 
-- [ ] 2.1 `git mv plugin.json .claude-plugin/plugin.json`, then change only the `hooks` field to `"./hooks/hooks.json"` (all other fields — `name`, `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`, `agents`, `commands` — unchanged; no `$schema`) — verify: `node -e 'const p=require("./.claude-plugin/plugin.json");const o=JSON.parse(require("child_process").execSync("git show origin/main:plugin.json"));for(const k of Object.keys(o))if(k!=="hooks"&&JSON.stringify(p[k])!==JSON.stringify(o[k]))process.exit(1);if(p.hooks!=="./hooks/hooks.json"||"$schema"in p)process.exit(1)'` exits 0 and `test ! -e plugin.json`
+- [x] 2.1 `git mv plugin.json .claude-plugin/plugin.json`, then change only the `hooks` field to `"./hooks/hooks.json"` (all other fields — `name`, `description`, `version`, `author`, `homepage`, `repository`, `license`, `keywords`, `agents`, `commands` — unchanged; no `$schema`) — verify: `node -e 'const p=require("./.claude-plugin/plugin.json");const o=JSON.parse(require("child_process").execSync("git show origin/main:plugin.json"));for(const k of Object.keys(o))if(k!=="hooks"&&JSON.stringify(p[k])!==JSON.stringify(o[k]))process.exit(1);if(p.hooks!=="./hooks/hooks.json"||"$schema"in p)process.exit(1)'` exits 0 and `test ! -e plugin.json`
 - [ ] 2.2 `git mv hooks.json hooks/hooks.json` with no content change — verify: `git diff --quiet origin/main:hooks.json HEAD:hooks/hooks.json` (after commit) or `cmp <(git show origin/main:hooks.json) hooks/hooks.json` exits 0, and `test ! -e hooks.json`
 - [ ] 2.3 Retarget the existing "plugin manifest…" test in `tests/customizations.test.mjs` to read `.claude-plugin/plugin.json` and to resolve `plugin.hooks` relative to the repo root (strip a leading `./`) so the version-match and `checkHooks` assertions cover the new files — verify: `node --test tests/customizations.test.mjs` exits 0 with the #36 test now `ok`
 

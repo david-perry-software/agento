@@ -9,5 +9,5 @@
   "keywords": ["copilot", "delivery", "workflow", "agents", "hooks"],
   "agents": ".github/agents",
   "commands": "commands",
-  "hooks": "hooks.json"
+  "hooks": "./hooks/hooks.json"
 }
