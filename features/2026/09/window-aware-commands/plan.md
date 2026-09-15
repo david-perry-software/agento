@@ -206,6 +206,10 @@ directory and AGENTS.md has no `## Agento` skills table).
 
 ## Approach
 
+> Note (2026-09-14, step 4.3): `capability-preflight` (#18) landed on `main` owning
+> `## 10. Capability preflight`, so the section below landed as `## 11. Window check`
+> and every `§10` written here for the window check reads `§11` in the code.
+
 ### 1. Session record: `hosted`, `worktrees[]` (`scripts/session-state.mjs`, `scripts/agento.mjs`)
 
 - `deriveRole({ cwd, worktrees, worktreesDir, config, env })`: new optional `env`
@@ -389,6 +393,9 @@ list unchanged), `plugin.json`/`package.json` (no version bump).
 - Version bump of `plugin.json`/`package.json`.
 
 ## Acceptance checklist
+
+> Note (2026-09-14, step 4.3): `§10` below refers to the window check, which landed as
+> policy `§11` (`§10` is `capability-preflight`'s section); the checks apply to `§11`.
 
 - [ ] `node scripts/agento.mjs session` emits `hosted` (boolean) and `worktrees[]`
   where each registered entry has `{ path, branch, detached, role, dirPrefix, id,
