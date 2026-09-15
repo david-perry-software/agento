@@ -1,8 +1,8 @@
 ```yaml
-status: paused
+status: in-progress
 branch: issue/plugin-hooks-layout
 last-updated: 2026-09-15
-next-step: "3.1 (manual) — settings.json already edited by the Builder (backup ~/.config/Code/User/settings.json.agento-3-1.bak) and /home/david/DP/prismicon opened in a new window; awaiting the user: in that window reload if hooks did not load, start a new Agent-mode chat, ask it to run `git status`, then reply 'done' + time so the Builder captures evidence/step-3-1-runtime-hooks.md, ticks 3.1, does 5.2, restores settings, sets in-review"
+next-step: "3.1 — user reported 'done 6:01 est' (2026-09-15 ~22:01 UTC) from the /home/david/DP/prismicon window; Builder capturing the Hooks log into evidence/step-3-1-runtime-hooks.md and checking the verify conditions, then restoring settings.json and doing 5.2"
 github-issue: "#36"
 ```
 
