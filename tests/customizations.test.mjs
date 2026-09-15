@@ -429,3 +429,26 @@ test("plugin manifest uses suffix-less command names and hook wiring points at e
     checkHooks(file, (cmd) => rel(cmd.replace(/^\.\//, "")));
   }
 });
+
+test("plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#36 plugin-hooks-layout)", () => {
+  // A root plugin.json + hooks.json (Copilot format 0) is parsed by VS Code without
+  // substituting the plugin-root token, so every hook spawns as `/scripts/hooks/…`
+  // and fails with "not found". Only the .claude-plugin/ + hooks/ layout substitutes.
+  const manifestPath = rel(".claude-plugin", "plugin.json");
+  assert.ok(fs.existsSync(manifestPath), ".claude-plugin/plugin.json missing");
+  const plugin = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  assert.ok(!fs.existsSync(rel("plugin.json")), "root plugin.json must not exist (would shadow the Claude layout)");
+  assert.ok(!fs.existsSync(rel("hooks.json")), "root hooks.json must not exist (never read under the Claude layout)");
+  assert.equal(plugin.hooks, "./hooks/hooks.json", "manifest hooks field must name ./hooks/hooks.json");
+  const hooksPath = rel("hooks", "hooks.json");
+  assert.ok(fs.existsSync(hooksPath), "hooks/hooks.json missing");
+  const wiring = JSON.parse(fs.readFileSync(hooksPath, "utf8"));
+  const commands = Object.values(wiring.hooks).flat().map((entry) => entry.command);
+  assert.ok(commands.length > 0, "hooks/hooks.json wires no hooks");
+  for (const cmd of commands) {
+    assert.match(cmd, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `hook command must start with \${CLAUDE_PLUGIN_ROOT}/: ${cmd}`);
+    const script = cmd.replace("${CLAUDE_PLUGIN_ROOT}", repoRoot);
+    assert.ok(fs.existsSync(script), `${cmd} does not resolve under the plugin root`);
+    assert.ok(fs.statSync(script).isFile() && fs.statSync(script).mode & 0o111, `${script} is not an executable file`);
+  }
+});

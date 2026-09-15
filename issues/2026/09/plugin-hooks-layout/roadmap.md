@@ -2,13 +2,13 @@
 status: in-progress
 branch: issue/plugin-hooks-layout
 last-updated: 2026-09-15
-next-step: "1.1 — add the exposing layout test to tests/customizations.test.mjs and confirm it FAILS"
+next-step: "2.1 — git mv plugin.json .claude-plugin/plugin.json and set hooks to ./hooks/hooks.json"
 github-issue: "#36"
 ```
 
 ## Phase 1: Expose the defect
 
-- [ ] 1.1 Add a `test(...)` to `tests/customizations.test.mjs` named `plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#36 plugin-hooks-layout)` that asserts: `.claude-plugin/plugin.json` exists and parses; root `plugin.json` and root `hooks.json` do not exist; the manifest's `hooks` equals `./hooks/hooks.json` and that file exists; every hook command in it starts with `${CLAUDE_PLUGIN_ROOT}/` and, after replacing the token with the repo root, is an existing executable file — verify: `node --test tests/customizations.test.mjs; echo "exit=$?"` prints `exit=1` and the TAP output names exactly that test as `not ok` (every other test still `ok`)
+- [x] 1.1 Add a `test(...)` to `tests/customizations.test.mjs` named `plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#36 plugin-hooks-layout)` that asserts: `.claude-plugin/plugin.json` exists and parses; root `plugin.json` and root `hooks.json` do not exist; the manifest's `hooks` equals `./hooks/hooks.json` and that file exists; every hook command in it starts with `${CLAUDE_PLUGIN_ROOT}/` and, after replacing the token with the repo root, is an existing executable file — verify: `node --test tests/customizations.test.mjs; echo "exit=$?"` prints `exit=1` and the TAP output names exactly that test as `not ok` (every other test still `ok`)
 
 ## Phase 2: Move the manifest and hook wiring
 
