@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: issue/plugin-hooks-layout
 last-updated: 2026-09-15
-next-step: "5.2 — scope-boundary check, merge origin/main, push, set in-review, write plan.md ## Resolution"
+next-step: "all steps ticked; awaiting /agento review-issue plugin-hooks-layout in this window"
 github-issue: "#36"
 ```
 
@@ -29,7 +29,7 @@ github-issue: "#36"
 ## Phase 5: Gate and publish
 
 - [x] 5.1 Full gate against the recorded baseline (shellcheck exit 0 / 0 findings; 140 tests pass; guard smoke exit 0): `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh`, `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`, `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` — verify: shellcheck exit 0 with no findings; tests report `# fail 0` with `# pass` ≥ 141; guard smoke exit 0; record all three results on this line — results (2026-09-15, a938abd): shellcheck exit 0, no findings; node --test `# tests 141`, `# pass 141`, `# fail 0` (baseline 140 + the #36 test); guard smoke exit 0
-- [ ] 5.2 Scope boundary and publish: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/hooks/` or `.github/hooks/` and lists both `.claude-plugin/plugin.json` and `hooks/hooks.json` while `plugin.json` and `hooks.json` are deletions (`git diff --diff-filter=D --name-only origin/main...HEAD`); `git merge origin/main` (never rebase); push; set `status: in-review` — verify: `gh pr view --json mergeStateStatus --jq .mergeStateStatus` is not `BEHIND`/`DIRTY`; PR body starts with `Fixes #36`
+- [x] 5.2 Scope boundary and publish: `git diff --name-only origin/main...HEAD` lists nothing under `scripts/hooks/` or `.github/hooks/` and lists both `.claude-plugin/plugin.json` and `hooks/hooks.json` while `plugin.json` and `hooks.json` are deletions (`git diff --diff-filter=D --name-only origin/main...HEAD`); `git merge origin/main` (never rebase); push; set `status: in-review` — verify: `gh pr view --json mergeStateStatus --jq .mergeStateStatus` is not `BEHIND`/`DIRTY`; PR body starts with `Fixes #36` — results (2026-09-15, base `origin/main` d1bdc3e): changed-file list has 0 entries under `scripts/hooks/` or `.github/hooks/` and includes `.claude-plugin/plugin.json` and `hooks/hooks.json`; the strict `--diff-filter=D` command prints nothing because git pairs the moves as renames (`R090 plugin.json → .claude-plugin/plugin.json`, `R100 hooks.json → hooks/hooks.json`), while `git diff --no-renames --diff-filter=D --name-only origin/main...HEAD` prints `hooks.json` and `plugin.json` — the root files are gone; `git merge origin/main` → `Already up to date`; PR #37 `mergeStateStatus` = `BLOCKED` (draft awaiting review; not `BEHIND`/`DIRTY`), body starts with `Fixes #36`; plan.md `## Resolution` written
 
 ## Follow-ups
 

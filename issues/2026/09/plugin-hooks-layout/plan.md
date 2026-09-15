@@ -309,3 +309,62 @@ Files touched: `.claude-plugin/plugin.json` (new, from `plugin.json`), `hooks/ho
   or `.github/hooks/`.
 - [ ] The PR body starts with `Fixes #36`; `gh pr view --json mergeStateStatus` is not
   `BEHIND` or `DIRTY` when `status: in-review` is set.
+
+## Resolution
+
+**Root cause.** Agento shipped in Copilot plugin format 0 (root `plugin.json` + root
+`hooks.json`). In VS Code 1.132.0 that format's hook parser (`BTo(s,o,t,i)`) drops the
+plugin root URI, so `${CLAUDE_PLUGIN_ROOT}` in each hook `command` was neither
+substituted nor exported to the hook's environment; `/bin/sh` therefore executed
+`/scripts/hooks/<script>.sh` and exited 127 (`not found`) on every SessionStart and
+PreToolUse. Formats 1 and 2 go through `HTo(...)`, which substitutes the token and
+sets `env.CLAUDE_PLUGIN_ROOT`
+([evidence/vscode-source-trace.txt](evidence/vscode-source-trace.txt),
+[evidence/shell-repro.txt](evidence/shell-repro.txt)). A masked second defect: the
+dev-clone docs recommended a workspace `"chat.pluginLocations": { "<path>": false }`
+toggle, which is machine-scoped and therefore ignored.
+
+**What changed and why.**
+
+- `plugin.json` → `.claude-plugin/plugin.json` (`git mv`, R090: only `hooks` changed to
+  `"./hooks/hooks.json"`, plus the `0.4.1` bump) and `hooks.json` → `hooks/hooks.json`
+  (R100, byte-identical). This is the Claude-format layout VS Code detects as format 1,
+  so the existing `${CLAUDE_PLUGIN_ROOT}` token is now expanded at runtime. The root
+  files were removed, not duplicated, because format detection would never read them
+  and they would only reintroduce version drift.
+- `tests/customizations.test.mjs`: new exposing test `plugin layout is Claude format so
+  VS Code expands ${CLAUDE_PLUGIN_ROOT} (#36 plugin-hooks-layout)`; the existing
+  manifest test now reads `.claude-plugin/plugin.json` and resolves `plugin.hooks`
+  relative to the repo root.
+- Docs and references (`AGENTS.md`, `README.md`, `docs/install.md`, `docs/hooks.md`, the
+  Mechanic agent, the `agento-init` and `ship` prompts and their `commands/` mirrors):
+  new layout paths; the dev-clone advice now says do not register the clone in
+  `chat.pluginLocations` (workspace-mode `.github/hooks/` already guards the clone and
+  every worktree), with the per-workspace disable from the Extensions view → *Agent
+  Plugins – Installed* as the fallback, and states that `chat.pluginLocations` is
+  machine-scoped.
+- Version `0.4.1` in `.claude-plugin/plugin.json` and `package.json`; `## 0.4.1
+  (unreleased)` CHANGELOG entry referencing #36.
+
+**Proof.**
+
+- Exposing test: at step 1.1 (old layout) `node --test tests/customizations.test.mjs`
+  exited 1 naming only the #36 test `not ok`; after step 2.3 and in the final gate it is
+  `ok`.
+- Full gate (step 5.1, 2026-09-15 at `a938abd`, re-run during the resume audit at
+  `3767c70`): `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exit 0, no
+  findings; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` → `# tests 141`,
+  `# pass 141`, `# fail 0` (baseline 140 + the #36 test); `./scripts/hooks/replay-guard.sh
+  < tests/guard-fixtures.txt` exit 0.
+- Runtime proof (step 3.1, [evidence/step-3-1-runtime-hooks.md](evidence/step-3-1-runtime-hooks.md)):
+  with this worktree registered as the plugin, a new chat in the non-Agento repository
+  `/home/david/DP/prismicon` logged `Running: {"command":"/home/david/DP/agento-worktrees/plan-20260915-192647/scripts/hooks/session-context.sh", …, "env":{"CLAUDE_PLUGIN_ROOT":"/home/david/DP/agento-worktrees/plan-20260915-192647"}}`
+  → `Completed (Success) in 214ms` with `Agento CLI: node …/scripts/agento.mjs` in the
+  SessionStart output, and the same for `delivery-guard.sh` on PreToolUse
+  (`Completed (Success) in 159ms`); `grep -c 'not found'` on that log is 0 and each
+  event shows exactly one `Executing 1 hook(s)`.
+- Scope boundary (step 5.2): `git diff --name-only origin/main...HEAD` touches nothing
+  under `scripts/hooks/` or `.github/hooks/`; `git diff --no-renames --diff-filter=D
+  --name-only origin/main...HEAD` lists `hooks.json` and `plugin.json` (with rename
+  detection they appear as `R090 plugin.json → .claude-plugin/plugin.json` and `R100
+  hooks.json → hooks/hooks.json`).
