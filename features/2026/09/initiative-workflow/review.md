@@ -113,9 +113,9 @@ artifact or evidence file.
 
 - Extend the Planner agent's `argument-hint` (delivery-planner.agent.md L4) to mention
   `initiative:<initiative-slug>/<feature-slug>` so direct agent invocation matches the
-  `/new-feature` prompt hint.
+  `/new-feature` prompt hint. → filed as #28
 - Add the `/next-feature` empty-argument list-mode behaviour to docs/commands.md and
-  README's command reference (currently only the prompt body describes it).
+  README's command reference (currently only the prompt body describes it). → filed as #29
 - First real use of the `/ship` changelog stamp is shipping this feature; the roadmap
   `## Follow-ups` note carries the exact manual replacement for the primary window's
   pre-stamp prompt. Confirm after PR #12 merges that `## 0.3.0 (<date>)` landed in the

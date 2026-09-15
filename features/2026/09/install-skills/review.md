@@ -38,4 +38,4 @@ future cleanup could drop it or implement it.
 ## Follow-ups
 
 - Consider an `/agento-init` follow-up that offers to run `/install-skills`
-  immediately after scaffolding (currently the user must discover it).
+  immediately after scaffolding (currently the user must discover it). → filed as #30

@@ -48,5 +48,5 @@ All 18 boxes spot-checked against the codebase by re-running each `verify:` comm
 ## Follow-ups
 
 - Add `initiative` to the CLI subcommand list in this repo's AGENTS.md (§ Non-negotiable/layout bullet) — can ride with `initiative-workflow`.
-- Emit a validation error for non-numeric `Wave:` values in `parseBreakdown`.
-- Guard fixture for the `{ shellcheck …; }` / `cd scripts/hooks && …` denial noted in plan `## Research` (already listed as out of scope there; still unfiled).
+- Emit a validation error for non-numeric `Wave:` values in `parseBreakdown`. → filed as #26
+- Guard fixture for the `{ shellcheck …; }` / `cd scripts/hooks && …` denial noted in plan `## Research` (already listed as out of scope there; still unfiled). → filed as #27

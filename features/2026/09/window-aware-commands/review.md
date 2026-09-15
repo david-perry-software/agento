@@ -178,7 +178,7 @@ The roadmap header (`status: in-review`, `next-step: ""`) is left as is.
 
 - Drop `/agento commit-current-changes` from the `FREEHAND` row of `deriveAllowed`
   in `scripts/session-state.mjs` so the record's alternatives match the command's
-  window-check requirement (already listed in roadmap.md Follow-ups).
+  window-check requirement (already listed in roadmap.md Follow-ups). → filed as #33
 - `ship-audit-first`: remove `ship` from the porcelain allowlist in
   `tests/customizations.test.mjs` and the `ship.prompt.md` `owner` precondition
-  paragraph once ship consumes `owner` for its post-merge close (plan.md Risks).
+  paragraph once ship consumes `owner` for its post-merge close (plan.md Risks). → filed as #34
