@@ -11,7 +11,10 @@ Close the isolated session named by the argument. Run this command from the
 primary worktree of this repository after closing the session's VS Code window. This
 invocation authorizes removing the managed worktree and, when already merged, deleting
 its local branch. It does not authorize discarding changes or deleting an unmerged
-branch.
+branch. `/agento ship` performs the build close itself once the PR is merged, so this
+command is the normal close only for plan and freehand sessions and for build
+sessions you abandon or supersede; closing a finished build before shipping stays
+valid (ship then takes its no-owner path).
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
