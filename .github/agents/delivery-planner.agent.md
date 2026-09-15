@@ -142,10 +142,12 @@ directories.
    planning worktree in place without moving or recreating it; that handoff (or
    `/agento build-<type> <slug>`) is the `next:` of the §9 result line. After promotion, the
    record reports this worktree as `role: build` (its `dirPrefix` stays `plan`) — a
-   build-session reservation even though the directory is unchanged; close it from
-   the primary workspace window with
-   `/agento close-session <type>/<slug>` after review. `/agento close-session <session-id>` on an
-   abandoned unpublished detached session closes it under the plan rules.
+   build-session reservation even though the directory is unchanged; once the review
+   approves, ship it from the primary workspace window with `/agento ship <slug>`,
+   which tears the worktree down when the PR is merged; `/agento close-session
+   <type>/<slug>` remains available to abandon the session. `/agento close-session
+   <session-id>` on an abandoned unpublished detached session closes it under the plan
+   rules.
 
 ## Non-negotiable rules
 

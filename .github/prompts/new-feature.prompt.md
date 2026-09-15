@@ -52,7 +52,8 @@ exact argument.
 5. Commit the two artifacts, push with upstream, and open a draft PR to `main`.
 6. Report slug, branch, PR number, and roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or
-   reinstalling dependencies. Explain that the promoted session is later closed from
-   the primary window with `/agento close-session feature/<slug>`.
+   reinstalling dependencies. Explain that the promoted session is later torn down by
+   `/agento ship <slug>` from the primary window once the PR is merged
+   (`/agento close-session feature/<slug>` only to abandon it).
 
 If the argument is empty, ask for a feature description and stop.

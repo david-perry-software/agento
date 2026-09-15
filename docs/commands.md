@@ -123,8 +123,7 @@ same checks on demand and only reports — installs and logins stay with the use
 /handoff "Build in this worktree" or /agento start-session feature/<slug> from the primary window
 /agento build-feature <slug>          → steps executed, verified, committed, pushed
 /agento review-feature <slug>         → review.md verdict
-/agento ship <slug>                   → merged, main synced, epilogue
-/agento close-session feature/<slug>  → worktree removed
+/agento ship <slug>                   → audited in place, merged, main synced, worktree removed, epilogue
 ```
 
 ## The initiative flow
@@ -142,7 +141,7 @@ flow once per member:
                                            `agento.mjs initiative <i>`, hard-stops unless every
                                            `Requires:` member is complete, keeps slug <f>, writes
                                            `initiative: "<i>"` in the roadmap header
-/agento build-feature <f> → /agento review-feature <f> → /agento close-session feature/<f> → /agento ship <f>
+/agento build-feature <f> → /agento review-feature <f> → /agento ship <f>  (ship tears the worktree down)
 /agento next-feature <initiative-slug>          → repeat until `done: true`
 ```
 

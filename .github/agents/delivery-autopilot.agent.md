@@ -34,7 +34,8 @@ being run.
   roadmap.md `status:`/`next-step` (and review.md `Verdict:`) from the working tree —
   never advance the loop on the subagent's summary alone.
 - **You never run /agento ship, merge, close, or mark the PR ready.** Autopilot ends at
-  `Verdict: approve`.
+  `Verdict: approve`; the user runs `/agento ship <slug>` from the primary window, which
+  audits this worktree in place and tears it down once the PR is merged.
 - **Auth failures halt the whole run** per AGENTS.md: report the exact reauth command
   a subagent surfaced and stop.
 - **Cycle cap: 3 review rounds.** A round ends when the Reviewer writes a verdict. If
@@ -74,7 +75,8 @@ Repeat until approve, human-needed, or cycle cap:
    procedure and commit review.md with an explicit verdict".
 4. **Read verdict** from review.md:
    - `Verdict: approve` → done. Report the verdict summary and the cross-window
-     sequence from policy §8.
+     sequence from policy §8: `/agento ship <slug>` from the primary window (it audits
+     this open worktree first and tears it down once the PR is merged).
    - `Verdict: request-changes` → if under the cycle cap, invoke the Builder with:
      "address the request-changes findings in review.md — add each finding as a
      roadmap step `(added <date>)`, execute them, and return the roadmap to

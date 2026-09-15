@@ -100,8 +100,9 @@ of `HEAD` (merge it and re-verify if not), then set `status: in-review`, commit,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the
-cross-window sequence from policy §8, its first command being the `next:` of the §9
-result line.
+cross-window sequence from policy §8 (review here; `/agento ship <slug>` from the
+primary window on approval, which tears this worktree down), its first command being
+the `next:` of the §9 result line.
 
 ## Non-negotiable rules
 
