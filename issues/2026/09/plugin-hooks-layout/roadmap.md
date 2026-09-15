@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: issue/plugin-hooks-layout
 last-updated: 2026-09-15
 next-step: "1.1 — add the exposing layout test to tests/customizations.test.mjs and confirm it FAILS"
