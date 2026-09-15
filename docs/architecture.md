@@ -20,6 +20,11 @@ flowchart TD
     SHIP -->|"reject: back to the open build window"| B
     SHIP -->|"merge PR, sync main, teardown, epilogue"| DONE([shipped])
     U -->|"/agento close-session (plan/freehand/abandon)"| CLOSE[remove worktree]
+    U -->|"/agento continue"| CONT[agento.mjs next: one legal transition]
+    CONT -->|"here: follow the command's own files"| B
+    CONT -->|"here"| R
+    CONT -->|"primary window"| SHIP
+    CONT -->|"start-session --resume, then continue"| SS
 
     subgraph hooks [Hooks — every session]
         SC[session-context.sh<br/>SessionStart: branch + resumable work]

@@ -2,6 +2,25 @@
 
 ## 0.4.0 (unreleased)
 
+- **New `/agento continue [<slug>]` and `agento.mjs next [<slug>]`.** `next` is a
+  pure, unit-tested transition function (`deriveNext` in `scripts/session-state.mjs`)
+  over the session record, roadmap ownership (`findOwner`), review freshness (last
+  commit touching `review.md` versus the last code commit on `origin/<branch>`, the
+  local branch, or `HEAD` — never fetching), and initiative readiness. It prints
+  `status` (`ok | none | ambiguous | blocked | unsupported | missing`), `next`
+  (`command`, `args`, `invocation`, `window: here | primary | secondary`, `then`,
+  `reason`), `candidates[]`, and `dispatch { prompt, agent }` — the absolute paths of
+  the command file and the agent file its `agent:` frontmatter names. `/agento
+  continue` runs it and performs the one transition: in this window by following the
+  dispatched command's own prompt and agent files verbatim (Builder, Reviewer,
+  Planner for an initiative member, `ship` from the primary), or across windows by
+  reopening the owning worktree (`/agento start-session … --resume`) or the primary
+  (`code <path>`) and naming the command for it. Delivery lifecycle only — freehand,
+  quick-fix, and commit-current-changes windows are rejected with the record's
+  alternatives, and `/agento ap` is never chosen; several candidates are listed as
+  `/agento continue <slug>` choices. `/agento continue` is now the first `allowed`
+  entry of every `primary`, `build`, and `plan` row in the session record; policy §8
+  names it as the derived handoff shorthand and §9 gains its idempotency row.
 - **`/agento ship` audits first and tears down last.** Ship no longer requires
   `/agento close-session` before it runs. With the build worktree still owning the
   branch (`owner` from `ship-preflight`), the audit is read-only from the primary
