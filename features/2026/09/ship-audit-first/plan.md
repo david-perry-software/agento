@@ -111,6 +111,20 @@ wrapper:
 | `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` | 0 | none |
 | `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` | 0 | all fixtures match |
 
+Re-run on the integrated branch at `3325195` (after merging `origin/main` `e32d872`,
+which landed `window-aware-commands`, `capability-preflight`, and `command-receipts`;
+roadmap step 1.2):
+
+| Command | Exit | Findings |
+| --- | --- | --- |
+| `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` | 0 | 120 tests, 120 pass, 0 fail |
+| `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` | 0 | none |
+| `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` | 0 | all fixtures match |
+
+Still green; the full gate applies unchanged. Note: after the merge the policy's
+window check is `§11` (capability preflight is `§10`); references below to "§10" for
+the window-check text mean the section that now holds it.
+
 Baseline is green; there is nothing to overlap or scope. The full gate applies:
 every roadmap step that changes a tested file reruns the whole suite and shellcheck
 stays green (no shell files change here). No `local:`/`dev-stack`/`preview` target
