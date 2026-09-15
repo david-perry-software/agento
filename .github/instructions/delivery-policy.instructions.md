@@ -148,7 +148,10 @@ with the exact commands:
 1. In this window: `/agento review-feature <slug>` or `/agento review-issue <slug>` after a build
    completes; the Builder fix handoff after `Verdict: request-changes`.
 2. After `Verdict: approve`, switch to the primary workspace window and run
-   `/agento close-session <type>/<slug>`, then `/agento ship <slug>`.
+   `/agento ship <slug>`; it audits while this worktree is still open, sends you
+   back here on a rejected audit, and tears the worktree down after the merge.
+   Standalone `/agento close-session <type>/<slug>` is for plan and freehand
+   sessions and for abandoning a build.
 
 Never substitute raw git or worktree commands for these workflow commands.
 
@@ -216,7 +219,7 @@ roadmap.
 | `/agento new-feature`, `/agento new-issue` | An existing roadmap for the slug enters the Planner resume protocol; no second branch, worktree, or PR. An existing GitHub issue is linked, not duplicated. |
 | `/agento build-feature`, `/agento build-issue` | The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone. |
 | `/agento review-feature`, `/agento review-issue` | A fresh verdict overwrites review.md; no second PR comment thread. |
-| `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; an already-merged PR only syncs the default branch and reports it. |
+| `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it. |
 | `/agento ap` | Re-enters the build or review resume protocol wherever the roadmap stands. |
 | `/agento start-session`, `/agento start-freehand` | A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened. |
 | `/agento close-session` | A worktree already removed is reported as already closed; a merged local branch is still deleted and worktrees pruned. |
@@ -306,8 +309,8 @@ lives in the CLI (`deriveAllowed`), never here or in a prompt.
 2. Compare `role` with the roles the command's line names. Match → proceed; from here
    on the record's `worktree`, `delivery`, and `worktrees[]` replace any further
    worktree inspection. Only commands that create or remove worktrees
-   (`/agento start-session`, `/agento start-freehand`, `/agento close-session` — and
-   `/agento ship` while it still depends on the worktree being gone) may additionally
+   (`/agento start-session`, `/agento start-freehand`, `/agento close-session`, and
+   `/agento ship` for its post-merge teardown) may additionally
    read `git worktree list --porcelain`, and only for that mutation. Ownership of a
    delivery branch comes from `worktrees[]` or from `close-decision` /
    `ship-preflight` `owner` (`{ path, role, dirPrefix, id } | null`; reasons
