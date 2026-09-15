@@ -283,6 +283,23 @@ window removes a clean, pushed worktree and keeps the branch (its PR stays open)
 it to abandon or park a build; a later `/agento ship <slug>` then checks the branch
 out in the primary as before.
 
+### Or just continue — any delivery window
+
+```text
+/agento continue [<slug>]
+```
+
+Derives the one legal next transition from the session record, the roadmaps, the
+worktree ownership, and the review's freshness (`agento.mjs next`) and performs it.
+In the secondary window that is the build or review step that is legal now; after
+`Verdict: approve` it opens the primary window and names `/agento ship <slug>`. In
+the primary with one delivery in flight it reopens that delivery's worktree window
+and names `/agento continue <slug>` for it; with no delivery but one ready initiative
+member it starts the plan session that will derive
+`/agento new-feature initiative:<i>/<f>`. One transition per invocation; several
+candidates are listed as `/agento continue <slug>` choices instead of guessed, and it
+never picks `/agento ap` or the lighter tiers.
+
 ### Initiatives — several features from one brief
 
 When a brief is too large for a single feature, decompose it first — primary window,
@@ -373,6 +390,7 @@ Mechanic.
 | `/agento ap <slug>` | secondary | 🤖 Autopilot | Unattended build → review → fix loop; never ships |
 | `/agento close-session <type/slug \| changes/slug \| id>` | primary | default | Remove a clean, pushed plan/freehand worktree, or abandon a build (ship tears finished builds down) |
 | `/agento ship <slug>` | primary | default | Audit in place, reject to the open build window or merge, sync, release, tear down, epilogue |
+| `/agento continue [<slug>]` | primary · secondary | default | Derive the one legal next transition and perform it here or open the window that owns it |
 | `/agento quick-fix <description>` | primary | default | Plan-less small change: branch, verify, PR, merge |
 | `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |

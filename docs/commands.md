@@ -13,6 +13,7 @@
 | `/agento review-feature <slug>` · `/agento review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
 | `/agento ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
 | `/agento ship <slug>` | default | Acceptance gate: audit in place while the build worktree is open, reject back to that window on a real gap, else required checks green, merge PR, sync main, optional release workflow, tear the worktree down, post-ship epilogue |
+| `/agento continue [<slug>]` | default | Derive the one legal next transition from the session record (`agento.mjs next`) and perform it: build, review, or ship here by following that command's own prompt and agent files, or open the worktree window that owns the next step and name the command for it; rejects with the choices when several deliveries are in flight |
 | `/agento close-session <session-id \| type/slug \| changes/slug>` | default | Remove a plan/freehand worktree or abandon a build (ship tears down finished builds) |
 | `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
 | `/agento start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
@@ -45,9 +46,17 @@ initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`,
 `doctor [--for <command>]` (six environment checks — `node`, `git-remote`, `gh`,
 `code`, `python3`, `worktrees-dir` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `--for` runs only the checks the named command's
-`Needs:` line requires and echoes them as `for.needs`). Every call prints one JSON
-document; exit 0 = usable result (`doctor`: `ok` or `warn`), 3 = resolution failure
-(`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`),
+`Needs:` line requires and echoes them as `for.needs`),
+`next [<slug>]` (the one legal delivery transition derived from the same record as
+`session` plus roadmap ownership, review freshness, and initiative readiness:
+`status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`
+`{ command, args, invocation, window: here | primary | secondary, then, reason }`,
+`candidates[]`, and `dispatch { prompt, agent }` — the absolute paths of the command
+file and its agent file; never `/agento ap`; never fetches). Every call prints one JSON
+document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`),
+3 = resolution failure
+(`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`,
+`next` `ambiguous | blocked | unsupported | missing`),
 1 = usage error. Every window-sensitive command runs `session` first and compares
 `role` with its `Window check per §11: requires role …` line (policy §11); a mismatch
 is a `rejected` receipt listing the record's alternatives.
@@ -69,6 +78,7 @@ Every command has one spelling, `/agento <name> [args]`. The canonical names are
 - `/agento review-issue`
 - `/agento ap`
 - `/agento ship`
+- `/agento continue`
 - `/agento close-session`
 - `/agento quick-fix`
 - `/agento start-freehand`
@@ -126,6 +136,13 @@ same checks on demand and only reports — installs and logins stay with the use
 /agento ship <slug>                   → audited in place, merged, main synced, worktree removed, epilogue
 ```
 
+Every arrow after the plan is also `/agento continue [<slug>]`: from the secondary
+window it runs the build or review step that is legal now; after `Verdict: approve` it
+opens the primary window and names `/agento ship <slug>`; from the primary it reopens
+the worktree window of the one delivery in flight (`/agento start-session … --resume`)
+and names `/agento continue <slug>` for it. Exactly one transition per invocation;
+with several deliveries in flight it lists them as `/agento continue <slug>` choices.
+
 ## The initiative flow
 
 For a brief too large for one feature, decompose it first and then run the standard
@@ -144,6 +161,12 @@ flow once per member:
 /agento build-feature <f> → /agento review-feature <f> → /agento ship <f>  (ship tears the worktree down)
 /agento next-feature <initiative-slug>          → repeat until `done: true`
 ```
+
+`/agento continue` covers this flow too: from the primary with no delivery in flight
+and exactly one `ready` member it starts the plan session and names
+`/agento continue <f>` for the new window, where it derives
+`/agento new-feature initiative:<i>/<f>`; the build, review, and ship arrows follow as
+in the standard flow.
 
 Same-wave members that are all `ready` may be planned and built concurrently, each
 in its own session. The breakdown holds no checkboxes; progress is derived from the

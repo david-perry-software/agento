@@ -7,14 +7,15 @@ delivery system. Layout:
   (`${CLAUDE_PLUGIN_ROOT}` paths).
 - `.github/agents/` — the five delivery agents (Planner, Builder, Reviewer,
   Autopilot, Mechanic).
-- `.github/prompts/` — the slash commands.
+- `.github/prompts/` — the slash commands (`/agento continue` performs the one
+  transition `agento.mjs next` derives by following the dispatched command's files).
 - `.github/instructions/` — the shared delivery policy (single source of the rules;
   agents cite `§N`), the artifact format contract, the skills-first policy, and the
   concurrent-delivery mechanics.
 - `.github/hooks/` — workspace-mode hook wiring (relative `./scripts/hooks` paths)
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,
-  close-decision, ship-preflight, paths, ports, session, initiative, doctor),
+  close-decision, ship-preflight, paths, ports, session, next, initiative, doctor),
   `agento-config.mjs`, `session-state.mjs`,
   `delivery-roadmap-resolver.mjs`,
   `wait-for-checks.sh`, `hooks/{delivery-guard,session-context,replay-guard}.sh`.

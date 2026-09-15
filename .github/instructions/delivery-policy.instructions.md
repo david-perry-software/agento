@@ -153,7 +153,10 @@ with the exact commands:
    Standalone `/agento close-session <type>/<slug>` is for plan and freehand
    sessions and for abandoning a build.
 
-Never substitute raw git or worktree commands for these workflow commands.
+`/agento continue [slug]` derives the same handoff command from the session record
+(`agento.mjs next`) and performs it; it may be named alongside the explicit command in
+these hand-offs. Never substitute raw git or worktree commands for these workflow
+commands.
 
 ## 9. Execution receipts
 
@@ -221,6 +224,7 @@ roadmap.
 | `/agento review-feature`, `/agento review-issue` | A fresh verdict overwrites review.md; no second PR comment thread. |
 | `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it. |
 | `/agento ap` | Re-enters the build or review resume protocol wherever the roadmap stands. |
+| `/agento continue` | Re-derives the transition from git + roadmap state and performs whatever is legal now; never a second worktree, branch, or PR — the dispatched command's own row governs the rest. |
 | `/agento start-session`, `/agento start-freehand` | A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened. |
 | `/agento close-session` | A worktree already removed is reported as already closed; a merged local branch is still deleted and worktrees pruned. |
 | `/agento finish-freehand`, `/agento commit-current-changes` | The existing commit, PR, or check-wait phase is reused; never a second commit or PR for the same changes. |
