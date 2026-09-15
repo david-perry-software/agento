@@ -1,0 +1,96 @@
+# VS Code 1.132.0 (df53daabb18cd157bdb08c7f01c34df936cf12f4) — plugin-format hook parsing
+# Extracted 2026-09-15 with grep -o from /usr/share/code/resources/app/out/vs/workbench/workbench.desktop.main.js
+# (minified; identifiers are build-specific). Reformatted for readability, content unchanged.
+
+## 1. Format descriptors — only formats 1 and 2 pass the plugin root + token to their hook parser
+
+var bEn = {                                  // format 0 — "Copilot" (Agento today)
+  format: 0,
+  manifestPath: "plugin.json",
+  hookConfigPath: "hooks.json",
+  pluginRootTokens: ["${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}"],
+  pluginRootEnvVars: ["PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT"],
+  parseHooks(s, o, e, t, i) { return BTo(s, o, t, i) }          // <-- drops `e` (plugin root URI); no token, no env var
+};
+var SEn = {                                  // format 1 — "Claude"
+  format: 1,
+  manifestPath: ".claude-plugin/plugin.json",
+  hookConfigPath: "hooks/hooks.json",
+  pluginRootTokens: ["${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}"],
+  pluginRootEnvVars: ["PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT"],
+  parseHooks(s, o, e, t, i) { return HTo(s, o, e, t, i, "${CLAUDE_PLUGIN_ROOT}", "CLAUDE_PLUGIN_ROOT") }
+};
+var yEn = {                                  // format 2 — legacy OpenPlugin
+  format: 2,
+  manifestPath: ".plugin/plugin.json",
+  hookConfigPath: "hooks/hooks.json",
+  pluginRootTokens: ["${PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}"],
+  pluginRootEnvVars: ["PLUGIN_ROOT", "CLAUDE_PLUGIN_ROOT"],
+  parseHooks(s, o, e, t, i) { return HTo(s, o, e, t, i, "${PLUGIN_ROOT}", "PLUGIN_ROOT") }
+};
+var IEn = { format: 3, manifestPath: "plugin.json", hookConfigPath: "", componentPaths: {...}, requiresManifest: true,
+  pluginRootTokens: [], pluginRootEnvVars: [], parseHooks() { return [] } };   // Agent Plugins 1.0 ($schema) — hooks via com.github.copilot only
+
+## 2. Format detection — .claude-plugin/plugin.json wins over the root-manifest default
+
+async function eAi(s, o) {
+  return await MAe(s, o) ? IEn                                                  // root plugin.json with the 1.0 $schema
+    : await Znt(Ve(s, ".plugin", "plugin.json"), o) ? yEn                        // format 2
+    : s.path.split("/").includes(".claude") || await Znt(Ve(s, ".claude-plugin", "plugin.json"), o) ? SEn   // format 1
+    : bEn;                                                                      // default: format 0
+}
+
+## 3. The parsers — BTo never touches the command string; HTo substitutes the token and sets the env var, then delegates
+
+function BTo(s, o, e, t) {                   // format 0 parser; also the tail of HTo
+  if (!o || typeof o != "object") return [];
+  let i = o; if (i.disableAllHooks === true) return [];
+  let n = i.hooks; if (!n || typeof n != "object") return [];
+  let r = n, a = [], c = wEn(s);
+  for (let l of Object.keys(r)) {
+    let u = DEn[l]; if (!u) continue;
+    let p = r[l]; if (!Array.isArray(p)) continue;
+    let m = []; for (let g of p) m.push(...LEn(g, e, t));
+    m.length > 0 && a.push({ type: u, commands: m, uri: s, originalId: l, customization: c });
+  }
+  return a;
+}
+function HTo(s, o, e, t, i, n, r) {          // formats 1 and 2: n = token, r = env var name, e = plugin root URI
+  let a = e.fsPath, c = o,
+      l = p => {
+        for (let m of ["command", "windows", "linux", "osx"]) typeof p[m] == "string" && (p[m] = WTo(p[m], a, n));
+        (!p.env || typeof p.env != "object") && (p.env = {}); p.env[r] = a;
+      };
+  for (let p of Object.values(c.hooks ?? {})) if (Array.isArray(p)) for (let m of p) {
+    if (!m || typeof m != "object") continue; let g = m;
+    if (Array.isArray(g.hooks)) for (let f of g.hooks) l(f); else l(g);
+  }
+  return BTo(s, AE(o, p => typeof p == "string" ? p.replaceAll(n, e.fsPath) : void 0), t, i);
+}
+
+## 4. Both discovery branches use the format's parser — a manifest `hooks` field does not help format 0
+
+_readHooksFromPaths(e, t, i) {               // manifest declares "hooks": <path>
+  … for (let a of t) { let c = await this._readJsonFile(a); if (c) try { return W9o(i.parseHooks(a, c, e, r, n)) } … }
+}
+E = v("hooks", Q => this._readHooksFromPaths(e, Q, t),
+      async Q => { … return W9o(t.parseHooks(b, Q, e, ne, se)) },   // default hookConfigPath
+      t.hookConfigPath)
+
+## 5. Component paths — formats 0/1/2 honour manifest `commands` / `agents` fields, so the current values carry over
+
+function ATo(s, o, e) { return s.componentPaths && Object.hasOwn(s.componentPaths, o) ? void 0 : e?.[o] }
+function NTo(s, o, e, t, i, n) { let r = o.componentPaths?.[e];
+  return o.componentPaths && Object.hasOwn(o.componentPaths, e) ? (typeof r == "string" ? MTo(s, r, I1t, n) : []) : MTo(s, t, xEn(i), n) }
+
+## 6. Setting scope — chat.pluginLocations is MACHINE-scoped (ConfigurationScope 2); enabledPlugins is APPLICATION (1)
+
+"chat.pluginLocations": { type: "object", additionalProperties: { type: "boolean" }, restricted: true,
+                          markdownDescription: d(9296, null), scope: 2, tags: ["experimental"] },
+"chat.plugins.enabledPlugins": { type: "object", additionalProperties: { type: "boolean" }, …, scope: 1,
+                                 policy: { name: "ChatEnabledPlugins", … } },
+# ConfigurationScope: 1 = APPLICATION, 2 = MACHINE, 3 = WINDOW, 4 = RESOURCE, 5 = LANGUAGE_OVERRIDABLE, 6 = MACHINE_OVERRIDABLE.
+# A MACHINE-scoped setting is ignored in workspace/folder settings.json, so the documented
+# `"chat.pluginLocations": { "<path>": false }` "for that workspace" can never take effect.
+# Per-workspace enable/disable is the Extensions view → Agent Plugins – Installed → context menu
+# (or the Agent Customizations editor), whose state VS Code stores separately from settings.
