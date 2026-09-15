@@ -408,7 +408,7 @@ test("session: hosted workspaces derive the role from the branch and warn once",
   assert.deepEqual(actions.warnings, ["hosted-workspace: role derived from the branch (GITHUB_ACTIONS=true)"]);
   // The build row applies: no roadmap yet, so only delivery-status here and start-session elsewhere.
   assert.equal(actions.lifecycle, "no-delivery");
-  assert.deepEqual(actions.allowed, ["/agento delivery-status"]);
+  assert.deepEqual(actions.allowed, ["/agento continue", "/agento delivery-status"]);
   assert.equal(actions.elsewhere[0].window, "primary");
   // worktrees[] still describes the on-disk checkouts by path.
   assert.equal(actions.worktrees.find((w) => w.path === stray).role, "unmanaged");

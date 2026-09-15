@@ -306,6 +306,7 @@ const COMMAND_NEEDS = {
   "build-issue": ["terminal", "browser", "gh", "network"],
   "close-session": ["terminal"],
   "commit-current-changes": ["terminal", "gh", "network"],
+  continue: ["terminal", "ask-questions", "browser", "gh", "code", "network"],
   "delivery-status": ["terminal"],
   doctor: ["terminal"],
   "extend-copilot": ["terminal"],

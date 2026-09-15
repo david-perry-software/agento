@@ -259,6 +259,12 @@ const TABLE = {
 const FREEHAND = { allowed: ["/agento finish-freehand <slug>", "/agento commit-current-changes"], elsewhere: [] };
 const UNMANAGED = { allowed: [], elsewhere: [primary(START, "this directory is neither the primary worktree nor a managed Agento worktree")] };
 
+const CONTINUE = "/agento continue";
+// Every delivery-window row offers `/agento continue` first: it derives the same
+// transition the rest of the row spells out (deriveNext). Freehand and unmanaged
+// windows are outside the delivery lifecycle and keep their fixed rows.
+for (const rows of Object.values(TABLE)) for (const row of Object.values(rows)) row.allowed = [CONTINUE, ...row.allowed];
+
 export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
   const row = role === "freehand" ? FREEHAND : role === "unmanaged" ? UNMANAGED : TABLE[role]?.[lifecycle];
   if (!row) return { allowed: [], elsewhere: [] };
@@ -274,8 +280,6 @@ export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
 // --- next: the one legal transition -----------------------------------------
 
 export const NEXT_STATUSES = ["ok", "none", "ambiguous", "blocked", "unsupported", "missing"];
-
-const CONTINUE = "/agento continue";
 
 function transition(command, args, window, reason, then = null) {
   return { command, args, invocation: [`/agento ${command}`, ...args].join(" "), window, then, reason };

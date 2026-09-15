@@ -100,7 +100,7 @@ test("emits exactly one Session: line with role=primary on a plain repo, right a
   const sessionLines = lines.filter((l) => l.startsWith("Session: "));
   assert.equal(sessionLines.length, 1);
   assert.equal(lines[lines.findIndex((l) => l.startsWith("Agento CLI: ")) + 1], sessionLines[0]);
-  assert.match(sessionLines[0], /^Session: role=primary worktree=\S+ branch=main delivery=none lifecycle=no-delivery allowed=\[\/agento start-session; .*\/agento delivery-status\] elsewhere=\[\]$/);
+  assert.match(sessionLines[0], /^Session: role=primary worktree=\S+ branch=main delivery=none lifecycle=no-delivery allowed=\[\/agento continue; \/agento start-session; .*\/agento delivery-status\] elsewhere=\[\]$/);
 });
 
 test("reports role=build with the delivery and lifecycle from a managed worktree", () => {
@@ -116,7 +116,7 @@ test("reports role=build with the delivery and lifecycle from a managed worktree
   const context = run(build);
   assert.match(context, /^Current git branch: feature\/widget$/m);
   const session = context.split("\n").find((l) => l.startsWith("Session: "));
-  assert.match(session, /^Session: role=build worktree=\S+\/feature-widget branch=feature\/widget delivery=feature\/widget lifecycle=building allowed=\[\/agento build-feature widget; \/agento delivery-status\] elsewhere=\[\/agento ship widget@primary\]$/);
+  assert.match(session, /^Session: role=build worktree=\S+\/feature-widget branch=feature\/widget delivery=feature\/widget lifecycle=building allowed=\[\/agento continue; \/agento build-feature widget; \/agento delivery-status\] elsewhere=\[\/agento ship widget@primary\]$/);
   assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
 });
 
