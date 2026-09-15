@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/continue-command
 last-updated: 2026-09-14
 next-step: "1.1 deriveNext() pure function and table test"
