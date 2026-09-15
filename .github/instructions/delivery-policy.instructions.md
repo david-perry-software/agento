@@ -149,7 +149,7 @@ with the exact commands:
    completes; the Builder fix handoff after `Verdict: request-changes`.
 2. After `Verdict: approve`, switch to the primary workspace window and run
    `/agento ship <slug>`; it audits while this worktree is still open, sends you
-   back here on a rejected audit, and tears the worktree down after the merge.
+   back here on a rejected audit, and tears the worktree down once the PR is merged.
    Standalone `/agento close-session <type>/<slug>` is for plan and freehand
    sessions and for abandoning a build.
 
