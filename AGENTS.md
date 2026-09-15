@@ -36,9 +36,14 @@ delivery system. Layout:
 - Never commit or push directly to `main`; publish through pull requests. No
   force-push, no rebase of pushed history, no `--no-verify`. (Bootstrap exception:
   the very first push of `main` when the repo had no remote.)
-- When developing Agento inside its own clone, keep the plugin **disabled** for this
-  workspace (`chat.pluginLocations`) so the plugin-mode and workspace-mode hooks do
-  not both fire.
+- When developing Agento inside its own clone, do **not** register the clone in
+  `chat.pluginLocations` (machine-scoped; a workspace value is ignored): the
+  workspace-mode `.github/hooks/` wiring already guards the clone and every worktree
+  and is the only wiring whose `./scripts/hooks/…` paths resolve inside a worktree.
+  If the clone must stay registered for other repositories, disable the plugin per
+  workspace from the Extensions view → *Agent Plugins – Installed* → context menu (or
+  the Agent Customizations editor), in each worktree window too, so the plugin-mode
+  and workspace-mode hooks do not both fire.
 - Hooks are security-sensitive: `scripts/hooks/` and `.github/hooks/` edits are
   always gated behind user approval by the guard itself.
 - Never print, request, or log secrets.
