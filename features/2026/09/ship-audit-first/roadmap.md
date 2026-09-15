@@ -2,13 +2,13 @@
 status: in-progress
 branch: feature/ship-audit-first
 last-updated: 2026-09-14
-next-step: "1.1 Integrate origin/main and confirm PR #19 merge commit e32d872 is an ancestor"
+next-step: "1.2 Re-run the full baseline on the integrated branch and record it in plan.md"
 initiative: "workflow-orchestration"
 ```
 
 ## Phase 1: Gate and baseline
 
-- [ ] 1.1 Integrate `origin/main` (merge, never rebase) and confirm `window-aware-commands` has landed: `sha=$(gh pr view 19 --json mergeCommit --jq .mergeCommit.oid)` is non-empty and `git merge-base --is-ancestor "$sha" HEAD` exits 0; if PR #19 is not merged, run the pause protocol with `status: paused`, `next-step: 1.1` and stop — verify: `git merge-base --is-ancestor "$sha" HEAD; echo $?` prints `0`, and `node scripts/agento.mjs ship-preflight feature ship-audit-first` output contains an `"owner"` key
+- [x] 1.1 Integrate `origin/main` (merge, never rebase) and confirm `window-aware-commands` has landed: `sha=$(gh pr view 19 --json mergeCommit --jq .mergeCommit.oid)` is non-empty and `git merge-base --is-ancestor "$sha" HEAD` exits 0; if PR #19 is not merged, run the pause protocol with `status: paused`, `next-step: 1.1` and stop — verify: `git merge-base --is-ancestor "$sha" HEAD; echo $?` prints `0`, and `node scripts/agento.mjs ship-preflight feature ship-audit-first` output contains an `"owner"` key
 - [ ] 1.2 Re-run the full baseline on the integrated branch and record it in plan.md `## Research` under the existing table (exit statuses, test count) — verify: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` exits 0; `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh` exits 0; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exits 0
 
 ## Phase 2: Tests first
