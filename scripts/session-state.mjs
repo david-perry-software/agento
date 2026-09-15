@@ -212,12 +212,18 @@ const SHIP = "/agento ship <slug>";
 const secondary = (command, reason) => ({ command, window: "secondary", reason });
 const primary = (command, reason) => ({ command, window: "primary", reason });
 const SHIP_LATER = [
-  primary(CLOSE, "after Verdict: approve, close the session from the primary window"),
-  primary(SHIP, "after Verdict: approve, ship from the primary window"),
+  primary(SHIP, "after Verdict: approve, ship from the primary window — ship audits here first and tears this worktree down after the merge"),
 ];
-const SHIP_NOW = [primary(CLOSE, "close the session from the primary window"), primary(SHIP, "ship from the primary window")];
+const SHIP_NOW = [primary(SHIP, "ship from the primary window — audits this worktree first, tears it down after the merge")];
+// Merged while this worktree still exists: re-sending ship resumes at teardown.
+const TEARDOWN = [
+  primary(SHIP, "the delivery is merged; re-send ship from the primary window to tear this worktree down"),
+  primary(CLOSE, "manual cleanup if you would rather close the session yourself"),
+];
 
-// Policy §8 as data: build/review in the secondary window, close/ship in the primary.
+// Policy §8 as data: build/review in the secondary window; ship — which audits first
+// and tears down — in the primary. close-session stays for plan/freehand sessions
+// and for abandoning a build.
 const TABLE = {
   primary: {
     "no-delivery": { allowed: CREATE, elsewhere: [] },
@@ -225,7 +231,7 @@ const TABLE = {
     building: { allowed: [RESUME, STATUS], elsewhere: [secondary(BUILD, "builds run in the secondary worktree window")] },
     paused: { allowed: [RESUME, STATUS], elsewhere: [secondary(BUILD, "builds resume in the secondary worktree window")] },
     "in-review": { allowed: [RESUME, STATUS], elsewhere: [secondary(REVIEW, "reviews run in the secondary worktree window")] },
-    approved: { allowed: [CLOSE, SHIP, STATUS], elsewhere: [] },
+    approved: { allowed: [SHIP, CLOSE, STATUS], elsewhere: [] },
     shipped: { allowed: CREATE, elsewhere: [] },
     "post-ship-pending": { allowed: [SHIP, STATUS], elsewhere: [] },
   },
@@ -236,7 +242,7 @@ const TABLE = {
     paused: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
     "in-review": { allowed: [REVIEW, STATUS], elsewhere: SHIP_LATER },
     approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
-    shipped: { allowed: [STATUS], elsewhere: [primary(CLOSE, "the delivery is complete; close this worktree from the primary window")] },
+    shipped: { allowed: [STATUS], elsewhere: TEARDOWN },
     "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
   },
   plan: {
@@ -246,7 +252,7 @@ const TABLE = {
     paused: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
     "in-review": { allowed: [REVIEW, STATUS], elsewhere: SHIP_LATER },
     approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
-    shipped: { allowed: [STATUS], elsewhere: [primary(CLOSE, "the delivery is complete; close this worktree from the primary window")] },
+    shipped: { allowed: [STATUS], elsewhere: TEARDOWN },
     "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
   },
 };

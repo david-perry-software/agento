@@ -68,6 +68,7 @@ The argument takes three forms — detect which applies:
 9. Report slug, branch, GitHub issue number, PR number, and roadmap step count. Offer
    **Build in this worktree** to hand off directly to the Builder without closing,
    reopening, or reinstalling dependencies. Explain that the promoted session is later
-   closed from the primary window with `/agento close-session issue/<slug>`.
+   torn down by `/agento ship <slug>` from the primary window once the PR is merged
+   (`/agento close-session issue/<slug>` only to abandon it).
 
 If the argument is empty, ask for an issue description and stop.

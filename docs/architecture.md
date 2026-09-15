@@ -17,9 +17,9 @@ flowchart TD
     U -->|"/agento ap"| AP[🤖 Agento Autopilot]
     AP --> B
     AP --> R
-    SHIP -->|merge PR, sync main, epilogue| DONE([shipped])
-    U -->|"/agento close-session"| CLOSE[remove worktree]
-    DONE --> CLOSE
+    SHIP -->|"reject: back to the open build window"| B
+    SHIP -->|"merge PR, sync main, teardown, epilogue"| DONE([shipped])
+    U -->|"/agento close-session (plan/freehand/abandon)"| CLOSE[remove worktree]
 
     subgraph hooks [Hooks — every session]
         SC[session-context.sh<br/>SessionStart: branch + resumable work]

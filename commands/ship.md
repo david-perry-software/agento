@@ -1,5 +1,5 @@
 ---
-description: "Acceptance gate: audit a feature/issue against roadmap, codebase, and review, warn about gaps, then merge its PR on explicit confirmation"
+description: "Acceptance gate: audit a feature/issue against roadmap, codebase, and review while its build worktree is still open, reject back to that window on a real gap, merge its PR on a clean audit or explicit confirmation, then tear the build worktree down"
 argument-hint: "Slug of the feature or issue to ship"
 agent: "agent"
 ---
@@ -15,38 +15,60 @@ the `type` it returned. A `source: remote` resolution (no local roadmap, artifac
 from `origin/<branch>`) is valid and must not be treated as a hard block; `conflict`,
 `branch-mismatch`, and `missing` are — report the `message` verbatim and stop. This
 prompt authorizes marking the PR ready, merging it through the repository ruleset,
-deleting the merged branch, and syncing the default branch — after the confirmation
-step below. Read the default branch and post-ship prefix from `agento.mjs config`
-(`branches.default`, `branches.postShip`); `main` below stands for the configured
-default.
+deleting the merged branch, syncing the default branch, and removing the build
+worktree that owned the branch — after the audit and confirmation steps below. Read
+the default branch and post-ship prefix from `agento.mjs config` (`branches.default`,
+`branches.postShip`); `main` below stands for the configured default.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: a roadmap already `status: complete` with unticked
 `(manual, post-ship)` steps skips straight to step 5 (post-ship verification
-epilogue), and an already-merged PR only syncs `main` and reports it. Before the
-first write, run `node <agento-root>/scripts/agento.mjs doctor --for ship` and map
-`fail`/`warn` per §10.
+epilogue); a roadmap `status: complete` on `main` whose PR is merged while a managed
+worktree still owns the branch resumes at the teardown in step 3, then the epilogue
+if post-ship steps remain; an already-merged PR with no owning worktree only syncs
+`main` and reports it. Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for ship` and map `fail`/`warn` per
+§10.
 Window check per §11: requires role `primary`.
 
-Before the audit, read `owner` from the `ship-preflight` result (`{ path, role,
+**Ownership.** Read `owner` from the `ship-preflight` result (`{ path, role,
 dirPrefix, id } | null`, derived by the CLI from `git worktree list --porcelain` for
-the roadmap's branch). A managed owner (`role` `plan` or `build`): stop and direct the
-user to run `/agento close-session <type>/<slug>` from the primary workspace window,
-then rerun this command in that same primary window. `role: "primary"`: the primary
-worktree itself sits on the branch — stop and return it to `main` first. `null`:
-proceed. Do not offer raw git commands as an alternative. Shipping requires exclusive
-checkout and branch cleanup; never force-remove the worktree or discard its state.
-This precondition does not apply when resuming only the post-ship epilogue after the
-work branch has already merged.
+the roadmap's branch). It selects one of two paths for every git operation below;
+`role: "primary"` means the primary worktree itself sits on the branch — stop and
+return it to `main` first.
+
+- `owner !== null` (a managed `plan` or `build` worktree still owns the branch — the
+  normal case straight after `Verdict: approve`). The audit is read-only from the
+  primary against `origin/<branch>`: `git fetch origin`; read roadmap.md, review.md,
+  and plan.md with `git show origin/<branch>:<path>`; diff with
+  `git diff origin/main...origin/<branch>`. Require `git -C <owner.path> status
+  --porcelain` to print nothing and `git -C <owner.path> rev-list --count
+  @{upstream}..HEAD` to print `0`; either failing is a hard-reject gap (step 2). Every
+  write happens in the owner worktree: `git -C <owner.path> merge origin/main` when
+  the PR is `BEHIND`, the `status: complete` commit and changelog stamp, and
+  `git -C <owner.path> push`. A conflicting integration merge is build-window work:
+  `git -C <owner.path> merge --abort`, confirm `status --porcelain` is empty again,
+  and reject naming `/agento build-<type> <slug>` for the open window.
+- `owner === null` (the session was already closed, or this is a re-send after
+  teardown). Fetch, check out the work branch in the primary, integrate, commit, and
+  push from there. Closing the session before shipping therefore stays valid.
+
+Never check the branch out in the primary while an owner exists (git refuses anyway);
+never create a temporary detached checkout — it is a second place to lose commits.
+Ownership does not apply when resuming only the post-ship epilogue.
 
 1. **Audit** (read-only):
-   - Fetch; check out the work branch; integrate `origin/<branch>` if ahead.
-   - `gh pr view <n> --json mergeStateStatus,mergeable`: `BEHIND` or `CONFLICTING`
-     means `origin/main` must be merged into the branch (never rebase) before the PR
-     can be marked ready; resolve conflicts per the hotspot recipes in
-     [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md)
-     and list the touched files as an audit note.
+   - Fetch; on the `owner === null` path check out the work branch and integrate
+     `origin/<branch>` if ahead; on the `owner !== null` path read everything from
+     `origin/<branch>` as described above and run the clean and zero-ahead checks.
+   - `gh pr view <n> --json mergeStateStatus,mergeable`: `BEHIND` means `origin/main`
+     must be merged into the branch (never rebase) before the PR can be marked ready
+     — in the owner worktree via `git -C <owner.path>` when one exists; list the
+     touched files as an audit note. `CONFLICTING` is a hard-reject gap: the
+     conflict is resolved in the build window per the hotspot recipes in
+     [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md),
+     not here.
    - roadmap.md: list unticked steps; spot-check ticked steps against the actual
      codebase and note falsely ticked ones (code is truth). Unticked
      `(manual, post-ship)` steps are expected only under the documented exception in
@@ -58,17 +80,30 @@ work branch has already merged.
      written, and the PR body contains `Fixes #<github-issue>` so the merge closes the
      GitHub issue.
    - PR state and required checks via `gh pr view` / `gh pr checks`.
-   - Release entry: does `git diff origin/main...HEAD -- plugin.json package.json`
-     change `"version"`? If so, `CHANGELOG.md` should carry a `## <version>
-     (unreleased)` heading that step 3 stamps. If `CHANGELOG.md` has an
+   - Release entry: does `git diff origin/main...origin/<branch> -- plugin.json
+     package.json` change `"version"`? If so, `CHANGELOG.md` should carry a
+     `## <version> (unreleased)` heading that step 3 stamps. If `CHANGELOG.md` has an
      `(unreleased)` heading but the version is unchanged, report it as a gap (it is
      not stamped).
-2. **Warn, don't block**: present one summary of every gap found (unticked or false
-   checkboxes, missing/stale/negative review, drift, uncommitted changes). If gaps
-   exist, ask the user explicitly whether to proceed anyway — default is do not
-   proceed. Never proceed on gaps without the user's answer.
-3. **On confirmation (or a clean audit)**:
-   - Set roadmap `status: complete`; record any user-accepted gaps under a
+2. **Sort the gaps** into the two pinned lists; nothing else counts as a gap.
+   - **Hard-reject** — any of: unticked steps that are not `(manual, post-ship)`;
+     falsely ticked steps; review.md missing, stale, or `request-changes`; an issue's
+     regression test failing; the owner worktree dirty or unpushed; PR
+     `CONFLICTING`. Write nothing (the only permitted cleanup is the `merge --abort`
+     above) and end with the §9 failed result line carrying `<gaps>; next: <command>`,
+     where `<command>` is `/agento review-<type> <slug>` when the review is the only
+     gap, otherwise `/agento build-<type> <slug>` (the Builder fix handoff) — both run
+     in the still-open secondary window at `owner.path`; when `owner === null`, name
+     `/agento start-session <type>/<slug> --resume` instead.
+   - **Confirmation path** — unstamped changelog, PR body/title nits, undocumented
+     unrelated drift. Present them in one summary, ask the user explicitly whether to
+     proceed (default is do not proceed), and on yes record them under
+     `## Follow-ups (accepted at ship)` in roadmap.md during step 3. Never proceed on
+     these without the user's answer. A missing `Fixes #<n>` on an issue PR is not a
+     question: fix it with `gh pr edit <n> --body` and note it in the report.
+3. **On confirmation (or a clean audit)** — writes go through `git -C <owner.path>`
+   when an owner exists, else the primary checkout:
+   - Set roadmap `status: complete`; record any user-accepted gaps under the
      `## Follow-ups (accepted at ship)` section in roadmap.md. **Changelog date
      stamp:** when the branch changes the plugin version (audit above) and
      `CHANGELOG.md` contains the heading `## <version> (unreleased)`, replace
@@ -83,9 +118,10 @@ work branch has already merged.
      shipping resumes on a later UTC date after such a stop, refresh the stamped
      heading to the new `date -u +%Y-%m-%d` in one more commit before the successful
      merge.
-   - Merge with a normal merge commit through the ruleset (no admin, no bypass),
-     delete the work branch, switch to `main`, fetch, fast-forward, and verify a clean
-     tree with zero ahead/behind.
+   - Merge with a normal merge commit through the ruleset (no admin, no bypass) and
+     delete the remote work branch. In the primary: switch to `main` (it already is
+     on the owner path), `git fetch --prune`, fast-forward, and verify a clean tree
+     with zero ahead/behind.
    - Release workflow: if the target repo's `.github/agento.json` sets
      `checks.releaseWorkflow`, dispatch that workflow (or resolve its existing run
      whose `headSha` exactly matches the merge commit, allowing for GitHub's short
@@ -94,11 +130,23 @@ work branch has already merged.
      record the outcome. Otherwise skip this step. A failed, cancelled, or timed out
      release run is a resumable hard stop; never substitute a run for another commit
      or trigger a duplicate release.
+   - **Teardown** (only when `owner !== null`): `git worktree remove <owner.path>`
+     with the literal resolved path, then `git worktree prune`, then `git branch -d
+     <branch>` (safe: the remote branch is gone and the local one is an ancestor of
+     `origin/main`). The removal triggers the delivery guard's occupant check; never
+     answer that ask yourself. If the guard reports the VS Code window or a process
+     still occupying the path, stop here with the §9 completed result line whose state
+     and next step read exactly
+     `paused at teardown (worktree <path> still open); next: close that VS Code window, then /agento ship <slug>`
+     — `main` is already merged and synced, and the re-send resumes at this bullet
+     per the §9 row. When `owner === null`, delete the merged local branch from the
+     primary as before.
 4. **Report** merge result, PR number, release workflow result and run URL (or that no
-   release workflow is configured), and any accepted gaps carried into Follow-ups. Do
-   not call the work shipped while its release workflow is pending.
+   release workflow is configured), the removed worktree path (or that none was
+   registered), and any accepted gaps carried into Follow-ups. Do not call the work
+   shipped while its release workflow is pending.
 5. **Post-ship verification epilogue** (only if unticked `(manual, post-ship)` steps
-   remain; runs after the merge and `main` sync):
+   remain; runs after the merge, `main` sync, and teardown):
    - After any configured release workflow succeeds (or right away when none is
      configured), walk the user through each manual check per the manual step
      protocol (delivery-policy.instructions.md §3): exact instructions, screenshot
@@ -114,4 +162,6 @@ Never force-push, rebase, squash, amend, or create additional content commits be
 the roadmap status commit (which carries the changelog date stamp when the plugin
 version changed), a refresh of that stamp when the merge lands on a later UTC date, a
 ruleset-required integration merge of `origin/main`, and the single post-ship
-evidence commit from step 5.
+evidence commit from step 5. Never `git worktree remove --force` or otherwise discard
+the owner worktree's state; on a rejected audit the only permitted cleanup is the
+`git -C <owner.path> merge --abort` that restores the pre-merge state.

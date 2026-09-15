@@ -12,8 +12,8 @@
 | `/agento build-feature <slug>` · `/agento build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
 | `/agento review-feature <slug>` · `/agento review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
 | `/agento ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
-| `/agento ship <slug>` | default | Acceptance gate: required checks green, merge PR, sync main, optional release workflow, post-ship epilogue |
-| `/agento close-session <session-id \| type/slug \| changes/slug>` | default | Remove the worktree, delete merged branches, verify state |
+| `/agento ship <slug>` | default | Acceptance gate: audit in place while the build worktree is open, reject back to that window on a real gap, else required checks green, merge PR, sync main, optional release workflow, tear the worktree down, post-ship epilogue |
+| `/agento close-session <session-id \| type/slug \| changes/slug>` | default | Remove a plan/freehand worktree or abandon a build (ship tears down finished builds) |
 | `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
 | `/agento start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
 | `/agento finish-freehand` | default | Commit, PR, merge freehand work |
@@ -123,8 +123,7 @@ same checks on demand and only reports — installs and logins stay with the use
 /handoff "Build in this worktree" or /agento start-session feature/<slug> from the primary window
 /agento build-feature <slug>          → steps executed, verified, committed, pushed
 /agento review-feature <slug>         → review.md verdict
-/agento ship <slug>                   → merged, main synced, epilogue
-/agento close-session feature/<slug>  → worktree removed
+/agento ship <slug>                   → audited in place, merged, main synced, worktree removed, epilogue
 ```
 
 ## The initiative flow
@@ -142,7 +141,7 @@ flow once per member:
                                            `agento.mjs initiative <i>`, hard-stops unless every
                                            `Requires:` member is complete, keeps slug <f>, writes
                                            `initiative: "<i>"` in the roadmap header
-/agento build-feature <f> → /agento review-feature <f> → /agento close-session feature/<f> → /agento ship <f>
+/agento build-feature <f> → /agento review-feature <f> → /agento ship <f>  (ship tears the worktree down)
 /agento next-feature <initiative-slug>          → repeat until `done: true`
 ```
 

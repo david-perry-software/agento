@@ -116,7 +116,7 @@ test("reports role=build with the delivery and lifecycle from a managed worktree
   const context = run(build);
   assert.match(context, /^Current git branch: feature\/widget$/m);
   const session = context.split("\n").find((l) => l.startsWith("Session: "));
-  assert.match(session, /^Session: role=build worktree=\S+\/feature-widget branch=feature\/widget delivery=feature\/widget lifecycle=building allowed=\[\/agento build-feature widget; \/agento delivery-status\] elsewhere=\[\/agento close-session feature\/widget@primary; \/agento ship widget@primary\]$/);
+  assert.match(session, /^Session: role=build worktree=\S+\/feature-widget branch=feature\/widget delivery=feature\/widget lifecycle=building allowed=\[\/agento build-feature widget; \/agento delivery-status\] elsewhere=\[\/agento ship widget@primary\]$/);
   assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
 });
 

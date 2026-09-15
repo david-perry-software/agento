@@ -108,6 +108,74 @@ test("ship preflight resolves remote fallback before failing a missing local roa
   assert.match(result.message, /remote fallback/i);
 });
 
+// Ownership for `/agento ship` (ship-audit-first): a managed worktree on the branch is
+// the owner ship audits against and tears down; ownership never changes `status`.
+function shipWorktreeList(root, config, entryDir) {
+  const entry = path.resolve(root, config.worktrees.dir, entryDir);
+  fs.mkdirSync(entry, { recursive: true });
+  return {
+    entry,
+    list: `worktree ${root}\nHEAD 1111111\nbranch refs/heads/main\n\nworktree ${entry}\nHEAD 2222222\nbranch refs/heads/feature/widget\n`,
+  };
+}
+
+test("ship preflight reports a managed feature worktree on the branch as owner with role build", () => {
+  const { root, config } = widgetRoot();
+  const { entry, list } = shipWorktreeList(root, config, "feature-widget");
+
+  const result = evaluateShipPreflight({
+    type: "feature",
+    slug: "widget",
+    rootDir: root,
+    currentBranch: "main",
+    git: makeGitMock({}),
+    config,
+    worktreeList: list,
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.owner.path, entry);
+  assert.equal(result.owner.role, "build");
+  assert.equal(result.owner.dirPrefix, "feature");
+});
+
+test("ship preflight reports a promoted plan-<id> worktree on the branch as owner with dirPrefix plan", () => {
+  const { root, config } = widgetRoot();
+  const { entry, list } = shipWorktreeList(root, config, "plan-20260914-233032");
+
+  const result = evaluateShipPreflight({
+    type: "feature",
+    slug: "widget",
+    rootDir: root,
+    currentBranch: "main",
+    git: makeGitMock({}),
+    config,
+    worktreeList: list,
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.owner.path, entry);
+  assert.equal(result.owner.dirPrefix, "plan");
+  assert.equal(result.owner.id, "20260914-233032");
+  assert.equal(result.owner.role, "build");
+});
+
+test("ship preflight without a worktree list reports owner null and stays ok", () => {
+  const { root, config } = widgetRoot();
+
+  const result = evaluateShipPreflight({
+    type: "feature",
+    slug: "widget",
+    rootDir: root,
+    currentBranch: "main",
+    git: makeGitMock({}),
+    config,
+  });
+
+  assert.equal(result.status, "ok");
+  assert.equal(result.owner, null);
+});
+
 test("conflicting local or remote roadmaps stay hard-blocked with precise messages", () => {
   const root = tmpRoot();
   const fileA = path.join(root, "features", "slug-a", "roadmap.md");

@@ -44,7 +44,7 @@ idempotency row (read-only: a fresh read). Window check per §11: requires role
    /agento new-feature initiative:<initiative-slug>/<feature-slug>   # secondary window → plan.md + roadmap.md + draft PR
    Build in this worktree  (Planner handoff)  — or —  /agento build-feature <feature-slug>   # secondary window
    /agento review-feature <feature-slug>                        # secondary window; then, from the primary window:
-   /agento close-session feature/<feature-slug>  →  /agento ship <feature-slug>
+   /agento ship <feature-slug>                                  # audits in place, merges, tears the worktree down
    ```
 
    Then list every other `ready` member as plannable concurrently, each with its own

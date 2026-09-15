@@ -2,6 +2,26 @@
 
 ## 0.4.0 (unreleased)
 
+- **`/agento ship` audits first and tears down last.** Ship no longer requires
+  `/agento close-session` before it runs. With the build worktree still owning the
+  branch (`owner` from `ship-preflight`), the audit is read-only from the primary
+  against `origin/<branch>`, the owner must be clean and zero-ahead, and every write
+  (integration merge, `status: complete` commit, changelog stamp, push) goes through
+  `git -C <owner.path>`; a conflicting integration merge is aborted and handed back to
+  the build window. Gaps are split into a pinned hard-reject list (unticked or falsely
+  ticked steps, review missing/stale/request-changes, failing regression test, dirty
+  or unpushed owner, `CONFLICTING` PR — nothing written, `next:` names the open
+  window's build or review command) and a confirmation list (unstamped changelog, PR
+  nits, undocumented drift); a missing `Fixes #<n>` is fixed via `gh pr edit`. After
+  the merge and `main` sync, ship removes the worktree, prunes, and deletes the merged
+  local branch; when the secondary window still occupies the path it pauses (`paused
+  at teardown`) and a re-send resumes there — new §9 ship idempotency row. Policy §8
+  now hands off `Verdict: approve` → `/agento ship <slug>` directly; standalone
+  `/agento close-session` is for plan and freehand sessions and abandoned builds
+  (closing before ship stays valid — ship then takes its no-owner path). The session
+  record's allowed/elsewhere table lists ship before close for approved deliveries and
+  points a shipped-but-still-open worktree back at ship. A customizations test rejects
+  any guidance that sequences close-session before ship.
 - **New `agento.mjs doctor` and per-command preflight.** `doctor [--for <command>]`
   runs six environment checks (`node` ≥ 20, `git-remote`, `gh` installed and
   authenticated, `code` CLI, `python3`, writable `worktrees-dir`), each reported as

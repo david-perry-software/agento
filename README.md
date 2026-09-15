@@ -252,29 +252,36 @@ pass/fail with evidence, audits the roadmap for falsely ticked boxes, and writes
 request-changes it offers the Builder fix handoff; the findings become new roadmap
 steps and the loop repeats.
 
-### 5. Close the session — primary window
+### 5. Ship — primary window
 
-After `Verdict: approve`, close the secondary window and switch to the primary:
-
-```text
-/agento close-session feature/<slug>
-```
-
-Confirms everything is pushed, removes the worktree, and keeps the branch (it still
-has an open PR).
-
-### 6. Ship — primary window
+After `Verdict: approve`, leave the secondary window open and switch to the primary:
 
 ```text
 /agento ship <slug>
 ```
 
-Audits the roadmap, review, and PR; presents every gap (unticked steps, stale or
-negative review, drift) and asks before proceeding on any. On a clean audit or your
-explicit yes: marks the PR ready, waits for required checks with the bounded poller,
-merges with a normal merge commit through the ruleset, deletes the branch, syncs
-`main`, optionally dispatches and waits on a release workflow, and completes any
-`(manual, post-ship)` steps in an epilogue PR.
+Audits in place: reads the roadmap, review, and PR from `origin/<branch>` while the
+build worktree still owns the branch, and requires that worktree to be clean and
+fully pushed. A real gap — unticked or falsely ticked steps, a missing, stale, or
+`request-changes` review, a failing regression test, a dirty or unpushed worktree, a
+`CONFLICTING` PR — rejects without writing anything and sends you straight back to
+the open secondary window with the exact `/agento build-<type> <slug>` or
+`/agento review-<type> <slug>` command. Lesser gaps (an unstamped changelog, PR nits,
+undocumented drift) are listed and need your explicit yes; a missing `Fixes #<n>` on
+an issue PR is fixed on the spot. On a clean audit or your yes: commits `status:
+complete` inside the build worktree, marks the PR ready, waits for required checks
+with the bounded poller, merges with a normal merge commit through the ruleset, syncs
+`main`, optionally dispatches and waits on a release workflow, then tears the build
+worktree down (remove, prune, delete the merged local branch) and completes any
+`(manual, post-ship)` steps in an epilogue PR. If the secondary VS Code window is
+still open, the delivery guard blocks the removal and ship pauses with `main` already
+merged and synced; close that window and re-send `/agento ship <slug>` to finish the
+teardown.
+
+**Closing without shipping.** `/agento close-session feature/<slug>` from the primary
+window removes a clean, pushed worktree and keeps the branch (its PR stays open). Use
+it to abandon or park a build; a later `/agento ship <slug>` then checks the branch
+out in the primary as before.
 
 ### Initiatives — several features from one brief
 
@@ -364,8 +371,8 @@ Mechanic.
 | `/agento build-feature <slug>` · `/agento build-issue <slug>` | secondary | 🔨 Builder | Execute roadmap steps with verification; commit + push each |
 | `/agento review-feature <slug>` · `/agento review-issue <slug>` | secondary | 🔍 Reviewer | Score acceptance, audit roadmap, write verdict |
 | `/agento ap <slug>` | secondary | 🤖 Autopilot | Unattended build → review → fix loop; never ships |
-| `/agento close-session <type/slug \| changes/slug \| id>` | primary | default | Remove a clean, pushed worktree |
-| `/agento ship <slug>` | primary | default | Audit, warn, mark ready, wait, merge, sync, release, epilogue |
+| `/agento close-session <type/slug \| changes/slug \| id>` | primary | default | Remove a clean, pushed plan/freehand worktree, or abandon a build (ship tears finished builds down) |
+| `/agento ship <slug>` | primary | default | Audit in place, reject to the open build window or merge, sync, release, tear down, epilogue |
 | `/agento quick-fix <description>` | primary | default | Plan-less small change: branch, verify, PR, merge |
 | `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
