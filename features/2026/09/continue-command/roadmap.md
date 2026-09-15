@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/continue-command
 last-updated: 2026-09-14
-next-step: "3.2 final gate, integrate origin/main, push, set status: in-review"
+next-step: "/agento review-feature continue-command"
 initiative: "workflow-orchestration"
 ```
 
@@ -24,4 +24,4 @@ initiative: "workflow-orchestration"
 ## Phase 3: Rehearsal and finalization
 
 - [x] 3.1 Rehearse the prompt against live state and record [`evidence/step-3-1-continue-rehearsal.md`](evidence/step-3-1-continue-rehearsal.md) (recorded 2026-09-14): for (a) the primary `--root /home/david/DP/agento` with no slug, (b) the primary with `continue-command`, (c) this promoted worktree while `in-progress` and again after a temporary `in-review` header (reverted, not committed), (d) a temporary freehand-named directory under the worktrees dir (removed afterwards) — paste each `agento.mjs next` JSON and the receipt, preflight, and result lines the prompt derives, then link the file from this step — verify: the file exists with four sections; re-running each recorded command reproduces the recorded `status`, `next.invocation`, and `window`; `git status --short` shows no leftover temporary changes
-- [ ] 3.2 Final gate against the plan.md `## Research` baseline, integrate `origin/main`, push, set `status: in-review` — verify: shellcheck (explicit file list) exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures and total > 124; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `git diff --stat origin/main` touches only the files listed in plan.md `## Approach` "Files touched"
+- [x] 3.2 Final gate against the plan.md `## Research` baseline, integrate `origin/main`, push, set `status: in-review` — verify: shellcheck (explicit file list) exit 0; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` 0 failures and total > 124; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `git diff --stat origin/main` touches only the files listed in plan.md `## Approach` "Files touched" (2026-09-14: shellcheck 0; 140 pass / 0 fail vs baseline 124; replay 0; 20 files, all listed)
