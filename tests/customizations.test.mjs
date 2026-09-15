@@ -385,7 +385,7 @@ test("command-invocation instructions apply everywhere and list every command", 
 });
 
 test("plugin manifest uses suffix-less command names and hook wiring points at existing executable files", () => {
-  const plugin = JSON.parse(fs.readFileSync(rel("plugin.json"), "utf8"));
+  const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
   assert.ok(fs.existsSync(rel(plugin.commands)), `plugin.commands ${plugin.commands} missing`);
   for (const name of fs.readdirSync(rel(plugin.commands))) {
@@ -408,7 +408,7 @@ test("plugin manifest uses suffix-less command names and hook wiring points at e
     );
   }
   const pkg = JSON.parse(fs.readFileSync(rel("package.json"), "utf8"));
-  assert.equal(plugin.version, pkg.version, "plugin.json and package.json versions differ");
+  assert.equal(plugin.version, pkg.version, ".claude-plugin/plugin.json and package.json versions differ");
 
   const checkHooks = (file, resolve) => {
     const wiring = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -421,7 +421,7 @@ test("plugin manifest uses suffix-less command names and hook wiring points at e
       }
     }
   };
-  checkHooks(rel(plugin.hooks), (cmd) => {
+  checkHooks(rel(plugin.hooks.replace(/^\.\//, "")), (cmd) => {
     assert.match(cmd, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `plugin hook must use the compatible root token: ${cmd}`);
     return rel(cmd.replace("${CLAUDE_PLUGIN_ROOT}/", ""));
   });
