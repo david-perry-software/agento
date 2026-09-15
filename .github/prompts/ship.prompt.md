@@ -27,14 +27,18 @@ idempotency row: a roadmap already `status: complete` with unticked
 epilogue), and an already-merged PR only syncs `main` and reports it. Before the
 first write, run `node <agento-root>/scripts/agento.mjs doctor --for ship` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `primary`.
 
-Before the audit, inspect `git worktree list --porcelain` for the roadmap's branch. If
-a secondary worktree owns it, stop and direct the user to run
-`/agento close-session <type>/<slug>` from the primary workspace window, then rerun this
-command in that same primary window. Do not offer raw git commands as an alternative.
-Shipping requires exclusive checkout and branch cleanup; never force-remove
-the worktree or discard its state. This precondition does not apply when resuming only
-the post-ship epilogue after the work branch has already merged.
+Before the audit, read `owner` from the `ship-preflight` result (`{ path, role,
+dirPrefix, id } | null`, derived by the CLI from `git worktree list --porcelain` for
+the roadmap's branch). A managed owner (`role` `plan` or `build`): stop and direct the
+user to run `/agento close-session <type>/<slug>` from the primary workspace window,
+then rerun this command in that same primary window. `role: "primary"`: the primary
+worktree itself sits on the branch — stop and return it to `main` first. `null`:
+proceed. Do not offer raw git commands as an alternative. Shipping requires exclusive
+checkout and branch cleanup; never force-remove the worktree or discard its state.
+This precondition does not apply when resuming only the post-ship epilogue after the
+work branch has already merged.
 
 1. **Audit** (read-only):
    - Fetch; check out the work branch; integrate `origin/<branch>` if ahead.

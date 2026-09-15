@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { LIFECYCLES, ROLES, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
+import { LIFECYCLES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, findOwner, parseWorktreeList } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -154,6 +154,95 @@ test("empty worktree list still classifies by directory", () => {
   assert.equal(r.worktree.branch, null);
   assert.equal(r.worktree.dirPrefix, "feature");
   assert.equal(r.worktree.path, path.join(l.worktreesDir, "feature-widget"));
+});
+
+const hostedRole = (l, cwd, env) => deriveRole({ cwd, worktrees: l.worktrees, worktreesDir: l.worktreesDir, config, env });
+
+test("hosted: CODESPACES=true derives build from a delivery branch, ignoring the path", () => {
+  const l = layout();
+  // The sibling is unmanaged by path, but its branch is a feature branch.
+  const r = hostedRole(l, path.join(l.base, "sibling"), { CODESPACES: "true" });
+  assert.equal(r.role, "build");
+  assert.equal(r.hosted, true);
+  assert.match(r.reason, /^hosted-workspace: role derived from the branch \(CODESPACES=true\)$/);
+  assert.equal(r.worktree.branch, "feature/elsewhere");
+  assert.equal(r.worktree.path, path.join(l.base, "sibling"));
+});
+
+test("hosted: GITHUB_ACTIONS=true on the default branch derives primary; worktrees.dir is ignored", () => {
+  const l = layout();
+  const onMain = hostedRole(l, l.primary, { GITHUB_ACTIONS: "true" });
+  assert.equal(onMain.role, "primary");
+  assert.equal(onMain.hosted, true);
+  assert.match(onMain.reason, /GITHUB_ACTIONS=true/);
+  // A detached plan-* worktree would be `plan` by path; hosted derives from the (absent) branch.
+  const detached = hostedRole(l, path.join(l.worktreesDir, "plan-fresh"), { GITHUB_ACTIONS: "true" });
+  assert.equal(detached.role, "primary");
+  assert.equal(detached.worktree.isManaged, true);
+  // A managed freehand worktree on a non-delivery branch is `primary` under hosted rules.
+  assert.equal(hostedRole(l, path.join(l.worktreesDir, "freehand-tidy"), { CODESPACES: "true" }).role, "primary");
+  assert.equal(hostedRole(l, path.join(l.worktreesDir, "issue-bug"), { CODESPACES: "true" }).role, "build");
+});
+
+test("hosted: env absent, empty, or with other values leaves results unchanged (hosted: false)", () => {
+  const l = layout();
+  const cwd = path.join(l.base, "sibling");
+  const plain = role(l, cwd);
+  assert.equal(plain.hosted, false);
+  assert.equal(plain.reason, undefined);
+  for (const env of [undefined, {}, { CODESPACES: "false" }, { GITHUB_ACTIONS: "1" }, { HOME: "/x" }]) {
+    assert.deepEqual(hostedRole(l, cwd, env), plain, JSON.stringify(env));
+  }
+  assert.equal(hostedRole(l, l.primary, {}).role, "primary");
+  assert.equal(hostedRole(l, path.join(l.worktreesDir, "plan-fresh"), {}).role, "plan");
+});
+
+test("classifyWorktrees: one record per registered entry, primary first, stray sibling unmanaged", () => {
+  const l = layout();
+  const list = classifyWorktrees({ worktrees: l.worktrees, worktreesDir: l.worktreesDir, config });
+  assert.equal(list.length, l.worktrees.length);
+  for (const [i, entry] of list.entries()) {
+    assert.deepEqual(Object.keys(entry).sort(), ["branch", "detached", "dirPrefix", "id", "isManaged", "isPrimary", "path", "role"]);
+    assert.equal(entry.path, l.worktrees[i].path);
+  }
+  assert.deepEqual(list[0], { path: l.primary, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false });
+  assert.deepEqual(list[1], {
+    path: path.join(l.worktreesDir, "plan-20260914-015913"),
+    branch: "feature/session-state-cli",
+    detached: false,
+    role: "build",
+    dirPrefix: "plan",
+    id: "20260914-015913",
+    isPrimary: false,
+    isManaged: true,
+  });
+  assert.deepEqual(list[2], { path: path.join(l.worktreesDir, "plan-fresh"), branch: null, detached: true, role: "plan", dirPrefix: "plan", id: "fresh", isPrimary: false, isManaged: true });
+  assert.equal(list[3].role, "build");
+  assert.equal(list[3].dirPrefix, "feature");
+  assert.equal(list[4].role, "build");
+  assert.equal(list[4].id, "bug");
+  assert.deepEqual(list[5], { path: path.join(l.worktreesDir, "freehand-tidy"), branch: "changes/tidy", detached: false, role: "freehand", dirPrefix: "freehand", id: "tidy", isPrimary: false, isManaged: true });
+  assert.deepEqual(list[6], { path: path.join(l.base, "sibling"), branch: "feature/elsewhere", detached: false, role: "unmanaged", dirPrefix: null, id: null, isPrimary: false, isManaged: false });
+  assert.deepEqual(classifyWorktrees({ worktrees: [], worktreesDir: l.worktreesDir, config }), []);
+});
+
+test("findOwner: managed owner, primary owner, and none", () => {
+  const l = layout();
+  const owner = (branch, worktrees = l.worktrees) => findOwner({ worktrees, worktreesDir: l.worktreesDir, branch, config });
+  assert.deepEqual(owner("feature/widget"), { path: path.join(l.worktreesDir, "feature-widget"), role: "build", dirPrefix: "feature", id: "widget" });
+  assert.deepEqual(owner("feature/session-state-cli"), { path: path.join(l.worktreesDir, "plan-20260914-015913"), role: "build", dirPrefix: "plan", id: "20260914-015913" });
+  assert.deepEqual(owner("main"), { path: l.primary, role: "primary", dirPrefix: null, id: null });
+  // The primary checkout sitting on a delivery branch owns it as `primary`.
+  const primaryOnFeature = [{ ...l.worktrees[0], branch: "feature/hotfix" }, ...l.worktrees.slice(1)];
+  assert.deepEqual(owner("feature/hotfix", primaryOnFeature), { path: l.primary, role: "primary", dirPrefix: null, id: null });
+  // An unmanaged sibling on the branch is not an owner; unknown branches have none.
+  assert.equal(owner("feature/elsewhere"), null);
+  assert.equal(owner("feature/nowhere"), null);
+  assert.equal(owner(null), null);
+  // A lookalike managed name outside worktrees.dir does not own the branch.
+  fs.mkdirSync(path.join(l.base, "feature-lookalike"));
+  const lookalike = [...l.worktrees, { path: path.join(l.base, "feature-lookalike"), head: "0".repeat(40), branch: "feature/lookalike", detached: false }];
+  assert.equal(owner("feature/lookalike", lookalike), null);
 });
 
 // Shape of agento.mjs describe() output.

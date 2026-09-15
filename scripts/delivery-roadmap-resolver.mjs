@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { loadAgentoConfig } from "./agento-config.mjs";
+import { findOwner, parseWorktreeList } from "./session-state.mjs";
 
 function artifactRoots(config) {
   return {
@@ -14,8 +15,16 @@ function branchPrefix(config, type) {
   return type === "feature" ? config.branches.feature : config.branches.issue;
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Exact ownership of the delivery branch from `git worktree list --porcelain`.
+// worktrees.dir is relative to the primary checkout (the first entry), not to
+// whichever worktree ran the command. `undefined` list → nothing is known → null.
+function branchOwner({ worktreeList, branch, rootDir, config }) {
+  if (worktreeList === undefined || worktreeList === null) return null;
+  const worktrees = parseWorktreeList(worktreeList);
+  const primaryRoot = worktrees[0]?.path ?? rootDir;
+  const dir = path.resolve(primaryRoot) === path.resolve(rootDir) ? config.worktrees.dir : loadAgentoConfig(primaryRoot).config.worktrees.dir;
+  const worktreesDir = path.resolve(primaryRoot, dir);
+  return findOwner({ worktrees, worktreesDir, branch, config });
 }
 
 export function findLocalRoadmaps({ rootDir, type, slug, config }) {
@@ -199,19 +208,27 @@ export function closeBuildSessionDecision({ type, slug, currentBranch, worktreeL
   });
 
   if (result.status === "ok") {
-    const worktreeBase = path.basename(cfg.worktrees.dir);
-    const managedPattern = new RegExp(`worktree .*${escapeRegExp(worktreeBase)}[/\\\\]`);
-    const managedOwnsBranch = managedPattern.test(worktreeList || "");
-    if (managedOwnsBranch || currentBranch !== cfg.branches.default) {
+    const owner = branchOwner({ worktreeList: worktreeList ?? "", branch: result.branch, rootDir: effectiveRoot, config: cfg });
+    if (owner && owner.role === "primary") {
+      return {
+        status: "ok",
+        reason: "primary-owns-branch",
+        owner,
+        message: `The primary worktree at ${owner.path} is on ${result.branch}; return it to ${cfg.branches.default} first — there is no managed worktree to remove for ${type}/${slug}.`,
+      };
+    }
+    if (owner) {
       return {
         status: "ok",
         reason: "managed-worktree-present",
-        message: `Build session for ${type}/${slug} resolves successfully; the managed worktree still owns the branch.`,
+        owner,
+        message: `Build session for ${type}/${slug} resolves successfully; the managed worktree at ${owner.path} still owns the branch.`,
       };
     }
     return {
       status: "ok",
       reason: "remote-roadmap-only",
+      owner: null,
       message: `No managed worktree owns ${type}/${slug}; the roadmap resolves from origin/${result.branch} and the session can be treated as already closed.`,
     };
   }
@@ -239,7 +256,7 @@ export function closeBuildSessionDecision({ type, slug, currentBranch, worktreeL
   };
 }
 
-export function evaluateShipPreflight({ type, slug, rootDir, currentBranch, git, config }) {
+export function evaluateShipPreflight({ type, slug, rootDir, currentBranch, git, config, worktreeList }) {
   const cfg = config ?? loadAgentoConfig(rootDir).config;
   const result = resolveRoadmapArtifact({
     rootDir,
@@ -255,6 +272,7 @@ export function evaluateShipPreflight({ type, slug, rootDir, currentBranch, git,
       status: "ok",
       resolutionSource: result.source,
       branch: result.branch,
+      owner: branchOwner({ worktreeList, branch: result.branch, rootDir, config: cfg }),
       message: `Ship preflight can proceed: roadmap resolved via ${result.source} fallback for ${type}/${slug}.`,
     };
   }

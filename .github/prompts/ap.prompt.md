@@ -15,6 +15,7 @@ delivery-policy.instructions.md §9; a duplicate submission follows this command
 idempotency row (re-enter the build or review resume protocol wherever the roadmap
 stands). Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for ap` and map `fail`/`warn` per §10.
+Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
 - Accept `feature/<slug>`, `issue/<slug>`, or a bare slug. Resolve it with the Agento
   CLI (`node <agento-root>/scripts/agento.mjs resolve <type> <slug>`, or `find <slug>`

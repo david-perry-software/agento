@@ -190,17 +190,125 @@ test("closeBuildSessionDecision detects a managed worktree from the configured w
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, "status: in-review\nbranch: feature/widget\n");
 
-  const worktreesBase = path.basename(config.worktrees.dir);
+  // worktrees.dir is relative to the primary checkout (the first entry).
+  const managed = path.resolve(root, config.worktrees.dir, "feature-widget");
   const decision = closeBuildSessionDecision({
     type: "feature",
     slug: "widget",
     currentBranch: "main",
     rootDir: root,
-    worktreeList: `worktree /repo\nbranch refs/heads/main\nworktree /repo/../x/${worktreesBase}/feature-widget\nbranch refs/heads/feature/widget\n`,
+    worktreeList: `worktree ${root}\nbranch refs/heads/main\nworktree ${managed}\nbranch refs/heads/feature/widget\n`,
     git: makeGitMock({}),
     config,
   });
 
   assert.equal(decision.status, "ok");
   assert.equal(decision.reason, "managed-worktree-present");
+  assert.deepEqual(decision.owner, { path: managed, role: "build", dirPrefix: "feature", id: "widget" });
+  assert.match(decision.message, new RegExp(`managed worktree at ${managed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+
+  // A promoted planning worktree on the branch is a managed owner too.
+  const plan = path.resolve(root, config.worktrees.dir, "plan-20260914-1");
+  const promoted = closeBuildSessionDecision({
+    type: "feature",
+    slug: "widget",
+    currentBranch: "main",
+    rootDir: root,
+    worktreeList: `worktree ${root}\nbranch refs/heads/main\n\nworktree ${plan}\nbranch refs/heads/feature/widget\n`,
+    git: makeGitMock({}),
+    config,
+  });
+  assert.equal(promoted.reason, "managed-worktree-present");
+  assert.deepEqual(promoted.owner, { path: plan, role: "build", dirPrefix: "plan", id: "20260914-1" });
+});
+
+function widgetRoot() {
+  const root = tmpRoot();
+  const config = defaultConfig(root);
+  const file = path.join(root, "features", "widget", "roadmap.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "status: in-review\nbranch: feature/widget\n");
+  return { root, config };
+}
+
+test("closeBuildSessionDecision reports primary-owns-branch when the primary checkout sits on the delivery branch", () => {
+  const { root, config } = widgetRoot();
+  const decision = closeBuildSessionDecision({
+    type: "feature",
+    slug: "widget",
+    currentBranch: "feature/widget",
+    rootDir: root,
+    worktreeList: `worktree ${root}\nHEAD 0000000000000000000000000000000000000000\nbranch refs/heads/feature/widget\n`,
+    git: makeGitMock({}),
+    config,
+  });
+  assert.equal(decision.status, "ok");
+  assert.equal(decision.reason, "primary-owns-branch");
+  assert.deepEqual(decision.owner, { path: root, role: "primary", dirPrefix: null, id: null });
+  assert.match(decision.message, /return it to main first/);
+  assert.match(decision.message, /no managed worktree to remove/);
+});
+
+test("closeBuildSessionDecision ignores lookalike paths outside worktrees.dir and the current branch", () => {
+  const { root, config } = widgetRoot();
+  const worktreesBase = path.basename(config.worktrees.dir);
+  // Same basename as worktrees.dir, but not inside it: the old regex accepted this.
+  const lookalike = closeBuildSessionDecision({
+    type: "feature",
+    slug: "widget",
+    currentBranch: "main",
+    rootDir: root,
+    worktreeList: `worktree ${root}\nbranch refs/heads/main\nworktree /elsewhere/${worktreesBase}/feature-widget\nbranch refs/heads/feature/widget\n`,
+    git: makeGitMock({}),
+    config,
+  });
+  assert.equal(lookalike.status, "ok");
+  assert.equal(lookalike.reason, "remote-roadmap-only");
+  assert.equal(lookalike.owner, null);
+
+  // currentBranch equal to the delivery branch no longer implies a managed worktree.
+  const fallback = closeBuildSessionDecision({
+    type: "feature",
+    slug: "widget",
+    currentBranch: "feature/widget",
+    rootDir: root,
+    worktreeList: `worktree ${root}\nbranch refs/heads/main\n`,
+    git: makeGitMock({}),
+    config,
+  });
+  assert.equal(fallback.reason, "remote-roadmap-only");
+  assert.equal(fallback.owner, null);
+
+  // An entry inside worktrees.dir on another branch is not an owner either.
+  const otherBranch = closeBuildSessionDecision({
+    type: "feature",
+    slug: "widget",
+    currentBranch: "main",
+    rootDir: root,
+    worktreeList: `worktree ${root}\nbranch refs/heads/main\nworktree ${path.resolve(root, config.worktrees.dir, "feature-other")}\nbranch refs/heads/feature/other\n`,
+    git: makeGitMock({}),
+    config,
+  });
+  assert.equal(otherBranch.reason, "remote-roadmap-only");
+  assert.equal(otherBranch.owner, null);
+});
+
+test("evaluateShipPreflight reports owner from the worktree list and null without one", () => {
+  const { root, config } = widgetRoot();
+  const base = { type: "feature", slug: "widget", rootDir: root, currentBranch: "main", git: makeGitMock({}), config };
+
+  const without = evaluateShipPreflight(base);
+  assert.equal(without.status, "ok");
+  assert.equal(without.owner, null);
+
+  const managed = path.resolve(root, config.worktrees.dir, "feature-widget");
+  const withManaged = evaluateShipPreflight({ ...base, worktreeList: `worktree ${root}\nbranch refs/heads/main\nworktree ${managed}\nbranch refs/heads/feature/widget\n` });
+  assert.deepEqual(withManaged.owner, { path: managed, role: "build", dirPrefix: "feature", id: "widget" });
+
+  const withPrimary = evaluateShipPreflight({ ...base, currentBranch: "feature/widget", worktreeList: `worktree ${root}\nbranch refs/heads/feature/widget\n` });
+  assert.deepEqual(withPrimary.owner, { path: root, role: "primary", dirPrefix: null, id: null });
+
+  const nobody = evaluateShipPreflight({ ...base, worktreeList: `worktree ${root}\nbranch refs/heads/main\n` });
+  assert.equal(nobody.owner, null);
+  assert.equal(nobody.resolutionSource, "local");
 });

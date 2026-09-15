@@ -13,7 +13,7 @@
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
 //   node scripts/agento.mjs initiative [<slug>]
-//   node scripts/agento.mjs session [--pr]             (role, worktree, delivery, lifecycle, allowed)
+//   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, delivery, lifecycle, allowed; hosted flag)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
@@ -29,7 +29,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -517,7 +517,7 @@ switch (command) {
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(evaluateShipPreflight({ type, slug, rootDir: root, currentBranch, git: gitAdapter, config }));
+    withExit(evaluateShipPreflight({ type, slug, rootDir: root, currentBranch, git: gitAdapter, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
     break;
   }
 
@@ -587,12 +587,28 @@ switch (command) {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
     // startDir (not root): a subdirectory inside a worktree resolves to that worktree's entry.
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
-    const { role, worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: primaryWorktreesDir(worktrees), config });
+    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env });
+    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config });
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(delivery?.branch ?? worktree.branch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
-    emit({ status: "ok", role, worktree, delivery, pr, lifecycle, allowed, elsewhere, warnings: [...prWarnings, ...warnings], root, configSource: source });
+    emit({
+      status: "ok",
+      role,
+      hosted,
+      worktree,
+      worktrees: classified,
+      delivery,
+      pr,
+      lifecycle,
+      allowed,
+      elsewhere,
+      warnings: [...(hostedReason ? [hostedReason] : []), ...prWarnings, ...warnings],
+      root,
+      configSource: source,
+    });
     break;
   }
 

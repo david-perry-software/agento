@@ -154,7 +154,7 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
 test("policy section references (§N) point at sections that exist", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
-  assert.ok(sections.size >= 10, "policy file lost sections");
+  assert.ok(sections.size >= 11, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, n] of text.matchAll(/§(\d+)/g)) {
@@ -169,6 +169,27 @@ test("every command and agent opens and closes with the §9 receipt", () => {
     if (!/§9\b/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
   }
   assert.deepEqual(missing, [], `files that do not cite policy §9 (execution receipts):\n${missing.join("\n")}`);
+});
+
+test("every command and agent declares its window check (§11)", () => {
+  const missing = [];
+  for (const file of [...promptFiles, ...agentFiles]) {
+    if (!/Window check per .*§11.*requires role/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
+  }
+  assert.deepEqual(missing, [], `files that do not declare a §11 window check (requires role):\n${missing.join("\n")}`);
+});
+
+test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
+  // Everyone else reads the session record (policy §11). `ship` stays here until
+  // `ship-audit-first` removes its worktree precondition, then the list shrinks to three.
+  const allowlist = new Set(["start-session", "start-freehand", "close-session", "ship"]);
+  const offenders = [];
+  for (const file of [...promptFiles, ...listFiles(rel("commands"), ".md"), ...agentFiles]) {
+    const name = path.basename(file).replace(/(?:\.prompt|\.agent)?\.md$/, "");
+    if (allowlist.has(name)) continue;
+    if (/worktree list\s+--porcelain/.test(fs.readFileSync(file, "utf8"))) offenders.push(path.relative(repoRoot, file));
+  }
+  assert.deepEqual(offenders, [], `files that inspect worktrees instead of the session record:\n${offenders.join("\n")}`);
 });
 
 // The §10 vocabulary, parsed from the policy's "- `<token>` — <meaning>" bullets.
@@ -241,7 +262,6 @@ function restrictedBin() {
   fs.symlinkSync(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(restrictedBinDir, "git"));
   return restrictedBinDir;
 }
-
 test("the policy file is the only place the shared rules are spelled out", () => {
   // Phrases that used to be duplicated across agents/prompts; each may now appear in
   // the policy file and nowhere else in the customization set.

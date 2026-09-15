@@ -28,7 +28,8 @@ for the work boundary (§1), shell hygiene (§6), and the git rules (§7). Open 
 response with the acceptance receipt and close it with the terminal result line per
 §9; a duplicate submission follows the new-initiative idempotency row — an open
 `changes/initiative-<slug>` PR is resumed at its current step, a merged one is
-rejected naming the existing breakdown. Read the
+rejected naming the existing breakdown. Window check per §11: requires role
+`primary` on the default branch, clean. Read the
 default branch and freehand prefix from the Agento CLI (`node
 <agento-root>/scripts/agento.mjs config` → `branches.default`, `branches.freehand`;
 the CLI path is announced in the session context as `Agento CLI:`). `main` and
@@ -42,12 +43,13 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
 
 ## Procedure
 
-1. **Require the primary worktree on `main`, clean, and synchronized.** Inspect `git
-   worktree list --porcelain`; the current path must be the primary checkout, not a
-   managed `plan-<session-id>` or `changes/*` worktree. `git fetch origin`, then
-   `git status --short --branch` must show nothing and zero ahead/behind. Otherwise
-   stop and say what to do (`/agento close-session`, `/agento commit-current-changes`, or switching
-   to the primary window). Authentication failures halt per AGENTS.md.
+1. **Require the primary worktree on `main`, clean, and synchronized.** Apply the
+   window check: `node <agento-root>/scripts/agento.mjs session` must report
+   `role: "primary"` with `worktree.branch` equal to the default branch — a managed
+   `plan`/`build`/`freehand` role or `unmanaged` is rejected per §11 with the record's
+   alternatives. `git fetch origin`, then `git status --short --branch` must show
+   nothing and zero ahead/behind; otherwise stop and name
+   `/agento commit-current-changes`. Authentication failures halt per AGENTS.md.
 2. **Read the brief.** The argument is exactly one of: inline text, or a
    repository-relative path to an existing file whose content is the brief. If the
    argument names no existing file and contains no whitespace, stop and ask whether it

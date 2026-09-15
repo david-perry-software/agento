@@ -16,6 +16,7 @@ delivery-policy.instructions.md §9; a duplicate submission follows this command
 idempotency row (existing files are kept unless `--force`). Before the first write,
 run `node <agento-root>/scripts/agento.mjs doctor --for agento-init` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 ## Steps
 

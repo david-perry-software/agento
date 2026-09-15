@@ -20,14 +20,14 @@ idempotency row (the existing commit, pull request, or check-wait phase is reuse
 step 2 recovers it from repository state). Before the first write, run `node
 <agento-root>/scripts/agento.mjs doctor --for finish-freehand` and map `fail`/`warn`
 per §10.
+Window check per §11: requires role `freehand` with `delivery.slug` equal to this session's slug.
 
-1. Require the current workspace to be a managed freehand worktree: resolve
-   `git worktree list --porcelain` and confirm this is a secondary worktree named
-   `freehand-<slug>` inside the managed worktrees directory (default
-   `<repo-name>-worktrees/`) on branch `changes/<slug>`. If the
-   branch is `main`, `feature/*`, or `issue/*`, stop and name the correct command
-   (`/agento commit-current-changes` from the primary worktree, or `/agento ship <slug>` for
-   delivery work).
+1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must
+   report `role: "freehand"` (a managed `freehand-<slug>` worktree on branch
+   `changes/<slug>`, per the record's `worktree` and `delivery`); otherwise reject
+   per §11 with the record's alternatives — on `main`, `feature/*`, or `issue/*` they
+   name the correct command (`/agento commit-current-changes` from the primary
+   worktree, or `/agento ship <slug>` for delivery work).
 2. Inspect `git status --short`, the branch's upstream and ahead/behind state, staged
    and unstaged diffs, untracked files, any existing pull request for the branch, and
    a small sample of recent commit subjects. Recover an existing pull request when

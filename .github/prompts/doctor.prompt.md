@@ -16,6 +16,7 @@ reports and never repairs (policy §1); the user performs every fix themselves.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (read-only: a fresh run of the checks).
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs doctor` (the CLI path
    is announced in the session context as `Agento CLI:`). If the argument is

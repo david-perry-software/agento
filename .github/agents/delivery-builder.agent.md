@@ -37,16 +37,18 @@ the lint gate, shell hygiene, git rules, and the cross-window handoff —
 Open every response with the acceptance receipt and close it with the terminal result
 line per policy §9; a duplicate build submission follows the build-feature /
 build-issue idempotency row, which is this protocol — ticked steps are audited,
-never redone.
+never redone. Window check per §11: requires role `build` with `delivery.slug` equal
+to the slug being built.
 
-1. `git fetch origin`. Confirm the current worktree is on the branch named in the
-   roadmap header; never switch a shared or managed worktree to another delivery
-   branch. If another worktree owns the branch, stop and direct the user to
-   `/agento start-session <type>/<slug> --resume`. If `origin/<branch>` is ahead, merge
+1. `git fetch origin`. From the session record, confirm `worktree.branch` is the
+   branch named in the roadmap header; never switch a shared or managed worktree to
+   another delivery branch. If the record's `worktrees[]` shows another entry on that
+   branch, stop and direct the user to the record's alternatives
+   (`/agento start-session <type>/<slug> --resume`). If `origin/<branch>` is ahead, merge
    it (never rebase). If `origin/main` advanced, merge `origin/main` into the branch.
-   A managed `plan-<session-id>` worktree already on the matching published branch
-   may be promoted in place through the Planner handoff; its path does not need to be
-   renamed or reopened.
+   A managed `plan-` worktree (`worktree.dirPrefix: "plan"`) already on the matching
+   published branch may be promoted in place through the Planner handoff; its path
+   does not need to be renamed or reopened.
 2. Read plan.md and roadmap.md fully.
 3. **Audit before trusting**: for each ticked step, spot-check the codebase evidence
    (files exist, tests pass, behavior present). Untick falsely ticked steps and note

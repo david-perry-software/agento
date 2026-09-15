@@ -8,7 +8,8 @@ Agento ships two hooks. In plugin mode they are wired by `hooks.json` with
 
 Injects `Current git branch: <branch>`, the `Agento CLI:` path, one
 `Session: role=… worktree=… branch=… delivery=… lifecycle=… allowed=[…] elsewhere=[…]`
-line (the output of `agento.mjs session` without `--pr`), plus one line per
+line (the output of `agento.mjs session` without `--pr`; the record's `hosted` flag
+and `worktrees[]` are JSON-only and do not appear on the line), plus one line per
 in-progress / paused / in-review roadmap (`status:` and `next-step:` from the YAML
 header) into every new chat session via `hookSpecificOutput.additionalContext`. It
 reads the repository from the hook input's `cwd` and the artifact roots from the

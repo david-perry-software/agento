@@ -18,8 +18,10 @@ idempotency row (a fresh verdict overwrites review.md; no second PR comment thre
 Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for review-issue` and map
 `fail`/`warn` per §10.
+Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
-Follow your full procedure: confirm this worktree owns `issue/<slug>`, study the diff against
+Follow your full procedure: confirm from the session record that `worktree.branch` is
+`issue/<slug>`, study the diff against
 `origin/main`, load every matching installed skill for the domains the work touches
 (per the project's skills table — its AGENTS.md `## Agento` section — and the
 skills-first policy, `.agents/skills/`), run the relevant test and
