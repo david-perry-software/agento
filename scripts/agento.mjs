@@ -14,6 +14,7 @@
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, delivery, lifecycle, allowed; hosted flag)
+//   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd).
@@ -29,12 +30,12 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveRole, parseWorktreeList } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, parseWorktreeList } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 19);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 20);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -118,21 +119,18 @@ function* walkFiles(base, name) {
 const walkRoadmaps = (base) => walkFiles(base, "roadmap.md");
 const walkBreakdowns = (base) => walkFiles(base, "breakdown.md");
 
-function describe(file, type) {
-  const content = fs.readFileSync(file, "utf8");
-  const dir = path.dirname(file);
+// One roadmap record from its content plus the sibling artifacts; `dir` and
+// `roadmap` are repository-relative. Shared by the checkout and git-ref readers.
+function describeContent({ type, dir, roadmap, content, planExists, reviewContent }) {
   const steps = [...content.matchAll(/^- \[( |x)\] \d+\.\d+/gm)];
-  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
   return {
     type,
-    slug: path.basename(dir),
-    dir: rel(dir),
-    roadmap: rel(file),
-    plan: fs.existsSync(path.join(dir, "plan.md")) ? rel(path.join(dir, "plan.md")) : null,
-    review: fs.existsSync(path.join(dir, "review.md")) ? rel(path.join(dir, "review.md")) : null,
-    reviewVerdict: fs.existsSync(path.join(dir, "review.md"))
-      ? (fs.readFileSync(path.join(dir, "review.md"), "utf8").match(/^Verdict:\s*(approve|request-changes)/m)?.[1] ?? null)
-      : null,
+    slug: path.posix.basename(dir),
+    dir,
+    roadmap,
+    plan: planExists ? `${dir}/plan.md` : null,
+    review: reviewContent !== null ? `${dir}/review.md` : null,
+    reviewVerdict: reviewContent !== null ? (reviewContent.match(/^Verdict:\s*(approve|request-changes)/m)?.[1] ?? null) : null,
     status: header(content, "status"),
     branch: header(content, "branch"),
     lastUpdated: header(content, "last-updated"),
@@ -142,6 +140,37 @@ function describe(file, type) {
     steps: { ticked: steps.filter((m) => m[1] === "x").length, total: steps.length },
     postShipPending: (content.match(/^- \[ \] \d+\.\d+ \(manual, post-ship\)/gm) ?? []).length,
   };
+}
+
+function describe(file, type) {
+  const dir = path.dirname(file);
+  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  const review = path.join(dir, "review.md");
+  return describeContent({
+    type,
+    dir: rel(dir),
+    roadmap: rel(file),
+    content: fs.readFileSync(file, "utf8"),
+    planExists: fs.existsSync(path.join(dir, "plan.md")),
+    reviewContent: fs.existsSync(review) ? fs.readFileSync(review, "utf8") : null,
+  });
+}
+
+// The same record read from a git ref (`origin/<branch>` or a local branch), for
+// roadmaps that exist only on a delivery branch. `roadmap` is repository-relative.
+function describeFromRef(ref, roadmap, type) {
+  const content = git(root, "show", `${ref}:${roadmap}`);
+  if (!content) return null;
+  const dir = path.posix.dirname(roadmap);
+  const tree = new Set(git(root, "ls-tree", "--name-only", ref, `${dir}/`).split("\n").filter(Boolean));
+  return describeContent({
+    type,
+    dir,
+    roadmap,
+    content,
+    planExists: tree.has(`${dir}/plan.md`),
+    reviewContent: tree.has(`${dir}/review.md`) ? git(root, "show", `${ref}:${dir}/review.md`) : null,
+  });
 }
 
 function allRoadmaps(typeFilter) {
@@ -461,6 +490,65 @@ function deriveInitiative(breakdown, roadmaps) {
   };
 }
 
+// --- next ------------------------------------------------------------------
+
+// The ref a delivery branch is judged from: origin/<branch> when fetched, else the
+// local branch (with a warning: no fetch happens here), else HEAD.
+function refFor(branch) {
+  if (branch && git(root, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) return { ref: `origin/${branch}`, warning: null };
+  if (branch && git(root, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
+    return { ref: branch, warning: `${branch}: origin/${branch} is absent, so review freshness and roadmap state reflect the local branch as of the last fetch` };
+  }
+  return { ref: "HEAD", warning: null };
+}
+
+// review.md is fresh when its last commit is not older than the last commit that
+// touched anything else on the branch; null when the branch has no review.md.
+function reviewFreshness(branch, dir) {
+  const { ref, warning } = refFor(branch);
+  const reviewTs = git(root, "log", "-1", "--format=%ct", ref, "--", `${dir}/review.md`);
+  if (!reviewTs) return { reviewFresh: null, ref, warning };
+  const otherTs = git(root, "log", "-1", "--format=%ct", ref, "--", ".", `:(exclude)${dir}/review.md`);
+  return { reviewFresh: Number(reviewTs) >= Number(otherTs || 0), ref, warning };
+}
+
+// A roadmap that lives only on its delivery branch: origin/<branch> first (via the
+// shared resolver), then the unpushed local branch. Never fetches.
+function roadmapOnBranch(type, slug) {
+  const resolved = resolveRoadmapArtifact({ rootDir: root, type, slug, currentBranch, git: gitAdapter, config });
+  if (resolved.status === "ok" && resolved.source === "remote") {
+    const record = describeFromRef(`origin/${resolved.branch}`, resolved.path, type);
+    if (record) return { record, source: "origin" };
+  }
+  const branch = `${type === "feature" ? config.branches.feature : config.branches.issue}${slug}`;
+  if (!git(root, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
+  const top = type === "feature" ? config.artifacts.features : config.artifacts.issues;
+  const roadmap = git(root, "ls-tree", "-r", "--name-only", branch)
+    .split("\n")
+    .find((p) => p.startsWith(`${top}/`) && p.endsWith(`/${slug}/roadmap.md`));
+  if (!roadmap) return null;
+  const record = describeFromRef(branch, roadmap, type);
+  return record ? { record, source: "local-branch" } : null;
+}
+
+// Where `/agento continue` finds the files to follow for the emitted command: the
+// plugin command file and, for custom-agent prompts, the agent file whose `name:`
+// matches the prompt's `agent:` frontmatter.
+function dispatchFor(command) {
+  if (!command) return null;
+  const prompt = path.join(PLUGIN_ROOT, "commands", `${command}.md`);
+  if (!fs.existsSync(prompt)) return { prompt, agent: null };
+  const agentName = fs.readFileSync(prompt, "utf8").match(/^agent:\s*"([^"\n]+)"/m)?.[1] ?? null;
+  if (!agentName || agentName === "agent") return { prompt, agent: null };
+  const agentsDir = path.join(PLUGIN_ROOT, ".github", "agents");
+  const agent = fs
+    .readdirSync(agentsDir)
+    .filter((f) => f.endsWith(".agent.md"))
+    .map((f) => path.join(agentsDir, f))
+    .find((f) => fs.readFileSync(f, "utf8").match(/^name:\s*"([^"\n]+)"/m)?.[1] === agentName);
+  return { prompt, agent: agent ?? null };
+}
+
 switch (command) {
   case "config":
     emit({
@@ -619,6 +707,124 @@ switch (command) {
     const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
     // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
     emit({ status, for: needs ? { command: options.for, needs } : null, checks, root, configSource: source }, status === "fail" ? 3 : 0);
+    break;
+  }
+
+  case "next": {
+    if (rest.length > 1) usage(`next takes at most one slug, got ${JSON.stringify(rest.slice(1).join(" "))}`);
+    const requestedSlug = rest[0] ? requireSlug(rest[0]) : null;
+    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+    const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env });
+    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config });
+    const roadmaps = allRoadmaps();
+    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
+    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null });
+    if (hostedReason) warnings.unshift(hostedReason);
+    const ownerOf = (branch) => findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch, config });
+
+    const toCandidate = (record, sourceKind) => {
+      const fresh = reviewFreshness(record.branch, record.dir);
+      if (fresh.warning) warnings.push(fresh.warning);
+      return {
+        kind: "delivery",
+        type: record.type,
+        slug: record.slug,
+        branch: record.branch,
+        dir: record.dir,
+        roadmap: record.roadmap,
+        status: record.status,
+        reviewVerdict: record.reviewVerdict,
+        postShipPending: record.postShipPending,
+        owner: ownerOf(record.branch),
+        reviewFresh: fresh.reviewFresh,
+        source: sourceKind,
+        ref: fresh.ref,
+      };
+    };
+
+    // Candidates: non-complete roadmaps in this checkout, deliveries owned by managed
+    // worktrees (read from their branch when not in this checkout), ready members.
+    const candidates = [];
+    const seen = new Set();
+    const add = (c) => {
+      if (!c || seen.has(c.slug)) return;
+      seen.add(c.slug);
+      candidates.push(c);
+    };
+    for (const r of roadmaps) if (r.status !== "complete") add(toCandidate(r, "local"));
+    for (const w of classified) {
+      if (!w.isManaged || w.role !== "build") continue;
+      const d = deriveDelivery({ branch: w.branch, dirPrefix: w.dirPrefix, id: w.id, roadmaps, config });
+      if (!d || seen.has(d.slug)) continue;
+      if (d.roadmap) add(toCandidate(roadmaps.find((r) => r.type === d.type && r.slug === d.slug), "local"));
+      else {
+        const found = roadmapOnBranch(d.type, d.slug);
+        if (found) add(toCandidate(found.record, found.source));
+      }
+    }
+    const members = [];
+    for (const b of allBreakdowns()) {
+      const derived = deriveInitiative(b, roadmaps.filter((r) => r.type === "feature"));
+      if (derived.status !== "ok") continue;
+      for (const f of derived.features) if (f.ready) members.push({ kind: "initiative-member", slug: f.slug, type: "feature", initiative: b.slug, branch: f.branch });
+    }
+    for (const m of members) add(m);
+
+    let missingMessage = null;
+    if (requestedSlug && !seen.has(requestedSlug)) {
+      const local = roadmaps.filter((r) => r.slug === requestedSlug);
+      if (local.length === 1) add(toCandidate(local[0], "local"));
+      else if (local.length > 1) {
+        emit({ status: "ambiguous", role, lifecycle, slug: requestedSlug, type: null, next: null, candidates: local.map((r) => ({ kind: "delivery", slug: r.slug, type: r.type, status: r.status, initiative: r.initiative, owner: ownerOf(r.branch), invocation: `/agento continue ${r.slug}` })), reviewFresh: null, dispatch: null, warnings, reason: `Slug ${requestedSlug} exists as both a feature and an issue; specify which by its own worktree.`, root, configSource: source }, 3);
+      } else {
+        let resolved = null;
+        for (const type of ["feature", "issue"]) {
+          const found = roadmapOnBranch(type, requestedSlug);
+          if (found) {
+            resolved = found;
+            break;
+          }
+        }
+        if (resolved) add(toCandidate(resolved.record, resolved.source));
+        else missingMessage = `No roadmap for slug ${requestedSlug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin, and no initiative member with that slug is ready.`;
+      }
+    }
+
+    const active = delivery?.dir ? reviewFreshness(delivery.branch, delivery.dir) : null;
+    if (active?.warning) warnings.push(active.warning);
+    const result = deriveNext({
+      role,
+      worktree,
+      delivery,
+      lifecycle,
+      owner: delivery ? ownerOf(delivery.branch) : null,
+      reviewFresh: active?.reviewFresh ?? null,
+      candidates,
+      requestedSlug,
+      config,
+    });
+    if (result.status === "missing" && missingMessage) result.reason = missingMessage;
+    const target = requestedSlug ? candidates.find((c) => c.slug === requestedSlug) ?? null : delivery && lifecycle !== "no-delivery" ? delivery : candidates.length === 1 ? candidates[0] : null;
+    const targetFresh = target === delivery ? active?.reviewFresh ?? null : target?.kind === "delivery" ? target.reviewFresh : null;
+    emit(
+      {
+        status: result.status,
+        role,
+        lifecycle,
+        slug: target?.slug ?? requestedSlug ?? null,
+        type: target?.type ?? null,
+        next: result.next,
+        candidates: result.candidates,
+        reviewFresh: targetFresh,
+        dispatch: dispatchFor(result.next?.command),
+        warnings,
+        reason: result.reason,
+        root,
+        configSource: source,
+      },
+      result.status === "ok" || result.status === "none" ? 0 : 3,
+    );
     break;
   }
 
