@@ -5,6 +5,10 @@ agent: "agent"
 tools: [read, search, edit, execute, agent]
 ---
 
+Needs: terminal, gh, network
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Make the change described in the argument end to end in the **current window** on a
 short-lived `changes/<slug>` branch. This is the plan-less tier for work that does
 not earn delivery artifacts: typo and doc fixes, a one-file bug with an obvious
@@ -21,8 +25,10 @@ means the configured default.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
-its current step; see step 2 for the suffix rule).
-Window check per §10: requires role `primary` on the default branch, clean.
+its current step; see step 2 for the suffix rule). Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for quick-fix` and map
+`fail`/`warn` per §10.
+Window check per §11: requires role `primary` on the default branch, clean.
 
 ## Refuse when the change does not fit
 
@@ -40,7 +46,7 @@ Stop and name the right command instead of proceeding if any of these hold:
 ## Steps
 
 1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
-   `role: "primary"` with `worktree.branch` equal to `main`, otherwise reject per §10
+   `role: "primary"` with `worktree.branch` equal to `main`, otherwise reject per §11
    with the record's alternatives. Then require clean and synchronized: `git fetch
    origin` then `git status --short --branch` shows nothing and zero ahead/behind.
    Authentication failures halt per the target repository's AGENTS.md.

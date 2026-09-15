@@ -2,6 +2,18 @@
 
 ## 0.4.0 (unreleased)
 
+- **New `agento.mjs doctor` and per-command preflight.** `doctor [--for <command>]`
+  runs six environment checks (`node` ≥ 20, `git-remote`, `gh` installed and
+  authenticated, `code` CLI, `python3`, writable `worktrees-dir`), each reported as
+  `{ id, status, detail, fallback }`, overall `ok | warn | fail` (exit 3 on `fail`);
+  `--for` limits the run to the named command's needs. Every prompt and agent now
+  opens with `Needs:` / `Fallback:` lines from the §10 vocabulary; commands needing
+  `gh`, `code`, or `network` run `doctor --for <name>` before their first write and
+  map `fail` to a `Receipt: rejected — <capability>: …; fallback: …` receipt and
+  `warn` to a `Preflight:` line. New `/agento doctor` command reports the checks and
+  fixes nothing. Policy gains `## 10. Capability preflight`; the customizations test
+  cross-checks vocabulary, prompts, and the CLI table.
+
 - **New `agento.mjs session [--pr]`.** One JSON record answering "where am I, what is
   active, what may I run next": the window `role` (`primary`, `plan`, `build`,
   `freehand`, `unmanaged` — a promoted `plan-*` worktree on a delivery branch reports
@@ -43,9 +55,9 @@
   already-removed worktree as already closed and still deletes a merged local branch;
   `/agento quick-fix` reuses an open `changes/<slug>` PR from the same base and applies
   the `-2`, `-3` suffix only when that PR is merged or closed.
-- **Window-aware commands (policy §10).** New `## 10. Window check` in
+- **Window-aware commands (policy §11).** New `## 11. Window check` in
   `delivery-policy.instructions.md`: every command and agent carries one
-  `Window check per §10: requires role …` line, runs `agento.mjs session` before
+  `Window check per §11: requires role …` line, runs `agento.mjs session` before
   reading delivery state or writing, and rejects a mismatch with the §9 `rejected`
   receipt whose alternatives come from the record (`role: unmanaged` always rejects
   and names the primary checkout). The roles table stays in the CLI (`deriveAllowed`).
@@ -61,7 +73,7 @@
   `primary-owns-branch` ("return the primary to `main` first") rather than
   `managed-worktree-present`. `git worktree list --porcelain` remains only in
   `start-session`, `start-freehand`, `close-session`, and `ship`;
-  `tests/customizations.test.mjs` enforces the §10 citation and that allowlist.
+  `tests/customizations.test.mjs` enforces the §11 citation and that allowlist.
   `/agento commit-current-changes` now requires role `primary` on a non-default
   branch; `/agento finish-freehand` requires role `freehand`.
 

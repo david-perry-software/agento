@@ -4,6 +4,10 @@ argument-hint: "Optional context, intent, or issue reference"
 agent: "agent"
 ---
 
+Needs: terminal, gh, network
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Wrap up the freehand session in this worktree: commit the current changes, publish
 the branch, and merge it into `main` through the protected pull-request workflow. This
 invocation explicitly authorizes committing, pushing, opening and merging a pull
@@ -13,13 +17,15 @@ supplemental context, but ground the commit message in the actual diff.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 2 recovers it from repository state). Window check per §10: requires role
-`freehand` with `delivery.slug` equal to this session's slug.
+step 2 recovers it from repository state). Before the first write, run `node
+<agento-root>/scripts/agento.mjs doctor --for finish-freehand` and map `fail`/`warn`
+per §10.
+Window check per §11: requires role `freehand` with `delivery.slug` equal to this session's slug.
 
 1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must
    report `role: "freehand"` (a managed `freehand-<slug>` worktree on branch
    `changes/<slug>`, per the record's `worktree` and `delivery`); otherwise reject
-   per §10 with the record's alternatives — on `main`, `feature/*`, or `issue/*` they
+   per §11 with the record's alternatives — on `main`, `feature/*`, or `issue/*` they
    name the correct command (`/agento commit-current-changes` from the primary
    worktree, or `/agento ship <slug>` for delivery work).
 2. Inspect `git status --short`, the branch's upstream and ahead/behind state, staged

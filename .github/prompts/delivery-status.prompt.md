@@ -5,10 +5,14 @@ agent: "agent"
 tools: [read, search, execute]
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Report the state of all delivery work, read-only. Do not modify any files or branches.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (read-only: a fresh read). Window check per §10: requires role
+idempotency row (read-only: a fresh read). Window check per §11: requires role
 `any` (read-only / not window-sensitive).
 
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs session --pr` (the CLI

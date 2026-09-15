@@ -3,6 +3,10 @@ description: "Close a clean isolated worktree — a detached planning session (s
 argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id>"
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Close the isolated session named by the argument. Run this command from the
 primary worktree of this repository after closing the session's VS Code window. This
 invocation authorizes removing the managed worktree and, when already merged, deleting
@@ -11,7 +15,7 @@ branch.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (shared rule 6 below). Window check per §10: requires role `primary`.
+idempotency row (shared rule 6 below). Window check per §11: requires role `primary`.
 
 **Dispatch on the argument:**
 
@@ -25,7 +29,7 @@ idempotency row (shared rule 6 below). Window check per §10: requires role `pri
 **Shared rules:**
 
 1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
-   `role: "primary"`; otherwise reject per §10 with the record's alternatives. Then
+   `role: "primary"`; otherwise reject per §11 with the record's alternatives. Then
    `git fetch origin`. Authentication or authorization failures halt immediately.
 2. Managed paths live under the managed worktrees directory; resolve the canonical
    path for the argument with the Agento CLI — `node <agento-root>/scripts/agento.mjs

@@ -4,6 +4,10 @@ argument-hint: "Issue slug, or blank to list resumable issues"
 agent: "🔨 Agento Builder"
 ---
 
+Needs: terminal, browser, gh, network
+Fallback: browser → §10 standard fallback (headless verify or report blocked)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Build the **issue** fix named by the slug in the argument. Resolve its roadmap with
 the Agento CLI — `node <agento-root>/scripts/agento.mjs resolve issue <slug>` (the CLI
 path is announced in the session context as `Agento CLI:`) — and act on the JSON:
@@ -13,8 +17,9 @@ are hard stops — report the `message` verbatim.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (the Builder resume/audit protocol below — ticked steps are audited,
-never redone). Window check per §10: requires role `build` with `delivery.slug` equal
-to the argument.
+never redone). Before the first write, run `node <agento-root>/scripts/agento.mjs
+doctor --for build-issue` and map `fail`/`warn` per §10.
+Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
 - If the argument is blank, run `agento.mjs status issue`, list each item's slug,
   `status`, `steps`, and `nextStep`, recommend the best candidate (in-progress and

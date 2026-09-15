@@ -3,17 +3,26 @@ description: "Create or resume an isolated Git worktree and VS Code window for a
 argument-hint: "[<feature|issue>/<slug> | session-id] [--resume] [--no-open]"
 ---
 
+Needs: terminal, code
+Fallback: code → §10 standard fallback (keep the worktree; print the open command)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Start an isolated delivery session in a sibling worktree. This invocation authorizes
 fetching, creating the managed worktree described below, and opening VS Code. It does
 not authorize creating a delivery branch, deleting a branch, or changing delivery
 artifacts. Optional flags for both modes are `--resume` and `--no-open`; reject extra
-arguments or unknown flags.
+arguments or unknown flags. "Plan mode" and "build mode" below are Agento worktree
+modes chosen by the argument, not VS Code chat modes; this command runs in Agent
+chat mode because it needs a terminal.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: a registered worktree for the same subject is resumed with `--resume`
 semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
-Window check per §10: requires role `primary` on the default branch, clean.
+Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for start-session` and map
+`fail`/`warn` per §10.
+Window check per §11: requires role `primary` on the default branch, clean.
 
 **Dispatch on the argument:**
 
@@ -24,7 +33,7 @@ Window check per §10: requires role `primary` on the default branch, clean.
 
 1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
    `role: "primary"` with `worktree.branch` equal to the configured default branch;
-   otherwise reject per §10 with the record's alternatives. The record's `worktrees[]`
+   otherwise reject per §11 with the record's alternatives. The record's `worktrees[]`
    is the ownership source for build mode step 2.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately
    under the repository policy.
@@ -39,8 +48,7 @@ Window check per §10: requires role `primary` on the default branch, clean.
    VS Code CLI may reuse an already-running editor session instead of visibly creating
    a second window; treat a successful worktree as a valid result, say so explicitly,
    and never infer a Git worktree lock or branch conflict from that behavior. If the
-   `code` CLI is unavailable or opening fails, keep the worktree and report the manual
-   open command.
+   `code` CLI is unavailable or opening fails, apply the declared `code` fallback (§10).
 
 ## Plan mode
 

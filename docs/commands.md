@@ -19,6 +19,7 @@
 | `/agento finish-freehand` | default | Commit, PR, merge freehand work |
 | `/agento commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
 | `/agento delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
+| `/agento doctor [--for <command>]` | default | Environment readiness: Node, git remote, gh auth, code CLI, python3, worktrees dir — each with status and fallback; fixes nothing |
 | `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
 | `/agento extend-copilot` · `/agento fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
 
@@ -40,11 +41,16 @@ and `elsewhere` commands; `--pr` adds the branch's PR via `gh`, degrading to
 `pr: null` plus a warning when `gh` is absent),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
-`anomalies` from its member roadmaps). Every call prints one JSON document; exit 0 =
-usable result, 3 = resolution failure (`missing`, `conflict`, `branch-mismatch`,
-`invalid` breakdown), 1 = usage error. Every window-sensitive command runs `session`
-first and compares `role` with its `Window check per §10: requires role …` line
-(policy §10); a mismatch is a `rejected` receipt listing the record's alternatives.
+`anomalies` from its member roadmaps),
+`doctor [--for <command>]` (six environment checks — `node`, `git-remote`, `gh`,
+`code`, `python3`, `worktrees-dir` — each `{ id, status, detail, fallback }` with
+`status` ∈ `ok | warn | fail`; `--for` runs only the checks the named command's
+`Needs:` line requires and echoes them as `for.needs`). Every call prints one JSON
+document; exit 0 = usable result (`doctor`: `ok` or `warn`), 3 = resolution failure
+(`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`),
+1 = usage error. Every window-sensitive command runs `session` first and compares
+`role` with its `Window check per §11: requires role …` line (policy §11); a mismatch
+is a `rejected` receipt listing the record's alternatives.
 
 ## Invocation
 
@@ -69,6 +75,7 @@ Every command has one spelling, `/agento <name> [args]`. The canonical names are
 - `/agento finish-freehand`
 - `/agento commit-current-changes`
 - `/agento delivery-status`
+- `/agento doctor`
 - `/agento triage-followups`
 - `/agento extend-copilot`
 - `/agento fix-copilot`
@@ -95,6 +102,18 @@ receipts). The receipt names a deterministic operation ID
 `agento.mjs session`; the result names the resulting state and the concrete next
 command. Re-sending any command is safe: §9's idempotency table says, per command,
 what a duplicate submission does, all derived from git + roadmap state.
+
+## Preflight
+
+Every command and agent opens its body with `Needs:` (the capabilities it uses, from
+the vocabulary in `delivery-policy.instructions.md` §10) and `Fallback:` (what happens
+when a soft need is absent). Hard needs (`terminal`; `gh` and `network` for anything
+that pushes or touches GitHub) missing produce a rejection receipt naming the
+fallback instead of a half-started command; soft needs (`ask-questions`, `browser`,
+`code`, `python3`) missing add one `Preflight:` line and the command proceeds with
+the standard fallback. Commands that need `gh`, `code`, or `network` run
+`agento.mjs doctor --for <name>` before their first write; `/agento doctor` runs the
+same checks on demand and only reports — installs and logins stay with the user.
 
 ## The standard flow
 

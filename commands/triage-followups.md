@@ -4,6 +4,10 @@ argument-hint: "Slug to triage, or empty to scan all shipped work"
 agent: "agent"
 ---
 
+Needs: terminal, gh, network
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Triage delivery follow-ups into the GitHub backlog. This invocation authorizes filing
 GitHub issues with `gh issue create`, commenting stale-code flags on open issues with
 `gh issue comment` (step 6), and merging the single annotation PR described in step 5
@@ -14,8 +18,10 @@ session context line `Agento CLI:`).
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (already-annotated follow-up lines and already-flagged issues are
-skipped). Window check per §10: requires role `any` (read-only / not
-window-sensitive).
+skipped). Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for triage-followups` and map
+`fail`/`warn` per §10.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Mode** — from the argument:
 - **Slug given**: `agento.mjs find <slug>`; triage only when `status` is `ok`,

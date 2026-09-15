@@ -43,10 +43,12 @@ flowchart TD
   rules, the cross-window handoff, and execution receipts with per-command
   idempotency (every command opens with a receipt line carrying a deterministic
   operation ID and closes with a result line; a duplicate submission resumes from git
-  + roadmap state), and the window check (§10: every command names the `role` it
-  requires and checks it against `agento.mjs session` — a mismatch is a `rejected`
-  receipt with the record's alternatives; the roles table itself lives in the CLI);
-  agents and prompts cite its numbered sections
+  + roadmap state), capability preflight (§10: every command and agent declares
+  `Needs:`/`Fallback:`; `agento.mjs doctor --for <name>` runs before the first write
+  of any command needing `gh`, `code`, or `network`), and the window check (§11: every
+  command names the `role` it requires and checks it against `agento.mjs session` — a
+  mismatch is a `rejected` receipt with the record's alternatives; the roles table
+  itself lives in the CLI); agents and prompts cite its numbered sections
   (`§2`) instead of restating them, and a test fails if a rule is spelled out twice.
   The **artifact contract** holds only formats; **concurrent-delivery** holds only
   mechanics (ports, previews, shared resources, integration recipes); **ai-skills**

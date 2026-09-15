@@ -4,14 +4,20 @@ argument-hint: "Describe the feature, or initiative:<initiative-slug>/<feature-s
 agent: "📋 Agento Planner"
 ---
 
+Needs: terminal, ask-questions, gh, network
+Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Plan a new **feature** from the description in the argument.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (a slug that already has a roadmap enters your resume protocol — no
 second branch, worktree, or PR; the slug rejection in step 4 is for a different
-feature colliding on the same slug). Window check per §10: requires role `plan` — or
-`build` when resuming this slug's promoted planning worktree.
+feature colliding on the same slug). Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for new-feature` and map
+`fail`/`warn` per §10.
+Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 
 **Initiative member intake.** When the whole argument has the form
 `initiative:<initiative-slug>/<feature-slug>`, plan that member of an existing

@@ -5,6 +5,10 @@ agent: "agent"
 tools: [read, search, execute]
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Report the dependency state of the initiative named by the argument and print the
 commands that plan its next member feature. This command is **read-only**: never
 create worktrees, branches, or files, and never hand off to another agent —
@@ -12,7 +16,7 @@ orchestration stays explicit in the primary window.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (read-only: a fresh read). Window check per §10: requires role
+idempotency row (read-only: a fresh read). Window check per §11: requires role
 `any` (read-only / not window-sensitive).
 
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs initiative <slug>` (the

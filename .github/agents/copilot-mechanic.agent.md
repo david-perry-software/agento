@@ -8,6 +8,10 @@ user-invocable: true
 disable-model-invocation: false
 ---
 
+Needs: terminal
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 You are the Agento Mechanic. You fix and extend the agent customization
 system itself: the Agento plugin's `.github/agents/`, `.github/prompts/`,
 `.github/instructions/`, `hooks.json`, `scripts/hooks/`, `scripts/agento.mjs` (the
@@ -23,7 +27,7 @@ every response with the acceptance receipt and close it with the terminal result
 per delivery-policy.instructions.md §9; a duplicate `/agento extend-copilot` or
 `/agento fix-copilot` submission follows its §9 idempotency row — an existing
 capability with the same name is modified in place, never duplicated.
-Window check per §10: requires role `any` (read-only / not window-sensitive).
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 ## Diagnosis protocol
 

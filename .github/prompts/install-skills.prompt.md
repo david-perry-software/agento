@@ -3,6 +3,10 @@ description: "Detect the project's stack, propose matching agent skills from the
 argument-hint: "No arguments"
 ---
 
+Needs: terminal, ask-questions, network
+Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Install agent skills matched to the current workspace (the **target repository**,
 not the Agento clone). Skills inject instructions into agent sessions, so nothing
 is installed without explicit per-skill approval.
@@ -10,7 +14,10 @@ is installed without explicit per-skill approval.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (already-installed skills are excluded from the batch, step 3).
-Window check per §10: requires role `any` (read-only / not window-sensitive).
+Before the first write, run
+`node <agento-root>/scripts/agento.mjs doctor --for install-skills` and map
+`fail`/`warn` per §10.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Preconditions:**
 
@@ -38,8 +45,9 @@ Window check per §10: requires role `any` (read-only / not window-sensitive).
 3. **Skip what's installed.** Compare candidates against `.agents/skills/`; mark
    already-installed ones and exclude them from the proposal.
 4. **Propose and confirm.** Present one table: `domain | skill | source | why it
-   fits`. Then ask with `vscode/askQuestions` which to install (multi-select;
-   default: none). No installs happen before this answer.
+   fits`. Then ask with the ask-questions tool (or its declared fallback, §10)
+   which to install (multi-select; default: none). No installs happen before this
+   answer.
 5. **Install approved skills** from the repo root:
    `npx skills add <owner/repo> --skill <name>` (or the pnpm equivalent). Run one
    install at a time; on failure, report the error and continue with the rest.

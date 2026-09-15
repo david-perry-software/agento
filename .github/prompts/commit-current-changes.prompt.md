@@ -4,6 +4,10 @@ argument-hint: "Optional context, intent, or issue reference"
 agent: "agent"
 ---
 
+Needs: terminal, gh, network
+Fallback: none — every need is hard
+Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+
 Review the current Git changes in this repository, commit them with the best
 possible commit message, and publish that commit through the protected pull-request
 workflow. This invocation explicitly authorizes creating and deleting a branch,
@@ -14,13 +18,15 @@ actual diff.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 1 recovers it from repository state). Window check per §10: requires role
-`primary` on a non-default branch.
+step 1 recovers it from repository state). Before the first write, run `node
+<agento-root>/scripts/agento.mjs doctor --for commit-current-changes` and map
+`fail`/`warn` per §10.
+Window check per §11: requires role `primary` on a non-default branch.
 
 1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must
 	report `role: "primary"` with `worktree.branch` different from the configured
 	default branch (a stray primary-window change). A `plan`, `build`, or `freehand`
-	role is rejected per §10 with the record's alternatives — they already name the
+	role is rejected per §11 with the record's alternatives — they already name the
 	handoff or `/agento finish-freehand` for that worktree; never hand-maintain that
 	list. Then inspect `git status --short`, the current branch and its
 	upstream/ahead-behind state, staged and unstaged diffs, untracked files, any pull

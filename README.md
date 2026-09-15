@@ -370,6 +370,7 @@ Mechanic.
 | `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
 | `/agento delivery-status [filter]` | any | default | Read-only dashboard |
+| `/agento doctor [--for <command>]` | any | default | Read-only environment readiness check with fallbacks |
 | `/agento triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |
 | `/agento extend-copilot` · `/agento fix-copilot` | any | 🛠️ Mechanic | Add or repair prompts, agents, instructions, hooks, skills |
 
@@ -416,7 +417,7 @@ Two hooks run outside the model on every session:
   `agento.mjs session` (window role, worktree, active delivery, lifecycle, and the
   commands allowed here versus elsewhere; the full record also carries a `hosted`
   flag for Codespaces/Actions and `worktrees[]`, which every window-sensitive
-  command checks per policy §10); without `node` on `PATH` the `Session:`
+  command checks per policy §11); without `node` on `PATH` the `Session:`
   line is simply omitted.
 - **PreToolUse** inspects each shell command and file edit and returns `allow`,
   `ask`, or `deny`. It denies commits/pushes/merges on the default branch (including
