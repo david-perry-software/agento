@@ -2,7 +2,10 @@
 # PreToolUse guard: protects the default branch, forbids force-push and hook bypasses,
 # nudges roadmap updates, checks worktree occupants, and gates hook-file edits behind
 # approval. Branch names and artifact roots come from the target repo's
-# .github/agento.json.
+# .github/agento.json. When that config sets `artifacts.repo`, the sibling companion
+# checkout is governed by the product config too (its default branch is protected the
+# same way) and the roadmap nudge on a product delivery-branch commit inspects the
+# companion's index and HEAD instead of the product commit.
 #
 # This is a slip guard for an LLM operator, not an enforcement boundary: it pattern
 # matches shell text and can be worked around. GitHub rulesets on the default branch
@@ -223,21 +226,30 @@ def target_dir():
 
 workdir = target_dir()
 
-def git(*args):
+
+def run_git(directory, *args):
     try:
-        return subprocess.run(["git", "-C", workdir, *args], capture_output=True, text=True, timeout=5).stdout.strip()
+        return subprocess.run(["git", "-C", directory, *args], capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
         return ""
 
-def agento_config():
+
+def git(*args):
+    return run_git(workdir, *args)
+
+
+# --- shared with scripts/hooks/session-context.sh; keep both copies identical ---
+CONFIG_DEFAULTS = {
+    "artifacts": {"features": "features", "issues": "issues", "repo": {"name": None, "dir": None}},
+    "branches": {"default": "main", "feature": "feature/", "issue": "issue/",
+                 "freehand": "changes/", "postShip": "post-ship/"},
+}
+
+
+def load_config(root):
     # Merge .github/agento.json over defaults; every key is optional and null keeps
-    # the default, matching scripts/agento-config.mjs.
-    defaults = {
-        "artifacts": {"features": "features", "issues": "issues"},
-        "branches": {"default": "main", "feature": "feature/", "issue": "issue/",
-                     "freehand": "changes/", "postShip": "post-ship/"},
-    }
-    root = git("rev-parse", "--show-toplevel") or workdir
+    # the default, matching scripts/agento-config.mjs. `artifacts.repo` merges nested.
+    config = json.loads(json.dumps(CONFIG_DEFAULTS))
     for rel in (".github/agento.json", "agento.json"):
         candidate = os.path.join(root, rel)
         if not os.path.isfile(candidate):
@@ -249,12 +261,57 @@ def agento_config():
             continue
         if isinstance(loaded, dict):
             for section, values in loaded.items():
-                if isinstance(values, dict) and isinstance(defaults.get(section), dict):
-                    defaults[section].update({k: v for k, v in values.items() if v is not None})
+                target = config.get(section)
+                if not isinstance(values, dict) or not isinstance(target, dict):
+                    continue
+                for key, value in values.items():
+                    if value is None:
+                        continue
+                    if isinstance(value, dict) and isinstance(target.get(key), dict):
+                        target[key].update({k: v for k, v in value.items() if v is not None})
+                    else:
+                        target[key] = value
         break
-    return defaults
+    return config
 
-config = agento_config()
+
+def resolve_artifacts(product_root):
+    # Mirror scripts/agento-config.mjs resolveArtifactsRoot(): `artifacts.repo` unset
+    # (name and dir both null) keeps the in-repo layout with no extra git call; else
+    # the companion path resolves against the primary checkout (first `git worktree
+    # list` entry) and its config, so managed worktrees never point into worktrees.dir.
+    repo = load_config(product_root)["artifacts"]["repo"]
+    if repo.get("name") is None and repo.get("dir") is None:
+        return False, None, None
+    primary_root = product_root
+    for line in run_git(product_root, "worktree", "list", "--porcelain").splitlines():
+        if line.startswith("worktree "):
+            primary_root = line[len("worktree "):].strip()
+            break
+    if os.path.realpath(primary_root) != os.path.realpath(product_root):
+        repo = load_config(primary_root)["artifacts"]["repo"]
+        if repo.get("name") is None and repo.get("dir") is None:
+            return False, None, None
+    path = os.path.abspath(os.path.join(primary_root, repo.get("dir") or os.path.join("..", repo["name"])))
+    return True, path, repo.get("name") or os.path.basename(path)
+# --- end shared helpers ---
+
+
+target_root = git("rev-parse", "--show-toplevel") or workdir
+config = load_config(target_root)
+
+# Companion mode: the repository the hook runs in (hook_cwd) is the product checkout;
+# when its config names a companion and the command targets that companion, the
+# product's branches.* govern it — a companion never carries its own agento.json.
+product_root = run_git(hook_cwd, "rev-parse", "--show-toplevel") if isinstance(hook_cwd, str) and hook_cwd else ""
+companion_external, companion_path, target_is_companion = False, None, False
+if product_root:
+    companion_external, companion_path, _ = resolve_artifacts(product_root)
+    if companion_external and os.path.realpath(target_root) == os.path.realpath(companion_path):
+        target_is_companion = True
+        if os.path.realpath(product_root) != os.path.realpath(target_root):
+            config = load_config(product_root)
+
 default_branch = config["branches"]["default"] or "main"
 feature_prefix = config["branches"]["feature"] or "feature/"
 issue_prefix = config["branches"]["issue"] or "issue/"
@@ -337,9 +394,19 @@ for segment in segments:
         decide("deny", f"Direct commits/pushes to {default_branch} are forbidden; use a work branch and a pull request.")
 
     if is_commit and (branch.startswith(feature_prefix) or branch.startswith(issue_prefix)):
-        files = commit_files(segment)
-        if files and not any(f.endswith("roadmap.md") for f in files):
-            decide("ask", "Committing delivery work without a roadmap.md update; progress may be lost on resume. Proceed?")
+        if companion_external and not target_is_companion:
+            # The roadmap can only live in the companion: allow when its index stages a
+            # roadmap.md or its HEAD commit touched one, else nudge naming the companion.
+            recorded = (run_git(companion_path, "diff", "--cached", "--name-only") + "\n"
+                        + run_git(companion_path, "show", "--name-only", "--format=", "HEAD")).splitlines()
+            if not any(f.endswith("roadmap.md") for f in recorded if f):
+                companion_branch = run_git(companion_path, "branch", "--show-current") or "detached"
+                decide("ask", f"Committing delivery work while the companion {companion_path} (branch {companion_branch}) "
+                       "has no staged or last-committed roadmap.md change; progress may be lost on resume. Proceed?")
+        else:
+            files = commit_files(segment)
+            if files and not any(f.endswith("roadmap.md") for f in files):
+                decide("ask", "Committing delivery work without a roadmap.md update; progress may be lost on resume. Proceed?")
 
 decide("allow")
 PY
