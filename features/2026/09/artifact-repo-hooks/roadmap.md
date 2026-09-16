@@ -1,5 +1,5 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/artifact-repo-hooks
 last-updated: 2026-09-16
 next-step: ""
