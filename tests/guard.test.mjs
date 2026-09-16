@@ -207,6 +207,58 @@ test("companion: denies a default-branch refspec push reached through cd", () =>
   assert.match(denied.reason, /trunk/);
 });
 
+test("companion: roadmap nudge on a product commit inspects the companion index and HEAD", () => {
+  const { product, companion } = makeGitRepo({ companion: true });
+  const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  git(product, "switch", "-c", "feature/widget");
+  fs.writeFileSync(path.join(product, "code.js"), "export {};\n");
+  git(product, "add", "code.js");
+
+  const nudged = decide("git commit -m 'feat: widget'", { cwd: product });
+  assert.equal(nudged.decision, "ask");
+  assert.match(nudged.reason, /companion|project-docs/);
+  assert.match(nudged.reason, /roadmap\.md/);
+  assert.match(nudged.reason, /branch main/);
+
+  // Staged, uncommitted roadmap in the companion satisfies the nudge.
+  fs.mkdirSync(path.join(companion, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(companion, "add", "features/widget/roadmap.md");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "allow");
+
+  // So does a companion HEAD that touched a roadmap.
+  git(companion, "commit", "-q", "-m", "roadmap");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "allow");
+
+  // A further companion commit without a roadmap re-arms the nudge.
+  fs.writeFileSync(path.join(companion, "notes.md"), "n\n");
+  git(companion, "add", "notes.md");
+  git(companion, "commit", "-q", "-m", "notes");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "ask");
+
+  // A roadmap staged in the product tree is ignored: only the companion counts.
+  fs.mkdirSync(path.join(product, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(product, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(product, "add", "features/widget/roadmap.md");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "ask");
+});
+
+test("companion: a commit run in the companion on a delivery branch keeps today's nudge rule", () => {
+  const { product, companion } = makeGitRepo({ companion: true });
+  const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  git(companion, "switch", "-c", "feature/widget");
+  fs.writeFileSync(path.join(companion, "notes.md"), "n\n");
+  git(companion, "add", "notes.md");
+  const nudged = decide(`git -C ${companion} commit -m x`, { cwd: product });
+  assert.equal(nudged.decision, "ask");
+  assert.match(nudged.reason, /without a roadmap\.md update/);
+
+  fs.mkdirSync(path.join(companion, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(companion, "add", "features/widget/roadmap.md");
+  assert.equal(decide(`git -C ${companion} commit -m x`, { cwd: product }).decision, "allow");
+});
+
 test("allows worktree removal with no occupants", () => {
   const missing = path.join(os.tmpdir(), `agento-no-such-worktree-${process.pid}`);
   assert.equal(decide(`git worktree remove ${missing}`).decision, "allow");
