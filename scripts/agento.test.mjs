@@ -242,6 +242,268 @@ test("a managed worktree resolves the companion beside the primary checkout, not
   assert.equal(run(plan, "resolve", "feature", "alpha").json.path, path.join(docs, "features", "2026", "09", "alpha", "roadmap.md"));
 });
 
+// --- paired worktrees (companion mode) -----------------------------------------
+
+// Product `<base>/project` (worktrees in ../wt) + companion `<base>/project-docs`
+// (halves in ../project-docs-worktrees). Returns the paths the pair tests share.
+function makePairRepo(extraConfig = {}) {
+  const repo = makeRepo({ config: { worktrees: { dir: "../wt" }, artifacts: { repo: { name: "project-docs" } }, ...extraConfig }, companion: true });
+  const base = path.dirname(repo);
+  const docs = companionOf(repo);
+  const wt = path.join(base, "wt");
+  const docsWt = path.join(base, "project-docs-worktrees");
+  fs.mkdirSync(wt);
+  fs.mkdirSync(docsWt);
+  return { repo, docs, wt, docsWt };
+}
+
+const strip = (record) => {
+  const { companion, workspace, worktrees, warnings, ...rest } = record;
+  return rest;
+};
+
+test("paths in companion mode adds the companion half and the workspace file; in-repo mode reports null", () => {
+  const { repo, docsWt, wt } = makePairRepo();
+  for (const [kind, id, branch] of [["plan", "20260916-1", null], ["feature", "widget", "feature/widget"], ["issue", "bug", "issue/bug"], ["freehand", "tidy", "changes/tidy"]]) {
+    const { code, json } = run(repo, "paths", kind, id);
+    assert.equal(code, 0);
+    assert.equal(json.worktree, path.join(wt, `${kind}-${id}`));
+    assert.equal(json.branch, branch);
+    assert.deepEqual(json.companion, { worktreesDir: docsWt, worktree: path.join(docsWt, `${kind}-${id}`), branch });
+    assert.equal(json.workspace, path.join(wt, `${kind}-${id}.code-workspace`));
+  }
+  const inRepo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
+  for (const [kind, id] of [["plan", "20260916-1"], ["feature", "widget"], ["freehand", "tidy"]]) {
+    const json = run(inRepo, "paths", kind, id).json;
+    assert.equal(json.status, "ok");
+    assert.equal(json.companion, null);
+    assert.equal(json.workspace, null);
+  }
+  assert.match(run(repo).json.usage.join("\n"), /companion half and \.code-workspace/);
+});
+
+test("session from a companion half anchors on the product primary and matches the product half", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  writeRoadmap(docs, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  const product = path.join(wt, "feature-widget");
+  const half = path.join(docsWt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+
+  const fromProduct = run(product, "session").json;
+  fs.mkdirSync(path.join(half, "features"));
+  const fromHalf = run(path.join(half, "features"), "session").json;
+  assert.equal(fromProduct.role, "build");
+  assert.equal(fromHalf.role, "build");
+  assert.equal(fromHalf.root, product, "root re-anchors on the product half");
+  assert.deepEqual(strip(fromHalf), strip(fromProduct));
+  assert.deepEqual(fromHalf.worktree, fromProduct.worktree);
+  assert.equal(fromHalf.worktree.path, product);
+  assert.deepEqual(fromHalf.delivery, fromProduct.delivery);
+  assert.deepEqual(fromHalf.allowed, fromProduct.allowed);
+  assert.deepEqual(fromHalf.companion, fromProduct.companion);
+  assert.deepEqual(fromHalf.worktrees, fromProduct.worktrees);
+  assert.deepEqual(fromProduct.warnings, []);
+  assert.equal(fromHalf.warnings.length, 1);
+  assert.match(fromHalf.warnings[0], /^anchored-from-companion: .*project-docs-worktrees\/feature-widget is a companion checkout of .*project; the record describes .*wt\/feature-widget$/);
+
+  // companion / workspace describe the pair from either side.
+  assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false });
+  fs.writeFileSync(path.join(wt, "feature-widget.code-workspace"), JSON.stringify({ folders: [{ path: product }, { path: half }], settings: {} }));
+  assert.equal(run(half, "session").json.workspace.exists, true);
+
+  // worktrees[]: product entries first (primary at 0), companion entries appended with repo: companion.
+  const list = fromProduct.worktrees;
+  assert.equal(list[0].repo, "product");
+  assert.equal(list[0].isPrimary, true);
+  assert.equal(list[0].path, repo);
+  assert.deepEqual(list.map((w) => w.repo), ["product", "product", "companion", "companion"]);
+  assert.deepEqual(list[3], { path: half, branch: "feature/widget", detached: false, role: "build", dirPrefix: "feature", id: "widget", isPrimary: false, isManaged: true, repo: "companion" });
+  assert.equal(list[2].path, docs);
+  assert.equal(list[2].role, "unmanaged");
+
+  // next agrees from both halves.
+  const nextProduct = run(product, "next").json;
+  const nextHalf = run(half, "next").json;
+  assert.equal(nextProduct.next.invocation, "/agento build-feature widget");
+  assert.equal(nextHalf.next.invocation, nextProduct.next.invocation);
+  assert.equal(nextHalf.role, "build");
+  assert.ok(nextHalf.warnings.some((w) => w.startsWith("anchored-from-companion:")));
+
+  // The primary and the companion clone: primary → primary with companion: null; clone → unmanaged, anchored on the product primary.
+  const primary = run(repo, "session").json;
+  assert.equal(primary.role, "primary");
+  assert.equal(primary.companion, null);
+  assert.equal(primary.workspace, null);
+  const clone = run(docs, "session").json;
+  assert.equal(clone.role, "unmanaged");
+  assert.equal(clone.root, repo);
+  assert.match(clone.warnings[0], /^anchored-from-companion: /);
+});
+
+test("session: plan pair (both detached), half-promoted pair, and a product half without a companion half", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const plan = path.join(wt, "plan-1");
+  const planHalf = path.join(docsWt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", planHalf, "origin/main");
+
+  const both = run(plan, "session").json;
+  assert.equal(both.role, "plan");
+  assert.deepEqual(both.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, registered: true });
+  const fromHalf = run(planHalf, "session").json;
+  assert.equal(fromHalf.role, "plan");
+  assert.deepEqual(fromHalf.worktree, both.worktree);
+  assert.deepEqual(fromHalf.companion, both.companion);
+
+  // Half-promoted: the product half moves to feature/thing, the companion half stays detached.
+  git(plan, "switch", "-q", "-c", "feature/thing");
+  const promoted = run(plan, "session").json;
+  assert.equal(promoted.role, "build");
+  assert.equal(promoted.delivery.slug, "thing");
+  assert.deepEqual(promoted.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, registered: true });
+  const promotedHalf = run(planHalf, "session").json;
+  assert.equal(promotedHalf.role, "build");
+  assert.equal(promotedHalf.worktree.branch, "feature/thing");
+  assert.deepEqual(promotedHalf.delivery, promoted.delivery);
+  assert.equal(promoted.worktrees.find((w) => w.path === planHalf).role, "build");
+
+  // A product half with no companion half registered (pre-pair session).
+  const lone = path.join(wt, "feature-lone");
+  git(repo, "worktree", "add", "-q", "-b", "feature/lone", lone);
+  assert.deepEqual(run(lone, "session").json.companion, { path: path.join(docsWt, "feature-lone"), branch: null, detached: false, dirty: false, ahead: 0, registered: false });
+});
+
+test("session: an unrelated repo and an ambiguous companion stay put; a half nobody names is that repo's own managed worktree", () => {
+  const { repo, docs } = makePairRepo();
+  const base = path.dirname(repo);
+  // An unrelated sibling repository: no anchoring, no warning.
+  const other = cloneWithOrigin(base, "other");
+  const unrelated = run(other, "session").json;
+  assert.equal(unrelated.role, "primary");
+  assert.equal(unrelated.root, other);
+  assert.deepEqual(unrelated.warnings, []);
+  assert.equal(unrelated.companion, null);
+
+  // `<name>-worktrees/plan-9` under a repo no product names is simply that repo's
+  // in-repo managed worktree: today's record, no anchoring, no warning.
+  const orphanDocs = cloneWithOrigin(base, "orphan-docs");
+  const orphanHalf = path.join(base, "orphan-docs-worktrees", "plan-9");
+  fs.mkdirSync(path.dirname(orphanHalf));
+  git(orphanDocs, "worktree", "add", "-q", "--detach", orphanHalf, "origin/main");
+  const orphan = run(orphanHalf, "session").json;
+  assert.equal(orphan.role, "plan");
+  assert.equal(orphan.root, orphanHalf);
+  assert.deepEqual(orphan.warnings, []);
+  assert.equal(orphan.companion, null);
+
+  // Two products naming the same companion: ambiguous, unmanaged, warning lists both.
+  cloneWithOrigin(base, "project-two", { artifacts: { repo: { name: "project-docs" } } });
+  const ambiguous = run(docs, "session").json;
+  assert.equal(ambiguous.role, "primary", "unanchored: the clone is its own primary");
+  assert.equal(ambiguous.root, docs);
+  assert.equal(ambiguous.companion, null);
+  assert.match(ambiguous.warnings[0], /^companion-anchor: 2 sibling checkouts name .*project-docs as their artifacts\.repo \(.*project.*project-two.*\)/);
+});
+
+test("close-decision and ship-preflight report the companion half and refuse a dirty or unpushed one", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  writeRoadmap(docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  const product = path.join(wt, "feature-widget");
+  const half = path.join(docsWt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+
+  // Product half registered, no companion half yet: companion is unregistered and harmless.
+  const none = run(repo, "close-decision", "feature", "widget").json;
+  assert.equal(none.status, "ok");
+  assert.equal(none.reason, "managed-worktree-present");
+  assert.deepEqual(none.companion, { path: half, branch: null, detached: false, dirty: false, ahead: 0, registered: false });
+
+  git(docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  const clean = run(repo, "close-decision", "feature", "widget");
+  assert.equal(clean.code, 0);
+  assert.equal(clean.json.reason, "managed-worktree-present");
+  assert.equal(clean.json.owner.path, product);
+  assert.deepEqual(clean.json.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, registered: true });
+  const ship = run(repo, "ship-preflight", "feature", "widget").json;
+  assert.equal(ship.status, "ok");
+  assert.deepEqual(ship.companion, clean.json.companion);
+  assert.deepEqual(ship.companionGaps, []);
+
+  // Dirty companion half.
+  fs.writeFileSync(path.join(half, "notes.md"), "wip\n");
+  const dirty = run(repo, "close-decision", "feature", "widget");
+  assert.equal(dirty.code, 3);
+  assert.equal(dirty.json.status, "error");
+  assert.equal(dirty.json.reason, "companion-unpushed");
+  assert.equal(dirty.json.companion.dirty, true);
+  assert.equal(dirty.json.owner.path, product);
+  assert.match(dirty.json.message, /companion half at .* is dirty; commit and push it/);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, ["dirty"]);
+
+  // Committed but never pushed (no upstream): counted as unpushed.
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "notes");
+  const ahead = run(repo, "close-decision", "feature", "widget").json;
+  assert.equal(ahead.reason, "companion-unpushed");
+  assert.deepEqual([ahead.companion.dirty, ahead.companion.ahead], [false, 1]);
+  assert.match(ahead.message, /is unpushed;/);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, ["unpushed"]);
+
+  // Pushed with an upstream: clean again.
+  git(half, "push", "-q", "-u", "origin", "feature/widget");
+  assert.equal(run(repo, "close-decision", "feature", "widget").json.reason, "managed-worktree-present");
+  assert.equal(run(repo, "close-decision", "feature", "widget").json.companion.ahead, 0);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, []);
+
+  // Dirty and unpushed together.
+  fs.writeFileSync(path.join(half, "more.md"), "wip\n");
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "more");
+  fs.writeFileSync(path.join(half, "notes.md"), "edited\n");
+  const both = run(repo, "close-decision", "feature", "widget").json;
+  assert.match(both.message, /is dirty and unpushed;/);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, ["dirty", "unpushed"]);
+
+  // In-repo mode: companion null, companionGaps empty, decisions unchanged.
+  const inRepo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
+  fs.mkdirSync(path.join(path.dirname(inRepo), "wt"));
+  git(inRepo, "worktree", "add", "-q", "-b", "feature/plain", path.join(path.dirname(inRepo), "wt", "feature-plain"));
+  writeRoadmap(inRepo, "features/2026/09/plain", "status: in-review\nbranch: feature/plain\nnext-step: review");
+  const plainClose = run(inRepo, "close-decision", "feature", "plain").json;
+  assert.equal(plainClose.reason, "managed-worktree-present");
+  assert.equal(plainClose.companion, null);
+  const plainShip = run(inRepo, "ship-preflight", "feature", "plain").json;
+  assert.equal(plainShip.companion, null);
+  assert.deepEqual(plainShip.companionGaps, []);
+  // Remote-only roadmap: no owner, no companion.
+  const remoteOnly = run(repo, "close-decision", "feature", "nobody");
+  assert.equal(remoteOnly.json.status, "error");
+  assert.equal(remoteOnly.json.companion, undefined);
+});
+
+test("doctor artifact-repo warns when the companion worktrees dir exists but is not writable", () => {
+  const { repo, docsWt } = makePairRepo();
+  const { env } = restrictedPath(okStubs);
+  const check = () => byId(runWith({ cwd: repo, env }, "doctor").json)["artifact-repo"];
+  assert.equal(check().status, "ok");
+  fs.chmodSync(docsWt, 0o555);
+  try {
+    if (process.getuid?.() === 0) return; // root ignores mode bits
+    const warned = check();
+    assert.equal(warned.status, "warn");
+    assert.match(warned.detail, new RegExp(`main present; ${docsWt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} not writable$`));
+    assert.match(warned.fallback, /companion half of every paired session/);
+  } finally {
+    fs.chmodSync(docsWt, 0o755);
+  }
+  assert.equal(check().status, "ok");
+  // Absent dir: nothing to check.
+  fs.rmdirSync(docsWt);
+  assert.equal(check().status, "ok");
+});
+
 test("status lists roadmaps with progress, verdicts, and duplicate slugs", () => {
   const repo = makeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nlast-updated: 2026-09-01\nnext-step: \"1.2 todo\"");
