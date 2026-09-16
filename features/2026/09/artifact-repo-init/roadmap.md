@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/artifact-repo-init
 last-updated: 2026-09-16
-next-step: "1.3 — extend the /agento agento-init idempotency row in delivery-policy §9"
+next-step: "2.1 — update README and docs for the companion layout"
 initiative: "external-artifact-repo"
 ```
 
@@ -10,7 +10,7 @@ initiative: "external-artifact-repo"
 
 - [x] 1.1 Rewrite `.github/prompts/agento-init.prompt.md` per plan.md `## Approach` item 1 (frontmatter description; steps: primary-checkout check + `gh repo view` → ask companion name → create/adopt repository and clone `../<name>` with the marker rule → companion scaffold and bootstrap push or companion PR → companion ruleset → product `.github/agento.json` with `"repo": { "name": "<name>", "dir": null }` and no product roots → AGENTS section → `wait-for-checks.sh` → product ruleset → `agento.mjs doctor` self-check requiring `artifact-repo` `ok` → commit/PR/report with the workspace-folder reminder), keeping `Needs:`/`Fallback:`/§ lines and `/agento <name>` spelling, then `cp .github/prompts/agento-init.prompt.md commands/agento-init.md` — verify: `diff .github/prompts/agento-init.prompt.md commands/agento-init.md` prints nothing; `grep -c 'gh repo create' .github/prompts/agento-init.prompt.md` ≥ 1; `grep -c 'Create the artifact roots from the config' .github/prompts/agento-init.prompt.md` = 0; `grep -c 'artifact-repo' .github/prompts/agento-init.prompt.md` ≥ 1; `node --test tests/customizations.test.mjs` exit 0
 - [x] 1.2 Update `templates/AGENTS-section.md` (companion sentence with `<owner>/<companion>` and `../<companion>`, identical to the prompt's inline AGENTS block), add `templates/companion-README.md` (first line `<!-- agento-companion: <owner>/<repo> -->`, one paragraph, the three roots), and extend `templates/project.instructions.md` body for the companion copy with `applyTo` unchanged — verify: `grep -c '<owner>/<companion>' templates/AGENTS-section.md .github/prompts/agento-init.prompt.md commands/agento-init.md` = 1 each; `sed -n 1p templates/companion-README.md` = `<!-- agento-companion: <owner>/<repo> -->`; `grep -c 'features/\*\*,issues/\*\*,initiatives/\*\*' templates/project.instructions.md` = 1; `node --test tests/customizations.test.mjs` exit 0
-- [ ] 1.3 Extend the `/agento agento-init` row of the §9 idempotency table in `.github/instructions/delivery-policy.instructions.md` with "an existing companion repository or clone is adopted, never recreated or reset" — verify: `grep -c 'adopted, never recreated' .github/instructions/delivery-policy.instructions.md` = 1; `node --test tests/customizations.test.mjs` exit 0
+- [x] 1.3 Extend the `/agento agento-init` row of the §9 idempotency table in `.github/instructions/delivery-policy.instructions.md` with "an existing companion repository or clone is adopted, never recreated or reset" — verify: `grep -c 'adopted, never recreated' .github/instructions/delivery-policy.instructions.md` = 1; `node --test tests/customizations.test.mjs` exit 0
 
 ## Phase 2: Documentation
 
