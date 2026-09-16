@@ -14,10 +14,18 @@ function git(dir, ...args) {
 }
 
 // A working clone with a bare origin, so remote fallbacks exercise real git.
-function makeRepo({ config } = {}) {
+// `companion: true` adds a sibling `<base>/project-docs` clone (own bare origin,
+// `main` pushed) for artifacts.repo tests; the caller sets the config key.
+function makeRepo({ config, companion = false } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-cli-"));
-  const origin = path.join(base, "origin.git");
-  const work = path.join(base, "project");
+  const work = cloneWithOrigin(base, "project", config);
+  if (companion) cloneWithOrigin(base, "project-docs");
+  return work;
+}
+
+function cloneWithOrigin(base, name, config) {
+  const origin = path.join(base, `${name}.git`);
+  const work = path.join(base, name);
   execFileSync("git", ["init", "--bare", "-q", "-b", "main", origin]);
   execFileSync("git", ["clone", "-q", origin, work]);
   git(work, "config", "user.email", "test@example.com");
@@ -31,6 +39,8 @@ function makeRepo({ config } = {}) {
   git(work, "push", "-q", "-u", "origin", "main");
   return work;
 }
+
+const companionOf = (repo) => path.join(path.dirname(repo), "project-docs");
 
 function writeRoadmap(root, rel, header, steps = "- [x] 1.1 done — verify: x\n- [ ] 1.2 todo — verify: y\n") {
   const dir = path.join(root, rel);
@@ -91,6 +101,77 @@ test("config resolves the template's null worktrees.dir to an absolute sibling p
   assert.equal(json.config.worktrees.dir, path.join(path.dirname(repo), "project-worktrees"));
   assert.equal(json.config.branches.default, "main");
   assert.equal(json.pluginRoot, repoRoot);
+  // In-repo layout: the artifacts root is the checkout and artifacts.repo stays null.
+  assert.equal(json.artifactsRoot, repo);
+  assert.deepEqual(json.config.artifacts.repo, { name: null, dir: null });
+});
+
+// --- artifacts.repo (companion checkout) -------------------------------------
+
+test("config with artifacts.repo.name reports the sibling companion as artifactsRoot", () => {
+  const repo = makeRepo({ config: { artifacts: { repo: { name: "project-docs" } } }, companion: true });
+  const { code, json } = run(repo, "config");
+  assert.equal(code, 0);
+  assert.equal(json.root, repo);
+  assert.equal(json.artifactsRoot, companionOf(repo));
+  assert.deepEqual(json.config.artifacts.repo, { name: "project-docs", dir: companionOf(repo) });
+  assert.equal(json.config.artifacts.features, "features");
+
+  // dir only: name derives from the directory basename.
+  const byDir = makeRepo({ config: { artifacts: { repo: { dir: "../project-docs" } } }, companion: true });
+  assert.deepEqual(run(byDir, "config").json.config.artifacts.repo, { name: "project-docs", dir: companionOf(byDir) });
+});
+
+test("status, initiative, session, and next read the companion and ignore in-repo roots", () => {
+  const repo = makeRepo({ config: { artifacts: { repo: { name: "project-docs" } } }, companion: true });
+  const docs = companionOf(repo);
+  // Pre-migration leftovers in the product repo must not appear anywhere.
+  writeRoadmap(repo, "features/2026/09/stale", "status: in-progress\nbranch: feature/stale\nnext-step: \"1.2\"");
+  writeBreakdown(repo, "initiatives/2026/09/stale-init", null, [{ slug: "stale" }]);
+  writeRoadmap(docs, "features/2026/09/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2 todo"');
+  writeRoadmap(docs, "issues/2026/09/bug", "status: planned\nbranch: issue/bug\nnext-step: \"1.1\"");
+  writeBreakdown(docs, "initiatives/2026/09/demo", null, [{ slug: "alpha" }, { slug: "beta", requires: ["alpha"] }]);
+
+  const status = run(repo, "status");
+  assert.equal(status.code, 0);
+  assert.equal(status.json.root, repo);
+  assert.deepEqual(status.json.items.map((i) => [i.type, i.slug, i.roadmap]), [
+    ["feature", "alpha", "features/2026/09/alpha/roadmap.md"],
+    ["issue", "bug", "issues/2026/09/bug/roadmap.md"],
+  ]);
+  assert.deepEqual(status.json.resumable, ["alpha"]);
+
+  const list = run(repo, "initiative");
+  assert.deepEqual(list.json.items.map((i) => [i.slug, i.dir, i.total, i.inFlight]), [["demo", "initiatives/2026/09/demo", 2, 1]]);
+  const demo = run(repo, "initiative", "demo");
+  assert.equal(demo.code, 0);
+  assert.equal(demo.json.initiative.breakdown, "initiatives/2026/09/demo/breakdown.md");
+  assert.deepEqual(demo.json.features.map((f) => [f.slug, f.state]), [["alpha", "in-progress"], ["beta", "unplanned"]]);
+  assert.equal(run(repo, "initiative", "stale-init").json.status, "missing");
+
+  const session = run(repo, "session").json;
+  assert.equal(session.role, "primary");
+  assert.equal(session.root, repo);
+
+  const next = run(repo, "next");
+  assert.equal(next.code, 3);
+  assert.equal(next.json.status, "ambiguous");
+  assert.deepEqual(next.json.candidates.map((c) => c.slug).sort(), ["alpha", "bug"]);
+  const alpha = run(repo, "next", "alpha");
+  assert.equal(alpha.code, 0);
+  assert.equal(alpha.json.next.invocation, "/agento start-session feature/alpha");
+  assert.equal(run(repo, "next", "stale").json.status, "missing");
+
+  // A worktree on the delivery branch reads the same companion roadmap as its delivery.
+  const wt = path.join(path.dirname(repo), "project-worktrees", "feature-alpha");
+  git(repo, "worktree", "add", "-q", "-b", "feature/alpha", wt);
+  const build = run(wt, "session").json;
+  assert.equal(build.role, "build");
+  assert.equal(build.delivery.slug, "alpha");
+  assert.equal(build.delivery.roadmap, "features/2026/09/alpha/roadmap.md");
+  assert.equal(build.delivery.status, "in-progress");
+  assert.equal(build.lifecycle, "building");
+  assert.equal(run(wt, "next").json.next.invocation, "/agento build-feature alpha");
 });
 
 test("status lists roadmaps with progress, verdicts, and duplicate slugs", () => {
