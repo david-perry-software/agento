@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/artifact-repo-init
 last-updated: 2026-09-16
 next-step: "1.1 — rewrite agento-init.prompt.md for the companion flow and mirror it to commands/"
