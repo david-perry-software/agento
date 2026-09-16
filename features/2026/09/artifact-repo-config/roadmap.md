@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/artifact-repo-config
 last-updated: 2026-09-15
-next-step: "4.3 merge origin/main, push, set status: in-review"
+next-step: ""
 initiative: "external-artifact-repo"
 ```
 
@@ -27,4 +27,4 @@ initiative: "external-artifact-repo"
 
 - [x] 4.1 Manual smoke in a throwaway pair outside the repo: `mkdir -p /tmp/arc && cd /tmp/arc && git init -b main product && git init -b main product-docs && git -C product-docs commit --allow-empty -m init && git -C product-docs remote add origin /tmp/arc/product-docs.git` (plus `git init --bare product-docs.git` and a push), write `.github/agento.json` with `{"artifacts":{"repo":{"name":"product-docs"}}}` in `product`, then run `node <worktree>/scripts/agento.mjs config`, `doctor`, `status`, `paths feature demo` from `product`; then `mv product-docs product-docs.off` and rerun `doctor` — verify: `config.artifactsRoot` is `/tmp/arc/product-docs`; first `doctor` exit 0 with `artifact-repo` `ok`; second `doctor` exit 3 with `artifact-repo` `fail` and a fallback naming `/agento agento-init`; record the four JSON outputs (trimmed) in the commit message body or `evidence/step-4-1-smoke.md` — recorded in [evidence/step-4-1-smoke.md](evidence/step-4-1-smoke.md) (2026-09-15; `doctor --for close-session` exit 0 then exit 3 — the unscoped `doctor` exits 3 in both states because the recipe's `product` repo has no `origin`, unrelated to this check; the guard denied the companion `main` push so `refs/heads/main` stood in for `origin/main`)
 - [x] 4.2 Full lint gate equal to baseline (plan.md `## Research`): `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`, `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` (no output redirection — the guard blocks it), `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`; record the three exit codes and the pass/fail counts on this line — recorded 2026-09-15 at `b663785`: `node --test` exit 0, `# tests 153`, `# pass 153`, `# fail 0` (baseline 141/141/0); `shellcheck` exit 0, no output; `replay-guard.sh` exit 0 — verify: all three exit 0, `# fail 0`, test count ≥ 141
-- [ ] 4.3 Integrate `origin/main` by merge, push, and set the roadmap to `status: in-review` with `next-step: ""` — verify: `git status` clean, `git log origin/main..HEAD` shows only this feature's commits, `node scripts/agento.mjs session` reports `lifecycle: in-review`
+- [x] 4.3 Integrate `origin/main` by merge, push, and set the roadmap to `status: in-review` with `next-step: ""` — verify: `git status` clean, `git log origin/main..HEAD` shows only this feature's commits, `node scripts/agento.mjs session` reports `lifecycle: in-review`
