@@ -54,9 +54,13 @@ Plugins installed through the CLI are also discovered by VS Code.
 
 ## First run in a project
 
-Open your project and run `/agento agento-init`. It scaffolds `.github/agento.json`,
-`features/` + `issues/`, an `## Agento` section in your `AGENTS.md`, and
-`scripts/wait-for-checks.sh`, then commits them on a `changes/agento-init` branch.
+Open your project and run `/agento agento-init`. It creates the companion artifact
+repository `<repo>-docs` on GitHub (same owner and visibility as your project),
+clones it to `../<repo>-docs` with `features/`, `issues/`, and `initiatives/`
+inside, then scaffolds `.github/agento.json` pointing at it, an `## Agento` section
+in your `AGENTS.md`, and `scripts/wait-for-checks.sh`, and commits those on a
+`changes/agento-init` branch. Add the companion folder to your VS Code workspace so
+its artifact-format instructions load.
 
 ## Verifying the install
 
@@ -66,8 +70,9 @@ Open your project and run `/agento agento-init`. It scaffolds `.github/agento.js
   `Agento CLI: node .../scripts/agento.mjs` line.
 - `git push origin main` typed by the agent is denied by the delivery guard.
 - The default branch has a GitHub ruleset (require PR, required checks, no force
-  push, no deletion) — `/agento agento-init` checks and offers to create one. The guard
-  alone is not protection.
+  push, no deletion) — `/agento agento-init` checks and offers to create one, and
+  protects the companion's default branch the same way. The guard alone is not
+  protection.
 
 ## Updating
 

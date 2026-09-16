@@ -2,7 +2,7 @@
 
 | Command | Agent | Purpose |
 |---|---|---|
-| `/agento agento-init` | default | Scaffold Agento into the current project (config, artifact dirs, AGENTS.md section, CI poller) |
+| `/agento agento-init` | default | Scaffold Agento into the current project (companion artifact repository created and cloned, config, AGENTS.md section, CI poller) |
 | `/agento install-skills` | default | Detect the project stack, propose matching agent skills, install approved ones, update the AGENTS.md skills table |
 | `/agento start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
 | `/agento new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |

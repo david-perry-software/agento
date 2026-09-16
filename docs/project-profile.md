@@ -29,9 +29,9 @@ entirely for defaults.
 
 | Key | Default | Effect |
 |---|---|---|
-| `artifacts.features` / `artifacts.issues` | `features` / `issues` | Where plan/roadmap/review live. If changed, also copy `templates/project.instructions.md` (done by `/agento agento-init`). |
-| `artifacts.initiatives` | `initiatives` | Where initiative `brief.md` + `breakdown.md` live; `agento.mjs initiative` walks this root. Same `project.instructions.md` note applies. |
-| `artifacts.repo.name` | `null` | Name of a sibling **companion repository** that holds the artifact roots instead of this repository. Setting it (or `dir`) switches every `agento.mjs` reader to the companion checkout; `null` for both = in-repo layout, byte-for-byte today's behaviour. Defaults to the basename of `dir` when only `dir` is set. |
+| `artifacts.features` / `artifacts.issues` | `features` / `issues` | Where plan/roadmap/review live, inside the companion checkout. If changed, also adjust the companion's `.github/instructions/agento.instructions.md` `applyTo` (copied from `templates/project.instructions.md` by `/agento agento-init`). |
+| `artifacts.initiatives` | `initiatives` | Where initiative `brief.md` + `breakdown.md` live; `agento.mjs initiative` walks this root. Same `agento.instructions.md` note applies. |
+| `artifacts.repo.name` | `null` | Name of a sibling **companion repository** that holds the artifact roots instead of this repository; set by `/agento agento-init` (default `<repo>-docs`). Setting it (or `dir`) switches every `agento.mjs` reader to the companion checkout; `null` for both = the in-repo layout of projects initialised before the companion existed. Defaults to the basename of `dir` when only `dir` is set. |
 | `artifacts.repo.dir` | `../<name>` | Path of the companion checkout, resolved against the **primary** checkout (like `worktrees.dir`), so every managed worktree reads the same sibling clone. When set, the in-repo `features/`, `issues/`, and `initiatives/` directories are ignored; `doctor` (`artifact-repo` check) fails when the checkout is missing, not a git toplevel, has no `origin`, or lacks `branches.default`, and warns about stale in-repo roots. |
 | `worktrees.dir` | `../<repo-name>-worktrees` | Managed worktree parent. `null` = derive from the repo directory name. |
 | `branches.default` | `main` | Protected branch: the guard denies direct commits/pushes to it. |
@@ -41,8 +41,9 @@ entirely for defaults.
 
 When `artifacts.repo` is set, the editor only sees the companion's files if the
 primary VS Code window adds the companion checkout as a workspace folder (*File →
-Add Folder to Workspace…*). `doctor` cannot detect this: the hook payload carries the
-working directory but no list of workspace folders, so keep the folder added by hand.
+Add Folder to Workspace…*); `/agento agento-init`'s report reminds you. `doctor`
+cannot detect this: the hook payload carries the working directory but no list of
+workspace folders, so keep the folder added by hand.
 
 ## `AGENTS.md` `## Agento` section — narrative
 

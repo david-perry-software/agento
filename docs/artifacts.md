@@ -1,10 +1,13 @@
 # Delivery artifacts
 
-Each planned unit of work gets an immutable creation-month directory in the target
-repository: `features/YYYY/MM/<slug>/` or `issues/YYYY/MM/<slug>/` (roots are
-configurable in `.github/agento.json`; when `artifacts.repo` is set they live in the
-sibling companion checkout it names instead, and any in-repo copies are ignored). A
-large brief that decomposes into several features gets an initiative directory,
+Each planned unit of work gets an immutable creation-month directory in the
+**companion repository** that `/agento agento-init` creates and clones as a sibling
+of the product checkout (`../<repo>-docs`, named by `.github/agento.json`
+`artifacts.repo.name`): `features/YYYY/MM/<slug>/` or `issues/YYYY/MM/<slug>/`
+(roots are configurable). Projects initialised before the companion existed keep
+the roots inside the product repository (`artifacts.repo` unset); once
+`artifacts.repo` is set, any in-repo copies are ignored. A large brief that
+decomposes into several features gets an initiative directory,
 `initiatives/YYYY/MM/<slug>/`.
 
 | File | Written by | Purpose |
@@ -37,9 +40,10 @@ Key rules:
 
 The exact contract — section order, YAML fields, checkbox syntax — is enforced by
 `.github/instructions/delivery-artifacts.instructions.md`, which loads for every
-file under the artifact roots. If you customize the roots, copy
-`templates/project.instructions.md` into your repo (done automatically by
-`/agento agento-init`) so the contract keeps applying.
+file under the artifact roots. `/agento agento-init` copies it into the companion
+repository as `.github/instructions/agento.instructions.md` (frontmatter from
+`templates/project.instructions.md`, `applyTo` matching your roots) so the contract
+keeps applying when the companion folder is in the workspace.
 
 ## Freehand work
 

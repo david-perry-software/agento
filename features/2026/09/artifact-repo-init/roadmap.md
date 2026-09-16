@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/artifact-repo-init
 last-updated: 2026-09-16
-next-step: "2.1 — update README and docs for the companion layout"
+next-step: "2.2 — CHANGELOG bullet for the companion-creating agento-init"
 initiative: "external-artifact-repo"
 ```
 
@@ -14,7 +14,7 @@ initiative: "external-artifact-repo"
 
 ## Phase 2: Documentation
 
-- [ ] 2.1 Update README.md (set-up table rows and ruleset sentence at L127–141, flow-table row at L381), docs/install.md (L57–59, L68–70), docs/commands.md (L5), docs/project-profile.md (L32, L34, L42–45), and docs/artifacts.md (L3–8, L39–42) per plan.md `## Approach` item 4 — verify: `grep -c 'companion' README.md docs/install.md docs/commands.md docs/project-profile.md docs/artifacts.md` ≥ 1 each; `grep -c 'Artifact roots (with `.gitkeep`)' README.md` = 0; `grep -c 'features/` + `issues/`' docs/install.md` = 0; `node --test tests/customizations.test.mjs` exit 0
+- [x] 2.1 Update README.md (set-up table rows and ruleset sentence at L127–141, flow-table row at L381), docs/install.md (L57–59, L68–70), docs/commands.md (L5), docs/project-profile.md (L32, L34, L42–45), and docs/artifacts.md (L3–8, L39–42) per plan.md `## Approach` item 4 — verify: `grep -c 'companion' README.md docs/install.md docs/commands.md docs/project-profile.md docs/artifacts.md` ≥ 1 each; `grep -c 'Artifact roots (with `.gitkeep`)' README.md` = 0; `grep -c 'features/` + `issues/`' docs/install.md` = 0; `node --test tests/customizations.test.mjs` exit 0
 - [ ] 2.2 Add the `/agento agento-init` companion bullet under `## Unreleased` in CHANGELOG.md — verify: `awk '/^## Unreleased/,/^## 0\.4\.1/' CHANGELOG.md | grep -c 'agento-init'` ≥ 1; `node --test tests/customizations.test.mjs` exit 0
 
 ## Phase 3: End-to-end smoke and gate

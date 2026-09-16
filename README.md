@@ -131,14 +131,15 @@ It scaffolds, on a `changes/agento-init` branch with a PR:
 
 | Created | Purpose |
 |---|---|
-| `.github/agento.json` | Machine-readable config: artifact roots, worktree dir, branch names, optional release workflow |
-| `features/`, `issues/` | Artifact roots (with `.gitkeep`) |
+| `../<repo>-docs` companion repository (created on GitHub with the product's owner and visibility, cloned as a sibling) | Artifact roots `features/`, `issues/`, `initiatives/` (with `.gitkeep`), a README, and the artifact-format instructions; an existing companion is adopted, never recreated |
+| `.github/agento.json` | Machine-readable config: `artifacts.repo.name` pointing at the companion, artifact roots, worktree dir, branch names, optional release workflow |
 | `AGENTS.md` `## Agento` section | Your project's facts for the agents: install/test/lint/typecheck commands, how to verify locally, shared resources, the skills table |
 | `scripts/wait-for-checks.sh` | Bounded CI poller the prompts use instead of `gh … --watch` |
 
-It also checks whether your default branch has a **GitHub ruleset** (require PR,
-required checks, no force-push, no deletion) and offers to create one. Say yes — the
-delivery guard alone is not protection.
+It also protects the default branch of both repositories with a **GitHub ruleset**
+(require PR, no force-push, no deletion; required checks on the product repo): the
+companion's is created right after its bootstrap commit, the product's is offered
+after a check. Say yes — the delivery guard alone is not protection.
 
 Then, optionally:
 
@@ -378,7 +379,7 @@ Mechanic.
 
 | Command | Window | Agent | Purpose |
 |---|---|---|---|
-| `/agento agento-init [--force]` | primary | default | Scaffold config, artifact roots, AGENTS.md section, CI poller; check for a ruleset |
+| `/agento agento-init [--force]` | primary | default | Create and clone the companion artifact repository, scaffold config, AGENTS.md section, CI poller; check for rulesets |
 | `/agento install-skills` | primary | default | Detect stack, propose skills, install approved ones, update the skills table |
 | `/agento start-session [type/slug \| id] [--resume] [--no-open]` | primary | default | Create/resume a planning or build worktree and open a window |
 | `/agento new-feature <description>` | secondary | 📋 Planner | Clarify, research, plan, branch, draft PR |
