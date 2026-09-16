@@ -6,7 +6,7 @@ const CONFIG_RELATIVE_PATHS = [".github/agento.json", "agento.json"];
 export function defaultConfig(rootDir) {
   const repoName = path.basename(path.resolve(rootDir));
   return {
-    artifacts: { features: "features", issues: "issues", initiatives: "initiatives" },
+    artifacts: { features: "features", issues: "issues", initiatives: "initiatives", repo: { name: null, dir: null } },
     worktrees: { dir: path.join("..", `${repoName}-worktrees`) },
     branches: {
       default: "main",
@@ -45,4 +45,16 @@ export function loadAgentoConfig(rootDir) {
     return { config: mergeConfig(defaults, parsed), source: file };
   }
   return { config: defaults, source: null };
+}
+
+// Where delivery artifacts live. `artifacts.repo` unset (both null) keeps the
+// in-repo layout: `root` is the checkout itself. A non-null `name` or `dir`
+// selects a sibling companion checkout, resolved against the primary checkout
+// (like worktrees.dir) so managed worktrees never point into the worktrees dir.
+export function resolveArtifactsRoot({ config, rootDir, primaryRoot = rootDir }) {
+  const repo = config.artifacts?.repo ?? {};
+  if (repo.name == null && repo.dir == null) return { external: false, name: null, dir: null, root: rootDir };
+  const dir = path.resolve(primaryRoot, repo.dir ?? path.join("..", repo.name));
+  const name = repo.name ?? path.basename(dir);
+  return { external: true, name, dir, root: dir };
 }
