@@ -649,12 +649,14 @@ switch (command) {
     if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("paths kind must be feature, issue, plan, or freehand");
     requireSlug(id);
     const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
+    const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
     emit({
       status: "ok",
       worktreesDir,
       worktree: path.join(worktreesDir, `${kind}-${id}`),
       branch: kind === "plan" ? null : `${prefixes[kind]}${id}`,
-      artifactRoot: kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null,
+      artifactsRoot,
+      artifactRoot: artifactRel === null ? null : path.join(artifactsRoot, artifactRel),
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
     });

@@ -295,12 +295,32 @@ test("paths and ports derive from config and are stable", () => {
   assert.equal(json.worktree, path.join(path.dirname(repo), "wt", "feature-widget"));
   assert.equal(json.defaultBranch, "trunk");
   assert.equal(json.postShipBranch, "post-ship/widget");
+  // In-repo layout: absolute artifact roots under the checkout itself.
+  assert.equal(json.artifactsRoot, repo);
+  assert.equal(json.artifactRoot, path.join(repo, "features"));
+  assert.equal(run(repo, "paths", "issue", "bug").json.artifactRoot, path.join(repo, "issues"));
+  assert.equal(run(repo, "paths", "plan", "20260914-1").json.artifactRoot, null);
+  assert.equal(run(repo, "paths", "freehand", "tidy").json.artifactRoot, null);
 
   const a = run(repo, "ports", "widget").json;
   const b = run(repo, "ports", "widget").json;
   assert.deepEqual(a, b);
   assert.ok(a.WEB_PORT >= 3100 && a.WEB_PORT < 3190);
   assert.equal(a.API_PORT - a.WEB_PORT, 1000);
+});
+
+test("paths places artifactRoot under the companion checkout when artifacts.repo is set", () => {
+  const repo = makeRepo({ config: { artifacts: { issues: "tracker/issues", repo: { name: "project-docs" } } }, companion: true });
+  const docs = companionOf(repo);
+  const feature = run(repo, "paths", "feature", "widget").json;
+  assert.equal(feature.artifactsRoot, docs);
+  assert.equal(feature.artifactRoot, path.join(docs, "features"));
+  // Worktrees stay beside the product repo, not the companion.
+  assert.equal(feature.worktreesDir, path.join(path.dirname(repo), "project-worktrees"));
+  assert.equal(run(repo, "paths", "issue", "bug").json.artifactRoot, path.join(docs, "tracker", "issues"));
+  const plan = run(repo, "paths", "plan", "20260914-1").json;
+  assert.equal(plan.artifactsRoot, docs);
+  assert.equal(plan.artifactRoot, null);
 });
 
 test("usage errors exit 1 and never throw", () => {
