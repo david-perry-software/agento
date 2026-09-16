@@ -24,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadAgentoConfig } from "./agento-config.mjs";
+import { loadAgentoConfig, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
   closeBuildSessionDecision,
   evaluateShipPreflight,
@@ -80,6 +80,27 @@ const gitAdapter = {
   lsTree: (ref) => git(root, "ls-tree", "-r", "--name-only", ref),
   show: (spec) => git(root, "show", spec),
 };
+
+// Artifact roots may live in a sibling companion checkout (artifacts.repo). Like
+// worktrees.dir, the path is relative to the primary checkout and read from the
+// primary's config when this root is a secondary worktree. Unset → the checkout
+// itself, with no extra git call.
+function resolveArtifacts() {
+  const repo = config.artifacts.repo ?? {};
+  if (repo.name == null && repo.dir == null) return resolveArtifactsRoot({ config, rootDir: root });
+  const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+  const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
+  return resolveArtifactsRoot({ config: primaryConfig, rootDir: root, primaryRoot });
+}
+const artifacts = resolveArtifacts();
+const artifactsRoot = artifacts.root;
+const artifactsGit = artifacts.external
+  ? {
+      lsTree: (ref) => git(artifactsRoot, "ls-tree", "-r", "--name-only", ref),
+      show: (spec) => git(artifactsRoot, "show", spec),
+    }
+  : gitAdapter;
+const agit = (...args) => git(artifactsRoot, ...args);
 
 function requireType(type) {
   if (type !== "feature" && type !== "issue") usage(`type must be feature or issue, got ${JSON.stringify(type ?? "")}`);
@@ -144,7 +165,7 @@ function describeContent({ type, dir, roadmap, content, planExists, reviewConten
 
 function describe(file, type) {
   const dir = path.dirname(file);
-  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  const rel = (p) => path.relative(artifactsRoot, p).split(path.sep).join("/");
   const review = path.join(dir, "review.md");
   return describeContent({
     type,
@@ -159,17 +180,17 @@ function describe(file, type) {
 // The same record read from a git ref (`origin/<branch>` or a local branch), for
 // roadmaps that exist only on a delivery branch. `roadmap` is repository-relative.
 function describeFromRef(ref, roadmap, type) {
-  const content = git(root, "show", `${ref}:${roadmap}`);
+  const content = agit("show", `${ref}:${roadmap}`);
   if (!content) return null;
   const dir = path.posix.dirname(roadmap);
-  const tree = new Set(git(root, "ls-tree", "--name-only", ref, `${dir}/`).split("\n").filter(Boolean));
+  const tree = new Set(agit("ls-tree", "--name-only", ref, `${dir}/`).split("\n").filter(Boolean));
   return describeContent({
     type,
     dir,
     roadmap,
     content,
     planExists: tree.has(`${dir}/plan.md`),
-    reviewContent: tree.has(`${dir}/review.md`) ? git(root, "show", `${ref}:${dir}/review.md`) : null,
+    reviewContent: tree.has(`${dir}/review.md`) ? agit("show", `${ref}:${dir}/review.md`) : null,
   });
 }
 
@@ -177,7 +198,7 @@ function allRoadmaps(typeFilter) {
   const out = [];
   for (const type of ["feature", "issue"]) {
     if (typeFilter && type !== typeFilter) continue;
-    const base = path.join(root, type === "feature" ? config.artifacts.features : config.artifacts.issues);
+    const base = path.join(artifactsRoot, type === "feature" ? config.artifacts.features : config.artifacts.issues);
     for (const file of walkRoadmaps(base)) out.push(describe(file, type));
   }
   return out;
@@ -281,14 +302,56 @@ const DOCTOR_CHECKS = {
       return { status: "fail", detail: `${dir} not writable (${existing} denies write)`, fallback: "create the directory with write permission or change worktrees.dir in .github/agento.json" };
     }
   },
+  "artifact-repo"() {
+    if (!artifacts.external) return { status: "ok", detail: "in-repo layout (artifacts.repo unset)", fallback: null };
+    const { name, dir } = artifacts;
+    const fallback = `run \`/agento agento-init\` to create and clone the companion repository ${name} at ${dir}, or correct artifacts.repo in .github/agento.json`;
+    const fail = (detail) => ({ status: "fail", detail, fallback });
+    if (!fs.existsSync(dir)) return fail(`${dir} absent`);
+    const toplevel = git(dir, "rev-parse", "--show-toplevel");
+    if (!toplevel || fs.realpathSync(toplevel) !== fs.realpathSync(dir)) return fail(`${dir} is not a git checkout toplevel (git rev-parse --show-toplevel → ${toplevel || "nothing"})`);
+    const url = git(dir, "remote", "get-url", "origin");
+    if (!url) return fail(`${dir} has no \`origin\` remote`);
+    const branch = config.branches.default;
+    if (!git(dir, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`) && !git(dir, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
+      return fail(`${dir} has neither origin/${branch} nor ${branch}`);
+    }
+    const detail = `${dir} (${name}), origin ${url}, ${branch} present`;
+    // Pre-migration leftovers in the product repo are ignored by every reader; say so once.
+    const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+    const stale = [config.artifacts.features, config.artifacts.issues, config.artifacts.initiatives].filter((rel) => holdsArtifacts(path.join(primaryRoot, rel)));
+    return stale.length
+      ? { status: "warn", detail: `${detail}; stale in-repo roots: ${stale.map((r) => `${r}/`).join(", ")}`, fallback: "the in-repo roots are ignored while artifacts.repo is set; move them into the companion (`/agento agento-init --migrate`) or remove them" }
+      : { status: "ok", detail, fallback: null };
+  },
 };
+
+// A root still holds artifacts when any file other than the scaffold's .gitkeep is under it.
+function holdsArtifacts(base) {
+  if (!fs.existsSync(base)) return false;
+  const stack = [base];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) stack.push(path.join(current, entry.name));
+      else if (entry.name !== ".gitkeep") return true;
+    }
+  }
+  return false;
+}
 
 const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
 
 // Capability vocabulary (delivery-policy §10) in canonical order, each mapped to the
 // doctor checks that prove it. Chat-tool capabilities have no CLI-side check.
 const CAPABILITY_CHECKS = {
-  terminal: ["node", "python3", "worktrees-dir"],
+  terminal: ["node", "python3", "worktrees-dir", "artifact-repo"],
   "ask-questions": [],
   browser: [],
   gh: ["gh"],
@@ -354,7 +417,7 @@ function slugList(value) {
 function parseBreakdown(file) {
   const content = fs.readFileSync(file, "utf8");
   const dir = path.dirname(file);
-  const rel = (p) => path.relative(root, p).split(path.sep).join("/");
+  const rel = (p) => path.relative(artifactsRoot, p).split(path.sep).join("/");
   const features = [];
   let inFeatures = false;
   let current = null;
@@ -406,7 +469,7 @@ function mergedAnomalies(features) {
 }
 
 function allBreakdowns() {
-  const base = path.join(root, config.artifacts.initiatives);
+  const base = path.join(artifactsRoot, config.artifacts.initiatives);
   return [...walkBreakdowns(base)].sort().map(parseBreakdown);
 }
 
@@ -496,8 +559,8 @@ function deriveInitiative(breakdown, roadmaps) {
 // The ref a delivery branch is judged from: origin/<branch> when fetched, else the
 // local branch (with a warning: no fetch happens here), else HEAD.
 function refFor(branch) {
-  if (branch && git(root, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) return { ref: `origin/${branch}`, warning: null };
-  if (branch && git(root, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
+  if (branch && agit("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) return { ref: `origin/${branch}`, warning: null };
+  if (branch && agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
     return { ref: branch, warning: `${branch}: origin/${branch} is absent, so review freshness and roadmap state reflect the local branch as of the last fetch` };
   }
   return { ref: "HEAD", warning: null };
@@ -507,24 +570,24 @@ function refFor(branch) {
 // touched anything else on the branch; null when the branch has no review.md.
 function reviewFreshness(branch, dir) {
   const { ref, warning } = refFor(branch);
-  const reviewTs = git(root, "log", "-1", "--format=%ct", ref, "--", `${dir}/review.md`);
+  const reviewTs = agit("log", "-1", "--format=%ct", ref, "--", `${dir}/review.md`);
   if (!reviewTs) return { reviewFresh: null, ref, warning };
-  const otherTs = git(root, "log", "-1", "--format=%ct", ref, "--", ".", `:(exclude)${dir}/review.md`);
+  const otherTs = agit("log", "-1", "--format=%ct", ref, "--", ".", `:(exclude)${dir}/review.md`);
   return { reviewFresh: Number(reviewTs) >= Number(otherTs || 0), ref, warning };
 }
 
 // A roadmap that lives only on its delivery branch: origin/<branch> first (via the
 // shared resolver), then the unpushed local branch. Never fetches.
 function roadmapOnBranch(type, slug) {
-  const resolved = resolveRoadmapArtifact({ rootDir: root, type, slug, currentBranch, git: gitAdapter, config });
+  const resolved = resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config });
   if (resolved.status === "ok" && resolved.source === "remote") {
     const record = describeFromRef(`origin/${resolved.branch}`, resolved.path, type);
     if (record) return { record, source: "origin" };
   }
   const branch = `${type === "feature" ? config.branches.feature : config.branches.issue}${slug}`;
-  if (!git(root, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
+  if (!agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
   const top = type === "feature" ? config.artifacts.features : config.artifacts.issues;
-  const roadmap = git(root, "ls-tree", "-r", "--name-only", branch)
+  const roadmap = agit("ls-tree", "-r", "--name-only", branch)
     .split("\n")
     .find((p) => p.startsWith(`${top}/`) && p.endsWith(`/${slug}/roadmap.md`));
   if (!roadmap) return null;
@@ -559,14 +622,15 @@ switch (command) {
       configSource: source,
       pluginRoot: PLUGIN_ROOT,
       currentBranch,
-      config: { ...config, worktrees: { dir: worktreesDir } },
+      artifactsRoot,
+      config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: worktreesDir } },
     });
     break;
 
   case "resolve": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(resolveRoadmapArtifact({ rootDir: root, type, slug, currentBranch, git: gitAdapter, config }));
+    withExit(resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config }));
     break;
   }
 
@@ -574,7 +638,7 @@ switch (command) {
     const slug = requireSlug(rest[0]);
     const results = ["feature", "issue"].map((type) => ({
       type,
-      ...resolveRoadmapArtifact({ rootDir: root, type, slug, currentBranch, git: gitAdapter, config }),
+      ...resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config }),
     }));
     const found = results.filter((r) => r.status !== "missing");
     if (found.length === 0) withExit({ status: "missing", message: `No roadmap for slug ${slug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin.` });
@@ -599,14 +663,14 @@ switch (command) {
   case "close-decision": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: gitAdapter, rootDir: root, config }));
+    withExit(closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: artifactsGit, rootDir: root, artifactsRoot, config }));
     break;
   }
 
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(evaluateShipPreflight({ type, slug, rootDir: root, currentBranch, git: gitAdapter, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
+    withExit(evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
     break;
   }
 
@@ -627,12 +691,14 @@ switch (command) {
     if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("paths kind must be feature, issue, plan, or freehand");
     requireSlug(id);
     const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
+    const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
     emit({
       status: "ok",
       worktreesDir,
       worktree: path.join(worktreesDir, `${kind}-${id}`),
       branch: kind === "plan" ? null : `${prefixes[kind]}${id}`,
-      artifactRoot: kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null,
+      artifactsRoot,
+      artifactRoot: artifactRel === null ? null : path.join(artifactsRoot, artifactRel),
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
     });

@@ -27,10 +27,12 @@ function branchOwner({ worktreeList, branch, rootDir, config }) {
   return findOwner({ worktrees, worktreesDir, branch, config });
 }
 
-export function findLocalRoadmaps({ rootDir, type, slug, config }) {
+// `artifactsRoot` is where the artifact directories live (the companion checkout
+// when artifacts.repo is set); `rootDir` stays the product repository.
+export function findLocalRoadmaps({ rootDir, artifactsRoot = rootDir, type, slug, config }) {
   const cfg = config ?? loadAgentoConfig(rootDir).config;
   const roots = artifactRoots(cfg);
-  const baseDirs = [...new Set(Object.values(roots))].map((rel) => path.join(rootDir, rel));
+  const baseDirs = [...new Set(Object.values(roots))].map((rel) => path.join(artifactsRoot, rel));
   const matches = [];
 
   for (const base of baseDirs) {
@@ -58,7 +60,7 @@ export function findLocalRoadmaps({ rootDir, type, slug, config }) {
         const parentName = path.basename(parent);
         if (parentName !== slug) continue;
 
-        const rel = path.relative(rootDir, parent).split(path.sep).join("/");
+        const rel = path.relative(artifactsRoot, parent).split(path.sep).join("/");
         if (!rel) continue;
         const kind = rel.split("/").slice(0, roots[type].split("/").length).join("/");
         if (kind !== roots[type]) continue;
@@ -115,12 +117,12 @@ function normalizeGitPaths(raw, expectedTop, slug) {
   return paths;
 }
 
-export function resolveRoadmapArtifact({ rootDir, type, slug, currentBranch, git, config }) {
+export function resolveRoadmapArtifact({ rootDir, artifactsRoot = rootDir, type, slug, currentBranch, git, config }) {
   const cfg = config ?? loadAgentoConfig(rootDir).config;
   const roots = artifactRoots(cfg);
   const expectedBranch = `${branchPrefix(cfg, type)}${slug}`;
   const expectedLabel = `${type}/${slug}`;
-  const localMatches = findLocalRoadmaps({ rootDir, type, slug, config: cfg });
+  const localMatches = findLocalRoadmaps({ rootDir, artifactsRoot, type, slug, config: cfg });
 
   if (localMatches.length > 1) {
     return {
@@ -195,11 +197,12 @@ export function resolveRoadmapArtifact({ rootDir, type, slug, currentBranch, git
   };
 }
 
-export function closeBuildSessionDecision({ type, slug, currentBranch, worktreeList, git, rootDir, config }) {
+export function closeBuildSessionDecision({ type, slug, currentBranch, worktreeList, git, rootDir, artifactsRoot, config }) {
   const effectiveRoot = rootDir ?? process.cwd();
   const cfg = config ?? loadAgentoConfig(effectiveRoot).config;
   const result = resolveRoadmapArtifact({
     rootDir: effectiveRoot,
+    artifactsRoot: artifactsRoot ?? effectiveRoot,
     type,
     slug,
     currentBranch,
@@ -256,10 +259,11 @@ export function closeBuildSessionDecision({ type, slug, currentBranch, worktreeL
   };
 }
 
-export function evaluateShipPreflight({ type, slug, rootDir, currentBranch, git, config, worktreeList }) {
+export function evaluateShipPreflight({ type, slug, rootDir, artifactsRoot = rootDir, currentBranch, git, config, worktreeList }) {
   const cfg = config ?? loadAgentoConfig(rootDir).config;
   const result = resolveRoadmapArtifact({
     rootDir,
+    artifactsRoot,
     type,
     slug,
     currentBranch,

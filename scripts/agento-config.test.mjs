@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { defaultConfig, loadAgentoConfig } from "./agento-config.mjs";
+import { defaultConfig, loadAgentoConfig, resolveArtifactsRoot } from "./agento-config.mjs";
 
 function tmpRoot(prefix = "agento-config-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -17,6 +17,7 @@ test("defaults derive the worktree dir from the repository directory name", () =
   assert.equal(config.artifacts.features, "features");
   assert.equal(config.artifacts.issues, "issues");
   assert.equal(config.artifacts.initiatives, "initiatives");
+  assert.deepEqual(config.artifacts.repo, { name: null, dir: null });
   assert.equal(config.branches.default, "main");
   assert.equal(config.branches.feature, "feature/");
   assert.equal(config.branches.freehand, "changes/");
@@ -80,6 +81,7 @@ test("the shipped templates/agento.json loads without clobbering defaults", () =
   assert.equal(config.branches.default, "main");
   assert.equal(config.artifacts.features, "features");
   assert.equal(config.artifacts.initiatives, "initiatives");
+  assert.deepEqual(config.artifacts.repo, { name: null, dir: null });
 });
 
 test("a root-level agento.json is accepted as a fallback location", () => {
@@ -88,4 +90,49 @@ test("a root-level agento.json is accepted as a fallback location", () => {
   const { config, source } = loadAgentoConfig(root);
   assert.equal(source, path.join(root, "agento.json"));
   assert.equal(config.worktrees.dir, "../wt");
+});
+
+// --- resolveArtifactsRoot ----------------------------------------------------
+
+const withRepo = (rootDir, repo) => {
+  const config = defaultConfig(rootDir);
+  config.artifacts.repo = { ...config.artifacts.repo, ...repo };
+  return config;
+};
+
+test("resolveArtifactsRoot keeps the in-repo layout when artifacts.repo is unset", () => {
+  const rootDir = path.resolve("/srv/project");
+  const config = defaultConfig(rootDir);
+  assert.deepEqual(resolveArtifactsRoot({ config, rootDir }), { external: false, name: null, dir: null, root: rootDir });
+  // A config without the key at all (older agento.json merged by hand) is also in-repo.
+  delete config.artifacts.repo;
+  assert.deepEqual(resolveArtifactsRoot({ config, rootDir }), { external: false, name: null, dir: null, root: rootDir });
+});
+
+test("resolveArtifactsRoot derives ../<name> from the primary checkout when only name is set", () => {
+  const rootDir = path.resolve("/srv/project");
+  const result = resolveArtifactsRoot({ config: withRepo(rootDir, { name: "project-docs" }), rootDir });
+  assert.deepEqual(result, { external: true, name: "project-docs", dir: path.resolve("/srv/project-docs"), root: path.resolve("/srv/project-docs") });
+});
+
+test("resolveArtifactsRoot derives name from the resolved dir when only dir is set", () => {
+  const rootDir = path.resolve("/srv/project");
+  const result = resolveArtifactsRoot({ config: withRepo(rootDir, { dir: "../planning-docs" }), rootDir });
+  assert.deepEqual(result, { external: true, name: "planning-docs", dir: path.resolve("/srv/planning-docs"), root: path.resolve("/srv/planning-docs") });
+});
+
+test("resolveArtifactsRoot takes both fields as given, resolving dir against the primary checkout", () => {
+  const rootDir = path.resolve("/srv/project");
+  const result = resolveArtifactsRoot({ config: withRepo(rootDir, { name: "docs", dir: "../elsewhere/docs-checkout" }), rootDir });
+  assert.deepEqual(result, { external: true, name: "docs", dir: path.resolve("/srv/elsewhere/docs-checkout"), root: path.resolve("/srv/elsewhere/docs-checkout") });
+});
+
+test("resolveArtifactsRoot resolves against primaryRoot, not the worktree that runs the command", () => {
+  const primaryRoot = path.resolve("/srv/project");
+  const rootDir = path.resolve("/srv/project-worktrees/plan-1");
+  const result = resolveArtifactsRoot({ config: withRepo(primaryRoot, { name: "project-docs" }), rootDir, primaryRoot });
+  assert.equal(result.root, path.resolve("/srv/project-docs"));
+  assert.notEqual(result.root, path.resolve("/srv/project-worktrees/project-docs"));
+  // In-repo mode still names the worktree itself as the root.
+  assert.equal(resolveArtifactsRoot({ config: defaultConfig(primaryRoot), rootDir, primaryRoot }).root, rootDir);
 });

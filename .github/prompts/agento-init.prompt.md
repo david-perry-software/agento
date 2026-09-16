@@ -29,7 +29,12 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 
    ```json
    {
-     "artifacts": { "features": "features", "issues": "issues", "initiatives": "initiatives" },
+     "artifacts": {
+       "features": "features",
+       "issues": "issues",
+       "initiatives": "initiatives",
+       "repo": { "name": null, "dir": null }
+     },
      "worktrees": { "dir": null },
      "branches": {
        "default": "main",
@@ -43,6 +48,9 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    ```
 
    `worktrees.dir: null` means "a sibling directory named `<repo-name>-worktrees/`".
+   `artifacts.repo.name: null` keeps the artifact roots inside this repository;
+   setting it (conventionally `<repo>-docs`) points every `agento.mjs` reader at the
+   sibling companion checkout `../<name>` instead.
    Only set the keys you want to override; every key is optional.
 
 3. Create the artifact roots from the config (default `features/`, `issues/`, and

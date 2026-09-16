@@ -380,3 +380,37 @@ test("evaluateShipPreflight reports owner from the worktree list and null withou
   assert.equal(nobody.owner, null);
   assert.equal(nobody.resolutionSource, "local");
 });
+
+// --- artifactsRoot (companion checkout) --------------------------------------
+
+test("artifactsRoot walks the companion checkout and ignores roadmaps under rootDir", () => {
+  const { root, config } = widgetRoot(); // rootDir carries a stale features/widget roadmap
+  const docs = tmpRoot();
+  const file = path.join(docs, "features", "2026", "09", "widget", "roadmap.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "status: in-progress\nbranch: feature/widget\n");
+
+  assert.deepEqual(findLocalRoadmaps({ rootDir: root, artifactsRoot: docs, type: "feature", slug: "widget", config }), [file.replace(/\\/g, "/")]);
+  // Default: today's behaviour, the artifact walk stays on rootDir.
+  assert.deepEqual(findLocalRoadmaps({ rootDir: root, type: "feature", slug: "widget", config }), [path.join(root, "features", "widget", "roadmap.md").replace(/\\/g, "/")]);
+
+  const resolved = resolveRoadmapArtifact({ rootDir: root, artifactsRoot: docs, type: "feature", slug: "widget", currentBranch: "main", git: makeGitMock({}), config });
+  assert.equal(resolved.status, "ok");
+  assert.equal(resolved.source, "local");
+  assert.equal(resolved.path, file.replace(/\\/g, "/"));
+
+  // Nothing in the companion: the stale in-repo roadmap does not rescue the lookup.
+  fs.rmSync(path.join(docs, "features"), { recursive: true });
+  assert.equal(resolveRoadmapArtifact({ rootDir: root, artifactsRoot: docs, type: "feature", slug: "widget", currentBranch: "main", git: makeGitMock({}), config }).status, "missing");
+
+  // The remote fallback reads whatever `git` the caller bound (the companion's).
+  const remote = makeGitMock({
+    remotePaths: ["features/2026/09/widget/roadmap.md"],
+    remoteContent: new Map([["features/2026/09/widget/roadmap.md", "status: in-review\nbranch: feature/widget\n"]]),
+  });
+  const ship = evaluateShipPreflight({ type: "feature", slug: "widget", rootDir: root, artifactsRoot: docs, currentBranch: "main", git: remote, config, worktreeList: `worktree ${root}\nbranch refs/heads/main\n` });
+  assert.equal(ship.status, "ok");
+  assert.equal(ship.resolutionSource, "remote");
+  const close = closeBuildSessionDecision({ type: "feature", slug: "widget", rootDir: root, artifactsRoot: docs, currentBranch: "main", git: remote, config, worktreeList: `worktree ${root}\nbranch refs/heads/main\n` });
+  assert.equal(close.reason, "remote-roadmap-only");
+});

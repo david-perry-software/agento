@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- **New `artifacts.repo` config: delivery artifacts in a sibling companion
+  repository.** `.github/agento.json` gains `artifacts.repo: { name, dir }` (template
+  ships nulls = today's in-repo layout). Setting `name` (or `dir`) makes every artifact
+  reader in `scripts/agento.mjs` — `status`, `initiative`, `session`, `next`, `find`,
+  `resolve`, `close-decision`, `ship-preflight`, `paths` — and the shared resolver walk
+  `<primary-checkout>/../<name>` (resolved against the primary checkout and its config,
+  like `worktrees.dir`, so managed worktrees agree) and read artifact git refs from
+  that checkout; in-repo `features/`, `issues/`, `initiatives/` are ignored while the
+  key is set. `config` and `paths` report `artifactsRoot` (and `paths.artifactRoot` is
+  now absolute). `doctor` gains a seventh check, `artifact-repo`, under `terminal`:
+  `ok` when unset, `fail` with a fallback naming `/agento agento-init` when the
+  companion is absent, not a checkout toplevel, has no `origin`, or lacks the default
+  branch, and `warn` naming stale non-empty in-repo roots. Companion creation, hooks,
+  paired worktrees, and mirrored branches follow in the `external-artifact-repo`
+  initiative's later members.
+
 ## 0.4.1 (2026-09-16)
 
 - **Fixed: plugin hooks never ran (#36).** The manifest moved from a root
