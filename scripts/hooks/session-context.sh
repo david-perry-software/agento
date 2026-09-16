@@ -4,7 +4,10 @@
 # repo, and a one-line `Session:` summary from `agento.mjs session` (role, worktree,
 # delivery, lifecycle, allowed commands) when Node is available. Operates on the repo
 # from the hook input's cwd; artifact roots come from the target repo's
-# .github/agento.json (defaults: features/, issues/).
+# .github/agento.json (defaults: features/, issues/). When that config sets
+# `artifacts.repo`, the roadmaps are read from the sibling companion checkout instead
+# (resolved against the primary checkout) and an `Artifacts: <path> (branch <b>)` line
+# names it directly after `Session:`.
 set -u
 
 input="$(cat)"
@@ -23,13 +26,76 @@ except json.JSONDecodeError:
 cwd = payload.get("cwd") or payload.get("workingDirectory") or os.getcwd()
 
 def git(*args):
+    return run_git(cwd, *args)
+
+
+def run_git(directory, *args):
     try:
-        return subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True, timeout=5).stdout.strip()
+        return subprocess.run(["git", "-C", directory, *args], capture_output=True, text=True, timeout=5).stdout.strip()
     except Exception:
         return ""
 
 root = git("rev-parse", "--show-toplevel") or cwd
 branch = git("branch", "--show-current") or "unknown"
+
+
+# --- shared with scripts/hooks/delivery-guard.sh; keep both copies identical ---
+CONFIG_DEFAULTS = {
+    "artifacts": {"features": "features", "issues": "issues", "repo": {"name": None, "dir": None}},
+    "branches": {"default": "main", "feature": "feature/", "issue": "issue/",
+                 "freehand": "changes/", "postShip": "post-ship/"},
+}
+
+
+def load_config(root):
+    # Merge .github/agento.json over defaults; every key is optional and null keeps
+    # the default, matching scripts/agento-config.mjs. `artifacts.repo` merges nested.
+    config = json.loads(json.dumps(CONFIG_DEFAULTS))
+    for rel in (".github/agento.json", "agento.json"):
+        candidate = os.path.join(root, rel)
+        if not os.path.isfile(candidate):
+            continue
+        try:
+            with open(candidate, encoding="utf-8") as handle:
+                loaded = json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(loaded, dict):
+            for section, values in loaded.items():
+                target = config.get(section)
+                if not isinstance(values, dict) or not isinstance(target, dict):
+                    continue
+                for key, value in values.items():
+                    if value is None:
+                        continue
+                    if isinstance(value, dict) and isinstance(target.get(key), dict):
+                        target[key].update({k: v for k, v in value.items() if v is not None})
+                    else:
+                        target[key] = value
+        break
+    return config
+
+
+def resolve_artifacts(product_root):
+    # Mirror scripts/agento-config.mjs resolveArtifactsRoot(): `artifacts.repo` unset
+    # (name and dir both null) keeps the in-repo layout with no extra git call; else
+    # the companion path resolves against the primary checkout (first `git worktree
+    # list` entry) and its config, so managed worktrees never point into worktrees.dir.
+    repo = load_config(product_root)["artifacts"]["repo"]
+    if repo.get("name") is None and repo.get("dir") is None:
+        return False, None, None
+    primary_root = product_root
+    for line in run_git(product_root, "worktree", "list", "--porcelain").splitlines():
+        if line.startswith("worktree "):
+            primary_root = line[len("worktree "):].strip()
+            break
+    if os.path.realpath(primary_root) != os.path.realpath(product_root):
+        repo = load_config(primary_root)["artifacts"]["repo"]
+        if repo.get("name") is None and repo.get("dir") is None:
+            return False, None, None
+    path = os.path.abspath(os.path.join(primary_root, repo.get("dir") or os.path.join("..", repo["name"])))
+    return True, path, repo.get("name") or os.path.basename(path)
+# --- end shared helpers ---
 
 
 def session_summary(cli):
@@ -62,20 +128,11 @@ def session_summary(cli):
         f"lifecycle={data.get('lifecycle')} allowed=[{allowed}] elsewhere=[{elsewhere}]"
     )
 
-roots = ["features", "issues"]
-for rel in (".github/agento.json", "agento.json"):
-    candidate = os.path.join(root, rel)
-    if not os.path.isfile(candidate):
-        continue
-    try:
-        with open(candidate, encoding="utf-8") as handle:
-            config = json.load(handle)
-        artifacts = config.get("artifacts") or {}
-        # null means "keep the default", matching scripts/agento-config.mjs.
-        roots = [artifacts.get("features") or "features", artifacts.get("issues") or "issues"]
-    except (OSError, json.JSONDecodeError, AttributeError):
-        pass
-    break
+config = load_config(root)
+roots = [config["artifacts"]["features"] or "features", config["artifacts"]["issues"] or "issues"]
+external, companion, _ = resolve_artifacts(root)
+# In companion mode the product's own features/ and issues/ are ignored.
+walk_root = companion if external else root
 
 lines = [f"Current git branch: {branch}"]
 agento_root = os.environ.get("AGENTO_ROOT", "")
@@ -85,9 +142,12 @@ if agento_root and os.path.isfile(os.path.join(agento_root, "scripts", "agento.m
     session_line = session_summary(cli)
     if session_line:
         lines.append(session_line)
+if external:
+    companion_branch = (run_git(companion, "branch", "--show-current") if os.path.isdir(companion) else "") or "detached"
+    lines.append(f"Artifacts: {companion} (branch {companion_branch})")
 found = False
 for base in dict.fromkeys(roots):
-    base_path = os.path.join(root, base)
+    base_path = os.path.join(walk_root, base)
     for dirpath, _dirnames, filenames in os.walk(base_path):
         if "roadmap.md" not in filenames:
             continue
@@ -103,7 +163,7 @@ for base in dict.fromkeys(roots):
             continue
         next_step = re.search(r"^next-step:\s*([^\n#]+)", content, re.MULTILINE)
         next_value = next_step.group(1).strip() if next_step else ""
-        rel = os.path.relpath(dirpath, root)
+        rel = os.path.relpath(dirpath, walk_root)
         lines.append(f"Delivery work: {rel} [status: {status_value}] next-step: {next_value}")
         found = True
 
