@@ -375,14 +375,14 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports six ok checks with exit 0 when every capability is present", () => {
+test("doctor reports seven ok checks with exit 0 when every capability is present", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "artifact-repo"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -392,6 +392,60 @@ test("doctor reports six ok checks with exit 0 when every capability is present"
   assert.match(checks.gh.detail, /gh version 9\.9\.9; authenticated/);
   assert.match(checks["git-remote"].detail, /main reachable/);
   assert.match(checks["worktrees-dir"].detail, /project-worktrees absent; .* writable, it will be created/);
+  assert.equal(checks["artifact-repo"].detail, "in-repo layout (artifacts.repo unset)");
+});
+
+test("doctor artifact-repo passes a valid companion, fails a missing or broken one naming /agento agento-init, and warns on stale in-repo roots", () => {
+  const repo = makeRepo({ config: { artifacts: { repo: { name: "project-docs" } } }, companion: true });
+  const docs = companionOf(repo);
+  const { env } = restrictedPath(okStubs);
+  const check = (...args) => {
+    const result = runWith({ cwd: repo, env }, "doctor", ...args);
+    return { code: result.code, status: result.json.status, check: byId(result.json)["artifact-repo"] };
+  };
+
+  const valid = check();
+  assert.equal(valid.code, 0);
+  assert.deepEqual(valid.check, { id: "artifact-repo", status: "ok", detail: `${docs} (project-docs), origin ${path.join(path.dirname(repo), "project-docs.git")}, main present`, fallback: null });
+
+  // Stale pre-migration roots in the product repo: ignored by readers, surfaced once here.
+  fs.mkdirSync(path.join(repo, "initiatives"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "initiatives", ".gitkeep"), "");
+  assert.equal(check().check.status, "ok", "a .gitkeep-only root is not stale");
+  writeRoadmap(repo, "features/2026/09/stale", "status: complete\nbranch: feature/stale");
+  fs.mkdirSync(path.join(repo, "issues", "2026", "09", "old"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "issues", "2026", "09", "old", "plan.md"), "# old\n");
+  const stale = check();
+  assert.equal(stale.code, 0);
+  assert.equal(stale.status, "warn");
+  assert.equal(stale.check.status, "warn");
+  assert.match(stale.check.detail, /main present; stale in-repo roots: features\/, issues\/$/);
+  assert.match(stale.check.fallback, /agento agento-init --migrate/);
+
+  // Default branch missing from the companion.
+  git(docs, "branch", "-m", "main", "trunk");
+  git(docs, "update-ref", "-d", "refs/remotes/origin/main");
+  const noBranch = check("--for", "close-session");
+  assert.equal(noBranch.code, 3);
+  assert.equal(noBranch.check.status, "fail");
+  assert.match(noBranch.check.detail, /neither origin\/main nor main/);
+  assert.match(noBranch.check.fallback, /`\/agento agento-init`.*project-docs/);
+
+  // No origin remote.
+  git(docs, "remote", "remove", "origin");
+  assert.match(check().check.detail, /no `origin` remote/);
+
+  // Not a git checkout toplevel (a plain directory), then absent altogether.
+  fs.rmSync(path.join(docs, ".git"), { recursive: true, force: true });
+  const notRepo = check();
+  assert.equal(notRepo.check.status, "fail");
+  assert.match(notRepo.check.detail, /not a git checkout toplevel/);
+  fs.rmSync(docs, { recursive: true, force: true });
+  const absent = check();
+  assert.equal(absent.code, 3);
+  assert.equal(absent.check.status, "fail");
+  assert.equal(absent.check.detail, `${docs} absent`);
+  assert.match(absent.check.fallback, /run `\/agento agento-init` to create and clone the companion repository project-docs at /);
 });
 
 test("doctor fails with exit 3 and the install or reauth fallback when gh is missing or unauthenticated", () => {
@@ -406,7 +460,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -467,13 +521,13 @@ test("doctor --for runs only the command's declared checks and reports its needs
   const local = runWith({ cwd: repo, env }, "doctor", "--for", "close-session");
   assert.equal(local.code, 0);
   assert.deepEqual(local.json.for, { command: "close-session", needs: ["terminal"] });
-  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir"]);
+  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "artifact-repo"]);
   assert.ok(!fs.existsSync(marker), "gh was invoked for a terminal-only command");
 
   const ship = runWith({ cwd: repo, env }, "doctor", "--for", "ship");
   assert.equal(ship.code, 0);
   assert.deepEqual(ship.json.for, { command: "ship", needs: ["terminal", "gh", "network"] });
-  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir"]);
+  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir", "artifact-repo"]);
   assert.match(fs.readFileSync(marker, "utf8"), /auth status/);
 
   const unknown = runWith({ cwd: repo, env }, "doctor", "--for", "nope");

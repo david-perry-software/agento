@@ -302,14 +302,56 @@ const DOCTOR_CHECKS = {
       return { status: "fail", detail: `${dir} not writable (${existing} denies write)`, fallback: "create the directory with write permission or change worktrees.dir in .github/agento.json" };
     }
   },
+  "artifact-repo"() {
+    if (!artifacts.external) return { status: "ok", detail: "in-repo layout (artifacts.repo unset)", fallback: null };
+    const { name, dir } = artifacts;
+    const fallback = `run \`/agento agento-init\` to create and clone the companion repository ${name} at ${dir}, or correct artifacts.repo in .github/agento.json`;
+    const fail = (detail) => ({ status: "fail", detail, fallback });
+    if (!fs.existsSync(dir)) return fail(`${dir} absent`);
+    const toplevel = git(dir, "rev-parse", "--show-toplevel");
+    if (!toplevel || fs.realpathSync(toplevel) !== fs.realpathSync(dir)) return fail(`${dir} is not a git checkout toplevel (git rev-parse --show-toplevel → ${toplevel || "nothing"})`);
+    const url = git(dir, "remote", "get-url", "origin");
+    if (!url) return fail(`${dir} has no \`origin\` remote`);
+    const branch = config.branches.default;
+    if (!git(dir, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`) && !git(dir, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
+      return fail(`${dir} has neither origin/${branch} nor ${branch}`);
+    }
+    const detail = `${dir} (${name}), origin ${url}, ${branch} present`;
+    // Pre-migration leftovers in the product repo are ignored by every reader; say so once.
+    const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+    const stale = [config.artifacts.features, config.artifacts.issues, config.artifacts.initiatives].filter((rel) => holdsArtifacts(path.join(primaryRoot, rel)));
+    return stale.length
+      ? { status: "warn", detail: `${detail}; stale in-repo roots: ${stale.map((r) => `${r}/`).join(", ")}`, fallback: "the in-repo roots are ignored while artifacts.repo is set; move them into the companion (`/agento agento-init --migrate`) or remove them" }
+      : { status: "ok", detail, fallback: null };
+  },
 };
+
+// A root still holds artifacts when any file other than the scaffold's .gitkeep is under it.
+function holdsArtifacts(base) {
+  if (!fs.existsSync(base)) return false;
+  const stack = [base];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) stack.push(path.join(current, entry.name));
+      else if (entry.name !== ".gitkeep") return true;
+    }
+  }
+  return false;
+}
 
 const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
 
 // Capability vocabulary (delivery-policy §10) in canonical order, each mapped to the
 // doctor checks that prove it. Chat-tool capabilities have no CLI-side check.
 const CAPABILITY_CHECKS = {
-  terminal: ["node", "python3", "worktrees-dir"],
+  terminal: ["node", "python3", "worktrees-dir", "artifact-repo"],
   "ask-questions": [],
   browser: [],
   gh: ["gh"],
