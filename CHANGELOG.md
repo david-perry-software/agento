@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Both hooks read `artifacts.repo`.** With a companion configured, the SessionStart
+  hook (`scripts/hooks/session-context.sh`) walks the companion checkout for
+  resumable roadmaps (product `features/`/`issues/` ignored, resolved against the
+  primary checkout like the CLI) and prints one `Artifacts: <path> (branch <b>)` line
+  after `Session:` — with or without `node`. The delivery guard
+  (`scripts/hooks/delivery-guard.sh`) applies the product config's `branches.*` to
+  commands targeting the companion (its default branch is denied commits, pushes, and
+  merges) and re-targets the roadmap nudge: a product delivery-branch commit asks
+  unless the companion's index stages a `roadmap.md` or its `HEAD` commit touched
+  one; the reason names the companion path and branch. `replay-guard.sh` gains
+  `REPLAY_COMPANION=1` (sibling companion repo, `{companion}` substitution) with
+  `tests/guard-fixtures-companion.txt`. Unset `artifacts.repo` → both hooks emit
+  today's output verbatim.
 - **New `artifacts.repo` config: delivery artifacts in a sibling companion
   repository.** `.github/agento.json` gains `artifacts.repo: { name, dir }` (template
   ships nulls = today's in-repo layout). Setting `name` (or `dir`) makes every artifact

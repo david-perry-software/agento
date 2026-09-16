@@ -18,6 +18,17 @@ target's `.github/agento.json` — it never assumes the plugin's own directory. 
 `Session:` line needs `node` on `PATH`; when it is missing, or the CLI fails or
 exceeds its 5 s timeout, the line is omitted and the rest of the output is unchanged.
 
+When the config sets `artifacts.repo`, the roadmaps are walked in the sibling
+companion checkout instead (resolved against the primary checkout, like
+`worktrees.dir`, so managed worktrees agree with the CLI) and the product's own
+`features/` and `issues/` are ignored. One extra line,
+`Artifacts: <absolute companion path> (branch <name|detached>)`, follows the
+`Session:` line (or `Agento CLI:` when there is none); it is produced without `node`,
+so the no-node fallback still equals the full output minus `Session:`. A missing
+companion directory yields the same line with `detached` and the usual "No
+in-progress delivery work" line — `agento.mjs doctor` is where the companion is
+validated. With `artifacts.repo` unset the output is byte-identical to before.
+
 ## PreToolUse — `scripts/hooks/delivery-guard.sh`
 
 **What it is:** a slip guard for an LLM operator. It pattern-matches the shell text
@@ -45,13 +56,20 @@ tracking branch switches earlier in the same line.
 | `chmod` / `chown` / `touch` on a hook file | ask |
 | Editing a hook file with an edit tool | ask — per-change approval |
 | Committing on a `feature/`/`issue/` branch without `roadmap.md` among the files that commit would record (index, `-a` modifications, or explicit pathspecs) | ask — progress may be lost on resume |
+| Companion mode (`artifacts.repo` set): the same commit in the product checkout while the companion checkout has neither a staged `roadmap.md` nor a `roadmap.md` in its `HEAD` commit — the reason names the companion path and its current branch; the product commit's own files are never what decides | ask — progress may be lost on resume |
+| Companion mode: commit, push, or merge targeting the companion checkout (`git -C <companion> …`, `cd <companion> && …`) on the **product** config's default branch, or a push whose refspec targets it | deny — the product config governs the companion |
 | `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only) | ask |
 | Everything else | allow |
 
 Branch names, the default branch, and artifact roots come from the target repo's
 `.github/agento.json`; the guard walks to the repo root (`git rev-parse
 --show-toplevel`) before reading it, so it behaves identically in primary and
-secondary worktrees.
+secondary worktrees. When that config sets `artifacts.repo`, the guard also resolves
+the companion checkout (from the hook `cwd`'s repository, against its primary
+checkout) and applies the product's `branches.*` to commands that target it — a
+companion carries no `agento.json` of its own. A commit run directly in the companion
+on a delivery branch keeps the ordinary roadmap rule (roadmap among the recorded
+files).
 
 ## Testing hook behavior
 
@@ -60,6 +78,11 @@ secondary worktrees.
   throwaway repo on a feature branch and exits 1 on any mismatch (CI runs this).
   Lines without a verdict prefix are printed without being asserted, so you can
   also pipe in an ad-hoc file of commands to see what the guard would decide.
+- `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt`
+  — the same harness with a sibling companion repo beside the throwaway product repo
+  (product config: `artifacts.repo.dir` → the companion, `branches.default: trunk`);
+  the literal `{companion}` in each fixture command is replaced with the companion's
+  absolute path.
 - `tests/guard.test.mjs` — the assertion suite (spins up real temp git repos).
 - `tests/session-context.test.mjs` — SessionStart output against temp repos.
 - `tests/customizations.test.mjs` — frontmatter validity and cross-reference

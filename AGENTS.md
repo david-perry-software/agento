@@ -30,6 +30,8 @@ delivery system. Layout:
 - Test: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` (Node ≥ 20, no
   dependencies)
 - Guard smoke: `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`
+- Guard smoke (companion mode): `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh <
+  tests/guard-fixtures-companion.txt`
 - Shell lint: `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh`
 
 ## Non-negotiable rules (this repository eats its own cooking)
