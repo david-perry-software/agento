@@ -2,13 +2,13 @@
 status: in-progress
 branch: feature/artifact-repo-hooks
 last-updated: 2026-09-16
-next-step: "1.1 replay harness companion mode"
+next-step: "1.2 companion fixtures and AGENTS.md command"
 initiative: "external-artifact-repo"
 ```
 
 ## Phase 1: Replay harness and fixtures
 
-- [ ] 1.1 In `scripts/hooks/replay-guard.sh` add the `REPLAY_COMPANION=1` mode per plan.md `## Approach` item 4: create `<cwd>-docs` beside the throwaway repo (`git init -q -b main`, empty commit, `switch -q -c feature/replay`), write and commit `<cwd>/.github/agento.json` with `{"artifacts":{"repo":{"dir":"../<basename>-docs"}}}` on `feature/replay`, remove both directories on exit, and substitute the literal `{companion}` in each command with the companion's absolute path before building the payload (default mode unchanged) — verify: `shellcheck scripts/hooks/replay-guard.sh` silent, exit 0; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `printf 'allow git -C {companion} status\n' | REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh` exit 0 and prints the substituted absolute path
+- [x] 1.1 In `scripts/hooks/replay-guard.sh` add the `REPLAY_COMPANION=1` mode per plan.md `## Approach` item 4: create `<cwd>-docs` beside the throwaway repo (`git init -q -b main`, empty commit, `switch -q -c feature/replay`), write and commit `<cwd>/.github/agento.json` with `{"artifacts":{"repo":{"dir":"../<basename>-docs"}}}` on `feature/replay`, remove both directories on exit, and substitute the literal `{companion}` in each command with the companion's absolute path before building the payload (default mode unchanged) — verify: `shellcheck scripts/hooks/replay-guard.sh` silent, exit 0; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `printf 'allow git -C {companion} status\n' | REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh` exit 0 and prints the substituted absolute path
 - [ ] 1.2 Add `tests/guard-fixtures-companion.txt` (header comment explaining `{companion}` and `REPLAY_COMPANION=1`) with the companion cases from plan.md `## Approach` item 4 — expected verdicts written for the *target* behaviour (companion default branch denied, companion work branches allowed, in-repo controls) — and add `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt` to AGENTS.md `## Commands` — verify: `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt` runs and exits 1 with mismatches only on the companion-default-branch lines (the guard does not yet know the companion — this is the exposing run; record the mismatch count on this line); `grep -c 'guard-fixtures-companion' AGENTS.md` = 1
 
 ## Phase 2: Delivery guard
