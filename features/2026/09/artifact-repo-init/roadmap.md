@@ -1,8 +1,8 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/artifact-repo-init
 last-updated: 2026-09-16
-next-step: "Reviewer: /agento review-feature artifact-repo-init"
+next-step: ""
 initiative: "external-artifact-repo"
 ```
 
