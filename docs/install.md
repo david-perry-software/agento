@@ -23,16 +23,21 @@ you open.
 git clone https://github.com/david-perry-software/agento ~/code/agento
 ```
 
-VS Code settings (user or workspace):
+VS Code **user** settings (`chat.pluginLocations` is machine-scoped; a workspace
+value is ignored):
 
 ```jsonc
 "chat.plugins.enabled": true,
 "chat.pluginLocations": { "~/code/agento": true }
 ```
 
-Set the value to `false` to disable Agento for a specific workspace — for example
-when developing Agento inside its own clone, where the workspace-mode hooks in
-`.github/hooks/` already apply.
+When developing Agento inside its own clone, do **not** register that clone here: the
+workspace-mode hooks in `.github/hooks/` already guard the clone and every worktree,
+and they are the only wiring whose `./scripts/hooks/…` paths resolve inside a
+worktree. If the clone must stay registered because it serves other repositories,
+disable the plugin per workspace from the Extensions view → **Agent Plugins –
+Installed** → context menu on Agento (or the Agent Customizations editor) — in each
+worktree window too.
 
 ## Option B — install from source
 

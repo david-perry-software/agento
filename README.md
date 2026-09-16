@@ -511,9 +511,14 @@ After install, in a fresh chat in your project:
 
 If commands don't appear or route to the wrong agent, run `/agento fix-copilot` and
 describe the symptom — the Mechanic knows the usual causes (frontmatter, name
-mismatches, missing tools). If you are developing Agento inside its own clone, set
-`"chat.pluginLocations": { "<path>": false }` for that workspace; the repo's own
-`.github/hooks/` already wires the same hooks in workspace mode.
+mismatches, missing tools). If you are developing Agento inside its own clone, do
+**not** register that clone in `chat.pluginLocations`: the repo's own `.github/hooks/`
+already wires the same hooks in workspace mode for the clone and every worktree, and
+it is the only wiring whose `./scripts/hooks/…` paths resolve inside a worktree.
+`chat.pluginLocations` is machine-scoped, so a workspace value is ignored. If the
+clone must stay registered because it serves other repositories, disable the plugin
+per workspace instead: Extensions view → **Agent Plugins – Installed** → context menu
+on Agento (or the Agent Customizations editor), repeated in each worktree window.
 
 ## Developing Agento
 
