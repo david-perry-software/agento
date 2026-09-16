@@ -2,14 +2,14 @@
 status: in-progress
 branch: feature/artifact-repo-config
 last-updated: 2026-09-15
-next-step: "1.2 mirror artifacts.repo into templates/agento.json, docs/project-profile.md, and the agento-init prompt"
+next-step: "2.1 bootstrap artifactsRoot/artifactsGit in agento.mjs and route the readers"
 initiative: "external-artifact-repo"
 ```
 
 ## Phase 1: Config resolution
 
 - [x] 1.1 In `scripts/agento-config.mjs` add `artifacts.repo: { name: null, dir: null }` to `defaultConfig()` and export `resolveArtifactsRoot({ config, rootDir, primaryRoot = rootDir })` returning `{ external, name, dir, root }` per plan.md `## Approach` item 1 (both null → `external: false, root: rootDir`; name only → `dir = <primaryRoot>/../<name>`; dir only → `name = basename(resolved dir)`; both → as given, `dir` resolved against `primaryRoot`); add unit tests for each case plus `primaryRoot ≠ rootDir` and the template still loading with `repo` nulls to `scripts/agento-config.test.mjs` — verify: `node --test scripts/agento-config.test.mjs` exit 0 with the new tests listed as passing; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` still 0 failures
-- [ ] 1.2 Mirror the key: add `"repo": { "name": null, "dir": null }` inside `artifacts` in `templates/agento.json`; add the same to the snippet and two table rows (`artifacts.repo.name` default `<repo>-docs`, `artifacts.repo.dir` default `../<name>` resolved against the primary checkout; nulls = in-repo layout) plus the "primary window must add the companion as a workspace folder; not detectable by doctor" note in `docs/project-profile.md`; add the key to the step‑2 snippet of `.github/prompts/agento-init.prompt.md` with one sentence after the `worktrees.dir: null` sentence, and copy the prompt to `commands/agento-init.md` — verify: `diff .github/prompts/agento-init.prompt.md commands/agento-init.md` prints nothing; `node --test scripts/agento-config.test.mjs tests/customizations.test.mjs` exit 0; `grep -c '"repo"' templates/agento.json docs/project-profile.md commands/agento-init.md` shows ≥1 each
+- [x] 1.2 Mirror the key: add `"repo": { "name": null, "dir": null }` inside `artifacts` in `templates/agento.json`; add the same to the snippet and two table rows (`artifacts.repo.name` default `<repo>-docs`, `artifacts.repo.dir` default `../<name>` resolved against the primary checkout; nulls = in-repo layout) plus the "primary window must add the companion as a workspace folder; not detectable by doctor" note in `docs/project-profile.md`; add the key to the step‑2 snippet of `.github/prompts/agento-init.prompt.md` with one sentence after the `worktrees.dir: null` sentence, and copy the prompt to `commands/agento-init.md` — verify: `diff .github/prompts/agento-init.prompt.md commands/agento-init.md` prints nothing; `node --test scripts/agento-config.test.mjs tests/customizations.test.mjs` exit 0; `grep -c '"repo"' templates/agento.json docs/project-profile.md commands/agento-init.md` shows ≥1 each
 
 ## Phase 2: CLI routing through the companion root
 
