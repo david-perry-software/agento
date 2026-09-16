@@ -213,6 +213,35 @@ test("resolve, find, ship-preflight, and close-decision fall back to the compani
   assert.equal(next.json.status, "ok");
 });
 
+test("a managed worktree resolves the companion beside the primary checkout, not beside itself", () => {
+  const repo = makeRepo({ config: { worktrees: { dir: "../wt" }, artifacts: { repo: { name: "project-docs" } } }, companion: true });
+  const docs = companionOf(repo);
+  const wt = path.join(path.dirname(repo), "wt");
+  fs.mkdirSync(wt);
+  writeRoadmap(docs, "features/2026/09/alpha", "status: planned\nbranch: feature/alpha\nnext-step: \"1.1\"");
+
+  const plan = path.join(wt, "plan-x");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  const config = run(plan, "config").json;
+  assert.equal(config.root, plan);
+  assert.equal(config.artifactsRoot, docs);
+  assert.notEqual(config.artifactsRoot, path.join(wt, "project-docs"));
+  assert.equal(config.config.artifacts.repo.dir, docs);
+
+  const session = run(plan, "session").json;
+  assert.equal(session.role, "plan");
+  assert.deepEqual(run(plan, "status").json.items.map((i) => i.slug), ["alpha"]);
+  assert.equal(run(plan, "paths", "feature", "alpha").json.artifactRoot, path.join(docs, "features"));
+
+  // Once promoted onto the delivery branch, the delivery still comes from the companion.
+  git(plan, "switch", "-q", "-c", "feature/alpha");
+  const promoted = run(plan, "session").json;
+  assert.equal(promoted.role, "build");
+  assert.equal(promoted.delivery.roadmap, "features/2026/09/alpha/roadmap.md");
+  assert.equal(promoted.lifecycle, "planned");
+  assert.equal(run(plan, "resolve", "feature", "alpha").json.path, path.join(docs, "features", "2026", "09", "alpha", "roadmap.md"));
+});
+
 test("status lists roadmaps with progress, verdicts, and duplicate slugs", () => {
   const repo = makeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nlast-updated: 2026-09-01\nnext-step: \"1.2 todo\"");
