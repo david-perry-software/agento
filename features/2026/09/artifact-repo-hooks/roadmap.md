@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/artifact-repo-hooks
 last-updated: 2026-09-16
 next-step: "1.1 replay harness companion mode"
