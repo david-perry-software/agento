@@ -7,10 +7,12 @@
 # not the caller's branch.
 #
 # REPLAY_COMPANION=1 additionally creates a sibling companion repo `<cwd>-docs` (on
-# feature/replay), commits `.github/agento.json` pointing `artifacts.repo.dir` at it,
-# and replaces the literal token `{companion}` in each command with the companion's
-# absolute path — the setup for tests/guard-fixtures-companion.txt. It only applies to
-# the throwaway repo, never to a caller-supplied REPLAY_CWD.
+# feature/replay), commits `.github/agento.json` pointing `artifacts.repo.dir` at it
+# with `branches.default` set to `trunk` (so companion-default-branch verdicts prove
+# the product config governs, not the guard's built-in `main`), and replaces the
+# literal token `{companion}` in each command with the companion's absolute path —
+# the setup for tests/guard-fixtures-companion.txt. It only applies to the throwaway
+# repo, never to a caller-supplied REPLAY_CWD.
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 guard="$PWD/scripts/hooks/delivery-guard.sh"
@@ -30,11 +32,11 @@ else
   git -C "$cwd" switch -q -c feature/replay
   if [[ -n "${REPLAY_COMPANION:-}" ]]; then
     companion="${cwd}-docs"
-    git init -q -b main "$companion"
+    git init -q -b trunk "$companion"
     git -C "$companion" -c user.email=replay@example.com -c user.name=replay commit -q --allow-empty -m init
     git -C "$companion" switch -q -c feature/replay
     mkdir -p "$cwd/.github"
-    printf '{"artifacts":{"repo":{"dir":"../%s-docs"}}}\n' "$(basename "$cwd")" > "$cwd/.github/agento.json"
+    printf '{"artifacts":{"repo":{"dir":"../%s-docs"}},"branches":{"default":"trunk"}}\n' "$(basename "$cwd")" > "$cwd/.github/agento.json"
     git -C "$cwd" add .github/agento.json
     git -C "$cwd" -c user.email=replay@example.com -c user.name=replay commit -q -m "companion config"
   fi

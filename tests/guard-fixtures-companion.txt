@@ -1,0 +1,44 @@
+# Companion-mode replay fixtures for scripts/hooks/replay-guard.sh. Run with
+#   REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt
+# The harness creates a throwaway product repo on feature/replay whose
+# .github/agento.json sets artifacts.repo.dir to a sibling companion repo (also on
+# feature/replay) and branches.default to `trunk`; the literal token `{companion}` in
+# each command is replaced with the companion's absolute path. The companion carries
+# no agento.json of its own: every verdict below must come from the product config.
+
+# Companion default branch (`trunk`, from the product config) is protected
+deny  git -C {companion} push origin trunk
+deny  git -C {companion} push origin HEAD:trunk
+deny  git -C {companion} push origin --delete trunk
+deny  git -C {companion} push origin :trunk
+deny  git -C {companion} switch trunk && git -C {companion} commit --allow-empty -m x
+deny  git -C {companion} checkout trunk && git -C {companion} merge feature/x
+deny  cd {companion} && git push origin HEAD:trunk
+deny  cd {companion} && git switch trunk && git commit -m x
+
+# Companion work branches and reads stay allowed; `main` is not the default here
+allow git -C {companion} push origin feature/replay
+allow git -C {companion} push -u origin feature/replay
+allow git -C {companion} push origin main
+allow git -C {companion} push origin :feature/x
+allow git -C {companion} merge origin/trunk
+allow git -C {companion} status
+allow git -C {companion} log --oneline -5
+allow cd {companion} && git status
+
+# Generic rules apply to the companion unchanged
+deny  git -C {companion} push --force origin feature/replay
+deny  git -C {companion} commit --no-verify -m x
+ask   git -C {companion} rebase origin/trunk
+
+# Roadmap nudge on a product delivery-branch commit consults the companion, not the
+# product tree: the companion has no staged or HEAD roadmap.md, so both ask
+ask   git commit -m x code.js
+ask   git commit -m x features/x/roadmap.md
+
+# In-repo controls: the product repo itself under the same config
+deny  git push origin trunk
+deny  git switch trunk && git commit -m x
+allow git push origin main
+allow git push origin feature/replay
+allow git status
