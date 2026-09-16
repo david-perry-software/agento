@@ -1,8 +1,8 @@
 ```yaml
-status: in-review
+status: complete
 branch: issue/plugin-hooks-layout
-last-updated: 2026-09-15
-next-step: "all steps ticked; awaiting /agento review-issue plugin-hooks-layout in this window"
+last-updated: 2026-09-16
+next-step: ""
 github-issue: "#36"
 ```
 

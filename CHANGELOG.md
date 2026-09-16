@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.1 (unreleased)
+## 0.4.1 (2026-09-16)
 
 - **Fixed: plugin hooks never ran (#36).** The manifest moved from a root
   `plugin.json` to `.claude-plugin/plugin.json` and the hook wiring from a root
