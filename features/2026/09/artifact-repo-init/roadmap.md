@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/artifact-repo-init
 last-updated: 2026-09-16
-next-step: "3.3 — rerun the full lint baseline and compare with plan.md Research"
+next-step: "Reviewer: /agento review-feature artifact-repo-init"
 initiative: "external-artifact-repo"
 ```
 
@@ -22,7 +22,7 @@ initiative: "external-artifact-repo"
 
 - [x] 3.1 In a temp directory (`mktemp -d`), `gh repo create <owner>/agento-smoke-init-<YYYYMMDD> --public --clone`, push an initial commit to `main`, then drive every step of the rewritten prompt from that checkout exactly as the default agent would (default companion name accepted) — verify: `gh repo view <owner>/agento-smoke-init-<YYYYMMDD>-docs --json visibility,createdAt` succeeds with `PUBLIC`; `git -C <tmp>/agento-smoke-init-<YYYYMMDD>-docs ls-tree -r --name-only origin/main` lists exactly `README.md`, `.github/instructions/agento.instructions.md`, `features/.gitkeep`, `issues/.gitkeep`, `initiatives/.gitkeep`; `gh api repos/<owner>/agento-smoke-init-<YYYYMMDD>-docs/rulesets --jq '.[].name'` lists one ruleset; `ls <tmp>/agento-smoke-init-<YYYYMMDD>` shows no `features`, `issues`, `initiatives`; `grep -c '"name": "agento-smoke-init-<YYYYMMDD>-docs"' <tmp>/agento-smoke-init-<YYYYMMDD>/.github/agento.json` = 1; `node scripts/agento.mjs doctor --root <tmp>/agento-smoke-init-<YYYYMMDD>` exit 0 with `artifact-repo` `ok`; `node scripts/agento.mjs config --root <tmp>/agento-smoke-init-<YYYYMMDD>` `artifactsRoot` = `<tmp>/agento-smoke-init-<YYYYMMDD>-docs`; trimmed outputs saved to `features/2026/09/artifact-repo-init/evidence/step-3-1-init-smoke.md`
 - [x] 3.2 Re-drive the prompt's steps against the same throwaway checkout (idempotency: adopt repository and clone, keep files, no push to the companion default branch) — verify: `gh repo view … --json createdAt` unchanged; `git -C <companion> rev-list --count origin/main` unchanged before and after; the run's report states the companion and files were kept; trimmed outputs saved to `evidence/step-3-2-init-rerun.md`; the throwaway names `agento-smoke-init-<YYYYMMDD>` and `agento-smoke-init-<YYYYMMDD>-docs` appended under `## Follow-ups` below
-- [ ] 3.3 Rerun the full lint baseline and compare with plan.md `## Research` — verify: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` ≥ 153 pass, 0 fail; `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` prints nothing, exit 0; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `gh pr checks` green on the PR
+- [x] 3.3 Rerun the full lint baseline and compare with plan.md `## Research` — verify: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` ≥ 153 pass, 0 fail; `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` prints nothing, exit 0; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `gh pr checks` green on the PR
 
 ## Follow-ups
 
