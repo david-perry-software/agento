@@ -28,18 +28,27 @@ function decide(command, { cwd, filePath, tool = "run_in_terminal" } = {}) {
   return { decision: out.permissionDecision, reason: out.permissionDecisionReason ?? "" };
 }
 
-function makeGitRepo({ config } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-guard-"));
-  const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
-  git("init", "-b", "main");
-  git("config", "user.email", "test@example.com");
-  git("config", "user.name", "Test");
-  git("commit", "--allow-empty", "-m", "init");
+function makeGitRepo({ config, companion = false } = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-guard-"));
+  const dir = companion ? path.join(base, "project") : base;
+  const initRepo = (target) => {
+    fs.mkdirSync(target, { recursive: true });
+    const git = (...args) => execFileSync("git", ["-C", target, ...args], { encoding: "utf8" });
+    git("init", "-b", "main");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    git("commit", "--allow-empty", "-m", "init");
+  };
+  initRepo(dir);
+  if (companion) {
+    initRepo(path.join(base, "project-docs"));
+    config = { ...config, artifacts: { repo: { name: "project-docs" }, ...config?.artifacts } };
+  }
   if (config) {
     fs.mkdirSync(path.join(dir, ".github"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".github", "agento.json"), JSON.stringify(config));
   }
-  return dir;
+  return companion ? { product: dir, companion: path.join(base, "project-docs") } : dir;
 }
 
 test("denies pushes to the default branch", () => {
@@ -168,6 +177,34 @@ test("null values in .github/agento.json keep the default branch protected", () 
   });
   assert.equal(decide("git push origin main", { cwd: repo }).decision, "deny");
   assert.equal(decide("git commit -m x", { cwd: repo }).decision, "deny");
+});
+
+test("companion: denies pushing the companion's default branch using the product config", () => {
+  const { product, companion } = makeGitRepo({ companion: true, config: { branches: { default: "trunk" } } });
+  const denied = decide(`git -C ${companion} push origin trunk`, { cwd: product });
+  assert.equal(denied.decision, "deny");
+  assert.match(denied.reason, /trunk/);
+  assert.equal(decide(`git -C ${companion} push origin main`, { cwd: product }).decision, "allow");
+});
+
+test("companion: denies a commit while the companion sits on the product's default branch", () => {
+  const { product, companion } = makeGitRepo({ companion: true, config: { branches: { default: "trunk" } } });
+  execFileSync("git", ["-C", companion, "switch", "-c", "trunk"]);
+  const denied = decide(`git -C ${companion} commit -m x`, { cwd: product });
+  assert.equal(denied.decision, "deny");
+  assert.match(denied.reason, /trunk/);
+});
+
+test("companion: allows pushes to companion work branches", () => {
+  const { product, companion } = makeGitRepo({ companion: true, config: { branches: { default: "trunk" } } });
+  assert.equal(decide(`git -C ${companion} push origin feature/widget`, { cwd: product }).decision, "allow");
+});
+
+test("companion: denies a default-branch refspec push reached through cd", () => {
+  const { product, companion } = makeGitRepo({ companion: true, config: { branches: { default: "trunk" } } });
+  const denied = decide(`cd ${companion} && git push origin HEAD:trunk`, { cwd: product });
+  assert.equal(denied.decision, "deny");
+  assert.match(denied.reason, /trunk/);
 });
 
 test("allows worktree removal with no occupants", () => {
