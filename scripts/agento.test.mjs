@@ -559,7 +559,7 @@ test("session from the primary worktree reports role primary and no delivery", (
   assert.deepEqual(json.elsewhere, []);
   assert.deepEqual(json.warnings, []);
   assert.equal(json.hosted, false);
-  assert.deepEqual(json.worktrees, [{ path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false }]);
+  assert.deepEqual(json.worktrees, [{ path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false, repo: "product" }]);
 
   const sub = path.join(repo, "src", "nested");
   fs.mkdirSync(sub, { recursive: true });
@@ -603,9 +603,9 @@ test("session from a managed build worktree reports the delivery, lifecycle, and
   // (git lists linked worktrees in no guaranteed order).
   const byPath = (list) => [...list].sort((a, b) => a.path.localeCompare(b.path));
   const expected = byPath([
-    { path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false },
-    { path: build, branch: "feature/widget", detached: false, role: "build", dirPrefix: "feature", id: "widget", isPrimary: false, isManaged: true },
-    { path: stray, branch: "issue/bug", detached: false, role: "unmanaged", dirPrefix: null, id: null, isPrimary: false, isManaged: false },
+    { path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false, repo: "product" },
+    { path: build, branch: "feature/widget", detached: false, role: "build", dirPrefix: "feature", id: "widget", isPrimary: false, isManaged: true, repo: "product" },
+    { path: stray, branch: "issue/bug", detached: false, role: "unmanaged", dirPrefix: null, id: null, isPrimary: false, isManaged: false, repo: "product" },
   ]);
   assert.equal(unmanaged.worktrees[0].path, repo, "primary first");
   assert.deepEqual(byPath(unmanaged.worktrees), expected);

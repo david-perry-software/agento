@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, parseWorktreeList } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -203,10 +203,11 @@ test("classifyWorktrees: one record per registered entry, primary first, stray s
   const list = classifyWorktrees({ worktrees: l.worktrees, worktreesDir: l.worktreesDir, config });
   assert.equal(list.length, l.worktrees.length);
   for (const [i, entry] of list.entries()) {
-    assert.deepEqual(Object.keys(entry).sort(), ["branch", "detached", "dirPrefix", "id", "isManaged", "isPrimary", "path", "role"]);
+    assert.deepEqual(Object.keys(entry).sort(), ["branch", "detached", "dirPrefix", "id", "isManaged", "isPrimary", "path", "repo", "role"]);
     assert.equal(entry.path, l.worktrees[i].path);
+    assert.equal(entry.repo, "product");
   }
-  assert.deepEqual(list[0], { path: l.primary, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false });
+  assert.deepEqual(list[0], { path: l.primary, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false, repo: "product" });
   assert.deepEqual(list[1], {
     path: path.join(l.worktreesDir, "plan-20260914-015913"),
     branch: "feature/session-state-cli",
@@ -216,15 +217,150 @@ test("classifyWorktrees: one record per registered entry, primary first, stray s
     id: "20260914-015913",
     isPrimary: false,
     isManaged: true,
+    repo: "product",
   });
-  assert.deepEqual(list[2], { path: path.join(l.worktreesDir, "plan-fresh"), branch: null, detached: true, role: "plan", dirPrefix: "plan", id: "fresh", isPrimary: false, isManaged: true });
+  assert.deepEqual(list[2], { path: path.join(l.worktreesDir, "plan-fresh"), branch: null, detached: true, role: "plan", dirPrefix: "plan", id: "fresh", isPrimary: false, isManaged: true, repo: "product" });
   assert.equal(list[3].role, "build");
   assert.equal(list[3].dirPrefix, "feature");
   assert.equal(list[4].role, "build");
   assert.equal(list[4].id, "bug");
-  assert.deepEqual(list[5], { path: path.join(l.worktreesDir, "freehand-tidy"), branch: "changes/tidy", detached: false, role: "freehand", dirPrefix: "freehand", id: "tidy", isPrimary: false, isManaged: true });
-  assert.deepEqual(list[6], { path: path.join(l.base, "sibling"), branch: "feature/elsewhere", detached: false, role: "unmanaged", dirPrefix: null, id: null, isPrimary: false, isManaged: false });
+  assert.deepEqual(list[5], { path: path.join(l.worktreesDir, "freehand-tidy"), branch: "changes/tidy", detached: false, role: "freehand", dirPrefix: "freehand", id: "tidy", isPrimary: false, isManaged: true, repo: "product" });
+  assert.deepEqual(list[6], { path: path.join(l.base, "sibling"), branch: "feature/elsewhere", detached: false, role: "unmanaged", dirPrefix: null, id: null, isPrimary: false, isManaged: false, repo: "product" });
   assert.deepEqual(classifyWorktrees({ worktrees: [], worktreesDir: l.worktreesDir, config }), []);
+});
+
+// Companion mode: <base>/project-docs (companion clone) and
+// <base>/project-docs-worktrees/<kind>-<id> (companion halves) next to the product layout.
+function pairLayout() {
+  const l = layout();
+  const companion = path.join(l.base, "project-docs");
+  const companionWorktreesDir = path.join(l.base, "project-docs-worktrees");
+  fs.mkdirSync(path.join(companion, "features"), { recursive: true });
+  for (const d of ["plan-fresh", "feature-widget", "plan-20260914-015913", "freehand-tidy", "plan-orphan"]) {
+    fs.mkdirSync(path.join(companionWorktreesDir, d, "features", "deep"), { recursive: true });
+  }
+  const wt = (p, branch) => ({ path: p, head: "1".repeat(40), branch, detached: branch === null });
+  const companionWorktrees = [
+    wt(companion, "main"),
+    wt(path.join(companionWorktreesDir, "plan-fresh"), null),
+    wt(path.join(companionWorktreesDir, "feature-widget"), "feature/widget"),
+    // Half-promoted planning pair: the product half is on feature/session-state-cli, this half is still detached.
+    wt(path.join(companionWorktreesDir, "plan-20260914-015913"), null),
+    wt(path.join(companionWorktreesDir, "freehand-tidy"), "changes/tidy"),
+    // No product half is registered for this companion half.
+    wt(path.join(companionWorktreesDir, "plan-orphan"), null),
+  ];
+  return { ...l, companion, companionWorktreesDir, companionWorktrees };
+}
+
+const pairRole = (l, cwd) => deriveRole({ cwd, worktrees: l.worktrees, worktreesDir: l.worktreesDir, config, companionWorktreesDir: l.companionWorktreesDir });
+
+test("companion half: a plan-* pair (both detached) resolves to the product half's record", () => {
+  const l = pairLayout();
+  const product = pairRole(l, path.join(l.worktreesDir, "plan-fresh"));
+  const fromCompanion = pairRole(l, path.join(l.companionWorktreesDir, "plan-fresh", "features", "deep"));
+  assert.equal(product.half, "product");
+  assert.equal(fromCompanion.half, "companion");
+  assert.equal(fromCompanion.role, "plan");
+  assert.deepEqual(fromCompanion.worktree, product.worktree);
+  assert.equal(fromCompanion.worktree.path, path.join(l.worktreesDir, "plan-fresh"));
+});
+
+test("companion half: a feature-* pair on the same branch yields build with the product path", () => {
+  const l = pairLayout();
+  const product = pairRole(l, path.join(l.worktreesDir, "feature-widget"));
+  const fromCompanion = pairRole(l, path.join(l.companionWorktreesDir, "feature-widget"));
+  assert.equal(fromCompanion.role, "build");
+  assert.deepEqual(fromCompanion.worktree, product.worktree);
+  assert.equal(fromCompanion.worktree.branch, "feature/widget");
+  assert.equal(fromCompanion.worktree.dirPrefix, "feature");
+  assert.equal(fromCompanion.worktree.id, "widget");
+  // Freehand pairs keep their role too.
+  assert.equal(pairRole(l, path.join(l.companionWorktreesDir, "freehand-tidy")).role, "freehand");
+});
+
+test("companion half: a half-promoted plan-* pair takes role and branch from the product half", () => {
+  const l = pairLayout();
+  const fromCompanion = pairRole(l, path.join(l.companionWorktreesDir, "plan-20260914-015913"));
+  assert.equal(fromCompanion.role, "build");
+  assert.equal(fromCompanion.worktree.branch, "feature/session-state-cli");
+  assert.equal(fromCompanion.worktree.detached, false);
+  assert.equal(fromCompanion.worktree.path, path.join(l.worktreesDir, "plan-20260914-015913"));
+  assert.equal(fromCompanion.half, "companion");
+});
+
+test("companion half without a registered product half derives the product path, detached", () => {
+  const l = pairLayout();
+  const r = pairRole(l, path.join(l.companionWorktreesDir, "plan-orphan"));
+  assert.equal(r.role, "plan");
+  assert.equal(r.half, "companion");
+  assert.deepEqual(r.worktree, {
+    path: path.join(l.worktreesDir, "plan-orphan"),
+    branch: null,
+    detached: true,
+    isPrimary: false,
+    isManaged: true,
+    dirPrefix: "plan",
+    id: "orphan",
+  });
+});
+
+test("companion clone itself and the companion worktrees dir are unmanaged; in-repo mode ignores the companion", () => {
+  const l = pairLayout();
+  assert.equal(pairRole(l, l.companion).role, "unmanaged");
+  assert.equal(pairRole(l, path.join(l.companion, "features")).role, "unmanaged");
+  assert.equal(pairRole(l, l.companionWorktreesDir).role, "unmanaged");
+  // Without companionWorktreesDir a companion half is just an unmanaged directory.
+  const inRepo = role(l, path.join(l.companionWorktreesDir, "feature-widget"));
+  assert.equal(inRepo.role, "unmanaged");
+  assert.equal(inRepo.half, "product");
+  // Product-side results are unchanged by the extra argument.
+  for (const cwd of [l.primary, path.join(l.worktreesDir, "plan-fresh"), path.join(l.worktreesDir, "feature-widget"), path.join(l.base, "sibling")]) {
+    assert.deepEqual(pairRole(l, cwd), role(l, cwd), cwd);
+  }
+});
+
+test("pairFor: the companion half of a managed product worktree, registered or not", () => {
+  const l = pairLayout();
+  const pair = (cwd) => pairFor({ worktree: pairRole(l, cwd).worktree, companionWorktreesDir: l.companionWorktreesDir, companionWorktrees: l.companionWorktrees });
+  assert.deepEqual(pair(path.join(l.worktreesDir, "feature-widget")), { path: path.join(l.companionWorktreesDir, "feature-widget"), branch: "feature/widget", detached: false, registered: true });
+  assert.deepEqual(pair(path.join(l.worktreesDir, "plan-fresh")), { path: path.join(l.companionWorktreesDir, "plan-fresh"), branch: null, detached: true, registered: true });
+  // Half-promoted: the companion half reports its own (detached) state.
+  assert.deepEqual(pair(path.join(l.worktreesDir, "plan-20260914-015913")), { path: path.join(l.companionWorktreesDir, "plan-20260914-015913"), branch: null, detached: true, registered: true });
+  // The product half is registered but the companion half is not (pre-pair session).
+  assert.deepEqual(pair(path.join(l.worktreesDir, "issue-bug")), { path: path.join(l.companionWorktreesDir, "issue-bug"), branch: null, detached: false, registered: false });
+  // From the companion half, the same pair comes back.
+  assert.deepEqual(pair(path.join(l.companionWorktreesDir, "feature-widget")), pair(path.join(l.worktreesDir, "feature-widget")));
+  // Primary, unmanaged, and in-repo mode have no pair.
+  assert.equal(pair(l.primary), null);
+  assert.equal(pair(path.join(l.base, "sibling")), null);
+  assert.equal(pairFor({ worktree: pairRole(l, path.join(l.worktreesDir, "feature-widget")).worktree, companionWorktreesDir: null, companionWorktrees: [] }), null);
+});
+
+test("classifyWorktrees: companion entries follow the product entries with repo: companion and the product half's role", () => {
+  const l = pairLayout();
+  const list = classifyWorktrees({ worktrees: l.worktrees, worktreesDir: l.worktreesDir, config, companionWorktreesDir: l.companionWorktreesDir, companionWorktrees: l.companionWorktrees });
+  assert.equal(list.length, l.worktrees.length + l.companionWorktrees.length);
+  assert.equal(list[0].repo, "product");
+  assert.equal(list[0].isPrimary, true);
+  assert.deepEqual(list.slice(0, l.worktrees.length), classifyWorktrees({ worktrees: l.worktrees, worktreesDir: l.worktreesDir, config }));
+  const companion = list.slice(l.worktrees.length);
+  for (const [i, entry] of companion.entries()) {
+    assert.equal(entry.repo, "companion");
+    assert.equal(entry.path, l.companionWorktrees[i].path);
+    assert.equal(entry.isPrimary, false);
+    assert.deepEqual(Object.keys(entry).sort(), ["branch", "detached", "dirPrefix", "id", "isManaged", "isPrimary", "path", "repo", "role"]);
+  }
+  assert.equal(companion[0].role, "unmanaged");
+  assert.equal(companion[0].branch, "main");
+  assert.deepEqual(companion[1], { path: path.join(l.companionWorktreesDir, "plan-fresh"), branch: null, detached: true, role: "plan", dirPrefix: "plan", id: "fresh", isPrimary: false, isManaged: true, repo: "companion" });
+  assert.deepEqual(companion[2], { path: path.join(l.companionWorktreesDir, "feature-widget"), branch: "feature/widget", detached: false, role: "build", dirPrefix: "feature", id: "widget", isPrimary: false, isManaged: true, repo: "companion" });
+  // Half-promoted: the entry carries its own detached state but the product half's role.
+  assert.deepEqual(companion[3], { path: path.join(l.companionWorktreesDir, "plan-20260914-015913"), branch: null, detached: true, role: "build", dirPrefix: "plan", id: "20260914-015913", isPrimary: false, isManaged: true, repo: "companion" });
+  assert.equal(companion[4].role, "freehand");
+  // A companionWorktreesDir with no companion list adds nothing; a list without the dir is ignored.
+  assert.equal(classifyWorktrees({ worktrees: l.worktrees, worktreesDir: l.worktreesDir, config, companionWorktreesDir: l.companionWorktreesDir }).length, l.worktrees.length);
+  assert.equal(classifyWorktrees({ worktrees: l.worktrees, worktreesDir: l.worktreesDir, config, companionWorktrees: l.companionWorktrees }).length, l.worktrees.length);
 });
 
 test("findOwner: managed owner, primary owner, and none", () => {

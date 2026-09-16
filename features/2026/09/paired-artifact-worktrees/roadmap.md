@@ -2,14 +2,14 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "1.2 classifyByPath companionWorktreesDir, pairFor, classifyWorktrees repo"
+next-step: "2.1 companion-cwd anchoring in agento.mjs"
 initiative: "external-artifact-repo"
 ```
 
 ## Phase 1: Config and pure session-state helpers
 
 - [x] 1.1 Extend `resolveArtifactsRoot()` in `scripts/agento-config.mjs` to return `worktreesDir` (`<dir>-worktrees`, absolute; `null` when not external) and add cases to `scripts/agento-config.test.mjs` for unset, name-only, dir-only, both, and `primaryRoot ≠ rootDir` — verify: `node --test scripts/agento-config.test.mjs` exit 0, new assertions present.
-- [ ] 1.2 In `scripts/session-state.mjs`, teach `classifyByPath()`/`deriveRole()` an optional `companionWorktreesDir`: a cwd inside `<companionWorktreesDir>/<kind>-<id>` yields the product half's record (path/branch/detached from the registered product entry, else path derived and `branch: null, detached: true`) plus `half: "companion" | "product"`; add `pairFor()` returning `{ path, branch, detached, registered } | null` from the companion worktree list; `classifyWorktrees()` gains `repo` — verify: `node --test scripts/session-state.test.mjs` exit 0 with new tests for a `plan-*` pair (both detached), a `feature-*` pair (same branch), a half-promoted `plan-*` pair, a cwd in the companion clone itself (`unmanaged`), in-repo mode (no `companionWorktreesDir`) unchanged; the existing key-set assertion extended with `repo`.
+- [x] 1.2 In `scripts/session-state.mjs`, teach `classifyByPath()`/`deriveRole()` an optional `companionWorktreesDir`: a cwd inside `<companionWorktreesDir>/<kind>-<id>` yields the product half's record (path/branch/detached from the registered product entry, else path derived and `branch: null, detached: true`) plus `half: "companion" | "product"`; add `pairFor()` returning `{ path, branch, detached, registered } | null` from the companion worktree list; `classifyWorktrees()` gains `repo` — verify: `node --test scripts/session-state.test.mjs` exit 0 with new tests for a `plan-*` pair (both detached), a `feature-*` pair (same branch), a half-promoted `plan-*` pair, a cwd in the companion clone itself (`unmanaged`), in-repo mode (no `companionWorktreesDir`) unchanged; the existing key-set assertion extended with `repo`.
 
 ## Phase 2: CLI — paths, session, next, close-decision, ship-preflight, doctor
 
