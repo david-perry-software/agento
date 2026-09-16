@@ -17,6 +17,22 @@
   branch, and `warn` naming stale non-empty in-repo roots. Companion creation, hooks,
   paired worktrees, and mirrored branches follow in the `external-artifact-repo`
   initiative's later members.
+- **`/agento agento-init` creates and clones the companion repository.** Init asks
+  for the companion name (default `<repo>-docs`), creates it on GitHub with the
+  product's owner and visibility (`gh repo create`), clones it to `../<name>`,
+  scaffolds `README.md` (from the new `templates/companion-README.md`, whose first
+  line is the `<!-- agento-companion: <owner>/<repo> -->` marker), `.gitkeep` in each
+  artifact root, and `.github/instructions/agento.instructions.md` (the
+  `templates/project.instructions.md` frontmatter plus the verbatim artifact
+  contract), pushes that one bootstrap commit to the companion's default branch
+  before protecting it with a `pull_request` / `non_fast_forward` / `deletion`
+  ruleset, and writes `artifacts.repo.name` into the product's `.github/agento.json`.
+  An existing companion repository or clone is adopted (marker or empty default
+  branch required), never recreated or reset; a companion that already has commits
+  receives missing files through a PR. The product repository no longer gets
+  `features/`, `issues/`, or `initiatives/` roots; `templates/AGENTS-section.md`
+  names the companion; the run ends with `agento.mjs doctor` requiring
+  `artifact-repo` `ok`.
 
 ## 0.4.1 (2026-09-16)
 
