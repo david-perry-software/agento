@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/artifact-repo-hooks
 last-updated: 2026-09-16
-next-step: "4.2 full lint gate"
+next-step: "4.3 merge origin/main, push, in-review"
 initiative: "external-artifact-repo"
 ```
 
@@ -27,7 +27,7 @@ initiative: "external-artifact-repo"
 ## Phase 4: Documentation and gate
 
 - [x] 4.1 Update `docs/hooks.md` (SessionStart paragraph: companion walk and the `Artifacts:` line; guard table: companion default-branch row and the re-targeted nudge row; the "Branch names … come from" paragraph naming `artifacts.repo`; testing section: companion fixture command), add a `## Unreleased` bullet to `CHANGELOG.md` — verify: `grep -c 'Artifacts:' docs/hooks.md` ≥ 1; `grep -c 'guard-fixtures-companion' docs/hooks.md` ≥ 1; `awk '/^## Unreleased/,/^## 0\./' CHANGELOG.md | grep -c 'hook'` ≥ 1; `node --test tests/customizations.test.mjs` exit 0
-- [ ] 4.2 Full lint gate equal to baseline (plan.md `## Research`): `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`; `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` (no output redirection); `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`; `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt`; record the exit codes and pass/fail counts on this line — verify: all four exit 0, `# fail 0`, test count ≥ 153
+- [x] 4.2 Full lint gate equal to baseline (plan.md `## Research`): `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`; `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` (no output redirection); `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`; `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt`; record the exit codes and pass/fail counts on this line — verify: all four exit 0, `# fail 0`, test count ≥ 153. Gate run 2026-09-16 at 0e3d97b: node --test exit 0 (`# tests 166`, `# pass 166`, `# fail 0`); shellcheck exit 0, no output; replay-guard exit 0; REPLAY_COMPANION=1 replay-guard exit 0 — equal to the baseline (no findings then, none now)
 - [ ] 4.3 Integrate `origin/main` by merge, push, and set the roadmap to `status: in-review` with `next-step: ""` — verify: `git status` clean; `git log origin/main..HEAD` shows only this feature's commits; `node scripts/agento.mjs session` reports `lifecycle: in-review`; `node scripts/agento.mjs initiative external-artifact-repo` lists `artifact-repo-hooks` with `state: in-review` and `errors: []`
 
 ## Follow-ups
