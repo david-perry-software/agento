@@ -588,7 +588,7 @@ switch (command) {
   case "resolve": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(resolveRoadmapArtifact({ rootDir: root, type, slug, currentBranch, git: gitAdapter, config }));
+    withExit(resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config }));
     break;
   }
 
@@ -596,7 +596,7 @@ switch (command) {
     const slug = requireSlug(rest[0]);
     const results = ["feature", "issue"].map((type) => ({
       type,
-      ...resolveRoadmapArtifact({ rootDir: root, type, slug, currentBranch, git: gitAdapter, config }),
+      ...resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config }),
     }));
     const found = results.filter((r) => r.status !== "missing");
     if (found.length === 0) withExit({ status: "missing", message: `No roadmap for slug ${slug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin.` });
@@ -621,14 +621,14 @@ switch (command) {
   case "close-decision": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: gitAdapter, rootDir: root, config }));
+    withExit(closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: artifactsGit, rootDir: root, artifactsRoot, config }));
     break;
   }
 
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(evaluateShipPreflight({ type, slug, rootDir: root, currentBranch, git: gitAdapter, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
+    withExit(evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
     break;
   }
 

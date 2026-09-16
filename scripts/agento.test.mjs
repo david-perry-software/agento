@@ -174,6 +174,45 @@ test("status, initiative, session, and next read the companion and ignore in-rep
   assert.equal(run(wt, "next").json.next.invocation, "/agento build-feature alpha");
 });
 
+test("resolve, find, ship-preflight, and close-decision fall back to the companion's origin branch", () => {
+  const repo = makeRepo({ config: { artifacts: { repo: { name: "project-docs" } } }, companion: true });
+  const docs = companionOf(repo);
+  // The roadmap exists only on the companion's feature/widget, pushed to the companion's origin.
+  git(docs, "switch", "-q", "-c", "feature/widget");
+  writeRoadmap(docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  git(docs, "add", "-A");
+  git(docs, "commit", "-q", "-m", "plan");
+  git(docs, "push", "-q", "-u", "origin", "feature/widget");
+  git(docs, "switch", "-q", "main");
+  assert.ok(!fs.existsSync(path.join(docs, "features")));
+  // A same-named roadmap in the product repo's own checkout must not be consulted.
+  writeRoadmap(repo, "features/2026/09/widget", "status: planned\nbranch: feature/wrong\nnext-step: 1.1");
+
+  const resolved = run(repo, "resolve", "feature", "widget");
+  assert.equal(resolved.code, 0);
+  assert.equal(resolved.json.status, "ok");
+  assert.equal(resolved.json.source, "remote");
+  assert.equal(resolved.json.branch, "feature/widget");
+  assert.equal(resolved.json.root, repo);
+
+  const found = run(repo, "find", "widget");
+  assert.equal(found.json.type, "feature");
+  assert.equal(found.json.source, "remote");
+
+  const ship = run(repo, "ship-preflight", "feature", "widget");
+  assert.equal(ship.code, 0);
+  assert.equal(ship.json.resolutionSource, "remote");
+
+  const close = run(repo, "close-decision", "feature", "widget");
+  assert.equal(close.json.reason, "remote-roadmap-only");
+
+  // The companion's origin branch also feeds `next` for a slug with no local roadmap.
+  const next = run(repo, "next", "widget");
+  assert.equal(next.code, 0);
+  assert.equal(next.json.slug, "widget");
+  assert.equal(next.json.status, "ok");
+});
+
 test("status lists roadmaps with progress, verdicts, and duplicate slugs", () => {
   const repo = makeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nlast-updated: 2026-09-01\nnext-step: \"1.2 todo\"");
