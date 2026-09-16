@@ -51,10 +51,14 @@ export function loadAgentoConfig(rootDir) {
 // in-repo layout: `root` is the checkout itself. A non-null `name` or `dir`
 // selects a sibling companion checkout, resolved against the primary checkout
 // (like worktrees.dir) so managed worktrees never point into the worktrees dir.
+// `worktreesDir` is the companion's parallel worktrees directory (`<dir>-worktrees`),
+// derived only — there is no config key for it.
 export function resolveArtifactsRoot({ config, rootDir, primaryRoot = rootDir }) {
   const repo = config.artifacts?.repo ?? {};
-  if (repo.name == null && repo.dir == null) return { external: false, name: null, dir: null, root: rootDir };
+  if (repo.name == null && repo.dir == null) {
+    return { external: false, name: null, dir: null, root: rootDir, worktreesDir: null };
+  }
   const dir = path.resolve(primaryRoot, repo.dir ?? path.join("..", repo.name));
   const name = repo.name ?? path.basename(dir);
-  return { external: true, name, dir, root: dir };
+  return { external: true, name, dir, root: dir, worktreesDir: `${dir}-worktrees` };
 }
