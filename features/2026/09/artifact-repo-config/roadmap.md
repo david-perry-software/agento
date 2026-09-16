@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/artifact-repo-config
 last-updated: 2026-09-15
 next-step: "1.1 add artifacts.repo defaults and resolveArtifactsRoot() to agento-config.mjs"
