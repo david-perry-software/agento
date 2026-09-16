@@ -16,6 +16,7 @@ initiative: "external-artifact-repo"
 
 - [x] 2.1 Update README.md (set-up table rows and ruleset sentence at L127–141, flow-table row at L381), docs/install.md (L57–59, L68–70), docs/commands.md (L5), docs/project-profile.md (L32, L34, L42–45), and docs/artifacts.md (L3–8, L39–42) per plan.md `## Approach` item 4 — verify: `grep -c 'companion' README.md docs/install.md docs/commands.md docs/project-profile.md docs/artifacts.md` ≥ 1 each; `grep -c 'Artifact roots (with `.gitkeep`)' README.md` = 0; `grep -c 'features/` + `issues/`' docs/install.md` = 0; `node --test tests/customizations.test.mjs` exit 0
 - [x] 2.2 Add the `/agento agento-init` companion bullet under `## Unreleased` in CHANGELOG.md — verify: `awk '/^## Unreleased/,/^## 0\.4\.1/' CHANGELOG.md | grep -c 'agento-init'` ≥ 1; `node --test tests/customizations.test.mjs` exit 0
+- [x] 2.3 (added 2026-09-16) Replace the companion bootstrap `git push -u origin <default>` in `.github/prompts/agento-init.prompt.md` step 4 with the GitHub Contents API write (`gh api -X PUT repos/<owner>/<name>/contents/<path>`, one commit per file, README first), record the amendment in plan.md `## Decisions`, align CHANGELOG.md, and re-mirror to `commands/agento-init.md` — discovered because the delivery guard denies `git -C <companion> push -u origin main` — verify: `grep -c 'contents/<path>' .github/prompts/agento-init.prompt.md` ≥ 1; `grep -c 'push -u origin <default>' .github/prompts/agento-init.prompt.md` = 0; `diff .github/prompts/agento-init.prompt.md commands/agento-init.md` prints nothing; `node --test tests/customizations.test.mjs` exit 0
 
 ## Phase 3: End-to-end smoke and gate
 
@@ -25,4 +26,4 @@ initiative: "external-artifact-repo"
 
 ## Follow-ups
 
-- `artifact-repo-hooks`: when the guard learns the companion default branch, the one bootstrap push init performs on an *empty* companion (no `origin/<default>`) must stay allowed.
+- `artifact-repo-hooks`: init no longer pushes to the companion default branch (the bootstrap is written through the GitHub Contents API, see step 2.3), so the guard needs no exemption for it; it still needs to learn the companion checkout so delivery-branch commits there get the same roadmap nudge.

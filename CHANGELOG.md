@@ -24,7 +24,9 @@
   line is the `<!-- agento-companion: <owner>/<repo> -->` marker), `.gitkeep` in each
   artifact root, and `.github/instructions/agento.instructions.md` (the
   `templates/project.instructions.md` frontmatter plus the verbatim artifact
-  contract), pushes that one bootstrap commit to the companion's default branch
+  contract), writes those bootstrap files to the companion's default branch through
+  the GitHub Contents API (`gh api -X PUT …/contents/<path>`, one commit per file —
+  never `git push`, which the delivery guard denies for any default branch)
   before protecting it with a `pull_request` / `non_fast_forward` / `deletion`
   ruleset, and writes `artifacts.repo.name` into the product's `.github/agento.json`.
   An existing companion repository or clone is adopted (marker or empty default
