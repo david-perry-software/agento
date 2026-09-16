@@ -2,8 +2,10 @@
 
 Each planned unit of work gets an immutable creation-month directory in the target
 repository: `features/YYYY/MM/<slug>/` or `issues/YYYY/MM/<slug>/` (roots are
-configurable in `.github/agento.json`). A large brief that decomposes into several
-features gets an initiative directory, `initiatives/YYYY/MM/<slug>/`.
+configurable in `.github/agento.json`; when `artifacts.repo` is set they live in the
+sibling companion checkout it names instead, and any in-repo copies are ignored). A
+large brief that decomposes into several features gets an initiative directory,
+`initiatives/YYYY/MM/<slug>/`.
 
 | File | Written by | Purpose |
 |---|---|---|

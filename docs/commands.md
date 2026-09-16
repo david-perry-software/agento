@@ -26,13 +26,18 @@
 
 Prompts never re-derive slug resolution or config lookups in prose; they call the
 **Agento CLI** — `node <agento-root>/scripts/agento.mjs` — whose path the SessionStart
-hook announces as `Agento CLI:`. Subcommands: `config`, `resolve <type> <slug>`,
+hook announces as `Agento CLI:`. Subcommands: `config` (the merged config with
+`worktrees.dir` and `artifacts.repo.dir` resolved to absolute paths, plus
+`artifactsRoot` — the checkout the artifact roots are read from: the repository
+itself, or the sibling companion checkout when `artifacts.repo` is set),
+`resolve <type> <slug>`,
 `find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>` and
 `ship-preflight <type> <slug>` (both report `owner` — `{ path, role, dirPrefix, id }`
 or `null` — for the delivery branch, resolved exactly from `git worktree list
 --porcelain`; `close-decision` reasons are `managed-worktree-present`,
 `primary-owns-branch` (return the primary to the default branch first — nothing to
-remove), or `remote-roadmap-only`), `paths <kind> <id>`, `ports <slug>`,
+remove), or `remote-roadmap-only`), `paths <kind> <id>` (worktree and branch names
+plus `artifactsRoot` and the absolute `artifactRoot` under it), `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
@@ -43,8 +48,8 @@ and `elsewhere` commands; `--pr` adds the branch's PR via `gh`, degrading to
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
-`doctor [--for <command>]` (six environment checks — `node`, `git-remote`, `gh`,
-`code`, `python3`, `worktrees-dir` — each `{ id, status, detail, fallback }` with
+`doctor [--for <command>]` (seven environment checks — `node`, `git-remote`, `gh`,
+`code`, `python3`, `worktrees-dir`, `artifact-repo` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `--for` runs only the checks the named command's
 `Needs:` line requires and echoes them as `for.needs`),
 `next [<slug>]` (the one legal delivery transition derived from the same record as

@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/artifact-repo-config
 last-updated: 2026-09-15
-next-step: "3.2 update docs/commands.md, architecture.md, artifacts.md, and CHANGELOG"
+next-step: "4.1 manual smoke in a throwaway product/product-docs pair under /tmp/arc"
 initiative: "external-artifact-repo"
 ```
 
@@ -21,7 +21,7 @@ initiative: "external-artifact-repo"
 ## Phase 3: doctor
 
 - [x] 3.1 Add the `"artifact-repo"` check to `DOCTOR_CHECKS` (after `worktrees-dir`) and to `CAPABILITY_CHECKS.terminal` per plan.md `## Approach` item 2: unset → `ok` `in-repo layout (artifacts.repo unset)`; set → `fail` with a fallback containing `/agento agento-init` when the dir is absent, `git -C <dir> rev-parse --show-toplevel` ≠ `<dir>`, `origin` missing, or neither `refs/remotes/origin/<default>` nor `refs/heads/<default>` resolves; valid → `ok` naming dir, name, origin URL, default branch; valid but non-empty in-repo roots under the primary checkout → `warn` naming them; update the "six ok checks" test title/id list and the `--for close-session` / `--for ship` id lists to include `artifact-repo`, and add tests for the four states — verify: `node --test scripts/agento.test.mjs tests/customizations.test.mjs` exit 0; `node scripts/agento.mjs doctor --for close-session` lists `node, python3, worktrees-dir, artifact-repo` all `ok` in this worktree
-- [ ] 3.2 Update `docs/commands.md` (doctor: "seven environment checks … `artifact-repo`"; `config` and `paths` field additions), `docs/architecture.md` configuration-boundary row (artifact roots may live in the companion checkout named by `artifacts.repo`), `docs/artifacts.md` intro (roots live in the target repository or, when `artifacts.repo` is set, in the sibling companion checkout), and add a CHANGELOG entry under the unreleased heading following the file's existing convention — verify: `grep -l 'artifacts.repo\|artifact-repo' docs/commands.md docs/architecture.md docs/artifacts.md CHANGELOG.md` lists all four; `node --test tests/customizations.test.mjs` exit 0
+- [x] 3.2 Update `docs/commands.md` (doctor: "seven environment checks … `artifact-repo`"; `config` and `paths` field additions), `docs/architecture.md` configuration-boundary row (artifact roots may live in the companion checkout named by `artifacts.repo`), `docs/artifacts.md` intro (roots live in the target repository or, when `artifacts.repo` is set, in the sibling companion checkout), and add a CHANGELOG entry under the unreleased heading following the file's existing convention — verify: `grep -l 'artifacts.repo\|artifact-repo' docs/commands.md docs/architecture.md docs/artifacts.md CHANGELOG.md` lists all four; `node --test tests/customizations.test.mjs` exit 0
 
 ## Phase 4: Verification
 
