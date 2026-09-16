@@ -9,19 +9,29 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const hook = path.join(repoRoot, "scripts", "hooks", "session-context.sh");
 
-function makeRepo({ branch = "feature/widget", config } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-session-"));
-  const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
-  git("init", "-b", "main");
-  git("config", "user.email", "test@example.com");
-  git("config", "user.name", "Test");
-  git("commit", "--allow-empty", "-m", "init");
+function makeRepo({ branch = "feature/widget", config, companion = false } = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-session-"));
+  const dir = companion ? path.join(base, "project") : base;
+  const initRepo = (target) => {
+    fs.mkdirSync(target, { recursive: true });
+    const git = (...args) => execFileSync("git", ["-C", target, ...args], { encoding: "utf8" });
+    git("init", "-b", "main");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    git("commit", "--allow-empty", "-m", "init");
+    return git;
+  };
+  const git = initRepo(dir);
   if (branch !== "main") git("switch", "-c", branch);
+  if (companion) {
+    initRepo(path.join(base, "project-docs"));
+    config = { ...config, artifacts: { repo: { name: "project-docs" }, ...config?.artifacts } };
+  }
   if (config) {
     fs.mkdirSync(path.join(dir, ".github"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".github", "agento.json"), JSON.stringify(config));
   }
-  return dir;
+  return companion ? { product: dir, companion: path.join(base, "project-docs") } : dir;
 }
 
 function writeRoadmap(root, rel, header) {
@@ -130,4 +140,46 @@ test("falls back to the pre-feature output byte for byte when node is absent fro
   assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
   assert.match(withoutNode, /^Agento CLI: node /m);
   assert.match(withoutNode, /Delivery work: features\/2026\/09\/alpha/);
+});
+
+test("companion: lists roadmaps from the companion checkout and ignores the product's own roots", () => {
+  const { product, companion } = makeRepo({ companion: true });
+  writeRoadmap(companion, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");
+  writeRoadmap(product, "features/2026/09/ignored", "status: in-progress\nbranch: feature/ignored\nnext-step: x");
+
+  const context = run(product);
+  assert.match(context, /^Delivery work: features\/2026\/09\/alpha \[status: in-progress\] next-step: "1\.2 wire it"$/m);
+  assert.doesNotMatch(context, /09\/ignored/);
+  assert.doesNotMatch(context, /No in-progress delivery work/);
+});
+
+test("companion: exactly one Artifacts: line, directly after Session:", () => {
+  const { product, companion } = makeRepo({ companion: true });
+  const lines = run(product).split("\n");
+  const artifactLines = lines.filter((l) => l.startsWith("Artifacts: "));
+  assert.equal(artifactLines.length, 1);
+  assert.equal(artifactLines[0], `Artifacts: ${companion} (branch main)`);
+  assert.equal(lines[lines.findIndex((l) => l.startsWith("Session: ")) + 1], artifactLines[0]);
+});
+
+test("companion: a detached companion HEAD is reported as (branch detached)", () => {
+  const { product, companion } = makeRepo({ companion: true });
+  execFileSync("git", ["-C", companion, "switch", "-q", "--detach", "HEAD"]);
+  assert.match(run(product), new RegExp(`^Artifacts: ${companion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(branch detached\\)$`, "m"));
+});
+
+test("companion: a missing companion directory still names the path and reports no work", () => {
+  const { product, companion } = makeRepo({ companion: true });
+  fs.rmSync(companion, { recursive: true, force: true });
+  const context = run(product);
+  assert.match(context, new RegExp(`^Artifacts: ${companion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(branch detached\\)$`, "m"));
+  assert.match(context, /No in-progress delivery work in features\/ or issues\//);
+});
+
+test("companion: no Artifacts: line when artifacts.repo is unset", () => {
+  const repo = makeRepo({ config: { artifacts: { repo: { name: null, dir: null } } } });
+  writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: x");
+  const context = run(repo);
+  assert.doesNotMatch(context, /^Artifacts: /m);
+  assert.match(context, /Delivery work: features\/2026\/09\/alpha/);
 });
