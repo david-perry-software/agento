@@ -128,7 +128,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 7. **AGENTS.md.** Create or append to the target repository's `AGENTS.md` an
    `## Agento` section using the template below (`<agento-root>/templates/AGENTS-section.md`).
-   Fill `<owner>/<companion>` and `../<companion>` from steps 1–2 and the remaining
+   Fill the owner and companion placeholders from steps 1–2 and the remaining
    placeholders from the project's actual files (package.json scripts, README,
    existing tooling); ask the user for anything you cannot infer, with the
    ask-questions tool (or its declared fallback, §10). If AGENTS.md already has an
