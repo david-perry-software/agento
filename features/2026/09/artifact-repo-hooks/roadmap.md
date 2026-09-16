@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/artifact-repo-hooks
 last-updated: 2026-09-16
-next-step: "3.3 no-node fallback and managed-worktree companion tests"
+next-step: "4.1 docs/hooks.md and CHANGELOG"
 initiative: "external-artifact-repo"
 ```
 
@@ -22,7 +22,7 @@ initiative: "external-artifact-repo"
 
 - [x] 3.1 In `scripts/hooks/session-context.sh` add the identical `resolve_artifacts()` helper, walk the companion instead of the product roots when external (relpaths relative to the walked base), and print `Artifacts: <abs companion path> (branch <git -C <companion> branch --show-current or detached>)` directly after the `Session:` line (after `Agento CLI:` when absent) only when external; keep the "No in-progress delivery work in <roots>" fallback; update the header comment — verify: `shellcheck scripts/hooks/session-context.sh` silent; `node --test tests/session-context.test.mjs` exit 0 (existing tests unchanged); `printf '{"cwd":"%s"}' "$PWD" | bash scripts/hooks/session-context.sh` in this worktree prints no `Artifacts:` line
 - [x] 3.2 Add `makeRepo({ companion: true, … })` to `tests/session-context.test.mjs` (product `<base>/project` + companion `<base>/project-docs`, product config `artifacts.repo.name: "project-docs"`) and tests: companion `features/2026/09/alpha` (in-progress) listed as `Delivery work: features/2026/09/alpha …` while a product `features/2026/09/ignored` roadmap is absent from the output; exactly one `Artifacts: <base>/project-docs (branch main)` line immediately after `Session:`; companion on a detached HEAD → `(branch detached)`; companion directory missing → `Artifacts:` line with `detached` plus the "No in-progress delivery work" line; unset config → no `Artifacts:` line — verify: `node --test tests/session-context.test.mjs` exit 0 with the new tests listed as passing
-- [ ] 3.3 Add the two remaining SessionStart tests: no‑node fallback in companion mode equals the with‑node output minus the `Session:` line (using `pathWithoutNode()`), and a managed worktree under `worktrees.dir` (`git worktree add -b feature/widget <wt>/feature-widget`) resolves `Artifacts:` to `<base>/project-docs`, not `<wt>/project-docs`, and lists the companion's roadmaps — verify: `node --test tests/session-context.test.mjs` exit 0 with both tests listed as passing
+- [x] 3.3 Add the two remaining SessionStart tests: no‑node fallback in companion mode equals the with‑node output minus the `Session:` line (using `pathWithoutNode()`), and a managed worktree under `worktrees.dir` (`git worktree add -b feature/widget <wt>/feature-widget`) resolves `Artifacts:` to `<base>/project-docs`, not `<wt>/project-docs`, and lists the companion's roadmaps — verify: `node --test tests/session-context.test.mjs` exit 0 with both tests listed as passing
 
 ## Phase 4: Documentation and gate
 

@@ -183,3 +183,32 @@ test("companion: no Artifacts: line when artifacts.repo is unset", () => {
   assert.doesNotMatch(context, /^Artifacts: /m);
   assert.match(context, /Delivery work: features\/2026\/09\/alpha/);
 });
+
+test("companion: the no-node fallback equals the with-node output minus Session:, Artifacts: included", () => {
+  const { product, companion } = makeRepo({ companion: true });
+  writeRoadmap(companion, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");
+  const withNode = run(product);
+  assert.match(withNode, /^Session: /m);
+  const withoutNode = run(product, pathWithoutNode());
+  assert.doesNotMatch(withoutNode, /^Session: /m);
+  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
+  assert.match(withoutNode, new RegExp(`^Artifacts: ${companion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(branch main\\)$`, "m"));
+  assert.match(withoutNode, /Delivery work: features\/2026\/09\/alpha/);
+});
+
+test("companion: a managed worktree resolves the companion relative to the primary checkout", () => {
+  const worktreesDir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-wt-"));
+  const { product, companion } = makeRepo({ branch: "main", companion: true, config: { worktrees: { dir: worktreesDir } } });
+  const git = (...args) => execFileSync("git", ["-C", product, ...args], { encoding: "utf8" });
+  git("add", "-A");
+  git("commit", "-q", "-m", "config");
+  const build = path.join(worktreesDir, "feature-widget");
+  git("worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(companion, "features/2026/09/widget", 'status: in-progress\nbranch: feature/widget\nnext-step: "1.1 step"');
+
+  const context = run(build);
+  assert.match(context, /^Current git branch: feature\/widget$/m);
+  assert.match(context, new RegExp(`^Artifacts: ${companion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(branch main\\)$`, "m"));
+  assert.doesNotMatch(context, new RegExp(worktreesDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/project-docs"));
+  assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
+});
