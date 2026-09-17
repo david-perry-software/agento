@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "4.1 confirm code --status workspace label"
+next-step: "4.2 delivery-guard occupant scan matches workspace window label"
 initiative: "external-artifact-repo"
 ```
 
@@ -30,7 +30,7 @@ initiative: "external-artifact-repo"
 
 ## Phase 4: Hooks (approval-gated edits)
 
-- [ ] 4.1 Confirm the `code --status` label for an open `.code-workspace` window: write a throwaway `/tmp/agento-pair-probe.code-workspace` with two folders, open it with `code --new-window`, capture `code --status | grep -E 'Folder|Workspace'`, close it; record the observed label in plan.md `## Research` (`(added 2026-09-16)` note) — verify: the captured line is quoted in plan.md and the guard regex in 4.2 uses it.
+- [x] 4.1 Confirm the `code --status` label for an open `.code-workspace` window: write a throwaway `/tmp/agento-pair-probe.code-workspace` with two folders, open it with `code --new-window`, capture `code --status | grep -E 'Folder|Workspace'`, close it; record the observed label in plan.md `## Research` (`(added 2026-09-16)` note) — verify: the captured line is quoted in plan.md and the guard regex in 4.2 uses it. (Observed 2026-09-16: no `Workspace (…)` line; the window appears as `Window (… agento-pair-probe (Workspace) …)` plus one `Folder (<basename>)` line per folder. The probe window is left open — the user closes it by hand.)
 - [ ] 4.2 `scripts/hooks/delivery-guard.sh`: occupant scan additionally matches the workspace label from 4.1 against `os.path.basename(target)` (one edit); add a `tests/guard.test.mjs` case stubbing `code` on `PATH` to print a matching workspace line and asserting `ask` for `git worktree remove <target>` and for `git -C <companion> worktree remove <target>`; add `allow git -C {companion} worktree list --porcelain` to `tests/guard-fixtures-companion.txt` — verify: `node --test tests/guard.test.mjs` exit 0; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt` exit 0.
 - [ ] 4.3 `scripts/hooks/session-context.sh` (and the identical shared helper in `delivery-guard.sh`): derive `<dir>-worktrees` in `resolve_artifacts()`; when the hook cwd is a managed product half whose companion half `<companion-worktrees>/<kind>-<id>` exists, `Artifacts:` names that half and its branch; otherwise unchanged — verify: `tests/session-context.test.mjs` new tests (paired half → half path; primary → clone path; no-node fallback equals with-node minus `Session:`); existing tests pass; `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` exit 0.
 

@@ -116,6 +116,31 @@ folder windows shows `|    Folder (agento)` / `|    Folder (plan-20260916-232139
 lines (verified 2026-09-16); the `Workspace (…)` label for `.code-workspace` windows
 must be confirmed by opening one (step 4.1).
 
+Step 4.1 probe (added 2026-09-16): `/tmp/agento-pair-probe.code-workspace` with
+folders `/tmp` and `/home/david/DP/agento-worktrees/plan-20260916-232139`, opened
+with `code --new-window`, then `code --status | grep -E 'Folder \(|Workspace \(|Window \('`
+printed verbatim:
+
+```
+|  Window (Welcome - agento-pair-probe (Workspace) - Visual Studio Code)
+|  Window (Welcome - plan-20260916-232139 - Visual Studio Code)
+|  Window (Preview breakdown.md - agento - Visual Studio Code)
+|    Folder (plan-20260916-232139): 166 files
+|    Folder (plan-20260916-232139): 166 files
+|    Folder (agento): 164 files
+|    Folder (tmp): more than 20000 files
+```
+
+Findings: VS Code prints **no** `Workspace (<name>)` line. A `.code-workspace` window
+is reported as a `Window (…)` title line containing `<workspace basename> (Workspace)`,
+and each of its folders is listed as an ordinary `Folder (<basename>)` line — so the
+existing `Folder (<basename of target>)` match already covers both halves of a pair
+(both are named `<kind>-<id>`). Step 4.2 therefore matches three forms against
+`os.path.basename(target)`: `Folder (<name>)` (existing), `Window (… <name> (Workspace) …)`
+(observed), and `Workspace (<name>)` (the expected form, kept in case a VS Code
+version prints it). The probe window cannot be closed from the CLI — the user closes
+it by hand.
+
 ### Concurrent deliveries
 
 `gh pr list --state open --json number,headRefName,title` → `[]` on 2026-09-16. Wave-2
