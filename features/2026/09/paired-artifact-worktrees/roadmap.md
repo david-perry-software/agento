@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "3.5 continue and agento-init prompts"
+next-step: "4.1 confirm code --status workspace label"
 initiative: "external-artifact-repo"
 ```
 
@@ -26,7 +26,7 @@ initiative: "external-artifact-repo"
 - [x] 3.2 `start-freehand.prompt.md`: the same pair creation for `freehand-<slug>` on `changes/<slug>` in both repos, workspace file, and open — verify: `diff` against `commands/start-freehand.md` empty; customizations test exit 0.
 - [x] 3.3 `close-session.prompt.md`: resolve both halves and the workspace file from `paths`; inspect both `status --short`; remove companion half (`git -C <companion clone> worktree remove <literal path>` + `prune`), product half, then delete the workspace file; delete each repo's merged local branch under the existing conditions; rule 6 per half; build close stops on `reason: companion-unpushed` — verify: `diff` against `commands/close-session.md` empty; customizations test exit 0.
 - [x] 3.4 `ship.prompt.md`: Ownership reads `companion` from `ship-preflight`; `companionGaps[]` join the hard-reject list; Teardown removes companion half, product half, and workspace file with literal paths and names the flagged path in the `paused at teardown` state — verify: `diff` against `commands/ship.md` empty; customizations test exit 0 (allowlist for `worktree list --porcelain` unchanged: `start-session, start-freehand, close-session, ship`).
-- [ ] 3.5 `continue.prompt.md` step 4: for `secondary` (and `primary` when the record's `workspace.exists`), run `code <workspace path>` instead of the folder; `agento-init.prompt.md` report gains one sentence that sessions open as two-folder workspaces in companion mode — verify: both `diff`s against `commands/` empty; customizations test exit 0.
+- [x] 3.5 `continue.prompt.md` step 4: for `secondary` (and `primary` when the record's `workspace.exists`), run `code <workspace path>` instead of the folder; `agento-init.prompt.md` report gains one sentence that sessions open as two-folder workspaces in companion mode — verify: both `diff`s against `commands/` empty; customizations test exit 0. (Repaired 2026-09-16: the record's `workspace` describes the *current* worktree and is `null` from the primary, so `secondary` opens `<path>.code-workspace` next to the located entry when it exists; `primary` always opens the folder — the primary window has no pair.)
 
 ## Phase 4: Hooks (approval-gated edits)
 
