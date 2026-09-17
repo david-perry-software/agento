@@ -1,5 +1,5 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/ship-dual-merge
 last-updated: 2026-09-17
 next-step: ""
