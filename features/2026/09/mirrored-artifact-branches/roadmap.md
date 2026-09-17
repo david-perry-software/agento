@@ -1,5 +1,5 @@
 ```yaml
-status: in-review
+status: in-progress
 branch: feature/mirrored-artifact-branches
 last-updated: 2026-09-17
 next-step: "1.6 initiative members artifactPr (review round 1: request-changes)"
