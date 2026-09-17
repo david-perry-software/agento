@@ -375,6 +375,45 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
   assert.deepEqual(run(lone, "session").json.companion, { path: path.join(docsWt, "feature-lone"), branch: null, detached: false, dirty: false, ahead: 0, registered: false });
 });
 
+test("session: a plan pair promoted on both halves is one delivery from either side", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const plan = path.join(wt, "plan-2");
+  const planHalf = path.join(docsWt, "plan-2");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", planHalf, "origin/main");
+  // The Planner's step 5: product branch first, then the same name in the companion half.
+  git(plan, "switch", "-q", "-c", "feature/mirror");
+  git(planHalf, "switch", "-q", "-c", "feature/mirror");
+  assert.equal(git(planHalf, "rev-parse", "--abbrev-ref", "HEAD"), "feature/mirror");
+  assert.equal(spawnSync("git", ["-C", planHalf, "rev-parse", "--abbrev-ref", "@{upstream}"]).status !== 0, true, "the mirrored branch has no upstream yet");
+
+  const fromProduct = run(plan, "session").json;
+  const fromHalf = run(planHalf, "session").json;
+  assert.equal(fromProduct.role, "build");
+  assert.equal(fromHalf.role, "build");
+  assert.equal(fromProduct.delivery.slug, "mirror");
+  assert.equal(fromProduct.delivery.branch, "feature/mirror");
+  assert.deepEqual(fromHalf.delivery, fromProduct.delivery);
+  assert.deepEqual(fromHalf.worktree, fromProduct.worktree);
+  assert.equal(fromProduct.worktree.dirPrefix, "plan", "promotion keeps the plan-* directory");
+  assert.deepEqual(fromProduct.companion, { path: planHalf, branch: "feature/mirror", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.equal(fromProduct.companion.branch, fromProduct.delivery.branch);
+  assert.deepEqual(fromHalf.companion, fromProduct.companion);
+  assert.deepEqual(fromHalf.worktrees, fromProduct.worktrees);
+  const tagged = fromProduct.worktrees.filter((w) => w.branch === "feature/mirror");
+  assert.deepEqual(tagged.map((w) => [w.repo, w.path, w.role, w.dirPrefix]), [["product", plan, "build", "plan"], ["companion", planHalf, "build", "plan"]]);
+  assert.match(fromHalf.warnings[0], /^anchored-from-companion: /);
+
+  // An unpushed companion commit shows up as ahead: 1 from either side.
+  fs.mkdirSync(path.join(planHalf, "features"), { recursive: true });
+  fs.writeFileSync(path.join(planHalf, "features", "x.md"), "x\n");
+  git(planHalf, "add", "-A");
+  git(planHalf, "commit", "-q", "-m", "docs: x");
+  assert.equal(run(plan, "session").json.companion.ahead, 1);
+  git(planHalf, "push", "-q", "-u", "origin", "feature/mirror");
+  assert.equal(run(planHalf, "session").json.companion.ahead, 0);
+});
+
 test("session: an unrelated repo and an ambiguous companion stay put; a half nobody names is that repo's own managed worktree", () => {
   const { repo, docs } = makePairRepo();
   const base = path.dirname(repo);
