@@ -1,0 +1,274 @@
+# Step 2.4 pair drive — 2026-09-16
+# Script: /tmp/agento-pair-drive.sh (throwaway /tmp product+companion pair, bare origins; gh calls simulated as PR #12 / #7)
+# Exit: 0
+
+#!/usr/bin/env bash
+# Step 2.4 drive: mirrored artifact branches on a throwaway product+companion pair.
+# Runs the exact git commands the Planner/Builder/Reviewer prompts name in companion mode.
+set -euo pipefail
+CLI="${AGENTO_CLI:?set AGENTO_CLI to scripts/agento.mjs}"
+BASE=$(mktemp -d /tmp/agento-pair-drive-XXXXXX)
+say() { printf '\n### %s\n' "$*"; }
+show() { printf '$ %s\n' "$*"; "$@"; }
+g() { git -C "$1" "${@:2}"; }
+mk() { # mk <name> [config-json]
+  local origin="$BASE/$1.git" work="$BASE/$1"
+  git init --bare -q -b main "$origin"
+  git clone -q "$origin" "$work"
+  g "$work" config user.email test@example.com
+  g "$work" config user.name Test
+  if [[ -n "${2:-}" ]]; then mkdir -p "$work/.github"; printf '%s\n' "$2" > "$work/.github/agento.json"; g "$work" add -A; fi
+  g "$work" commit -q --allow-empty -m init
+  g "$work" push -q -u origin main
+}
+
+say "Setup: bare origins + clones (artifacts.repo.name = project-docs)"
+mk project '{"worktrees":{"dir":"../wt"},"artifacts":{"repo":{"name":"project-docs"}}}'
+mk project-docs
+PRODUCT="$BASE/project"; DOCS="$BASE/project-docs"
+mkdir -p "$BASE/wt" "$BASE/project-docs-worktrees"
+PLAN="$BASE/wt/plan-20260916-1"; HALF="$BASE/project-docs-worktrees/plan-20260916-1"
+node "$CLI" --root "$PRODUCT" config | grep -E '"artifactsRoot"|"name"'
+
+say "start-session (plan mode): detached pair at origin/main (build mode would use worktree add --no-track -b)"
+show g "$PRODUCT" worktree add -q --detach "$PLAN" origin/main
+show g "$DOCS" worktree add -q --detach "$HALF" origin/main
+node "$CLI" --root "$PLAN" session | grep -E '"role"|"companion"|"detached"|"branch"' | sed -n '1,8p'
+
+say "Planner step 5: product feature/xw, then companion switch -c feature/xw from detached origin/main"
+show g "$PLAN" switch -q -c feature/xw
+show g "$HALF" rev-parse --verify --quiet refs/heads/feature/xw || echo "(companion has no local feature/xw — ok)"
+show g "$HALF" rev-parse --verify --quiet refs/remotes/origin/feature/xw || echo "(companion origin has no feature/xw — ok)"
+show g "$HALF" switch -q -c feature/xw
+node "$CLI" --root "$PLAN" session | grep -E '"companion": \{' -A 6
+
+say "Planner step 8: artifacts in the companion half, product published empty, artifact-pr recorded"
+ART="$HALF/features/2026/09/xw"; mkdir -p "$ART"
+cat > "$ART/plan.md" <<'EOF'
+# xw
+
+## Acceptance checklist
+
+- [ ] widget.txt exists on the product branch
+EOF
+cat > "$ART/roadmap.md" <<'EOF'
+```yaml
+status: planned
+branch: feature/xw
+last-updated: 2026-09-16
+next-step: "1.1 add widget"
+```
+
+## Phase 1
+
+- [ ] 1.1 add widget.txt — verify: test -f widget.txt
+EOF
+show g "$HALF" add features
+show g "$HALF" commit -q -m "docs(feature): plan xw"
+show g "$HALF" push -q -u origin feature/xw
+show g "$PLAN" commit -q --allow-empty -m "chore(feature): open x"
+show g "$PLAN" push -q -u origin feature/xw
+echo "(gh pr create --draft … → code PR #12; gh pr create --draft --repo project-docs … → companion PR #7; simulated: no GitHub here)"
+sed -i 's/^next-step: "1.1 add widget"$/next-step: "1.1 add widget"\nartifact-pr: "#7"/' "$ART/roadmap.md"
+show g "$HALF" commit -q -am "docs(feature): record artifact PR for xw"
+show g "$HALF" push -q origin feature/xw
+node "$CLI" --root "$PLAN" session | grep -E '"artifactPr"|"status"|"lifecycle"'
+
+say "Builder step 1.1: code commit in the product half, roadmap tick in the companion half, product pushed first"
+echo widget > "$PLAN/widget.txt"
+show g "$PLAN" add widget.txt
+show g "$PLAN" commit -q -m "feat(xw): add widget (step 1.1)"
+sed -i 's/^status: planned$/status: in-progress/; s/^- \[ \] 1.1/- [x] 1.1/; s/^next-step: .*/next-step: ""/' "$ART/roadmap.md"
+show g "$HALF" commit -q -am "docs(feature): tick xw step 1.1"
+show g "$PLAN" fetch -q origin; g "$PLAN" merge-base --is-ancestor origin/main HEAD && echo "origin/main is an ancestor of the product branch"
+show g "$HALF" fetch -q origin; g "$HALF" merge-base --is-ancestor origin/main HEAD && echo "companion origin/main is an ancestor of the companion branch"
+show g "$PLAN" push -q origin feature/xw
+show g "$HALF" push -q origin feature/xw
+test -f "$PLAN/widget.txt" && echo "verify 1.1: widget.txt present"
+
+say "Builder completion → Reviewer: status in-review, review.md in the companion half, one companion commit"
+sed -i 's/^status: in-progress$/status: in-review/' "$ART/roadmap.md"
+show g "$HALF" commit -q -am "docs(feature): xw ready for review"
+show g "$HALF" push -q origin feature/xw
+cat > "$ART/review.md" <<'EOF'
+# Review: xw
+
+Verdict: approve
+
+## Acceptance checklist
+
+- [x] widget.txt exists on the product branch — `test -f widget.txt` exit 0
+EOF
+show g "$HALF" add features
+show g "$HALF" commit -q -m "docs(feature): review xw — approve"
+show g "$HALF" push -q origin feature/xw
+echo "(gh pr comment 12 --body 'Verdict: approve — <companion>/blob/feature/xw/features/2026/09/xw/review.md'; re-review: --edit-last; simulated)"
+
+say "Verify: session from the product half"
+node "$CLI" --root "$PLAN" session --pr > "$BASE/from-product.json"
+grep -E '"slug"|"branch"|"status"|"artifactPr"|"reviewVerdict"|"lifecycle"|"companionPr"|"pr"' "$BASE/from-product.json"
+python3 - "$BASE/from-product.json" <<'EOF'
+import json,sys; r=json.load(open(sys.argv[1]))
+print("companion:", json.dumps(r["companion"]))
+EOF
+
+say "Verify: session from the companion half (re-anchors on the product half)"
+node "$CLI" --root "$HALF" session --pr > "$BASE/from-half.json"
+python3 - "$BASE/from-product.json" "$BASE/from-half.json" <<'EOF'
+import json,sys
+a=json.load(open(sys.argv[1])); b=json.load(open(sys.argv[2]))
+assert a["delivery"]==b["delivery"], (a["delivery"], b["delivery"])
+d=a["delivery"]; c=a["companion"]
+assert (d["slug"],d["branch"],d["status"],d["artifactPr"])==("xw","feature/xw","in-review","#7"), d
+assert c["branch"]=="feature/xw" and c["ahead"]==0 and c["dirty"] is False and c["detached"] is False, c
+assert a["companion"]==b["companion"]
+assert a["companionPr"] is None or isinstance(a["companionPr"], dict)
+print("OK: both halves agree —", json.dumps({"delivery":d,"companion":c}))
+EOF
+
+say "Verify: from the product primary (on main) resolve/next see the branch-only roadmap"
+node "$CLI" --root "$PRODUCT" resolve feature xw | grep -E '"status"|"source"|"artifactPr"|"branch"'
+node "$CLI" --root "$PRODUCT" next xw | grep -E '"status"|"command"|"artifactPr"|"slug"' | sed -n '1,12p'
+echo "(status walks only the clone's working tree; a branch-only roadmap is invisible to it by design:)"
+node "$CLI" --root "$PRODUCT" status feature xw | grep -E '"items": \[\]|"slug"' || true
+
+say "Verify: close-decision from the product primary reports no companion gaps"
+node "$CLI" --root "$PRODUCT" close-decision feature xw > "$BASE/close.json"
+python3 - "$BASE/close.json" <<'EOF'
+import json,sys; r=json.load(open(sys.argv[1]))
+print(json.dumps({k:r.get(k) for k in ("status","decision","reason","owner","companion","warnings")}, indent=1))
+w=[x for x in (r.get("warnings") or []) if "companion" in x.lower()]
+assert not w, w
+print("OK: no companion warnings")
+EOF
+
+say "Done: pair at $BASE"
+
+
+# ---- transcript ----
+
+
+### Setup: bare origins + clones (artifacts.repo.name = project-docs)
+warning: You appear to have cloned an empty repository.
+warning: You appear to have cloned an empty repository.
+  "artifactsRoot": "/tmp/agento-pair-drive-87gD9M/project-docs",
+        "name": "project-docs",
+
+### start-session (plan mode): detached pair at origin/main (build mode would use worktree add --no-track -b)
+$ g /tmp/agento-pair-drive-87gD9M/project worktree add -q --detach /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 origin/main
+$ g /tmp/agento-pair-drive-87gD9M/project-docs worktree add -q --detach /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 origin/main
+  "role": "plan",
+    "branch": null,
+    "detached": true,
+      "branch": "main",
+      "detached": false,
+      "role": "primary",
+      "branch": null,
+      "detached": true,
+
+### Planner step 5: product feature/xw, then companion switch -c feature/xw from detached origin/main
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 switch -q -c feature/xw
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 rev-parse --verify --quiet refs/heads/feature/xw
+(companion has no local feature/xw — ok)
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 rev-parse --verify --quiet refs/remotes/origin/feature/xw
+(companion origin has no feature/xw — ok)
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 switch -q -c feature/xw
+  "companion": {
+    "path": "/tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1",
+    "branch": "feature/xw",
+    "detached": false,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+
+### Planner step 8: artifacts in the companion half, product published empty, artifact-pr recorded
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 add features
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 commit -q -m docs(feature): plan xw
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 push -q -u origin feature/xw
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 commit -q --allow-empty -m chore(feature): open x
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 push -q -u origin feature/xw
+(gh pr create --draft … → code PR #12; gh pr create --draft --repo project-docs … → companion PR #7; simulated: no GitHub here)
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 commit -q -am docs(feature): record artifact PR for xw
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 push -q origin feature/xw
+  "status": "ok",
+    "status": "planned",
+    "artifactPr": "#7",
+  "lifecycle": "planned",
+
+### Builder step 1.1: code commit in the product half, roadmap tick in the companion half, product pushed first
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 add widget.txt
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 commit -q -m feat(xw): add widget (step 1.1)
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 commit -q -am docs(feature): tick xw step 1.1
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 fetch -q origin
+origin/main is an ancestor of the product branch
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 fetch -q origin
+companion origin/main is an ancestor of the companion branch
+$ g /tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1 push -q origin feature/xw
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 push -q origin feature/xw
+verify 1.1: widget.txt present
+
+### Builder completion → Reviewer: status in-review, review.md in the companion half, one companion commit
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 commit -q -am docs(feature): xw ready for review
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 push -q origin feature/xw
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 add features
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 commit -q -m docs(feature): review xw — approve
+$ g /tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1 push -q origin feature/xw
+(gh pr comment 12 --body 'Verdict: approve — <companion>/blob/feature/xw/features/2026/09/xw/review.md'; re-review: --edit-last; simulated)
+
+### Verify: session from the product half
+  "status": "ok",
+    "branch": "feature/xw",
+      "branch": "main",
+      "branch": "feature/xw",
+      "branch": "main",
+      "branch": "feature/xw",
+    "branch": "feature/xw",
+    "slug": "xw",
+    "branch": "feature/xw",
+    "reviewVerdict": "approve",
+    "status": "in-review",
+    "artifactPr": "#7",
+  "pr": null,
+  "companionPr": null,
+  "lifecycle": "approved",
+companion: {"path": "/tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1", "branch": "feature/xw", "detached": false, "dirty": false, "ahead": 0, "registered": true}
+
+### Verify: session from the companion half (re-anchors on the product half)
+OK: both halves agree — {"delivery": {"type": "feature", "slug": "xw", "branch": "feature/xw", "dir": "features/2026/09/xw", "roadmap": "features/2026/09/xw/roadmap.md", "plan": "features/2026/09/xw/plan.md", "review": "features/2026/09/xw/review.md", "reviewVerdict": "approve", "status": "in-review", "lastUpdated": "2026-09-16", "nextStep": "", "githubIssue": null, "artifactPr": "#7", "initiative": null, "steps": {"ticked": 1, "total": 1}, "postShipPending": 0}, "companion": {"path": "/tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1", "branch": "feature/xw", "detached": false, "dirty": false, "ahead": 0, "registered": true}}
+
+### Verify: from the product primary (on main) resolve/next see the branch-only roadmap
+  "status": "ok",
+  "source": "remote",
+  "branch": "feature/xw",
+  "artifactPr": "#7",
+  "status": "ok",
+  "slug": "xw",
+  "artifactPr": "#7",
+    "command": "ship",
+(status walks only the clone's working tree; a branch-only roadmap is invisible to it by design:)
+  "items": [],
+
+### Verify: close-decision from the product primary reports no companion gaps
+{
+ "status": "ok",
+ "decision": null,
+ "reason": "managed-worktree-present",
+ "owner": {
+  "path": "/tmp/agento-pair-drive-87gD9M/wt/plan-20260916-1",
+  "role": "build",
+  "dirPrefix": "plan",
+  "id": "20260916-1"
+ },
+ "companion": {
+  "path": "/tmp/agento-pair-drive-87gD9M/project-docs-worktrees/plan-20260916-1",
+  "branch": "feature/xw",
+  "detached": false,
+  "dirty": false,
+  "ahead": 0,
+  "registered": true
+ },
+ "warnings": null
+}
+OK: no companion warnings
+
+### Done: pair at /tmp/agento-pair-drive-87gD9M
