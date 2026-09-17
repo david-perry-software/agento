@@ -9,7 +9,7 @@
 //   node scripts/agento.mjs find <slug>                 (type-agnostic)
 //   node scripts/agento.mjs status [feature|issue] [slug]
 //   node scripts/agento.mjs close-decision <feature|issue> <slug>
-//   node scripts/agento.mjs ship-preflight <feature|issue> <slug>
+//   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (--pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
 //   node scripts/agento.mjs initiative [<slug>]
@@ -337,7 +337,7 @@ function withExit(result) {
   emit({ ...result, root, configSource: source }, result.status === "ok" ? 0 : 3);
 }
 
-// Only `session --pr` reaches this; every failure is a warning, never an exit code.
+// Only `session --pr` and `ship-preflight --pr` reach this; every failure is a warning, never an exit code.
 // `label` names the field in warnings (`pr` for the code PR in the product checkout,
 // `companionPr` for the artifact PR looked up in the companion clone).
 function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
@@ -840,7 +840,17 @@ switch (command) {
     const preflight = evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") });
     if (preflight.status !== "ok") withExit(preflight);
     const companion = companionOfOwner(preflight.owner);
-    withExit({ ...preflight, companion, companionGaps: companionGaps(companion) });
+    const gaps = companionGaps(companion);
+    if (!options.pr) withExit({ ...preflight, companion, companionGaps: gaps });
+    const { pr, warnings: prWarnings } = lookupPullRequest(preflight.branch);
+    const { pr: companionPr, warnings: companionPrWarnings } = lookupCompanionPullRequest(preflight.branch);
+    // A MERGED companion PR is the resume-at-teardown case, not a gap.
+    if (artifacts.external) {
+      if (!companionPr) gaps.push("missing-pr");
+      else if (companionPr.state === "CLOSED") gaps.push("pr-not-open");
+      else if (companionPr.mergeStateStatus === "CONFLICTING") gaps.push("conflicting-pr");
+    }
+    withExit({ ...preflight, companion, companionGaps: gaps, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] });
     break;
   }
 

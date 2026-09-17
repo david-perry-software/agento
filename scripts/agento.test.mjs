@@ -1150,6 +1150,79 @@ test("session --pr: companionPr is null with no extra gh call in-repo, and the c
   assert.match(degraded.json.warnings[0], /^companionPr: gh pr view feature\/widget failed: no pull requests found/);
 });
 
+// A stub gh answering `pr view` with a per-repo state: `product` for the product
+// checkout, `companion` for anything under project-docs. Logs `$PWD $*` to marker.
+function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN" } = {}) {
+  return `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge};; *) n=15; s=${product}; m=CLEAN;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
+}
+
+test("ship-preflight --pr: in-repo one gh call with companionPr null; companion mode both PRs and PR gaps; no --pr means no pr key", () => {
+  // In-repo layout.
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(repo, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  const marker = path.join(wt, "gh-invoked");
+  const { env } = restrictedPath({ gh: prStub(marker) });
+  const plain = runWith({ cwd: repo, env }, "ship-preflight", "feature", "widget");
+  assert.equal(plain.code, 0);
+  assert.ok(!("pr" in plain.json) && !("companionPr" in plain.json) && !("warnings" in plain.json), "without --pr the output is today's shape");
+  assert.ok(!fs.existsSync(marker), "gh was invoked without --pr");
+  const inRepo = runWith({ cwd: repo, env }, "ship-preflight", "feature", "widget", "--pr");
+  assert.equal(inRepo.code, 0);
+  assert.equal(inRepo.json.pr.number, 15);
+  assert.equal(inRepo.json.companionPr, null);
+  assert.equal(inRepo.json.companion, null);
+  assert.deepEqual(inRepo.json.companionGaps, []);
+  assert.deepEqual(inRepo.json.warnings, []);
+  const inRepoCalls = fs.readFileSync(marker, "utf8").trim().split("\n");
+  assert.equal(inRepoCalls.length, 1, "in-repo mode runs gh pr view once");
+  assert.match(inRepoCalls[0], new RegExp(`^${repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url$`));
+
+  // Companion mode: both PRs, the companion one looked up from inside the clone.
+  const pair = makePairRepo();
+  const product = path.join(pair.wt, "feature-widget");
+  const half = path.join(pair.docsWt, "feature-widget");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(pair.docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  writeRoadmap(pair.docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review\nartifact-pr: \"#7\"");
+  const pairMarker = path.join(pair.wt, "gh-invoked");
+  const shipWith = (states) => {
+    fs.rmSync(pairMarker, { force: true });
+    const json = runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker, states) }).env }, "ship-preflight", "feature", "widget", "--pr").json;
+    return { json, calls: fs.existsSync(pairMarker) ? fs.readFileSync(pairMarker, "utf8").trim().split("\n") : [] };
+  };
+  const both = shipWith({});
+  assert.equal(both.json.status, "ok");
+  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/7" });
+  assert.deepEqual(both.json.companionGaps, []);
+  assert.deepEqual(both.json.warnings, []);
+  assert.equal(both.json.companion.path, half);
+  assert.equal(both.calls.length, 2);
+  assert.match(both.calls[0], new RegExp(`^${pair.repo} pr view feature/widget `));
+  assert.match(both.calls[1], new RegExp(`^${pair.docs} pr view feature/widget `));
+  assert.equal(git(pair.docs, "branch", "--show-current"), "main", "the companion clone is never switched");
+
+  const missing = shipWith({ companion: "NONE" });
+  assert.equal(missing.json.companionPr, null);
+  assert.deepEqual(missing.json.companionGaps, ["missing-pr"]);
+  assert.equal(missing.json.warnings.length, 1);
+  assert.match(missing.json.warnings[0], /^companionPr: gh pr view feature\/widget failed/);
+  assert.deepEqual(shipWith({ companion: "CLOSED" }).json.companionGaps, ["pr-not-open"]);
+  assert.deepEqual(shipWith({ companionMerge: "CONFLICTING" }).json.companionGaps, ["conflicting-pr"]);
+  const merged = shipWith({ product: "MERGED", companion: "MERGED" });
+  assert.equal(merged.json.companionPr.state, "MERGED");
+  assert.deepEqual(merged.json.companionGaps, [], "a merged companion PR is the resume-at-teardown case, not a gap");
+  // The resume-at-companion-merge case: code merged, companion still open, no gap.
+  const halfShipped = shipWith({ product: "MERGED", companion: "OPEN" });
+  assert.deepEqual([halfShipped.json.pr.state, halfShipped.json.companionPr.state, halfShipped.json.companionGaps], ["MERGED", "OPEN", []]);
+  // PR gaps stack on top of the half's own gaps.
+  fs.writeFileSync(path.join(half, "wip.md"), "wip\n");
+  assert.deepEqual(shipWith({ companion: "CLOSED" }).json.companionGaps, ["dirty", "pr-not-open"]);
+  assert.ok(!("pr" in runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker) }).env }, "ship-preflight", "feature", "widget").json));
+});
+
 const chain = [{ slug: "a" }, { slug: "b", recommendedAfter: ["a"] }, { slug: "c", requires: ["b"] }];
 
 test("initiative derives state, readiness, waves, and next; only complete roadmaps satisfy Requires", () => {
