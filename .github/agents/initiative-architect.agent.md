@@ -41,6 +41,14 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
 `agento.mjs config` → `artifacts.initiatives`, default `initiatives/`). Never modify
 `features/`, `issues/`, source code, configuration, or any other directory.
 
+**Companion mode** (the session record's `companion` is not `null`): the initiative
+files live in the companion clone at `companion.path` (its `artifacts.initiatives`
+root), never in the product checkout. The branch, commit, PR, and merge in steps 5,
+7, and 8 all happen in that clone — `git -C <companion.path>` for every git command
+and `--repo <artifacts.repo.name>` for every `gh` command — and the product
+checkout stays on `main`, untouched. The in-repo layout (`companion: null`) keeps the
+single-repo flow below.
+
 ## Procedure
 
 1. **Require the primary worktree on `main`, clean, and synchronized.** Apply the
@@ -50,6 +58,9 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
    alternatives. `git fetch origin`, then `git status --short --branch` must show
    nothing and zero ahead/behind; otherwise stop and name
    `/agento commit-current-changes`. Authentication failures halt per AGENTS.md.
+   Companion mode: the record's `companion` must also be on its default branch and
+   clean (`companion.dirty: false`, `companion.ahead: 0`) after `git -C
+   <companion.path> fetch origin`; otherwise stop and name the half.
 2. **Read the brief.** The argument is exactly one of: inline text, or a
    repository-relative path to an existing file whose content is the brief. If the
    argument names no existing file and contains no whitespace, stop and ask whether it
@@ -71,7 +82,9 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
    - no `<initiatives-root>/**/<slug>/` directory exists locally or on `origin/main`
      (`git ls-tree -r --name-only origin/main -- <initiatives-root>`);
    - the branch `changes/initiative-<slug>` exists neither locally nor on origin.
-   Then `git switch -c changes/initiative-<slug>`.
+   Then `git switch -c changes/initiative-<slug>` (companion mode: `git -C
+   <companion.path> switch -c changes/initiative-<slug>` from the clone's default
+   branch, checking the branch is absent in the companion clone and its origin).
 6. **Decompose and write.** Split the brief into 2–8 member features that are each
    independently shippable. For every member choose a kebab-case feature slug that is
    unique within the file and free everywhere: `agento.mjs find <feature-slug>` must
@@ -100,7 +113,12 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
    branch (never rebase), push, and wait again. Failing checks are a resumable
    blocker — report the PR and stop. Then merge with a normal merge commit through
    the ruleset (no admin, no squash, no rebase), delete the branch, switch to `main`,
-   fetch, fast-forward, and confirm a clean tree with zero ahead/behind.
+   fetch, fast-forward, and confirm a clean tree with zero ahead/behind. Companion
+   mode: every one of these commands runs in the companion clone (`git -C
+   <companion.path> …`, `gh pr create --repo <artifacts.repo.name> …`,
+   `scripts/wait-for-checks.sh pr <n> --repo <artifacts.repo.name>`, `gh pr merge
+   --repo <artifacts.repo.name> …`), the PR targets the companion's default branch,
+   and the clone ends back on that default, clean, with `companion.ahead: 0`.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
    the §9 result line's `next:` command:

@@ -23,6 +23,14 @@ skipped). Before the first write, run
 `fail`/`warn` per §10.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
+**Companion mode** (the session record's `companion` is not `null`): the artifacts
+you harvest and annotate live in the companion clone at `companion.path` (`agento.mjs
+find`/`status` already resolve them there), so the annotation branch, commit, PR, and
+merge in step 5 happen in that clone — `git -C <companion.path>` for every git
+command and `--repo <artifacts.repo.name>` for `gh pr` commands — while the GitHub
+issues in steps 3 and 6 are still filed and flagged in the product repository. The
+in-repo layout (`companion: null`) keeps the single-repo flow.
+
 **Mode** — from the argument:
 - **Slug given**: `agento.mjs find <slug>`; triage only when `status` is `ok`,
   otherwise report the `message` and stop.
@@ -65,7 +73,12 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    (`docs(delivery): triage follow-ups ...`), push with upstream, open a PR to `main`,
    merge it through the ruleset once required checks pass (normal merge commit, no
    bypass), delete the branch, and sync `main`. If nothing was filed, skip this step
-   entirely — no branch, no PR.
+   entirely — no branch, no PR. Companion mode: from the companion clone on its
+   default branch synced with its origin, `git -C <companion.path> switch -c
+   chore/followup-triage-…`, commit and push there, `gh pr create --repo
+   <artifacts.repo.name>`, wait with `scripts/wait-for-checks.sh pr <n> --repo
+   <artifacts.repo.name>`, merge with `gh pr merge --repo
+   <artifacts.repo.name>`, and return the clone to its default branch clean.
 
 6. **Reconcile the open backlog against the codebase** (code is truth; scan mode
    only — skip in slug mode). For every open GitHub issue whose body carries a
