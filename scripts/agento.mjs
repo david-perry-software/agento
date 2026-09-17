@@ -667,6 +667,7 @@ function deriveInitiative(breakdown, roadmaps) {
       state,
       roadmap: roadmap ? roadmap.roadmap : null,
       branch: roadmap ? roadmap.branch : `${config.branches.feature}${f.slug}`,
+      artifactPr: roadmap?.artifactPr ?? null,
       requires: f.requires,
       recommendedAfter: f.recommendedAfter,
       wave: f.wave,

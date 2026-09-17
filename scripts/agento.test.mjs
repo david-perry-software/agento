@@ -1146,19 +1146,22 @@ test("initiative derives state, readiness, waves, and next; only complete roadma
     ["c", "unplanned", false, ["b"]],
   ]);
   assert.deepEqual(first.json.features[1].recommendedAfter, ["a"]);
+  assert.deepEqual(first.json.features.map((f) => f.artifactPr), [null, null, null]);
   assert.deepEqual(first.json.waves, [["a", "b"], ["c"]]);
   assert.equal(first.json.next, "a");
   assert.equal(first.json.done, false);
   assert.deepEqual(first.json.anomalies, []);
 
   writeRoadmap(repo, "features/2026/09/a", 'status: complete\nbranch: feature/a\ninitiative: "demo"\nnext-step: ""');
-  writeRoadmap(repo, "features/2026/09/b", 'status: in-review\nbranch: feature/b\ninitiative: "demo"\nnext-step: review');
+  writeRoadmap(repo, "features/2026/09/b", 'status: in-review\nbranch: feature/b\ninitiative: "demo"\nnext-step: review\nartifact-pr: "#7"');
   const second = run(repo, "initiative", "demo").json;
   assert.deepEqual(second.features.map((f) => [f.slug, f.state, f.ready]), [
     ["a", "complete", false],
     ["b", "in-review", false],
     ["c", "unplanned", false],
   ]);
+  // Members carry the companion PR from their roadmap header; null without one or without a roadmap.
+  assert.deepEqual(second.features.map((f) => f.artifactPr), [null, "#7", null]);
   assert.deepEqual(second.features[2].blockedBy, ["b"]);
   assert.equal(second.next, null);
 
