@@ -52,9 +52,18 @@ exact argument.
    nowhere in the companion — so both halves carry `feature/<slug>` before any
    artifact is written. Create
    `features/<current-YYYY>/<current-MM>/<slug>/plan.md` and `roadmap.md` per the
-   delivery artifact format, with branch `feature/<slug>` in the roadmap header.
-5. Commit the two artifacts, push with upstream, and open a draft PR to `main`.
-6. Report slug, branch, PR number, and roadmap step count. Offer **Build in this
+   delivery artifact format, with branch `feature/<slug>` in the roadmap header, under
+   the `artifactRoot` of `node <agento-root>/scripts/agento.mjs paths feature <slug>`
+   (the companion half in companion mode, the product checkout in-repo).
+5. Commit the two artifacts, push with upstream, and open a draft PR to `main`. In
+   companion mode follow the Planner's step 8 order: commit and push the artifacts in
+   the companion half (`git -C <companion.path>`), publish the product branch with one
+   empty Conventional Commit and open the draft code PR, open the **draft** companion
+   PR titled `docs(<type>): <slug>` whose body links the code PR, cross-link the code
+   PR body with `gh pr edit`, then record `artifact-pr: "#<n>"` in the roadmap header
+   and push that second companion commit.
+6. Report slug, branch, PR number (and the companion PR number in companion mode), and
+   roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or
    reinstalling dependencies. Explain that the promoted session is later torn down by
    `/agento ship <slug>` from the primary window once the PR is merged

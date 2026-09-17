@@ -60,15 +60,25 @@ The argument takes three forms — detect which applies:
    imported issues, reuse the existing number. Record it as `GitHub issue: #<n>` in
    plan.md `## Evidence` and `github-issue` in the roadmap header.
 7. Create `issues/<current-YYYY>/<current-MM>/<slug>/plan.md` and `roadmap.md` per the
-   delivery artifact format, with branch `issue/<slug>`. The roadmap MUST include an early step
+   delivery artifact format, with branch `issue/<slug>`, under the `artifactRoot` of
+   `node <agento-root>/scripts/agento.mjs paths issue <slug>` (the companion half in
+   companion mode, the product checkout in-repo; `evidence/` from step 5 lives there
+   too). The roadmap MUST include an early step
    that adds a regression test exposing the defect and verifies it FAILS, and the
    acceptance checklist's first item MUST require that test to pass. The test's name
    or header comment must reference the GitHub issue number and slug so future readers
    can trace it back to the evidence.
 8. Commit the artifacts (including evidence/), push with upstream, and open a draft PR
    to `main` whose body starts
-   with `Fixes #<n>` so the merge closes the issue.
-9. Report slug, branch, GitHub issue number, PR number, and roadmap step count. Offer
+   with `Fixes #<n>` so the merge closes the issue. In companion mode follow the
+   Planner's step 8 order: commit and push the artifacts in the companion half (`git
+   -C <companion.path>`), publish the product branch with one empty Conventional
+   Commit and open the draft code PR (body starting with `Fixes #<n>`), open the
+   **draft** companion PR titled `docs(<type>): <slug>` whose body links the code PR,
+   cross-link the code PR body with `gh pr edit`, then record `artifact-pr: "#<n>"`
+   in the roadmap header and push that second companion commit.
+9. Report slug, branch, GitHub issue number, PR number (and the companion PR number in
+   companion mode), and roadmap step count. Offer
    **Build in this worktree** to hand off directly to the Builder without closing,
    reopening, or reinstalling dependencies. Explain that the promoted session is later
    torn down by `/agento ship <slug>` from the primary window once the PR is merged

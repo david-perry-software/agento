@@ -37,8 +37,10 @@ change colliding on the same slug). Window check per §11: requires role `plan` 
 ## Scope of edits
 
 Only create or edit files inside `features/YYYY/MM/<slug>/` or
-`issues/YYYY/MM/<slug>/`. Never modify source code, configuration, or other
-directories.
+`issues/YYYY/MM/<slug>/` under the artifact root `node <agento-root>/scripts/agento.mjs
+paths <type> <slug>` reports as `artifactRoot` — the product checkout in the in-repo
+layout, the companion half (`companion.path` in the session record) in companion
+mode. Never modify source code, configuration, or other directories.
 
 ## Procedure
 
@@ -142,14 +144,39 @@ directories.
    `status: planned`, `branch: feature/<slug>` (or `issue/<slug>`), today's date,
    `next-step:` pointing at step 1.1, and — for an initiative member only —
    `initiative: "<initiative-slug>"`; plan.md `## Problem` then links the breakdown
-   file and names the member block it implements.
+   file and names the member block it implements. In companion mode the files go
+   under the companion half's artifact root (the `artifactRoot` of `agento.mjs paths
+   <type> <slug>`, inside `companion.path`), never under the product checkout; the
+   `artifact-pr:` header is added in step 8 once the companion PR exists.
 8. **Publish the branch.** Confirm from the session record that `worktree.branch` is
-   the branch named in the roadmap header. Commit only the artifact files
-   (Conventional Commit, e.g. `docs(delivery): plan <slug>`), push with upstream, and
-   open a **draft** pull request to `main` titled after the slug, whose body links the
-   plan — for issues, the body starts with `Fixes #<n>` so the merge closes the
-   GitHub issue. Never commit to `main`.
-9. **Report** the slug, branch, PR number (and GitHub issue number for issues), and
+   the branch named in the roadmap header. **In-repo layout:** commit only the
+   artifact files (Conventional Commit, e.g. `docs(delivery): plan <slug>`), push
+   with upstream, and open a **draft** pull request to `main` titled after the slug,
+   whose body links the plan — for issues, the body starts with `Fixes #<n>` so the
+   merge closes the GitHub issue. **Companion mode** (`companion` not `null` and
+   `companion.branch` equal to the roadmap branch): the artifacts are committed in
+   the companion half and the product branch is published empty so the code PR can
+   open — in this order:
+   1. `git -C <companion.path> add <artifact dir>` and `git -C <companion.path>
+      commit` (`docs(<type>): plan <slug>`), then `git -C <companion.path> push -u
+      origin <branch>`.
+   2. In the product half: `git commit --allow-empty -m "chore(<type>): open
+      <slug>"` (one empty Conventional Commit; the product branch carries no
+      artifact files), `git push -u origin <branch>`, and open the **draft** code PR
+      to `main` titled after the slug, whose body links the plan on the companion
+      branch (`<companion repo URL>/blob/<branch>/<path to plan.md>`) — for issues
+      starting with `Fixes #<n>`.
+   3. `gh pr create --draft --repo <artifacts.repo.name owner/name from the companion's
+      origin> --head <branch> --base <default> --title "docs(<type>): <slug>"`
+      with a body linking the code PR by URL; then `gh pr edit <code PR> --body` to
+      append the companion PR URL so the two PRs cross-link.
+   4. Write `artifact-pr: "#<n>"` (the companion PR number) into the roadmap header
+      next to `github-issue`, commit it in the companion half (`docs(<type>): record
+      artifact PR for <slug>`), and push. `agento.mjs session --pr` now reports both
+      `pr` and `companionPr`, and `delivery.artifactPr` equals the header.
+   Never commit to `main` in either repository.
+9. **Report** the slug, branch, PR number (the companion PR number too in companion
+   mode; and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current
    planning worktree in place without moving or recreating it; that handoff (or
    `/agento build-<type> <slug>`) is the `next:` of the §9 result line. After promotion, the
