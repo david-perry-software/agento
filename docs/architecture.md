@@ -87,7 +87,7 @@ per-project state.
 | Project-specific fact | Where it lives |
 |---|---|
 | Artifact roots, worktree dir, branch names, release workflow | target repo `.github/agento.json` (read by hooks, the resolver, and `scripts/agento.mjs`) |
-| Delivery artifacts themselves (`features/`, `issues/`, `initiatives/`) | the target repo, or — when `artifacts.repo` names a sibling companion checkout — that checkout, which the CLI resolves as `artifactsRoot` against the primary checkout and `doctor` verifies (`artifact-repo`) |
+| Delivery artifacts themselves (`features/`, `issues/`, `initiatives/`) | the target repo, or — when `artifacts.repo` names a sibling companion checkout — that checkout, which the CLI resolves as `artifactsRoot` against the primary checkout and `doctor` verifies (`artifact-repo`); each managed session then owns a companion half under the derived `<artifacts.repo.dir>-worktrees/<kind>-<id>` next to its product half |
 | Commands, verification strategy, shared resources, skills table | target repo `AGENTS.md` `## Agento` section (read by agents) |
 | Delivery policy and artifact format | the plugin (this repo) |
 
@@ -95,3 +95,17 @@ Where prompt text still says `main`, `features/`, `issues/`, or `initiatives/`, 
 it as the configured `branches.default`, `artifacts.features`, `artifacts.issues`,
 and `artifacts.initiatives`; the values the model should actually use come from
 `agento.mjs config`.
+
+**Companion-cwd anchoring.** The companion clone carries no `agento.json`, so a CLI
+call whose cwd is inside the companion clone or one of its halves cannot read the
+product config from its own toplevel. `agento.mjs` therefore anchors first: when the
+cwd's toplevel has no `artifacts.repo` of its own, it takes that checkout's primary
+(the first entry of its own `git worktree list --porcelain`), lists the primary's
+parent directory once, and picks the sibling git checkout whose `.github/agento.json`
+resolves `artifacts.repo.dir` to exactly that clone. Exactly one match → the record is
+computed from that product (for a half `<kind>-<id>`, from the product half of the
+same name when it exists) and `warnings[]` carries `anchored-from-companion`; zero
+matches → today's behaviour (`unmanaged`); several → `unmanaged` plus a warning
+listing them. The hooks pass `--root <cwd>` unchanged, so a terminal sitting in the
+companion folder of a pair window prints the same `Session:` line as the product
+folder.

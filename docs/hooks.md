@@ -27,7 +27,10 @@ companion checkout instead (resolved against the primary checkout, like
 so the no-node fallback still equals the full output minus `Session:`. A missing
 companion directory yields the same line with `detached` and the usual "No
 in-progress delivery work" line — `agento.mjs doctor` is where the companion is
-validated. With `artifacts.repo` unset the output is byte-identical to before.
+validated. From a managed product worktree `<kind>-<id>` whose companion half
+`<companion>-worktrees/<kind>-<id>` exists, the `Artifacts:` line names that half and
+its branch, and the roadmaps are walked there; the primary and an unpaired worktree
+still name the clone. With `artifacts.repo` unset the output is byte-identical to before.
 
 ## PreToolUse — `scripts/hooks/delivery-guard.sh`
 
@@ -59,6 +62,7 @@ tracking branch switches earlier in the same line.
 | Companion mode (`artifacts.repo` set): the same commit in the product checkout while the companion checkout has neither a staged `roadmap.md` nor a `roadmap.md` in its `HEAD` commit — the reason names the companion path and its current branch; the product commit's own files are never what decides | ask — progress may be lost on resume |
 | Companion mode: commit, push, or merge targeting the companion checkout (`git -C <companion> …`, `cd <companion> && …`) on the **product** config's default branch, or a push whose refspec targets it | deny — the product config governs the companion |
 | `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only) | ask |
+| `git [-C <companion clone>] worktree remove <half>` while the pair's `<kind>-<id>.code-workspace` window is open — `code --status` shows `Window (… <kind>-<id> (Workspace) …)` (observed) or `Workspace (<kind>-<id>)`; both halves share the name, so either removal asks | ask |
 | Everything else | allow |
 
 Branch names, the default branch, and artifact roots come from the target repo's

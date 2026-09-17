@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "5.1 docs: commands, concurrency, architecture, project-profile, hooks"
+next-step: "5.2 policy §8/§11 and CHANGELOG entry"
 initiative: "external-artifact-repo"
 ```
 
@@ -36,7 +36,7 @@ initiative: "external-artifact-repo"
 
 ## Phase 5: Docs, policy, changelog
 
-- [ ] 5.1 Update `docs/commands.md` (`paths`, `session`, `next`, `close-decision`, `ship-preflight`, `doctor` fields), `docs/concurrency.md` `## Worktrees` (the pair, `<companion-dir>-worktrees/`, the workspace file, one builder per slug covers both halves), `docs/architecture.md` (companion-cwd anchoring rule), `docs/project-profile.md` (derived companion worktrees dir; no new key), `docs/hooks.md` (occupant `Workspace` row; `Artifacts:` names the half) — verify: `grep -c 'code-workspace' docs/concurrency.md docs/commands.md` ≥ 1 each; `grep -c 'Workspace (' docs/hooks.md` ≥ 1; `node --test tests/customizations.test.mjs` exit 0.
+- [x] 5.1 Update `docs/commands.md` (`paths`, `session`, `next`, `close-decision`, `ship-preflight`, `doctor` fields), `docs/concurrency.md` `## Worktrees` (the pair, `<companion-dir>-worktrees/`, the workspace file, one builder per slug covers both halves), `docs/architecture.md` (companion-cwd anchoring rule), `docs/project-profile.md` (derived companion worktrees dir; no new key), `docs/hooks.md` (occupant `Workspace` row; `Artifacts:` names the half) — verify: `grep -c 'code-workspace' docs/concurrency.md docs/commands.md` ≥ 1 each; `grep -c 'Workspace (' docs/hooks.md` ≥ 1; `node --test tests/customizations.test.mjs` exit 0.
 - [ ] 5.2 Policy: `delivery-policy.instructions.md` §8 names the pair's workspace window as the secondary window; §11 step 2 allows the four worktree-mutating commands to read the companion clone's `git worktree list --porcelain` for that mutation; `CHANGELOG.md` `## Unreleased` gains the paired-worktrees entry — verify: `node --test tests/customizations.test.mjs` exit 0 (§N references resolve); `grep -c 'companion' CHANGELOG.md` increased versus `origin/main`.
 
 ## Phase 6: End-to-end and gate
