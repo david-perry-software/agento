@@ -179,25 +179,27 @@ test("resolve, find, ship-preflight, and close-decision fall back to the compani
   const docs = companionOf(repo);
   // The roadmap exists only on the companion's feature/widget, pushed to the companion's origin.
   git(docs, "switch", "-q", "-c", "feature/widget");
-  writeRoadmap(docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  writeRoadmap(docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review\nartifact-pr: \"#7\"");
   git(docs, "add", "-A");
   git(docs, "commit", "-q", "-m", "plan");
   git(docs, "push", "-q", "-u", "origin", "feature/widget");
   git(docs, "switch", "-q", "main");
   assert.ok(!fs.existsSync(path.join(docs, "features")));
   // A same-named roadmap in the product repo's own checkout must not be consulted.
-  writeRoadmap(repo, "features/2026/09/widget", "status: planned\nbranch: feature/wrong\nnext-step: 1.1");
+  writeRoadmap(repo, "features/2026/09/widget", "status: planned\nbranch: feature/wrong\nnext-step: 1.1\nartifact-pr: \"#99\"");
 
   const resolved = run(repo, "resolve", "feature", "widget");
   assert.equal(resolved.code, 0);
   assert.equal(resolved.json.status, "ok");
   assert.equal(resolved.json.source, "remote");
   assert.equal(resolved.json.branch, "feature/widget");
+  assert.equal(resolved.json.artifactPr, "#7");
   assert.equal(resolved.json.root, repo);
 
   const found = run(repo, "find", "widget");
   assert.equal(found.json.type, "feature");
   assert.equal(found.json.source, "remote");
+  assert.equal(found.json.artifactPr, "#7");
 
   const ship = run(repo, "ship-preflight", "feature", "widget");
   assert.equal(ship.code, 0);
@@ -206,11 +208,18 @@ test("resolve, find, ship-preflight, and close-decision fall back to the compani
   const close = run(repo, "close-decision", "feature", "widget");
   assert.equal(close.json.reason, "remote-roadmap-only");
 
-  // The companion's origin branch also feeds `next` for a slug with no local roadmap.
+  // The companion's origin branch also feeds `next` for a slug with no local roadmap,
+  // carrying the header's artifact PR.
   const next = run(repo, "next", "widget");
   assert.equal(next.code, 0);
   assert.equal(next.json.slug, "widget");
   assert.equal(next.json.status, "ok");
+  assert.equal(next.json.artifactPr, "#7");
+  // In-repo resolution reads the header from the checkout; absent → null.
+  const inRepo = makeRepo();
+  writeRoadmap(inRepo, "features/2026/09/plain", "status: planned\nbranch: feature/plain\nnext-step: 1.1");
+  assert.equal(run(inRepo, "resolve", "feature", "plain").json.artifactPr, null);
+  assert.equal(run(inRepo, "next", "plain").json.artifactPr, null);
 });
 
 test("a managed worktree resolves the companion beside the primary checkout, not beside itself", () => {

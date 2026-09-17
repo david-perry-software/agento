@@ -91,9 +91,13 @@ function parseRoadmapContent(content, expectedBranch, expectedLabel) {
   }
 
   const statusMatch = content.match(/(?:^|\n)status:\s*([^\n#]+?)(?:\s+#.*)?(?:\r?\n|$)/m);
+  // Companion mode only: the artifact PR the header names; quoted so `#` survives.
+  const prMatch = content.match(/(?:^|\n)artifact-pr:[ \t]*("[^"\n]*"|'[^'\n]*'|[^\n#]*)/);
+  const artifactPr = prMatch ? prMatch[1].trim().replace(/^["']|["']$/g, "") : "";
   return {
     status: statusMatch ? "ok" : "branch-mismatch",
     branch,
+    artifactPr: artifactPr || null,
     message: statusMatch ? "Roadmap resolved successfully." : `Roadmap is missing a status header for ${expectedBranch}.`,
   };
 }
@@ -143,6 +147,7 @@ export function resolveRoadmapArtifact({ rootDir, artifactsRoot = rootDir, type,
         source: "local",
         path: pathValue,
         branch: parsed.branch,
+        artifactPr: parsed.artifactPr,
         message: `Resolved ${expectedLabel} from the current checkout at ${pathValue}.`,
       };
     }
@@ -168,7 +173,7 @@ export function resolveRoadmapArtifact({ rootDir, artifactsRoot = rootDir, type,
         message: `Remote roadmap for ${expectedLabel} has a branch mismatch: ${parsed.message}`,
       };
     }
-    remoteCandidates.push({ path: remotePath, branch: parsed.branch, content: shown });
+    remoteCandidates.push({ path: remotePath, branch: parsed.branch, artifactPr: parsed.artifactPr, content: shown });
   }
 
   if (remoteCandidates.length > 1) {
@@ -186,6 +191,7 @@ export function resolveRoadmapArtifact({ rootDir, artifactsRoot = rootDir, type,
       source: "remote",
       path: remoteCandidates[0].path,
       branch: remoteCandidates[0].branch,
+      artifactPr: remoteCandidates[0].artifactPr,
       message: `Resolved ${expectedLabel} from ${remoteRef}; no local roadmap was present in the current checkout.`,
     };
   }

@@ -347,6 +347,7 @@ function summarizeCandidate(c) {
     type: c.type ?? "feature",
     status: c.kind === "delivery" ? (c.status ?? null) : "unplanned",
     initiative: c.initiative ?? null,
+    artifactPr: c.kind === "delivery" ? (c.artifactPr ?? null) : null,
     owner: c.owner ?? null,
     invocation: `${CONTINUE} ${c.slug}`,
   };
