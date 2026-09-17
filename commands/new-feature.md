@@ -46,7 +46,11 @@ exact argument.
    (CLI path in the session context line `Agento CLI:`) must return `status: missing`,
    and neither `feature/<slug>` nor `origin/feature/<slug>` may exist. Create
    `feature/<slug>` from the planning worktree's detached `origin/main` HEAD before
-   writing artifacts. Create
+   writing artifacts; in companion mode also promote the companion half onto the same
+   name — `git -C <companion.path> switch -c feature/<slug>` from its detached
+   `origin/<default>` HEAD, after the Planner's step 5 checks that the branch exists
+   nowhere in the companion — so both halves carry `feature/<slug>` before any
+   artifact is written. Create
    `features/<current-YYYY>/<current-MM>/<slug>/plan.md` and `roadmap.md` per the
    delivery artifact format, with branch `feature/<slug>` in the roadmap header.
 5. Commit the two artifacts, push with upstream, and open a draft PR to `main`.

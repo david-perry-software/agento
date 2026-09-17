@@ -83,7 +83,8 @@ Session IDs identify worktrees only and never determine the eventual delivery sl
    With a pair, create the companion half the same way in the companion clone:
    `git -C <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> worktree add
    --detach <companion.worktree> origin/<default>` (the companion's default branch;
-   detached, mirroring the product half). A companion half that is already
+   detached, mirroring the product half — the Planner promotes both halves onto the
+   delivery branch when it reserves the slug). A companion half that is already
    registered — for example on a resume whose product half was promoted — is reused
    untouched. Then write the workspace file per shared precondition 4.
 4. Report the path (and companion half and workspace file when they exist), created
@@ -119,8 +120,11 @@ window or infer the delivery slug from the session ID.
    <artifactsRoot> fetch origin`; when `origin/<branch>` exists there, `git -C
    <artifactsRoot> worktree add <companion.worktree> <branch>` (tracking it); when it
    does not yet exist in the companion (deliveries planned before the companion
-   branch mirroring landed), `git -C <artifactsRoot> worktree add -b <branch>
-   <companion.worktree> origin/<default>` and say so. A companion half already
+   branch mirroring landed), `git -C <artifactsRoot> worktree add --no-track -b
+   <branch> <companion.worktree> origin/<default>` and say so — the flag keeps
+   the half from inheriting an `origin/<default>` upstream, so its later artifact
+   commits count as unpushed until `git -C <companion.worktree> push -u origin
+   <branch>` publishes the mirrored branch. A companion half already
    registered at that path (whatever its branch) is reused untouched — never switch
    it. Then write the workspace file per shared precondition 4.
 4. Report the worktree path, branch, created or resumed (plus the companion half, its

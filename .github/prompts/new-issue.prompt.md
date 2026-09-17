@@ -44,7 +44,10 @@ The argument takes three forms — detect which applies:
 4. Derive the slug and reject it unless `node <agento-root>/scripts/agento.mjs find
    <slug>` (CLI path in the session context line `Agento CLI:`) returns
    `status: missing` and neither `issue/<slug>` nor `origin/issue/<slug>` exists, then
-   create `issue/<slug>` from the planning worktree's detached `origin/main` HEAD.
+   create `issue/<slug>` from the planning worktree's detached `origin/main` HEAD; in
+   companion mode also promote the companion half onto the same name — `git -C
+   <companion.path> switch -c issue/<slug>` from its detached `origin/<default>` HEAD,
+   after the Planner's step 5 checks that the branch exists nowhere in the companion.
 5. **Verify the issue before planning.** Reproduce it: run the relevant commands or
    tests, capture exact error output/logs, and for UI-visible defects capture
    screenshots (playwright-cli skill / browser tools). Store binary evidence in the

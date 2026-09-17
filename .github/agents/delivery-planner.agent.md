@@ -102,7 +102,19 @@ directories.
    Fetch origin and require that neither the local nor remote final branch exists.
    Before writing decisions, artifacts, or evidence, create `feature/<slug>` or `issue/<slug>`
    from the detached `origin/main` HEAD in the planning worktree. Never switch the
-   primary worktree or create a temporary planning branch.
+   primary worktree or create a temporary planning branch. **Companion mode** (the
+   session record's `companion` is not `null`): mirror the branch into the companion
+   half at once, before any artifact exists. The half must be detached at the
+   companion's `origin/<default>` and clean (`companion.detached: true`,
+   `companion.dirty: false`), and after `git -C <companion.path> fetch origin` the same
+   branch name must exist in neither the companion clone nor its origin
+   (`git -C <companion.path> rev-parse --verify --quiet refs/heads/<branch>` and
+   `refs/remotes/origin/<branch>` both fail); then `git -C <companion.path> switch -c
+   <branch>` — same name as the product branch, no upstream yet. A half already on
+   that branch is this slug's promoted resume case and is reused untouched; a half on
+   any other branch, dirty, or whose companion already knows the branch is a hard
+   stop naming the half and the conflicting ref. The in-repo layout skips this
+   paragraph entirely.
 6. **Issues only — verify, document, and file.** Reproduce the defect before planning:
    run the failing commands/tests, drive the browser yourself for UI defects instead of
    relying on the user's report, capture logs and screenshots into
