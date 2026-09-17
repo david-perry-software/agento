@@ -222,8 +222,9 @@ export function deriveDelivery({ branch, dirPrefix, id, roadmaps, config }) {
 
 export const LIFECYCLES = ["no-delivery", "planned", "building", "paused", "in-review", "approved", "shipped", "post-ship-pending"];
 
-// PR state never changes the lifecycle; a merged PR on a non-complete roadmap only warns.
-export function deriveLifecycle({ delivery, pr }) {
+// PR state never changes the lifecycle; a merged PR on a non-complete roadmap only
+// warns, as does a merged code PR whose companion PR is still open (half-shipped).
+export function deriveLifecycle({ delivery, pr, companionPr = null }) {
   const warnings = [];
   if (!delivery || !delivery.roadmap) return { lifecycle: "no-delivery", warnings };
   let lifecycle;
@@ -249,6 +250,9 @@ export function deriveLifecycle({ delivery, pr }) {
   }
   if (pr && pr.state === "MERGED" && delivery.status !== "complete") {
     warnings.push(`merged-but-not-complete: PR #${pr.number} for ${delivery.branch} is merged but ${delivery.roadmap} has status ${delivery.status}`);
+  }
+  if (pr && pr.state === "MERGED" && companionPr && companionPr.state === "OPEN") {
+    warnings.push(`companion-pr-open: PR #${pr.number} for ${delivery.branch} is merged but companion PR #${companionPr.number} is still open`);
   }
   return { lifecycle, warnings };
 }

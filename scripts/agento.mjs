@@ -9,7 +9,7 @@
 //   node scripts/agento.mjs find <slug>                 (type-agnostic)
 //   node scripts/agento.mjs status [feature|issue] [slug]
 //   node scripts/agento.mjs close-decision <feature|issue> <slug>
-//   node scripts/agento.mjs ship-preflight <feature|issue> <slug>
+//   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (--pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
 //   node scripts/agento.mjs initiative [<slug>]
@@ -177,16 +177,18 @@ function companionWorktrees() {
 }
 
 // The companion half paired with a managed product worktree, with the git facts the
-// close and ship decisions need: `dirty` (uncommitted changes) and `ahead` (commits
-// not on the upstream, or on no remote ref at all when there is no upstream).
+// close and ship decisions need: `dirty` (uncommitted changes), `ahead` (commits
+// not on the upstream, or on no remote ref at all when there is no upstream), and
+// `behind` (upstream commits not in HEAD; 0 without an upstream).
 function describeCompanion(worktree) {
   const pair = pairFor({ worktree, companionWorktreesDir, companionWorktrees: companionWorktrees() });
   if (!pair) return null;
-  if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0 };
+  if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0, behind: 0 };
   const dirty = git(pair.path, "status", "--porcelain") !== "";
   const upstream = git(pair.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
   const count = upstream ? git(pair.path, "rev-list", "--count", "@{upstream}..HEAD") : git(pair.path, "rev-list", "--count", "HEAD", "--not", "--remotes");
-  return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, registered: true };
+  const behind = upstream ? git(pair.path, "rev-list", "--count", "HEAD..@{upstream}") : "0";
+  return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, behind: Number.parseInt(behind, 10) || 0, registered: true };
 }
 
 // The multi-root workspace file a paired session opens (product side, next to the
@@ -206,7 +208,7 @@ function companionOfOwner(owner) {
 
 function companionGaps(companion) {
   if (!companion?.registered) return [];
-  return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : [])];
+  return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : []), ...(companion.behind > 0 ? ["behind"] : [])];
 }
 
 function requireType(type) {
@@ -335,7 +337,7 @@ function withExit(result) {
   emit({ ...result, root, configSource: source }, result.status === "ok" ? 0 : 3);
 }
 
-// Only `session --pr` reaches this; every failure is a warning, never an exit code.
+// Only `session --pr` and `ship-preflight --pr` reach this; every failure is a warning, never an exit code.
 // `label` names the field in warnings (`pr` for the code PR in the product checkout,
 // `companionPr` for the artifact PR looked up in the companion clone).
 function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
@@ -815,12 +817,17 @@ switch (command) {
     const companion = companionOfOwner(decision.owner);
     const gaps = companionGaps(companion);
     if (gaps.length) {
+      const behindOnly = gaps.length === 1 && gaps[0] === "behind";
+      const fix = behindOnly
+        ? `run git -C ${companion.path} merge origin/${companion.branch} (a fast-forward) before closing ${type}/${slug}`
+        : `commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost`;
+      const state = gaps.map((g) => (g === "behind" ? "behind its upstream" : g)).join(" and ");
       withExit({
         status: "error",
         reason: "companion-unpushed",
         owner: decision.owner,
         companion,
-        message: `The companion half at ${companion.path} is ${gaps.join(" and ")}; commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost.`,
+        message: `The companion half at ${companion.path} is ${state}; ${fix}.`,
       });
     }
     withExit({ ...decision, companion });
@@ -833,7 +840,17 @@ switch (command) {
     const preflight = evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") });
     if (preflight.status !== "ok") withExit(preflight);
     const companion = companionOfOwner(preflight.owner);
-    withExit({ ...preflight, companion, companionGaps: companionGaps(companion) });
+    const gaps = companionGaps(companion);
+    if (!options.pr) withExit({ ...preflight, companion, companionGaps: gaps });
+    const { pr, warnings: prWarnings } = lookupPullRequest(preflight.branch);
+    const { pr: companionPr, warnings: companionPrWarnings } = lookupCompanionPullRequest(preflight.branch);
+    // A MERGED companion PR is the resume-at-teardown case, not a gap.
+    if (artifacts.external) {
+      if (!companionPr) gaps.push("missing-pr");
+      else if (companionPr.state === "CLOSED") gaps.push("pr-not-open");
+      else if (companionPr.mergeStateStatus === "CONFLICTING") gaps.push("conflicting-pr");
+    }
+    withExit({ ...preflight, companion, companionGaps: gaps, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] });
     break;
   }
 
@@ -918,7 +935,7 @@ switch (command) {
     const prBranch = delivery?.branch ?? worktree.branch;
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
     const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
-    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
+    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
     emit({
       status: "ok",
@@ -960,7 +977,7 @@ switch (command) {
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const roadmaps = allRoadmaps(null, companionHalfOf(describeCompanion(worktree)));
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
-    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null });
+    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null, companionPr: null });
     warnings.unshift(...anchor.warnings);
     if (hostedReason) warnings.unshift(hostedReason);
     const ownerOf = (branch) => findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch, config });

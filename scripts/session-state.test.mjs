@@ -492,6 +492,24 @@ test("deriveLifecycle: PR state only warns and never changes the lifecycle", () 
   assert.match(unknown.warnings[0], /^unknown-roadmap-status/);
 });
 
+test("deriveLifecycle: a merged code PR with an open companion PR warns companion-pr-open without changing the lifecycle", () => {
+  const complete = roadmapRecord("feature", "widget", { status: "complete" });
+  const half = deriveLifecycle({ delivery: complete, pr: { number: 15, state: "MERGED" }, companionPr: { number: 7, state: "OPEN" } });
+  assert.equal(half.lifecycle, "shipped");
+  assert.deepEqual(half.warnings, ["companion-pr-open: PR #15 for feature/widget is merged but companion PR #7 is still open"]);
+  // Both warnings when the roadmap is also not complete.
+  const inReview = roadmapRecord("feature", "widget", { status: "in-review" });
+  const both = deriveLifecycle({ delivery: inReview, pr: { number: 15, state: "MERGED" }, companionPr: { number: 7, state: "OPEN" } });
+  assert.equal(both.lifecycle, "in-review");
+  assert.deepEqual(both.warnings.map((w) => w.split(":")[0]), ["merged-but-not-complete", "companion-pr-open"]);
+  // Absent: companionPr null (in-repo), companion MERGED, or the code PR still open.
+  assert.deepEqual(deriveLifecycle({ delivery: complete, pr: { number: 15, state: "MERGED" }, companionPr: null }).warnings, []);
+  assert.deepEqual(deriveLifecycle({ delivery: complete, pr: { number: 15, state: "MERGED" } }).warnings, []);
+  assert.deepEqual(deriveLifecycle({ delivery: complete, pr: { number: 15, state: "MERGED" }, companionPr: { number: 7, state: "MERGED" } }).warnings, []);
+  assert.deepEqual(deriveLifecycle({ delivery: inReview, pr: { number: 15, state: "OPEN" }, companionPr: { number: 7, state: "OPEN" } }).warnings, []);
+  assert.deepEqual(deriveLifecycle({ delivery: inReview, pr: null, companionPr: { number: 7, state: "OPEN" } }).warnings, []);
+});
+
 const widget = { type: "feature", slug: "widget" };
 const bug = { type: "issue", slug: "bug" };
 

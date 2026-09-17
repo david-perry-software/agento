@@ -317,7 +317,7 @@ test("session from a companion half anchors on the product primary and matches t
   assert.match(fromHalf.warnings[0], /^anchored-from-companion: .*project-docs-worktrees\/feature-widget is a companion checkout of .*project; the record describes .*wt\/feature-widget$/);
 
   // companion / workspace describe the pair from either side.
-  assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
   assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false });
   fs.writeFileSync(path.join(wt, "feature-widget.code-workspace"), JSON.stringify({ folders: [{ path: product }, { path: half }], settings: {} }));
   assert.equal(run(half, "session").json.workspace.exists, true);
@@ -360,7 +360,7 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
 
   const both = run(plan, "session").json;
   assert.equal(both.role, "plan");
-  assert.deepEqual(both.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(both.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, behind: 0, registered: true });
   const fromHalf = run(planHalf, "session").json;
   assert.equal(fromHalf.role, "plan");
   assert.deepEqual(fromHalf.worktree, both.worktree);
@@ -371,7 +371,7 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
   const promoted = run(plan, "session").json;
   assert.equal(promoted.role, "build");
   assert.equal(promoted.delivery.slug, "thing");
-  assert.deepEqual(promoted.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(promoted.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, behind: 0, registered: true });
   const promotedHalf = run(planHalf, "session").json;
   assert.equal(promotedHalf.role, "build");
   assert.equal(promotedHalf.worktree.branch, "feature/thing");
@@ -381,7 +381,7 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
   // A product half with no companion half registered (pre-pair session).
   const lone = path.join(wt, "feature-lone");
   git(repo, "worktree", "add", "-q", "-b", "feature/lone", lone);
-  assert.deepEqual(run(lone, "session").json.companion, { path: path.join(docsWt, "feature-lone"), branch: null, detached: false, dirty: false, ahead: 0, registered: false });
+  assert.deepEqual(run(lone, "session").json.companion, { path: path.join(docsWt, "feature-lone"), branch: null, detached: false, dirty: false, ahead: 0, behind: 0, registered: false });
 });
 
 test("session: a plan pair promoted on both halves is one delivery from either side", () => {
@@ -405,7 +405,7 @@ test("session: a plan pair promoted on both halves is one delivery from either s
   assert.deepEqual(fromHalf.delivery, fromProduct.delivery);
   assert.deepEqual(fromHalf.worktree, fromProduct.worktree);
   assert.equal(fromProduct.worktree.dirPrefix, "plan", "promotion keeps the plan-* directory");
-  assert.deepEqual(fromProduct.companion, { path: planHalf, branch: "feature/mirror", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(fromProduct.companion, { path: planHalf, branch: "feature/mirror", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
   assert.equal(fromProduct.companion.branch, fromProduct.delivery.branch);
   assert.deepEqual(fromHalf.companion, fromProduct.companion);
   assert.deepEqual(fromHalf.worktrees, fromProduct.worktrees);
@@ -504,14 +504,14 @@ test("close-decision and ship-preflight report the companion half and refuse a d
   const none = run(repo, "close-decision", "feature", "widget").json;
   assert.equal(none.status, "ok");
   assert.equal(none.reason, "managed-worktree-present");
-  assert.deepEqual(none.companion, { path: half, branch: null, detached: false, dirty: false, ahead: 0, registered: false });
+  assert.deepEqual(none.companion, { path: half, branch: null, detached: false, dirty: false, ahead: 0, behind: 0, registered: false });
 
   git(docs, "worktree", "add", "-q", "-b", "feature/widget", half);
   const clean = run(repo, "close-decision", "feature", "widget");
   assert.equal(clean.code, 0);
   assert.equal(clean.json.reason, "managed-worktree-present");
   assert.equal(clean.json.owner.path, product);
-  assert.deepEqual(clean.json.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(clean.json.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
   const ship = run(repo, "ship-preflight", "feature", "widget").json;
   assert.equal(ship.status, "ok");
   assert.deepEqual(ship.companion, clean.json.companion);
@@ -541,6 +541,28 @@ test("close-decision and ship-preflight report the companion half and refuse a d
   git(half, "push", "-q", "-u", "origin", "feature/widget");
   assert.equal(run(repo, "close-decision", "feature", "widget").json.reason, "managed-worktree-present");
   assert.equal(run(repo, "close-decision", "feature", "widget").json.companion.ahead, 0);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, []);
+
+  // Behind its upstream: a second commit pushed to origin/feature/widget from the clone.
+  git(docs, "fetch", "-q", "origin");
+  git(docs, "switch", "-q", "-c", "feature/widget-elsewhere", "origin/feature/widget");
+  fs.writeFileSync(path.join(docs, "elsewhere.md"), "from another machine\n");
+  git(docs, "add", "-A");
+  git(docs, "commit", "-q", "-m", "docs: elsewhere");
+  git(docs, "push", "-q", "origin", "HEAD:feature/widget");
+  git(docs, "switch", "-q", "main");
+  git(docs, "branch", "-q", "-D", "feature/widget-elsewhere");
+  git(half, "fetch", "-q", "origin");
+  const behind = run(repo, "close-decision", "feature", "widget");
+  assert.equal(behind.code, 3);
+  assert.equal(behind.json.reason, "companion-unpushed");
+  assert.equal(behind.json.companion.behind, 1);
+  assert.equal(behind.json.companion.ahead, 0);
+  assert.match(behind.json.message, /is behind its upstream; run git -C .* merge origin\/feature\/widget/);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, ["behind"]);
+  git(half, "merge", "-q", "origin/feature/widget");
+  assert.equal(run(repo, "close-decision", "feature", "widget").json.reason, "managed-worktree-present");
+  assert.equal(run(repo, "close-decision", "feature", "widget").json.companion.behind, 0);
   assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, []);
 
   // Dirty and unpushed together.
@@ -1126,6 +1148,86 @@ test("session --pr: companionPr is null with no extra gh call in-repo, and the c
   assert.equal(degraded.json.companionPr, null);
   assert.deepEqual(degraded.json.warnings.length, 1);
   assert.match(degraded.json.warnings[0], /^companionPr: gh pr view feature\/widget failed: no pull requests found/);
+
+  // Half-shipped: the code PR merged while the companion PR is still open → companion-pr-open warning, lifecycle unchanged.
+  const halfShippedEnv = restrictedPath({ gh: prStub(path.join(pair.wt, "gh-half"), { product: "MERGED", companion: "OPEN" }) }).env;
+  const halfShipped = runWith({ cwd: product, env: halfShippedEnv }, "session", "--pr");
+  assert.equal(halfShipped.json.lifecycle, "building");
+  assert.deepEqual(halfShipped.json.warnings.map((w) => w.split(":")[0]), ["merged-but-not-complete", "companion-pr-open"]);
+  assert.match(halfShipped.json.warnings[1], /^companion-pr-open: PR #15 for feature\/widget is merged but companion PR #7 is still open$/);
+});
+
+// A stub gh answering `pr view` with a per-repo state: `product` for the product
+// checkout, `companion` for anything under project-docs. Logs `$PWD $*` to marker.
+function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN" } = {}) {
+  return `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge};; *) n=15; s=${product}; m=CLEAN;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
+}
+
+test("ship-preflight --pr: in-repo one gh call with companionPr null; companion mode both PRs and PR gaps; no --pr means no pr key", () => {
+  // In-repo layout.
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(repo, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  const marker = path.join(wt, "gh-invoked");
+  const { env } = restrictedPath({ gh: prStub(marker) });
+  const plain = runWith({ cwd: repo, env }, "ship-preflight", "feature", "widget");
+  assert.equal(plain.code, 0);
+  assert.ok(!("pr" in plain.json) && !("companionPr" in plain.json) && !("warnings" in plain.json), "without --pr the output is today's shape");
+  assert.ok(!fs.existsSync(marker), "gh was invoked without --pr");
+  const inRepo = runWith({ cwd: repo, env }, "ship-preflight", "feature", "widget", "--pr");
+  assert.equal(inRepo.code, 0);
+  assert.equal(inRepo.json.pr.number, 15);
+  assert.equal(inRepo.json.companionPr, null);
+  assert.equal(inRepo.json.companion, null);
+  assert.deepEqual(inRepo.json.companionGaps, []);
+  assert.deepEqual(inRepo.json.warnings, []);
+  const inRepoCalls = fs.readFileSync(marker, "utf8").trim().split("\n");
+  assert.equal(inRepoCalls.length, 1, "in-repo mode runs gh pr view once");
+  assert.match(inRepoCalls[0], new RegExp(`^${repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url$`));
+
+  // Companion mode: both PRs, the companion one looked up from inside the clone.
+  const pair = makePairRepo();
+  const product = path.join(pair.wt, "feature-widget");
+  const half = path.join(pair.docsWt, "feature-widget");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(pair.docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  writeRoadmap(pair.docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review\nartifact-pr: \"#7\"");
+  const pairMarker = path.join(pair.wt, "gh-invoked");
+  const shipWith = (states) => {
+    fs.rmSync(pairMarker, { force: true });
+    const json = runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker, states) }).env }, "ship-preflight", "feature", "widget", "--pr").json;
+    return { json, calls: fs.existsSync(pairMarker) ? fs.readFileSync(pairMarker, "utf8").trim().split("\n") : [] };
+  };
+  const both = shipWith({});
+  assert.equal(both.json.status, "ok");
+  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/7" });
+  assert.deepEqual(both.json.companionGaps, []);
+  assert.deepEqual(both.json.warnings, []);
+  assert.equal(both.json.companion.path, half);
+  assert.equal(both.calls.length, 2);
+  assert.match(both.calls[0], new RegExp(`^${pair.repo} pr view feature/widget `));
+  assert.match(both.calls[1], new RegExp(`^${pair.docs} pr view feature/widget `));
+  assert.equal(git(pair.docs, "branch", "--show-current"), "main", "the companion clone is never switched");
+
+  const missing = shipWith({ companion: "NONE" });
+  assert.equal(missing.json.companionPr, null);
+  assert.deepEqual(missing.json.companionGaps, ["missing-pr"]);
+  assert.equal(missing.json.warnings.length, 1);
+  assert.match(missing.json.warnings[0], /^companionPr: gh pr view feature\/widget failed/);
+  assert.deepEqual(shipWith({ companion: "CLOSED" }).json.companionGaps, ["pr-not-open"]);
+  assert.deepEqual(shipWith({ companionMerge: "CONFLICTING" }).json.companionGaps, ["conflicting-pr"]);
+  const merged = shipWith({ product: "MERGED", companion: "MERGED" });
+  assert.equal(merged.json.companionPr.state, "MERGED");
+  assert.deepEqual(merged.json.companionGaps, [], "a merged companion PR is the resume-at-teardown case, not a gap");
+  // The resume-at-companion-merge case: code merged, companion still open, no gap.
+  const halfShipped = shipWith({ product: "MERGED", companion: "OPEN" });
+  assert.deepEqual([halfShipped.json.pr.state, halfShipped.json.companionPr.state, halfShipped.json.companionGaps], ["MERGED", "OPEN", []]);
+  // PR gaps stack on top of the half's own gaps.
+  fs.writeFileSync(path.join(half, "wip.md"), "wip\n");
+  assert.deepEqual(shipWith({ companion: "CLOSED" }).json.companionGaps, ["dirty", "pr-not-open"]);
+  assert.ok(!("pr" in runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker) }).env }, "ship-preflight", "feature", "widget").json));
 });
 
 const chain = [{ slug: "a" }, { slug: "b", recommendedAfter: ["a"] }, { slug: "c", requires: ["b"] }];

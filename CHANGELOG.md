@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Ship dual merge.** In companion mode `/agento ship` merges both PRs: it audits
+  with the new `agento.mjs ship-preflight <type> <slug> --pr` (adds `pr`,
+  `companionPr`, `warnings[]`, and the companion PR gaps `missing-pr`,
+  `pr-not-open`, `conflicting-pr` to `companionGaps[]`; a `MERGED` companion PR is
+  not a gap), reads roadmap, review, and plan from the companion's `origin/<branch>`,
+  integrates a `BEHIND` companion PR with `git -C <companion.path> merge
+  origin/<default>`, commits `status: complete` in the companion half, marks both
+  PRs ready, merges the code PR first and then the companion PR from inside the
+  companion clone, syncs both default branches, deletes the merged companion local
+  branch at teardown, and runs the post-ship epilogue (`post-ship/<slug>`, evidence
+  + roadmap tick, PR, merge) in the companion repository. A companion merge that
+  fails after the code merge is a resumable stop — the re-send sees `pr: MERGED`
+  and `companionPr: OPEN` and resumes at the companion merge (policy §9 row). CLI:
+  `describeCompanion` gains `behind` (upstream commits not in the half's HEAD) and
+  `companionGaps[]`/`close-decision` flag it as `behind`; `deriveLifecycle` warns
+  `companion-pr-open` when the code PR is merged but the companion PR is still
+  open. In-repo layout unchanged.
 - **Mirrored artifact branches.** In companion mode a delivery's artifacts follow the
   code branch: the Planner creates the companion branch of the same name right after
   the product branch (`git -C <companion.path> switch -c <branch>` from the plan
@@ -21,9 +38,7 @@
   looked up in the companion clone, `null` with no extra `gh` call in the in-repo
   layout); `session`/`next` read the delivery roadmap from the registered companion
   half, so a roadmap living only on the mirrored branch still yields `delivery`,
-  `lifecycle`, and the build/review commands. Interim: `/agento ship` still merges
-  only the code PR and leaves the companion PR open until `ship-dual-merge` lands.
-  In-repo layout unchanged.
+  `lifecycle`, and the build/review commands. In-repo layout unchanged.
 - **Paired companion worktrees.** In companion mode every managed session is a pair:
   `/agento start-session` and `/agento start-freehand` create the product half in
   `worktrees.dir` and a companion half of the same `<kind>-<id>` name under the

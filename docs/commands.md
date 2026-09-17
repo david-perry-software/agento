@@ -32,15 +32,21 @@ hook announces as `Agento CLI:`. Subcommands: `config` (the merged config with
 itself, or the sibling companion checkout when `artifacts.repo` is set),
 `resolve <type> <slug>`,
 `find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>` and
-`ship-preflight <type> <slug>` (both report `owner` — `{ path, role, dirPrefix, id }`
+`ship-preflight <type> <slug> [--pr]` (both report `owner` — `{ path, role, dirPrefix, id }`
 or `null` — for the delivery branch, resolved exactly from `git worktree list
 --porcelain`; `close-decision` reasons are `managed-worktree-present`,
 `primary-owns-branch` (return the primary to the default branch first — nothing to
 remove), or `remote-roadmap-only`; in companion mode both add `companion` — `{ path,
-branch, detached, dirty, ahead, registered }` for the owner's companion half or `null`
-— and `close-decision` stops with `status: "error", reason: "companion-unpushed"`
-while that half is dirty or ahead of its upstream, where `ship-preflight` lists the
-same conditions as `companionGaps[]` (`dirty`, `unpushed`)), `paths <kind> <id>`
+branch, detached, dirty, ahead, behind, registered }` for the owner's companion half or
+`null` — and `close-decision` stops with `status: "error", reason: "companion-unpushed"`
+while that half is dirty, ahead of, or behind its upstream, where `ship-preflight`
+lists the same conditions as `companionGaps[]` (`dirty`, `unpushed`, `behind`);
+`ship-preflight --pr` additionally looks up the branch's PR via `gh` as `pr`, in
+companion mode the same branch name in the companion clone as `companionPr`
+(`null` with no extra `gh` call in the in-repo layout), reports lookup failures in
+`warnings[]`, and appends the companion PR's problems to `companionGaps[]` —
+`missing-pr` (no companion PR), `pr-not-open` (`CLOSED`), `conflicting-pr`
+(`mergeStateStatus: CONFLICTING`); a `MERGED` companion PR is not a gap), `paths <kind> <id>`
 (worktree and branch names plus `artifactsRoot` and the absolute `artifactRoot`
 under it; in companion mode also `companion: { worktreesDir, worktree, branch }` —
 the paired half at `<artifacts.repo.dir>-worktrees/<kind>-<id>` — and `workspace`,
@@ -54,14 +60,16 @@ same way (each tagged `repo: "product" | "companion"`; companion halves follow e
 product entry, so `worktrees[0]` is always the product primary), the active delivery
 and its `lifecycle`, and the `allowed` and `elsewhere` commands; in companion mode
 also `companion` — the current session's half `{ path, branch, detached, dirty,
-ahead, registered }` — and `workspace: { path, exists }`, both `null` from the
+ahead, behind, registered }` — and `workspace: { path, exists }`, both `null` from the
 primary or in the in-repo layout; a cwd inside a companion half or the companion
 clone is anchored on its product checkout and yields the same record, with an
 `anchored-from-companion` entry in `warnings[]`; `--pr` adds the branch's PR via `gh`,
 degrading to `pr: null` plus a warning when `gh` is absent, and in companion mode also
 `companionPr` — the same branch name looked up with `gh pr view` in the companion
 clone, degrading to `null` plus a `companionPr:` warning the same way; always `null`
-with no extra `gh` call in the in-repo layout),
+with no extra `gh` call in the in-repo layout; a `MERGED` `pr` beside an `OPEN`
+`companionPr` adds a `companion-pr-open` warning, the half-shipped state `/agento
+ship` resumes from),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
@@ -110,10 +118,15 @@ from `agento.mjs config` (`artifactsRoot` ≠ `root`), address the clone as
 `artifactsRoot`, and run `gh` from inside it (or with `--repo` set to the
 `nameWithOwner` derived there — `artifacts.repo.name` is a directory basename, not a
 `gh --repo` value); `/agento delivery-status` shows `companionPr` beside `pr`.
-Interim limitation: until
-the `ship-dual-merge` initiative member lands, `/agento ship` in companion mode merges
-the code PR and leaves the companion PR open for the user to merge by hand — the
-`artifact-pr` header is what that member will consume.
+`/agento ship` consumes the `artifact-pr` header end to end: it audits with
+`ship-preflight --pr`, reads the artifacts from the companion's `origin/<branch>`,
+commits `status: complete` in the companion half, marks both PRs ready, merges the
+code PR first (its required checks are the gate) and then the companion PR from
+inside the clone, syncs both default branches, tears down both halves and the
+`.code-workspace` file, and lands any post-ship evidence on the companion's
+`post-ship/<slug>`. A companion merge that fails after the code merge is a
+resumable stop: re-sending `/agento ship <slug>` sees `pr: MERGED` and
+`companionPr: OPEN` and resumes at the companion merge.
 
 ## Invocation
 
