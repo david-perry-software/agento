@@ -32,8 +32,12 @@ idempotency row (read-only: a fresh read). Window check per §11: requires role
    header, or null), and a `duplicates` list to flag as anomalies.
 3. Cross-reference open PRs with `gh pr list --state all --limit 50` matching the
    configured feature/issue branch prefixes: PR number, draft/ready, check status. In
-   companion mode run the same listing against the companion repository (`gh pr list
-   --repo <artifacts.repo.name> …`) and show each row's companion PR beside its code
+   companion mode — `agento.mjs config` reports `artifactsRoot` different from `root`
+   (`artifacts.repo.name` or `.dir` set); from the primary window the session record's
+   `companion` is `null` and is not the trigger — run the same listing against the
+   companion repository from inside its clone (`cd <artifactsRoot> && gh pr list …`,
+   which infers the repository from `origin`; `artifacts.repo.name` is a directory
+   basename, never a `--repo` value) and show each row's companion PR beside its code
    PR, flagging a row whose `artifactPr` header names no open or merged companion PR.
 4. Present one table in the CLI's order (in-progress, paused, in-review, planned,
    complete) with an `Initiative` column (`—` when null) and a final column

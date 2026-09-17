@@ -166,10 +166,12 @@ mode. Never modify source code, configuration, or other directories.
       to `main` titled after the slug, whose body links the plan on the companion
       branch (`<companion repo URL>/blob/<branch>/<path to plan.md>`) — for issues
       starting with `Fixes #<n>`.
-   3. `gh pr create --draft --repo <artifacts.repo.name owner/name from the companion's
-      origin> --head <branch> --base <default> --title "docs(<type>): <slug>"`
-      with a body linking the code PR by URL; then `gh pr edit <code PR> --body` to
-      append the companion PR URL so the two PRs cross-link.
+   3. `cd <companion.path> && gh pr create --draft --head <branch> --base <default>
+      --title "docs(<type>): <slug>"` (run inside the companion half so `gh` infers
+      the companion repository from its `origin`; `artifacts.repo.name` is a directory
+      basename, never a `--repo` value) with a body linking the code PR by URL; then
+      `gh pr edit <code PR> --body` in the product half to append the companion PR URL
+      so the two PRs cross-link.
    4. Write `artifact-pr: "#<n>"` (the companion PR number) into the roadmap header
       next to `github-issue`, commit it in the companion half (`docs(<type>): record
       artifact PR for <slug>`), and push. `agento.mjs session --pr` now reports both

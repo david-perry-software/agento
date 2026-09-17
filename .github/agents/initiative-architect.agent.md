@@ -41,13 +41,20 @@ Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
 `agento.mjs config` → `artifacts.initiatives`, default `initiatives/`). Never modify
 `features/`, `issues/`, source code, configuration, or any other directory.
 
-**Companion mode** (the session record's `companion` is not `null`): the initiative
-files live in the companion clone at `companion.path` (its `artifacts.initiatives`
-root), never in the product checkout. The branch, commit, PR, and merge in steps 5,
-7, and 8 all happen in that clone — `git -C <companion.path>` for every git command
-and `--repo <artifacts.repo.name>` for every `gh` command — and the product
-checkout stays on `main`, untouched. The in-repo layout (`companion: null`) keeps the
-single-repo flow below.
+**Companion mode** (`node <agento-root>/scripts/agento.mjs config` reports
+`artifactsRoot` different from `root` — `artifacts.repo.name` or `.dir` set — the same
+trigger `/agento start-session`, `/agento close-session`, and `/agento ship` use; the
+session record's `companion` is `null` in the primary window by design and is not the
+trigger): the initiative files live in the companion clone at `artifactsRoot` (its
+`artifacts.initiatives` root), never in the product checkout. The branch, commit, PR,
+and merge in steps 5, 7, and 8 all happen in that clone — `git -C <artifactsRoot>`
+for every git command and, for every `gh` command, either run it from inside the
+clone (`cd <artifactsRoot> && gh …`, which infers the repository from `origin`) or
+pass `--repo <companion-repo>` where `<companion-repo>` is derived once with `cd
+<artifactsRoot> && gh repo view --json nameWithOwner -q .nameWithOwner`.
+`artifacts.repo.name` is the companion directory's basename, never a `gh --repo`
+value. The product checkout stays on `main`, untouched. The in-repo layout
+(`artifactsRoot` equal to `root`) keeps the single-repo flow below.
 
 ## Procedure
 
@@ -58,9 +65,9 @@ single-repo flow below.
    alternatives. `git fetch origin`, then `git status --short --branch` must show
    nothing and zero ahead/behind; otherwise stop and name
    `/agento commit-current-changes`. Authentication failures halt per AGENTS.md.
-   Companion mode: the record's `companion` must also be on its default branch and
-   clean (`companion.dirty: false`, `companion.ahead: 0`) after `git -C
-   <companion.path> fetch origin`; otherwise stop and name the half.
+   Companion mode: after `git -C <artifactsRoot> fetch origin`, the clone must also be
+   on its default branch with `git -C <artifactsRoot> status --short --branch`
+   showing nothing and zero ahead/behind; otherwise stop and name the clone.
 2. **Read the brief.** The argument is exactly one of: inline text, or a
    repository-relative path to an existing file whose content is the brief. If the
    argument names no existing file and contains no whitespace, stop and ask whether it
@@ -83,7 +90,7 @@ single-repo flow below.
      (`git ls-tree -r --name-only origin/main -- <initiatives-root>`);
    - the branch `changes/initiative-<slug>` exists neither locally nor on origin.
    Then `git switch -c changes/initiative-<slug>` (companion mode: `git -C
-   <companion.path> switch -c changes/initiative-<slug>` from the clone's default
+   <artifactsRoot> switch -c changes/initiative-<slug>` from the clone's default
    branch, checking the branch is absent in the companion clone and its origin).
 6. **Decompose and write.** Split the brief into 2–8 member features that are each
    independently shippable. For every member choose a kebab-case feature slug that is
@@ -115,10 +122,11 @@ single-repo flow below.
    the ruleset (no admin, no squash, no rebase), delete the branch, switch to `main`,
    fetch, fast-forward, and confirm a clean tree with zero ahead/behind. Companion
    mode: every one of these commands runs in the companion clone (`git -C
-   <companion.path> …`, `gh pr create --repo <artifacts.repo.name> …`,
-   `scripts/wait-for-checks.sh pr <n> --repo <artifacts.repo.name>`, `gh pr merge
-   --repo <artifacts.repo.name> …`), the PR targets the companion's default branch,
-   and the clone ends back on that default, clean, with `companion.ahead: 0`.
+   <artifactsRoot> …`, `gh pr create --repo <companion-repo> …`,
+   `scripts/wait-for-checks.sh pr <n> --repo <companion-repo>`, `gh pr merge
+   --repo <companion-repo> …`, with `<companion-repo>` derived as above), the PR
+   targets the companion's default branch, and the clone ends back on that default,
+   clean, with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
    the §9 result line's `next:` command:

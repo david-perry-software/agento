@@ -46,8 +46,13 @@ Window check per §11: requires role `primary` on the default branch, clean.
 This invocation authorizes creating and deleting the `changes/initiative-<slug>`
 branch, committing, pushing, opening and merging the pull request, and synchronizing
 the default branch. It does not authorize planning any member feature or creating
-worktrees. In companion mode (the session record's `companion` is not `null`) all of
-that happens in the companion clone at `companion.path` — `git -C <companion.path>`
-and `gh … --repo <artifacts.repo.name>` — and the product checkout is not touched.
+worktrees. In companion mode (`agento.mjs config` reports `artifactsRoot` different
+from `root` — `artifacts.repo.name` or `.dir` set; the session record's `companion`
+is `null` in the primary window and is not the trigger) all of that happens in the
+companion clone at `artifactsRoot` — `git -C <artifactsRoot>` and `gh` run from
+inside the clone (`cd <artifactsRoot> && gh …`) or with `--repo <companion-repo>`
+derived there via `gh repo view --json nameWithOwner -q .nameWithOwner`; never
+`artifacts.repo.name`, a directory basename, as the `--repo` value — and the product
+checkout is not touched.
 
 If the argument is empty, ask for the brief (text or file path) and stop.

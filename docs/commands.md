@@ -102,9 +102,15 @@ in their bodies; the companion PR's number lands in the roadmap header as
 roadmap from the registered companion half (its working tree on the mirrored branch
 takes precedence over the companion clone's same-path copy), so a pair whose roadmap
 lives only on the branch still reports `delivery`, `lifecycle`, and the build/review
-commands in `allowed[]`. Builder, Reviewer, Architect, and `/agento triage-followups`
-commit artifacts with `git -C <companion.path>` (policy §7 two-commit rule);
-`/agento delivery-status` shows `companionPr` beside `pr`. Interim limitation: until
+commands in `allowed[]`. Builder and Reviewer commit artifacts with `git -C
+<companion.path>` (policy §7 two-commit rule); the Architect, `/agento
+triage-followups`, and `/agento delivery-status` run from the primary window, where
+the session record's `companion` is `null` by design, so they detect companion mode
+from `agento.mjs config` (`artifactsRoot` ≠ `root`), address the clone as
+`artifactsRoot`, and run `gh` from inside it (or with `--repo` set to the
+`nameWithOwner` derived there — `artifacts.repo.name` is a directory basename, not a
+`gh --repo` value); `/agento delivery-status` shows `companionPr` beside `pr`.
+Interim limitation: until
 the `ship-dual-merge` initiative member lands, `/agento ship` in companion mode merges
 the code PR and leaves the companion PR open for the user to merge by hand — the
 `artifact-pr` header is what that member will consume.
