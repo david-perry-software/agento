@@ -221,10 +221,14 @@ Ownership does not apply when resuming only the post-ship epilogue.
      the primary as before.
 4. **Report** merge result, PR number, release workflow result and run URL (or that no
    release workflow is configured), the removed worktree path(s) and workspace file
-   (or that none was registered), and any accepted gaps carried into Follow-ups. Do
-   not call the work shipped while its release workflow is pending.
+   (or that none was registered), and any accepted gaps carried into Follow-ups.
+   *Companion mode*: name both merged PR numbers (code `#<n>`, companion `#<m>`),
+   both synced defaults (product and companion), and both removed halves plus the
+   `.code-workspace` file. Do not call the work shipped while its release workflow
+   is pending.
 5. **Post-ship verification epilogue** (only if unticked `(manual, post-ship)` steps
-   remain; runs after the merge, `main` sync, and teardown):
+   remain; runs after the merge, `main` sync, and teardown — *companion mode*: after
+   both merges and both default syncs):
    - After any configured release workflow succeeds (or right away when none is
      configured), walk the user through each manual check per the manual step
      protocol (delivery-policy.instructions.md §3): exact instructions, screenshot
@@ -233,6 +237,14 @@ Ownership does not apply when resuming only the post-ship epilogue.
      evidence files + roadmap tick as one commit, push, open a PR, merge it through the
      ruleset once required checks pass (normal merge commit, no bypass), delete the
      branch, and sync `main`. The user's /agento ship invocation authorizes this merge.
+     *Companion mode*: the whole epilogue happens in the companion repository, where
+     the roadmap and `evidence/` live — `git -C <artifactsRoot>` from its fresh
+     default for the `post-ship/<slug>` branch, the evidence + roadmap-tick commit,
+     and the push; `gh` for the PR, the check wait (`scripts/wait-for-checks.sh pr
+     <k> --repo <nameWithOwner>`), the merge, and the remote branch delete run from
+     inside the clone; then sync the companion default (`switch`, `fetch --prune`,
+     `merge --ff-only origin/<default>`) and delete the local `post-ship/<slug>`.
+     The product receives no post-ship commit.
    - If the user cannot verify yet, stop and report that re-running /agento ship with the slug
      resumes exactly here (the duplicate-submission rule cited above).
 
