@@ -20,14 +20,25 @@ idempotency row (read-only: a fresh read). Window check per §11: requires role
    **Session** section first: `role`, `worktree.path` and `worktree.branch` (or
    `detached`), the active `delivery` as `<type>/<slug>` (or none), `lifecycle`, the
    `allowed` commands one per line, each `elsewhere` command with its `window`, and
-   every `warnings[]` entry verbatim.
+   every `warnings[]` entry verbatim. When `companion` is not `null`, add a
+   `Companion` line with `companion.path`, `companion.branch` (or `detached`),
+   `dirty`/`ahead`, and show `companionPr` beside `pr` (number, draft/ready, state);
+   in the in-repo layout `companionPr` is `null` and the line is omitted.
 2. Run `node <agento-root>/scripts/agento.mjs status [feature|issue] [slug]`,
    passing the argument as the filter. Its JSON gives every roadmap's `slug`, `dir`,
    `type`, `status`, `branch`, `lastUpdated`, `nextStep`, `steps` (ticked/total),
    `reviewVerdict`, `postShipPending`, `initiative` (the initiative slug from the
-   roadmap header, or null), and a `duplicates` list to flag as anomalies.
+   roadmap header, or null), `artifactPr` (the companion PR from the `artifact-pr:`
+   header, or null), and a `duplicates` list to flag as anomalies.
 3. Cross-reference open PRs with `gh pr list --state all --limit 50` matching the
-   configured feature/issue branch prefixes: PR number, draft/ready, check status.
+   configured feature/issue branch prefixes: PR number, draft/ready, check status. In
+   companion mode — `agento.mjs config` reports `artifactsRoot` different from `root`
+   (`artifacts.repo.name` or `.dir` set); from the primary window the session record's
+   `companion` is `null` and is not the trigger — run the same listing against the
+   companion repository from inside its clone (`cd <artifactsRoot> && gh pr list …`,
+   which infers the repository from `origin`; `artifacts.repo.name` is a directory
+   basename, never a `--repo` value) and show each row's companion PR beside its code
+   PR, flagging a row whose `artifactPr` header names no open or merged companion PR.
 4. Present one table in the CLI's order (in-progress, paused, in-review, planned,
    complete) with an `Initiative` column (`—` when null) and a final column
    recommending the next command per row (/agento build-feature, /agento build-issue,

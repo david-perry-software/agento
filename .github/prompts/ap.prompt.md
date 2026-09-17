@@ -27,4 +27,6 @@ Window check per §11: requires role `build` with `delivery.slug` equal to the a
 - Run your preflight, then the build → review → fix loop per your agent instructions:
   cycle cap 3 review rounds, pause the entire run on any `(manual)` step or auth
   failure, and stop at `Verdict: approve` — /agento ship and /agento close-session always remain the
-  user's commands.
+  user's commands. Read roadmap.md and review.md from the artifact checkout the
+  session record names: this worktree in the in-repo layout, the companion half
+  (`companion.path`) in companion mode.

@@ -13,7 +13,7 @@
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
 //   node scripts/agento.mjs initiative [<slug>]
-//   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag)
+//   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //
@@ -264,15 +264,16 @@ function describeContent({ type, dir, roadmap, content, planExists, reviewConten
     lastUpdated: header(content, "last-updated"),
     nextStep: header(content, "next-step"),
     githubIssue: header(content, "github-issue") || null,
+    artifactPr: header(content, "artifact-pr") || null,
     initiative: header(content, "initiative") || null,
     steps: { ticked: steps.filter((m) => m[1] === "x").length, total: steps.length },
     postShipPending: (content.match(/^- \[ \] \d+\.\d+ \(manual, post-ship\)/gm) ?? []).length,
   };
 }
 
-function describe(file, type) {
+function describe(file, type, base = artifactsRoot) {
   const dir = path.dirname(file);
-  const rel = (p) => path.relative(artifactsRoot, p).split(path.sep).join("/");
+  const rel = (p) => path.relative(base, p).split(path.sep).join("/");
   const review = path.join(dir, "review.md");
   return describeContent({
     type,
@@ -301,14 +302,33 @@ function describeFromRef(ref, roadmap, type) {
   });
 }
 
-function allRoadmaps(typeFilter) {
+// `half`: companion mode only — the registered companion half's working tree, whose
+// mirrored branch carries the delivery's own roadmap; its roadmaps take precedence
+// over the clone's same-path copies (the clone sits on <default>). Null → the
+// artifacts root alone, which is today's behaviour in the in-repo layout.
+function allRoadmaps(typeFilter, half = null) {
   const out = [];
-  for (const type of ["feature", "issue"]) {
-    if (typeFilter && type !== typeFilter) continue;
-    const base = path.join(artifactsRoot, type === "feature" ? config.artifacts.features : config.artifacts.issues);
-    for (const file of walkRoadmaps(base)) out.push(describe(file, type));
+  const seen = new Set();
+  const bases = half && fs.existsSync(half) ? [half, artifactsRoot] : [artifactsRoot];
+  for (const base of bases) {
+    for (const type of ["feature", "issue"]) {
+      if (typeFilter && type !== typeFilter) continue;
+      const top = path.join(base, type === "feature" ? config.artifacts.features : config.artifacts.issues);
+      for (const file of walkRoadmaps(top)) {
+        const record = describe(file, type, base);
+        if (seen.has(record.roadmap)) continue;
+        seen.add(record.roadmap);
+        out.push(record);
+      }
+    }
   }
   return out;
+}
+
+// The companion half a session reads roadmaps from, or null (primary, unregistered
+// pair, in-repo layout).
+function companionHalfOf(companion) {
+  return companion?.registered && fs.existsSync(companion.path) ? companion.path : null;
 }
 
 function withExit(result) {
@@ -316,21 +336,30 @@ function withExit(result) {
 }
 
 // Only `session --pr` reaches this; every failure is a warning, never an exit code.
-function lookupPullRequest(branch) {
-  if (!branch) return { pr: null, warnings: ["pr: no branch to look up (detached HEAD)"] };
-  const opts = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
+// `label` names the field in warnings (`pr` for the code PR in the product checkout,
+// `companionPr` for the artifact PR looked up in the companion clone).
+function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
+  if (!branch) return { pr: null, warnings: [`${label}: no branch to look up (detached HEAD)`] };
+  const opts = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
   try {
     execFileSync("gh", ["--version"], opts);
   } catch {
-    return { pr: null, warnings: ["pr: gh CLI not found on PATH; install GitHub CLI to include pull request state"] };
+    return { pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] };
   }
   try {
     const out = execFileSync("gh", ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"], opts);
     return { pr: JSON.parse(out), warnings: [] };
   } catch (error) {
     const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
-    return { pr: null, warnings: [`pr: gh pr view ${branch} failed: ${stderr}`] };
+    return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
   }
+}
+
+// The mirrored artifact PR: the same branch name looked up in the companion clone.
+// In-repo layout → null with no gh call, so today's output is unchanged.
+function lookupCompanionPullRequest(branch) {
+  if (!artifacts.external) return { pr: null, warnings: [] };
+  return lookupPullRequest(branch, { cwd: artifactsRoot, label: "companionPr" });
 }
 
 // worktrees.dir is relative to the primary checkout; resolving it against a
@@ -638,6 +667,7 @@ function deriveInitiative(breakdown, roadmaps) {
       state,
       roadmap: roadmap ? roadmap.roadmap : null,
       branch: roadmap ? roadmap.branch : `${config.branches.feature}${f.slug}`,
+      artifactPr: roadmap?.artifactPr ?? null,
       requires: f.requires,
       recommendedAfter: f.recommendedAfter,
       wave: f.wave,
@@ -883,8 +913,11 @@ switch (command) {
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
-    const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(delivery?.branch ?? worktree.branch) : { pr: null, warnings: [] };
+    const companion = describeCompanion(worktree);
+    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, companionHalfOf(companion)), config });
+    const prBranch = delivery?.branch ?? worktree.branch;
+    const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
+    const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
     emit({
@@ -893,14 +926,15 @@ switch (command) {
       hosted,
       worktree,
       worktrees: classified,
-      companion: describeCompanion(worktree),
+      companion,
       workspace: describeWorkspace(worktree, sessionWorktreesDir),
       delivery,
       pr,
+      companionPr,
       lifecycle,
       allowed,
       elsewhere,
-      warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...warnings],
+      warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...companionPrWarnings, ...warnings],
       root,
       configSource: source,
     });
@@ -924,7 +958,7 @@ switch (command) {
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-    const roadmaps = allRoadmaps();
+    const roadmaps = allRoadmaps(null, companionHalfOf(describeCompanion(worktree)));
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null });
     warnings.unshift(...anchor.warnings);
@@ -944,6 +978,7 @@ switch (command) {
         status: record.status,
         reviewVerdict: record.reviewVerdict,
         postShipPending: record.postShipPending,
+        artifactPr: record.artifactPr,
         owner: ownerOf(record.branch),
         reviewFresh: fresh.reviewFresh,
         source: sourceKind,
@@ -1022,6 +1057,7 @@ switch (command) {
         lifecycle,
         slug: target?.slug ?? requestedSlug ?? null,
         type: target?.type ?? null,
+        artifactPr: target?.artifactPr ?? null,
         next: result.next,
         candidates: result.candidates,
         reviewFresh: targetFresh,

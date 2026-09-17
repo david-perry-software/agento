@@ -25,6 +25,16 @@ roadmap is the only durable progress record; chat memory does not survive, pushe
 commits do. `agento.mjs config` gives the configured default branch and branch
 prefixes; `main` in these instructions means `branches.default`.
 
+**Companion mode** (the session record's `companion` is not `null`): the code lives
+in this product worktree and the artifacts — plan.md, roadmap.md, review.md,
+`evidence/` — live in the companion half at `companion.path`, on the mirrored branch
+(`companion.branch` must equal the roadmap's `branch:`; a detached or differently
+named half is a hard stop naming the half). Every artifact read and write below
+happens there, every artifact commit uses `git -C <companion.path>`, and
+`session.delivery` already reflects that half. The in-repo layout (`companion:
+null`) keeps the single-repo flow: artifacts and code share this worktree and one
+commit.
+
 Follow the target repository's AGENTS.md at its root, the skills-first policy in
 [ai-skills.instructions.md](../instructions/ai-skills.instructions.md), the artifact
 formats in [delivery-artifacts.instructions.md](../instructions/delivery-artifacts.instructions.md),
@@ -46,15 +56,18 @@ to the slug being built.
    branch, stop and direct the user to the record's alternatives
    (`/agento start-session <type>/<slug> --resume`). If `origin/<branch>` is ahead, merge
    it (never rebase). If `origin/main` advanced, merge `origin/main` into the branch.
+   Companion mode: do the same in the half — `git -C <companion.path> fetch origin`,
+   merge its `origin/<branch>` when ahead and its `origin/<default>` when advanced
+   (never rebase) — so both halves start integrated.
    A managed `plan-` worktree (`worktree.dirPrefix: "plan"`) already on the matching
    published branch may be promoted in place through the Planner handoff; its path
    does not need to be renamed or reopened.
-2. Read plan.md and roadmap.md fully.
+2. Read plan.md and roadmap.md fully (from the companion half in companion mode).
 3. **Audit before trusting**: for each ticked step, spot-check the codebase evidence
    (files exist, tests pass, behavior present). Untick falsely ticked steps and note
    the repair. Add missing discovered work as new `(added <date>)` steps. Code is truth.
 4. Set `status: in-progress`, update `next-step`, commit and push the repaired roadmap
-   before writing any code.
+   (in the companion half in companion mode) before writing any code.
 5. One active builder per slug: the branch's registered worktree is its reservation.
    Never start a second builder chat for an occupied slug unless the user explicitly
    chose `--resume` or this chat arrived through the Planner's in-place handoff in the
@@ -81,22 +94,34 @@ For each unchecked step, in order:
    ancestor of `HEAD`, merge it in now (never rebase), resolve any conflict with the
    step's context fresh per the hotspot recipes in
    [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md),
-   rerun the step's `verify:`, then push.
-5. If the first push of the branch has no pull request yet, open a **draft** PR to `main`.
+   rerun the step's `verify:`, then push. Companion mode is the two-commit rule of
+   policy §7: the code commit in this product half, then the roadmap tick plus any
+   evidence in the companion half (`git -C <companion.path> commit`, same
+   Conventional Commit type and step reference); integrate both defaults, then push
+   product first, companion second, so the companion tick never precedes the code it
+   records. A step that changes no code (documentation living in the companion, a
+   `(manual)` step's evidence) is one companion commit.
+5. If the first push of the branch has no pull request yet, open a **draft** PR to `main`
+   (in companion mode also the draft `docs(<type>): <slug>` companion PR and the
+   `artifact-pr:` header, per the Planner's step 8, when the Planner left them out).
 
 ## Pause protocol
 
 When asked to pause, or when blocked: finish or revert the in-flight step (never commit
 half-broken state), set `status: paused` with a precise `next-step` (including the
-blocker if any), commit, push, and report the exact resume point — a pause is a
-`completed` §9 result whose state is `paused` and whose `next:` names the resume
-command.
+blocker if any), commit, push (both halves in companion mode: the product half first,
+then the companion half carrying the roadmap — `agento.mjs session` must show
+`companion.dirty: false` and `companion.ahead: 0`), and report the exact resume point
+— a pause is a `completed` §9 result whose state is `paused` and whose `next:` names
+the resume command.
 
 ## Completion
 
 When every step is ticked and verifications pass — `(manual, post-ship)` steps are
 exempt and stay unticked until /agento ship — fetch and confirm `origin/main` is an ancestor
-of `HEAD` (merge it and re-verify if not), then set `status: in-review`, commit, push,
+of `HEAD` (merge it and re-verify if not; in companion mode also that the companion's
+`origin/<default>` is an ancestor of the half's HEAD), then set `status: in-review`,
+commit, push (the companion half in companion mode, leaving `companion.ahead: 0`),
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the

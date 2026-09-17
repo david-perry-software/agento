@@ -30,7 +30,12 @@ checklist item with evidence, and apply the lint gate from
 delivery-policy.instructions.md. Audit and repair roadmap.md, and write
 `review.md` in the resolved slug directory with an explicit `Verdict: approve` or
 `Verdict: request-changes`. Commit and push the review, then summarize the verdict and
-top findings and end with the cross-window command sequence.
+top findings and end with the cross-window command sequence. In companion mode (the
+session record's `companion` is not `null`) the slug directory is in the companion
+half at `companion.path` on the mirrored branch: read plan.md and roadmap.md there,
+commit review.md and roadmap repairs with `git -C <companion.path>`, push that half,
+and post the single verdict comment on the code PR (`gh pr comment --edit-last` on a
+re-review).
 
 If the argument is blank, run `agento.mjs status feature`, list the items with
 `status: in-review`, and ask which to review.

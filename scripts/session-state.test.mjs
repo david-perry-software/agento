@@ -397,6 +397,7 @@ function roadmapRecord(type, slug, overrides = {}) {
     lastUpdated: "2026-09-13",
     nextStep: "1.1",
     githubIssue: null,
+    artifactPr: null,
     initiative: null,
     steps: { ticked: 0, total: 3 },
     postShipPending: 0,
@@ -405,17 +406,19 @@ function roadmapRecord(type, slug, overrides = {}) {
 }
 
 test("deriveDelivery: branch prefix decides type/slug and merges the matching roadmap", () => {
-  const roadmaps = [roadmapRecord("feature", "widget", { status: "in-progress" }), roadmapRecord("issue", "widget", { status: "paused", githubIssue: "#7" })];
+  const roadmaps = [roadmapRecord("feature", "widget", { status: "in-progress", artifactPr: "#7" }), roadmapRecord("issue", "widget", { status: "paused", githubIssue: "#7" })];
   const feature = deriveDelivery({ branch: "feature/widget", dirPrefix: "plan", id: "x", roadmaps, config });
   assert.equal(feature.type, "feature");
   assert.equal(feature.slug, "widget");
   assert.equal(feature.status, "in-progress");
   assert.equal(feature.roadmap, "features/2026/09/widget/roadmap.md");
   assert.deepEqual(feature.steps, { ticked: 0, total: 3 });
+  assert.equal(feature.artifactPr, "#7");
   const issue = deriveDelivery({ branch: "issue/widget", dirPrefix: null, id: null, roadmaps, config });
   assert.equal(issue.type, "issue");
   assert.equal(issue.status, "paused");
   assert.equal(issue.githubIssue, "#7");
+  assert.equal(issue.artifactPr, null);
 });
 
 test("deriveDelivery: no roadmap yet yields null roadmap fields; non-delivery branches yield null", () => {
@@ -822,8 +825,8 @@ test("deriveNext: primary window with no slug — none, one initiative member, a
   assert.equal(two.status, "ambiguous");
   assert.equal(two.next, null);
   assert.deepEqual(two.candidates, [
-    { kind: "delivery", slug: "widget", type: "feature", status: "in-progress", initiative: null, owner: managedOwner, invocation: "/agento continue widget" },
-    { kind: "initiative-member", slug: "other", type: "feature", status: "unplanned", initiative: "orchestration", owner: null, invocation: "/agento continue other" },
+    { kind: "delivery", slug: "widget", type: "feature", status: "in-progress", initiative: null, artifactPr: null, owner: managedOwner, invocation: "/agento continue widget" },
+    { kind: "initiative-member", slug: "other", type: "feature", status: "unplanned", initiative: "orchestration", artifactPr: null, owner: null, invocation: "/agento continue other" },
   ]);
   const chosen = next({ ...primaryWindow, candidates: two.candidates.length ? [deliveryCandidate("feature", "widget", "in-progress", { owner: managedOwner }), member("other")] : [], requestedSlug: "other" });
   assert.equal(chosen.status, "ok");
