@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "3.1 start-session prompt"
+next-step: "3.2 start-freehand prompt"
 initiative: "external-artifact-repo"
 ```
 
@@ -22,7 +22,7 @@ initiative: "external-artifact-repo"
 
 ## Phase 3: Prompts (mirrored to commands/)
 
-- [ ] 3.1 `start-session.prompt.md`: precondition 3 reads `companion`/`workspace` from `paths`; plan mode creates the companion half detached at the companion `origin/<default>`; build mode creates it on the roadmap branch (`origin/<branch>` if present in the companion, else `-b <branch> origin/<default>`; a registered companion half is reused untouched); write the workspace JSON (two absolute `folders`, `settings: {}`) and run `code --new-window <workspace>` unless `--no-open`; refuse a companion path that exists but is not the registered worktree; product-only when `companion` is `null` — verify: `diff .github/prompts/start-session.prompt.md commands/start-session.md` empty; `node --test tests/customizations.test.mjs` exit 0.
+- [x] 3.1 `start-session.prompt.md`: precondition 3 reads `companion`/`workspace` from `paths`; plan mode creates the companion half detached at the companion `origin/<default>`; build mode creates it on the roadmap branch (`origin/<branch>` if present in the companion, else `-b <branch> origin/<default>`; a registered companion half is reused untouched); write the workspace JSON (two absolute `folders`, `settings: {}`) and run `code --new-window <workspace>` unless `--no-open`; refuse a companion path that exists but is not the registered worktree; product-only when `companion` is `null` — verify: `diff .github/prompts/start-session.prompt.md commands/start-session.md` empty; `node --test tests/customizations.test.mjs` exit 0.
 - [ ] 3.2 `start-freehand.prompt.md`: the same pair creation for `freehand-<slug>` on `changes/<slug>` in both repos, workspace file, and open — verify: `diff` against `commands/start-freehand.md` empty; customizations test exit 0.
 - [ ] 3.3 `close-session.prompt.md`: resolve both halves and the workspace file from `paths`; inspect both `status --short`; remove companion half (`git -C <companion clone> worktree remove <literal path>` + `prune`), product half, then delete the workspace file; delete each repo's merged local branch under the existing conditions; rule 6 per half; build close stops on `reason: companion-unpushed` — verify: `diff` against `commands/close-session.md` empty; customizations test exit 0.
 - [ ] 3.4 `ship.prompt.md`: Ownership reads `companion` from `ship-preflight`; `companionGaps[]` join the hard-reject list; Teardown removes companion half, product half, and workspace file with literal paths and names the flagged path in the `paused at teardown` state — verify: `diff` against `commands/ship.md` empty; customizations test exit 0 (allowlist for `worktree list --porcelain` unchanged: `start-session, start-freehand, close-session, ship`).
