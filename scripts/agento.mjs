@@ -11,13 +11,14 @@
 //   node scripts/agento.mjs close-decision <feature|issue> <slug>
 //   node scripts/agento.mjs ship-preflight <feature|issue> <slug>
 //   node scripts/agento.mjs ports <slug>
-//   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>
+//   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
 //   node scripts/agento.mjs initiative [<slug>]
-//   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, delivery, lifecycle, allowed; hosted flag)
+//   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //
-// Options: --root <dir> (default: the git toplevel of the cwd).
+// Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
+// companion half re-anchors on its product checkout).
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -30,12 +31,12 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, parseWorktreeList } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 20);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 21);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -71,7 +72,71 @@ function parseArgs(argv) {
 const { positional, options } = parseArgs(process.argv.slice(2));
 const [command, ...rest] = positional;
 const startDir = path.resolve(options.root ?? process.cwd());
-const root = git(startDir, "rev-parse", "--show-toplevel") || startDir;
+const toplevel = git(startDir, "rev-parse", "--show-toplevel") || startDir;
+
+function samePath(a, b) {
+  try {
+    return fs.realpathSync(a) === fs.realpathSync(b);
+  } catch {
+    return path.resolve(a) === path.resolve(b);
+  }
+}
+
+function hasCompanionConfig(dir) {
+  try {
+    const repo = loadAgentoConfig(dir).config.artifacts?.repo ?? {};
+    return repo.name != null || repo.dir != null;
+  } catch {
+    return false;
+  }
+}
+
+const MANAGED_HALF = /^(plan|feature|issue|freehand)-(.+)$/;
+
+// A cwd inside a companion clone or a companion half (`<clone>-worktrees/<kind>-<id>`)
+// has no artifacts.repo of its own. Re-anchor on the product checkout: the sibling
+// git checkout of the clone whose config resolves artifacts.dir to that clone — and,
+// for a half, the product half of the same name when it exists. Zero matches keep
+// today's behaviour silently (an in-repo project's own managed worktree looks the
+// same); several matches keep it too and warn.
+function anchorRoot(dir) {
+  if (hasCompanionConfig(dir)) return { root: dir, warnings: [] };
+  const ownList = parseWorktreeList(git(dir, "worktree", "list", "--porcelain"));
+  const clone = ownList[0]?.path ?? dir;
+  if (!samePath(clone, dir) && hasCompanionConfig(clone)) return { root: dir, warnings: [] };
+  const halfName = path.basename(dir);
+  const looksLikeHalf = !samePath(clone, dir) && MANAGED_HALF.test(halfName) && path.basename(path.dirname(dir)) === `${path.basename(clone)}-worktrees`;
+  const parent = path.dirname(clone);
+  let siblings;
+  try {
+    siblings = fs.readdirSync(parent, { withFileTypes: true });
+  } catch {
+    return { root: dir, warnings: [] };
+  }
+  const matches = [];
+  for (const entry of siblings) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(parent, entry.name);
+    if (samePath(candidate, clone) || !fs.existsSync(path.join(candidate, ".git"))) continue;
+    try {
+      const resolved = resolveArtifactsRoot({ config: loadAgentoConfig(candidate).config, rootDir: candidate });
+      if (resolved.external && samePath(resolved.dir, clone)) matches.push(candidate);
+    } catch {
+      // unreadable or malformed config: not a product checkout
+    }
+  }
+  if (matches.length === 1) {
+    const product = matches[0];
+    const productHalf = path.resolve(product, loadAgentoConfig(product).config.worktrees.dir, halfName);
+    const anchored = looksLikeHalf && fs.existsSync(productHalf) ? productHalf : product;
+    return { root: anchored, warnings: [`anchored-from-companion: ${dir} is a companion checkout of ${product}; the record describes ${anchored}`] };
+  }
+  if (matches.length > 1) return { root: dir, warnings: [`companion-anchor: ${matches.length} sibling checkouts name ${clone} as their artifacts.repo (${matches.join(", ")}); keep one product per companion`] };
+  return { root: dir, warnings: [] };
+}
+
+const anchor = anchorRoot(toplevel);
+const root = anchor.root;
 const { config, source } = loadAgentoConfig(root);
 const repoName = path.basename(root);
 const worktreesDir = path.resolve(root, config.worktrees.dir);
@@ -101,6 +166,48 @@ const artifactsGit = artifacts.external
     }
   : gitAdapter;
 const agit = (...args) => git(artifactsRoot, ...args);
+
+// Companion mode only: the companion clone's registered worktrees, read once.
+const companionWorktreesDir = artifacts.external ? artifacts.worktreesDir : null;
+let companionWorktreesCache = null;
+function companionWorktrees() {
+  if (!artifacts.external) return [];
+  companionWorktreesCache ??= parseWorktreeList(git(artifacts.dir, "worktree", "list", "--porcelain"));
+  return companionWorktreesCache;
+}
+
+// The companion half paired with a managed product worktree, with the git facts the
+// close and ship decisions need: `dirty` (uncommitted changes) and `ahead` (commits
+// not on the upstream, or on no remote ref at all when there is no upstream).
+function describeCompanion(worktree) {
+  const pair = pairFor({ worktree, companionWorktreesDir, companionWorktrees: companionWorktrees() });
+  if (!pair) return null;
+  if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0 };
+  const dirty = git(pair.path, "status", "--porcelain") !== "";
+  const upstream = git(pair.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+  const count = upstream ? git(pair.path, "rev-list", "--count", "@{upstream}..HEAD") : git(pair.path, "rev-list", "--count", "HEAD", "--not", "--remotes");
+  return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, registered: true };
+}
+
+// The multi-root workspace file a paired session opens (product side, next to the
+// product half); null for the primary, unmanaged cwds, and in-repo mode.
+function describeWorkspace(worktree, sessionWorktreesDir) {
+  if (!artifacts.external || !worktree?.isManaged) return null;
+  const file = path.join(sessionWorktreesDir, `${worktree.dirPrefix}-${worktree.id}.code-workspace`);
+  return { path: file, exists: fs.existsSync(file) };
+}
+
+// close-decision / ship-preflight: the companion half owned alongside the product
+// half, or null when no managed worktree owns the branch (or in-repo mode).
+function companionOfOwner(owner) {
+  if (!owner || owner.role === "primary" || !owner.dirPrefix) return null;
+  return describeCompanion({ isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id });
+}
+
+function companionGaps(companion) {
+  if (!companion?.registered) return [];
+  return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : [])];
+}
 
 function requireType(type) {
   if (type !== "feature" && type !== "issue") usage(`type must be feature or issue, got ${JSON.stringify(type ?? "")}`);
@@ -320,9 +427,19 @@ const DOCTOR_CHECKS = {
     // Pre-migration leftovers in the product repo are ignored by every reader; say so once.
     const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
     const stale = [config.artifacts.features, config.artifacts.issues, config.artifacts.initiatives].filter((rel) => holdsArtifacts(path.join(primaryRoot, rel)));
-    return stale.length
-      ? { status: "warn", detail: `${detail}; stale in-repo roots: ${stale.map((r) => `${r}/`).join(", ")}`, fallback: "the in-repo roots are ignored while artifacts.repo is set; move them into the companion (`/agento agento-init --migrate`) or remove them" }
-      : { status: "ok", detail, fallback: null };
+    if (stale.length) {
+      return { status: "warn", detail: `${detail}; stale in-repo roots: ${stale.map((r) => `${r}/`).join(", ")}`, fallback: "the in-repo roots are ignored while artifacts.repo is set; move them into the companion (`/agento agento-init --migrate`) or remove them" };
+    }
+    // The companion halves of paired sessions go under <dir>-worktrees (derived, no key).
+    const pairDir = artifacts.worktreesDir;
+    if (fs.existsSync(pairDir)) {
+      try {
+        fs.accessSync(pairDir, fs.constants.W_OK);
+      } catch {
+        return { status: "warn", detail: `${detail}; ${pairDir} not writable`, fallback: `give ${pairDir} write permission (it holds the companion half of every paired session) or remove it so it is recreated` };
+      }
+    }
+    return { status: "ok", detail, fallback: null };
   },
 };
 
@@ -663,14 +780,30 @@ switch (command) {
   case "close-decision": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: artifactsGit, rootDir: root, artifactsRoot, config }));
+    const decision = closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: artifactsGit, rootDir: root, artifactsRoot, config });
+    if (decision.status !== "ok") withExit(decision);
+    const companion = companionOfOwner(decision.owner);
+    const gaps = companionGaps(companion);
+    if (gaps.length) {
+      withExit({
+        status: "error",
+        reason: "companion-unpushed",
+        owner: decision.owner,
+        companion,
+        message: `The companion half at ${companion.path} is ${gaps.join(" and ")}; commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost.`,
+      });
+    }
+    withExit({ ...decision, companion });
     break;
   }
 
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") }));
+    const preflight = evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") });
+    if (preflight.status !== "ok") withExit(preflight);
+    const companion = companionOfOwner(preflight.owner);
+    withExit({ ...preflight, companion, companionGaps: companionGaps(companion) });
     break;
   }
 
@@ -692,15 +825,20 @@ switch (command) {
     requireSlug(id);
     const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
     const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
+    const branch = kind === "plan" ? null : `${prefixes[kind]}${id}`;
     emit({
       status: "ok",
       worktreesDir,
       worktree: path.join(worktreesDir, `${kind}-${id}`),
-      branch: kind === "plan" ? null : `${prefixes[kind]}${id}`,
+      branch,
       artifactsRoot,
       artifactRoot: artifactRel === null ? null : path.join(artifactsRoot, artifactRel),
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
+      // Companion mode: the paired companion half (same <kind>-<id>, same branch) and the
+      // two-folder workspace file the session opens; both null in the in-repo layout.
+      companion: artifacts.external ? { worktreesDir: companionWorktreesDir, worktree: path.join(companionWorktreesDir, `${kind}-${id}`), branch } : null,
+      workspace: artifacts.external ? path.join(worktreesDir, `${kind}-${id}.code-workspace`) : null,
     });
     break;
   }
@@ -743,8 +881,8 @@ switch (command) {
     // startDir (not root): a subdirectory inside a worktree resolves to that worktree's entry.
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env });
-    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config });
+    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(delivery?.branch ?? worktree.branch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
@@ -755,12 +893,14 @@ switch (command) {
       hosted,
       worktree,
       worktrees: classified,
+      companion: describeCompanion(worktree),
+      workspace: describeWorkspace(worktree, sessionWorktreesDir),
       delivery,
       pr,
       lifecycle,
       allowed,
       elsewhere,
-      warnings: [...(hostedReason ? [hostedReason] : []), ...prWarnings, ...warnings],
+      warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...warnings],
       root,
       configSource: source,
     });
@@ -782,11 +922,12 @@ switch (command) {
     const requestedSlug = rest[0] ? requireSlug(rest[0]) : null;
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env });
-    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config });
+    const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const roadmaps = allRoadmaps();
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null });
+    warnings.unshift(...anchor.warnings);
     if (hostedReason) warnings.unshift(hostedReason);
     const ownerOf = (branch) => findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch, config });
 

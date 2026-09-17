@@ -216,8 +216,11 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
     rulesets' status (created / already protected / declined / gap), config values
     chosen, files created and files kept, the reminder to add `../<name>` to the
     editor workspace (*File → Add Folder to Workspace…*) so the artifact-format
-    instructions load — see the Agento clone's `docs/project-profile.md` — until
-    paired worktrees automate it, the exact next command (`/agento start-session` then
+    instructions load in the **primary** window — see the Agento clone's
+    `docs/project-profile.md`; managed sessions need no such step because
+    `/agento start-session` and `/agento start-freehand` open every session as a
+    two-folder `.code-workspace` pairing the product worktree with its companion half
+    under `../<name>-worktrees/` — the exact next command (`/agento start-session` then
     `/agento new-feature <description>`), and — if the plugin is not yet registered —
     the settings snippet:
 

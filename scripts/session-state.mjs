@@ -46,7 +46,27 @@ function isWithin(dir, target) {
 
 const HOSTED_VARS = ["CODESPACES", "GITHUB_ACTIONS"];
 
-function classifyByPath({ cwd, worktrees, worktreesDir, config }) {
+// The managed `<kind>-<id>` directory name a cwd sits under, when `managedDir` is
+// the worktrees dir that holds it (never the dir itself).
+function managedTop(managedDir, real) {
+  if (!managedDir) return null;
+  const managedRoot = realpath(managedDir);
+  if (!isWithin(managedRoot, real) || real === managedRoot) return null;
+  const top = path.relative(managedRoot, real).split(path.sep)[0];
+  return top.match(MANAGED_DIR) ? top : null;
+}
+
+function roleForManaged(worktree, config) {
+  if (worktree.dirPrefix === "freehand") return "freehand";
+  const { branch } = worktree;
+  if (branch && (branch.startsWith(config.branches.feature) || branch.startsWith(config.branches.issue))) return "build";
+  return "plan";
+}
+
+// `companionWorktreesDir` (companion mode only) is the parallel directory holding the
+// companion half of every managed pair; a cwd inside `<companionWorktreesDir>/<kind>-<id>`
+// resolves to the *product* half's record and `half: "companion"`.
+function classifyByPath({ cwd, worktrees, worktreesDir, config, companionWorktreesDir = null }) {
   const real = realpath(cwd);
   const entries = (worktrees ?? []).map((w) => ({ ...w, realPath: realpath(w.path) }));
   const primary = entries[0] ?? null;
@@ -64,34 +84,44 @@ function classifyByPath({ cwd, worktrees, worktreesDir, config }) {
   };
 
   if (owner && primary && owner.realPath === primary.realPath) {
-    return { role: "primary", worktree: { ...worktree, isPrimary: true } };
+    return { role: "primary", worktree: { ...worktree, isPrimary: true }, half: "product" };
   }
 
-  const managedRoot = realpath(worktreesDir);
-  if (isWithin(managedRoot, real) && real !== managedRoot) {
-    const top = path.relative(managedRoot, real).split(path.sep)[0];
+  const top = managedTop(worktreesDir, real);
+  if (top) {
     const match = top.match(MANAGED_DIR);
-    if (match) {
-      worktree.isManaged = true;
-      worktree.dirPrefix = match[1];
-      worktree.id = match[2];
-      if (!owner) worktree.path = path.join(worktreesDir, top);
-      if (match[1] === "freehand") return { role: "freehand", worktree };
-      const { branch } = worktree;
-      if (branch && (branch.startsWith(config.branches.feature) || branch.startsWith(config.branches.issue))) {
-        return { role: "build", worktree };
-      }
-      return { role: "plan", worktree };
-    }
+    worktree.isManaged = true;
+    worktree.dirPrefix = match[1];
+    worktree.id = match[2];
+    if (!owner) worktree.path = path.join(worktreesDir, top);
+    return { role: roleForManaged(worktree, config), worktree, half: "product" };
   }
 
-  return { role: "unmanaged", worktree };
+  const companionTop = owner ? null : managedTop(companionWorktreesDir, real);
+  if (companionTop) {
+    const match = companionTop.match(MANAGED_DIR);
+    const productPath = path.join(worktreesDir, companionTop);
+    const productReal = realpath(productPath);
+    const product = entries.find((w) => w.realPath === productReal) ?? null;
+    const paired = {
+      path: product ? product.path : productPath,
+      branch: product?.branch ?? null,
+      detached: product ? product.detached : true,
+      isPrimary: false,
+      isManaged: true,
+      dirPrefix: match[1],
+      id: match[2],
+    };
+    return { role: roleForManaged(paired, config), worktree: paired, half: "companion" };
+  }
+
+  return { role: "unmanaged", worktree, half: "product" };
 }
 
 // In a hosted workspace (Codespaces, Actions) the path rules do not apply: the role
 // comes from the branch alone and `reason` explains why, for `warnings[]`.
-export function deriveRole({ cwd, worktrees, worktreesDir, config, env }) {
-  const result = classifyByPath({ cwd, worktrees, worktreesDir, config });
+export function deriveRole({ cwd, worktrees, worktreesDir, config, env, companionWorktreesDir = null }) {
+  const result = classifyByPath({ cwd, worktrees, worktreesDir, config, companionWorktreesDir });
   const hostedVar = HOSTED_VARS.find((v) => env?.[v] === "true");
   if (!hostedVar) return { ...result, hosted: false };
   const { branch } = result.worktree;
@@ -99,16 +129,36 @@ export function deriveRole({ cwd, worktrees, worktreesDir, config, env }) {
   return {
     role: isDelivery ? "build" : "primary",
     worktree: result.worktree,
+    half: result.half,
     hosted: true,
     reason: `hosted-workspace: role derived from the branch (${hostedVar}=true)`,
   };
 }
 
+// The companion half paired with a managed product worktree: its path is derived,
+// `registered` says whether the companion clone lists it (branch/detached come from
+// that entry). Null for the primary, unmanaged entries, and in-repo mode.
+export function pairFor({ worktree, companionWorktreesDir, companionWorktrees }) {
+  if (!companionWorktreesDir || !worktree?.isManaged) return null;
+  const pairPath = path.join(companionWorktreesDir, `${worktree.dirPrefix}-${worktree.id}`);
+  const pairReal = realpath(pairPath);
+  const entry = (companionWorktrees ?? []).find((w) => realpath(w.path) === pairReal) ?? null;
+  return {
+    path: entry ? entry.path : pairPath,
+    branch: entry?.branch ?? null,
+    detached: entry ? Boolean(entry.detached) : false,
+    registered: Boolean(entry),
+  };
+}
+
 // One classified record per registered worktree entry; the list describes on-disk
-// checkouts, so the hosted flag never applies here.
-export function classifyWorktrees({ worktrees, worktreesDir, config }) {
-  return (worktrees ?? []).map((entry) => {
-    const { role, worktree } = classifyByPath({ cwd: entry.path, worktrees, worktreesDir, config });
+// checkouts, so the hosted flag never applies here. Product entries come first
+// (`repo: "product"`, the primary at index 0); in companion mode the companion
+// clone's entries follow with `repo: "companion"`, each half's role taken from its
+// product half.
+export function classifyWorktrees({ worktrees, worktreesDir, config, companionWorktreesDir = null, companionWorktrees = [] }) {
+  const classify = (entry, repo) => {
+    const { role, worktree } = classifyByPath({ cwd: entry.path, worktrees, worktreesDir, config, companionWorktreesDir });
     return {
       path: entry.path,
       branch: entry.branch ?? null,
@@ -118,8 +168,13 @@ export function classifyWorktrees({ worktrees, worktreesDir, config }) {
       id: worktree.id,
       isPrimary: worktree.isPrimary,
       isManaged: worktree.isManaged,
+      repo,
     };
-  });
+  };
+  return [
+    ...(worktrees ?? []).map((entry) => classify(entry, "product")),
+    ...(companionWorktreesDir ? companionWorktrees ?? [] : []).map((entry) => classify(entry, "companion")),
+  ];
 }
 
 // Exact ownership of a branch: a managed entry inside worktrees.dir, the primary

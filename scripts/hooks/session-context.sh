@@ -7,7 +7,9 @@
 # .github/agento.json (defaults: features/, issues/). When that config sets
 # `artifacts.repo`, the roadmaps are read from the sibling companion checkout instead
 # (resolved against the primary checkout) and an `Artifacts: <path> (branch <b>)` line
-# names it directly after `Session:`.
+# names it directly after `Session:`. From a managed product worktree `<kind>-<id>`
+# whose companion half `<companion>-worktrees/<kind>-<id>` exists, that half is the
+# artifacts checkout named and walked instead of the companion clone.
 set -u
 
 input="$(cat)"
@@ -81,9 +83,11 @@ def resolve_artifacts(product_root):
     # (name and dir both null) keeps the in-repo layout with no extra git call; else
     # the companion path resolves against the primary checkout (first `git worktree
     # list` entry) and its config, so managed worktrees never point into worktrees.dir.
+    # Returns (external, companion_path, name, companion_worktrees_dir, primary_root);
+    # the companion's session halves live under `<companion_path>-worktrees/<kind>-<id>`.
     repo = load_config(product_root)["artifacts"]["repo"]
     if repo.get("name") is None and repo.get("dir") is None:
-        return False, None, None
+        return False, None, None, None, product_root
     primary_root = product_root
     for line in run_git(product_root, "worktree", "list", "--porcelain").splitlines():
         if line.startswith("worktree "):
@@ -92,9 +96,9 @@ def resolve_artifacts(product_root):
     if os.path.realpath(primary_root) != os.path.realpath(product_root):
         repo = load_config(primary_root)["artifacts"]["repo"]
         if repo.get("name") is None and repo.get("dir") is None:
-            return False, None, None
+            return False, None, None, None, primary_root
     path = os.path.abspath(os.path.join(primary_root, repo.get("dir") or os.path.join("..", repo["name"])))
-    return True, path, repo.get("name") or os.path.basename(path)
+    return True, path, repo.get("name") or os.path.basename(path), path + "-worktrees", primary_root
 # --- end shared helpers ---
 
 
@@ -130,7 +134,14 @@ def session_summary(cli):
 
 config = load_config(root)
 roots = [config["artifacts"]["features"] or "features", config["artifacts"]["issues"] or "issues"]
-external, companion, _ = resolve_artifacts(root)
+external, companion, _, companion_worktrees, primary_root = resolve_artifacts(root)
+# A managed product half `<kind>-<id>` pairs with `<companion>-worktrees/<kind>-<id>`;
+# when that half exists it is the session's artifacts checkout, not the clone.
+MANAGED_DIR = re.compile(r"^(plan|feature|issue|freehand)-(.+)$")
+if external and os.path.realpath(root) != os.path.realpath(primary_root) and MANAGED_DIR.match(os.path.basename(root)):
+    half = os.path.join(companion_worktrees, os.path.basename(root))
+    if os.path.isdir(half):
+        companion = half
 # In companion mode the product's own features/ and issues/ are ignored.
 walk_root = companion if external else root
 

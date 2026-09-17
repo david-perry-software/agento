@@ -12,10 +12,23 @@ Agento is built for several delivery sessions running side by side on one machin
   - `feature-<slug>` / `issue-<slug>` — build sessions
   - `freehand-<slug>` — freehand sessions on `changes/<slug>`
 - A branch's registered worktree is its reservation: one active builder per slug.
+- **Companion mode** (`artifacts.repo` set): every managed session is a **pair**. The
+  product half lives in `worktrees.dir` as above; the companion half is a worktree of
+  the companion clone with the same `<kind>-<id>` name under the derived parallel
+  directory `<artifacts.repo.dir>-worktrees/` (for example
+  `../agento-docs-worktrees/feature-<slug>`); plan sessions hold both halves detached
+  at their origin default, build and freehand sessions hold both on the same branch
+  name. `/agento start-session` and `/agento start-freehand` create both halves and
+  write `<worktrees.dir>/<kind>-<id>.code-workspace` (two absolute `folders`), which
+  is the window they open and the one `/agento continue` reopens; `/agento
+  close-session` and `/agento ship`'s teardown remove the companion half, the product
+  half, and the workspace file together, refusing while the companion half is dirty
+  or unpushed (`companion-unpushed`). The one-builder-per-slug reservation covers
+  both halves: `agento.mjs session` from either half describes the same session.
 - `/agento start-session` refuses to touch a path that exists but is not the expected
   registered worktree; `/agento close-session` removes worktrees and prunes merged
   branches. The delivery guard asks before removing a worktree that still has
-  processes or a VS Code window inside it.
+  processes, a VS Code folder window, or the pair's `.code-workspace` window inside it.
 - Initiative members in the same wave whose `Requires:` are all complete are all
   `ready` at once (`/agento next-feature <initiative-slug>` lists them); each may be planned
   and built concurrently in its own `/agento start-session` → `/agento new-feature

@@ -36,22 +36,37 @@ itself, or the sibling companion checkout when `artifacts.repo` is set),
 or `null` — for the delivery branch, resolved exactly from `git worktree list
 --porcelain`; `close-decision` reasons are `managed-worktree-present`,
 `primary-owns-branch` (return the primary to the default branch first — nothing to
-remove), or `remote-roadmap-only`), `paths <kind> <id>` (worktree and branch names
-plus `artifactsRoot` and the absolute `artifactRoot` under it), `ports <slug>`,
+remove), or `remote-roadmap-only`; in companion mode both add `companion` — `{ path,
+branch, detached, dirty, ahead, registered }` for the owner's companion half or `null`
+— and `close-decision` stops with `status: "error", reason: "companion-unpushed"`
+while that half is dirty or ahead of its upstream, where `ship-preflight` lists the
+same conditions as `companionGaps[]` (`dirty`, `unpushed`)), `paths <kind> <id>`
+(worktree and branch names plus `artifactsRoot` and the absolute `artifactRoot`
+under it; in companion mode also `companion: { worktreesDir, worktree, branch }` —
+the paired half at `<artifacts.repo.dir>-worktrees/<kind>-<id>` — and `workspace`,
+the `<worktrees.dir>/<kind>-<id>.code-workspace` file the pair opens as; both `null`
+in the in-repo layout), `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
 `warnings[]` says so), `worktrees[]` with every registered checkout classified the
-same way, the active delivery and its `lifecycle`, and the `allowed`
-and `elsewhere` commands; `--pr` adds the branch's PR via `gh`, degrading to
-`pr: null` plus a warning when `gh` is absent),
+same way (each tagged `repo: "product" | "companion"`; companion halves follow every
+product entry, so `worktrees[0]` is always the product primary), the active delivery
+and its `lifecycle`, and the `allowed` and `elsewhere` commands; in companion mode
+also `companion` — the current session's half `{ path, branch, detached, dirty,
+ahead, registered }` — and `workspace: { path, exists }`, both `null` from the
+primary or in the in-repo layout; a cwd inside a companion half or the companion
+clone is anchored on its product checkout and yields the same record, with an
+`anchored-from-companion` entry in `warnings[]`; `--pr` adds the branch's PR via `gh`,
+degrading to `pr: null` plus a warning when `gh` is absent),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
 `doctor [--for <command>]` (seven environment checks — `node`, `git-remote`, `gh`,
 `code`, `python3`, `worktrees-dir`, `artifact-repo` — each `{ id, status, detail, fallback }` with
-`status` ∈ `ok | warn | fail`; `--for` runs only the checks the named command's
-`Needs:` line requires and echoes them as `for.needs`),
+`status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
+`<dir>-worktrees` directory exists but is not writable; `--for` runs only the checks
+the named command's `Needs:` line requires and echoes them as `for.needs`),
 `next [<slug>]` (the one legal delivery transition derived from the same record as
 `session` plus roadmap ownership, review freshness, and initiative readiness:
 `status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`

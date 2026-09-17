@@ -24,6 +24,7 @@ allow git -C {companion} push origin :feature/x
 allow git -C {companion} merge origin/trunk
 allow git -C {companion} status
 allow git -C {companion} log --oneline -5
+allow git -C {companion} worktree list --porcelain
 allow cd {companion} && git status
 
 # Generic rules apply to the companion unchanged

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Paired companion worktrees.** In companion mode every managed session is a pair:
+  `/agento start-session` and `/agento start-freehand` create the product half in
+  `worktrees.dir` and a companion half of the same `<kind>-<id>` name under the
+  derived `<artifacts.repo.dir>-worktrees/` (plan sessions detached at the companion's
+  origin default, build and freehand sessions on the same branch name), write
+  `<worktrees.dir>/<kind>-<id>.code-workspace` with both folders, and open that
+  workspace; `/agento continue` reopens it. `agento.mjs paths` gains `companion` and
+  `workspace`; `session`/`next` gain `companion { path, branch, detached, dirty,
+  ahead, registered }`, `workspace { path, exists }`, and tag every `worktrees[]`
+  entry `repo: "product" | "companion"`; a cwd inside the companion clone or one of
+  its halves is anchored on its product checkout (`anchored-from-companion` warning)
+  and yields the same record. `close-decision` stops with `companion-unpushed` and
+  `ship-preflight` lists `companionGaps[]` while the companion half is dirty or
+  ahead; `/agento close-session` and `/agento ship`'s teardown remove companion half,
+  product half, and workspace file together. `doctor` `artifact-repo` warns when
+  `<dir>-worktrees` exists but is not writable. The delivery guard also asks before
+  `git [-C <companion>] worktree remove` while the pair's workspace window is open,
+  and the SessionStart `Artifacts:` line names the companion half from a paired
+  product worktree. Policy §8 names the pair's workspace window as the secondary
+  window; §11 lets the four worktree-mutating commands read the companion clone's
+  worktree list. In-repo layout: all new fields are `null`/`[]`, output otherwise
+  unchanged.
 - **Both hooks read `artifacts.repo`.** With a companion configured, the SessionStart
   hook (`scripts/hooks/session-context.sh`) walks the companion checkout for
   resumable roadmaps (product `features/`/`issues/` ignored, resolved against the

@@ -1,0 +1,745 @@
+
+### setup: bare origins + clones in /tmp/agento-pair-e2e-M0J0cV (date 2026-09-17)
+warning: You appear to have cloned an empty repository.
+warning: You appear to have cloned an empty repository.
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs doctor --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "ok",
+  "for": null,
+  "checks": [
+    {
+      "id": "node",
+      "status": "ok",
+      "detail": "node v22.22.3",
+      "fallback": null
+    },
+    {
+      "id": "git-remote",
+      "status": "ok",
+      "detail": "origin /tmp/agento-pair-e2e-M0J0cV/project.git, main reachable",
+      "fallback": null
+    },
+    {
+      "id": "gh",
+      "status": "ok",
+      "detail": "gh version 2.45.0 (2025-07-18 Ubuntu 2.45.0-1ubuntu0.3); authenticated",
+      "fallback": null
+    },
+    {
+      "id": "code",
+      "status": "ok",
+      "detail": "code 1.132.0",
+      "fallback": null
+    },
+    {
+      "id": "python3",
+      "status": "ok",
+      "detail": "Python 3.12.3",
+      "fallback": null
+    },
+    {
+      "id": "worktrees-dir",
+      "status": "ok",
+      "detail": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees absent; /tmp/agento-pair-e2e-M0J0cV writable, it will be created",
+      "fallback": null
+    },
+    {
+      "id": "artifact-repo",
+      "status": "ok",
+      "detail": "/tmp/agento-pair-e2e-M0J0cV/project-docs (project-docs), origin /tmp/agento-pair-e2e-M0J0cV/project-docs.git, main present",
+      "fallback": null
+    }
+  ],
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project/.github/agento.json"
+}
+  -> exit 0
+
+### PLAN MODE — /agento start-session plan --no-open
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs paths plan 20260916-120000 --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "ok",
+  "worktreesDir": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees",
+  "worktree": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+  "branch": null,
+  "artifactsRoot": "/tmp/agento-pair-e2e-M0J0cV/project-docs",
+  "artifactRoot": null,
+  "defaultBranch": "main",
+  "postShipBranch": null,
+  "companion": {
+    "worktreesDir": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees",
+    "worktree": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000",
+    "branch": null
+  },
+  "workspace": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace"
+}
+  -> exit 0
+worktree=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000 companion=/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000 workspace=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace artifactsRoot=/tmp/agento-pair-e2e-M0J0cV/project-docs
+
+### git worktree list (product, before)
+/tmp/agento-pair-e2e-M0J0cV/project  84ee2d1 [main]
+
+### git worktree list (companion, before)
+/tmp/agento-pair-e2e-M0J0cV/project-docs  15f9836 [main]
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project fetch origin
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project worktree add --detach /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000 origin/main
+Preparing worktree (detached HEAD 84ee2d1)
+HEAD is now at 84ee2d1 init
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs fetch origin
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs worktree add --detach /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000 origin/main
+Preparing worktree (detached HEAD 15f9836)
+HEAD is now at 15f9836 init
+  -> exit 0
+$ cat /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace
+{ "folders": [{ "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000" }, { "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000" }], "settings": {} }
+  -> exit 0
+
+### git worktree list (product, after start)
+/tmp/agento-pair-e2e-M0J0cV/project                                 84ee2d1 [main]
+/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000  84ee2d1 (detached HEAD)
+
+### git worktree list (companion, after start)
+/tmp/agento-pair-e2e-M0J0cV/project-docs                                 15f9836 [main]
+/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000  15f9836 (detached HEAD)
+
+### session from the product half
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs session --root /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000
+{
+  "status": "ok",
+  "role": "plan",
+  "hosted": false,
+  "worktree": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+    "branch": null,
+    "detached": true,
+    "isPrimary": false,
+    "isManaged": true,
+    "dirPrefix": "plan",
+    "id": "20260916-120000"
+  },
+  "worktrees": [
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project",
+      "branch": "main",
+      "detached": false,
+      "role": "primary",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": true,
+      "isManaged": false,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+      "branch": null,
+      "detached": true,
+      "role": "plan",
+      "dirPrefix": "plan",
+      "id": "20260916-120000",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs",
+      "branch": "main",
+      "detached": false,
+      "role": "unmanaged",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": false,
+      "isManaged": false,
+      "repo": "companion"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000",
+      "branch": null,
+      "detached": true,
+      "role": "plan",
+      "dirPrefix": "plan",
+      "id": "20260916-120000",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "companion"
+    }
+  ],
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000",
+    "branch": null,
+    "detached": true,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+  },
+  "workspace": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace",
+    "exists": true
+  },
+  "delivery": null,
+  "pr": null,
+  "lifecycle": "no-delivery",
+  "allowed": [
+    "/agento continue",
+    "/agento new-feature",
+    "/agento new-issue",
+    "/agento delivery-status"
+  ],
+  "elsewhere": [],
+  "warnings": [],
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000/.github/agento.json"
+}
+  -> exit 0
+
+### session from the companion half
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs session --root /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000
+{
+  "status": "ok",
+  "role": "plan",
+  "hosted": false,
+  "worktree": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+    "branch": null,
+    "detached": true,
+    "isPrimary": false,
+    "isManaged": true,
+    "dirPrefix": "plan",
+    "id": "20260916-120000"
+  },
+  "worktrees": [
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project",
+      "branch": "main",
+      "detached": false,
+      "role": "primary",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": true,
+      "isManaged": false,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+      "branch": null,
+      "detached": true,
+      "role": "plan",
+      "dirPrefix": "plan",
+      "id": "20260916-120000",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs",
+      "branch": "main",
+      "detached": false,
+      "role": "unmanaged",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": false,
+      "isManaged": false,
+      "repo": "companion"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000",
+      "branch": null,
+      "detached": true,
+      "role": "plan",
+      "dirPrefix": "plan",
+      "id": "20260916-120000",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "companion"
+    }
+  ],
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000",
+    "branch": null,
+    "detached": true,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+  },
+  "workspace": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace",
+    "exists": true
+  },
+  "delivery": null,
+  "pr": null,
+  "lifecycle": "no-delivery",
+  "allowed": [
+    "/agento continue",
+    "/agento new-feature",
+    "/agento new-issue",
+    "/agento delivery-status"
+  ],
+  "elsewhere": [],
+  "warnings": [
+    "anchored-from-companion: /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000 is a companion checkout of /tmp/agento-pair-e2e-M0J0cV/project; the record describes /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000"
+  ],
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000/.github/agento.json"
+}
+  -> exit 0
+
+### agreement check (role / worktree.path / allowed / workspace.path)
+role               product=plan companion=plan
+worktree.path      product=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000 companion=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000
+worktree.branch    product=null companion=null
+worktree.detached  product=true companion=true
+workspace.path     product=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace companion=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace
+companion.path     product=/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000 companion=/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000
+allowed equal: yes
+
+### PLAN CLOSE — /agento close-session plan/20260916-120000
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000 status --short
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000 status --short
+  -> exit 0
+product half detached & ancestor of origin/main: yes / yes
+companion half detached & ancestor of origin/main: yes / yes
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs worktree remove /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs worktree prune
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project worktree remove /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project worktree prune
+  -> exit 0
+$ rm /tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace
+  -> exit 0
+
+### git worktree list (product, after close)
+/tmp/agento-pair-e2e-M0J0cV/project  84ee2d1 [main]
+
+### git worktree list (companion, after close)
+/tmp/agento-pair-e2e-M0J0cV/project-docs  15f9836 [main]
+leftovers: ls: cannot access '/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000': No such file or directory
+ls: cannot access '/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/plan-20260916-120000': No such file or directory
+ls: cannot access '/tmp/agento-pair-e2e-M0J0cV/project-worktrees/plan-20260916-120000.code-workspace': No such file or directory
+
+### BUILD MODE — plant roadmap feature/demo on the companion's main, publish product branch
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project branch feature/demo origin/main
+branch 'feature/demo' set up to track 'origin/main'.
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project push -q -u origin feature/demo
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project branch -D feature/demo
+Deleted branch feature/demo (was 84ee2d1).
+  -> exit 0
+
+### /agento start-session feature/demo --no-open
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs resolve feature demo --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "ok",
+  "source": "local",
+  "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs/features/2026/09/demo/roadmap.md",
+  "branch": "feature/demo",
+  "message": "Resolved feature/demo from the current checkout at /tmp/agento-pair-e2e-M0J0cV/project-docs/features/2026/09/demo/roadmap.md.",
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project/.github/agento.json"
+}
+  -> exit 0
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs paths feature demo --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "ok",
+  "worktreesDir": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees",
+  "worktree": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+  "branch": "feature/demo",
+  "artifactsRoot": "/tmp/agento-pair-e2e-M0J0cV/project-docs",
+  "artifactRoot": "/tmp/agento-pair-e2e-M0J0cV/project-docs/features",
+  "defaultBranch": "main",
+  "postShipBranch": "post-ship/demo",
+  "companion": {
+    "worktreesDir": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees",
+    "worktree": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+    "branch": "feature/demo"
+  },
+  "workspace": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace"
+}
+  -> exit 0
+worktree=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo companion=/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo workspace=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace branch=feature/demo
+
+### git worktree list (product, before)
+/tmp/agento-pair-e2e-M0J0cV/project  84ee2d1 [main]
+
+### git worktree list (companion, before)
+/tmp/agento-pair-e2e-M0J0cV/project-docs  3ebb554 [main]
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project fetch origin
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project worktree add --track -b feature/demo /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo origin/feature/demo
+Preparing worktree (new branch 'feature/demo')
+branch 'feature/demo' set up to track 'origin/feature/demo'.
+HEAD is now at 84ee2d1 init
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs fetch origin
+  -> exit 0
+(origin/feature/demo absent in companion — creating it from origin/main, as the prompt says)
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs worktree add -b feature/demo /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo origin/main
+Preparing worktree (new branch 'feature/demo')
+branch 'feature/demo' set up to track 'origin/main'.
+HEAD is now at 3ebb554 plan: demo
+  -> exit 0
+$ cat /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace
+{ "folders": [{ "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo" }, { "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo" }], "settings": {} }
+  -> exit 0
+
+### git worktree list (product, after start)
+/tmp/agento-pair-e2e-M0J0cV/project                         84ee2d1 [main]
+/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo  84ee2d1 [feature/demo]
+
+### git worktree list (companion, after start)
+/tmp/agento-pair-e2e-M0J0cV/project-docs                         3ebb554 [main]
+/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo  3ebb554 [feature/demo]
+
+### session from both halves
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs session --root /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo
+{
+  "status": "ok",
+  "role": "build",
+  "hosted": false,
+  "worktree": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "isPrimary": false,
+    "isManaged": true,
+    "dirPrefix": "feature",
+    "id": "demo"
+  },
+  "worktrees": [
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project",
+      "branch": "main",
+      "detached": false,
+      "role": "primary",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": true,
+      "isManaged": false,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+      "branch": "feature/demo",
+      "detached": false,
+      "role": "build",
+      "dirPrefix": "feature",
+      "id": "demo",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs",
+      "branch": "main",
+      "detached": false,
+      "role": "unmanaged",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": false,
+      "isManaged": false,
+      "repo": "companion"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+      "branch": "feature/demo",
+      "detached": false,
+      "role": "build",
+      "dirPrefix": "feature",
+      "id": "demo",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "companion"
+    }
+  ],
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+  },
+  "workspace": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace",
+    "exists": true
+  },
+  "delivery": {
+    "type": "feature",
+    "slug": "demo",
+    "branch": "feature/demo",
+    "dir": "features/2026/09/demo",
+    "roadmap": "features/2026/09/demo/roadmap.md",
+    "plan": null,
+    "review": null,
+    "reviewVerdict": null,
+    "status": "ready",
+    "lastUpdated": "2026-09-16",
+    "nextStep": "1.1",
+    "githubIssue": null,
+    "initiative": null,
+    "steps": {
+      "ticked": 0,
+      "total": 1
+    },
+    "postShipPending": 0
+  },
+  "pr": null,
+  "lifecycle": "no-delivery",
+  "allowed": [
+    "/agento continue",
+    "/agento delivery-status"
+  ],
+  "elsewhere": [
+    {
+      "command": "/agento start-session",
+      "window": "primary",
+      "reason": "no roadmap for this branch yet; plan or start a session from the primary window"
+    }
+  ],
+  "warnings": [
+    "unknown-roadmap-status: features/2026/09/demo/roadmap.md has status \"ready\""
+  ],
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo/.github/agento.json"
+}
+  -> exit 0
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs session --root /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo
+{
+  "status": "ok",
+  "role": "build",
+  "hosted": false,
+  "worktree": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "isPrimary": false,
+    "isManaged": true,
+    "dirPrefix": "feature",
+    "id": "demo"
+  },
+  "worktrees": [
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project",
+      "branch": "main",
+      "detached": false,
+      "role": "primary",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": true,
+      "isManaged": false,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+      "branch": "feature/demo",
+      "detached": false,
+      "role": "build",
+      "dirPrefix": "feature",
+      "id": "demo",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "product"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs",
+      "branch": "main",
+      "detached": false,
+      "role": "unmanaged",
+      "dirPrefix": null,
+      "id": null,
+      "isPrimary": false,
+      "isManaged": false,
+      "repo": "companion"
+    },
+    {
+      "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+      "branch": "feature/demo",
+      "detached": false,
+      "role": "build",
+      "dirPrefix": "feature",
+      "id": "demo",
+      "isPrimary": false,
+      "isManaged": true,
+      "repo": "companion"
+    }
+  ],
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+  },
+  "workspace": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace",
+    "exists": true
+  },
+  "delivery": {
+    "type": "feature",
+    "slug": "demo",
+    "branch": "feature/demo",
+    "dir": "features/2026/09/demo",
+    "roadmap": "features/2026/09/demo/roadmap.md",
+    "plan": null,
+    "review": null,
+    "reviewVerdict": null,
+    "status": "ready",
+    "lastUpdated": "2026-09-16",
+    "nextStep": "1.1",
+    "githubIssue": null,
+    "initiative": null,
+    "steps": {
+      "ticked": 0,
+      "total": 1
+    },
+    "postShipPending": 0
+  },
+  "pr": null,
+  "lifecycle": "no-delivery",
+  "allowed": [
+    "/agento continue",
+    "/agento delivery-status"
+  ],
+  "elsewhere": [
+    {
+      "command": "/agento start-session",
+      "window": "primary",
+      "reason": "no roadmap for this branch yet; plan or start a session from the primary window"
+    }
+  ],
+  "warnings": [
+    "anchored-from-companion: /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo is a companion checkout of /tmp/agento-pair-e2e-M0J0cV/project; the record describes /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+    "unknown-roadmap-status: features/2026/09/demo/roadmap.md has status \"ready\""
+  ],
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo/.github/agento.json"
+}
+  -> exit 0
+role                   product=build companion=build
+worktree.path          product=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo companion=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo
+worktree.branch        product=feature/demo companion=feature/demo
+delivery.slug          product=demo companion=demo
+delivery.status        product=ready companion=ready
+workspace.path         product=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace companion=/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace
+workspace.exists       product=true companion=true
+companion.path         product=/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo companion=/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo
+companion.branch       product=feature/demo companion=feature/demo
+companion.registered   product=true companion=true
+allowed equal: yes
+
+### close-decision while the companion half is unpushed (expect companion-unpushed)
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs close-decision feature demo --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "error",
+  "reason": "companion-unpushed",
+  "owner": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+    "role": "build",
+    "dirPrefix": "feature",
+    "id": "demo"
+  },
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "dirty": false,
+    "ahead": 1,
+    "registered": true
+  },
+  "message": "The companion half at /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo is unpushed; commit and push it (or discard the changes) before closing feature/demo, or its artifact work is lost.",
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project/.github/agento.json"
+}
+  -> exit 3
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo push -q -u origin feature/demo
+  -> exit 0
+
+### BUILD CLOSE — /agento close-session feature/demo
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs close-decision feature demo --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "ok",
+  "reason": "managed-worktree-present",
+  "owner": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+    "role": "build",
+    "dirPrefix": "feature",
+    "id": "demo"
+  },
+  "message": "Build session for feature/demo resolves successfully; the managed worktree at /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo still owns the branch.",
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+  },
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project/.github/agento.json"
+}
+  -> exit 0
+$ node /home/david/DP/agento-worktrees/plan-20260916-232139/scripts/agento.mjs ship-preflight feature demo --root /tmp/agento-pair-e2e-M0J0cV/project
+{
+  "status": "ok",
+  "resolutionSource": "local",
+  "branch": "feature/demo",
+  "owner": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo",
+    "role": "build",
+    "dirPrefix": "feature",
+    "id": "demo"
+  },
+  "message": "Ship preflight can proceed: roadmap resolved via local fallback for feature/demo.",
+  "companion": {
+    "path": "/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo",
+    "branch": "feature/demo",
+    "detached": false,
+    "dirty": false,
+    "ahead": 0,
+    "registered": true
+  },
+  "companionGaps": [],
+  "root": "/tmp/agento-pair-e2e-M0J0cV/project",
+  "configSource": "/tmp/agento-pair-e2e-M0J0cV/project/.github/agento.json"
+}
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo status --short
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo status --short
+  -> exit 0
+product ahead of upstream: 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs worktree remove /tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs worktree prune
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project worktree remove /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project worktree prune
+  -> exit 0
+$ rm /tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace
+  -> exit 0
+remote branch still exists in both repos -> local branches retained (prompt rule 4):
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project branch --list feature/demo
+  feature/demo
+  -> exit 0
+$ git -C /tmp/agento-pair-e2e-M0J0cV/project-docs branch --list feature/demo
+  feature/demo
+  -> exit 0
+
+### git worktree list (product, after close)
+/tmp/agento-pair-e2e-M0J0cV/project  84ee2d1 [main]
+
+### git worktree list (companion, after close)
+/tmp/agento-pair-e2e-M0J0cV/project-docs  3ebb554 [main]
+leftovers: ls: cannot access '/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo': No such file or directory
+ls: cannot access '/tmp/agento-pair-e2e-M0J0cV/project-docs-worktrees/feature-demo': No such file or directory
+ls: cannot access '/tmp/agento-pair-e2e-M0J0cV/project-worktrees/feature-demo.code-workspace': No such file or directory
+
+### cleanup
+removed /tmp/agento-pair-e2e-M0J0cV

@@ -8,9 +8,10 @@ Fallback: code → §10 standard fallback (keep the worktree; print the open com
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 
 Start an isolated delivery session in a sibling worktree. This invocation authorizes
-fetching, creating the managed worktree described below, and opening VS Code. It does
-not authorize creating a delivery branch, deleting a branch, or changing delivery
-artifacts. Optional flags for both modes are `--resume` and `--no-open`; reject extra
+fetching, creating the managed worktree described below (in companion mode, the
+product + companion **pair** and its `.code-workspace` file), and opening VS Code. It
+does not authorize creating a delivery branch in the product repository, deleting a
+branch, or changing delivery artifacts. Optional flags for both modes are `--resume` and `--no-open`; reject extra
 arguments or unknown flags. "Plan mode" and "build mode" below are Agento worktree
 modes chosen by the argument, not VS Code chat modes; this command runs in Agent
 chat mode because it needs a terminal.
@@ -43,12 +44,26 @@ Window check per §11: requires role `primary` on the default branch, clean.
    (the CLI path is announced in the session context as `Agento CLI:`). It resolves
    `worktrees.dir` from the target repository's `.github/agento.json`, defaulting to
    a sibling `<repo-name>-worktrees/`. Refuse to touch a path that exists but is not
-   the registered worktree expected here.
-4. Unless `--no-open` was supplied, finish by running `code --new-window <path>`. The
-   VS Code CLI may reuse an already-running editor session instead of visibly creating
-   a second window; treat a successful worktree as a valid result, say so explicitly,
-   and never infer a Git worktree lock or branch conflict from that behavior. If the
-   `code` CLI is unavailable or opening fails, apply the declared `code` fallback (§10).
+   the registered worktree expected here. The same result carries the **pair**
+   fields: `companion` (`{ worktreesDir, worktree, branch } | null`) and `workspace`
+   (`<worktrees.dir>/<kind>-<id>.code-workspace | null`). Both are `null` in the
+   in-repo layout — then everything below is product-only and nothing else changes.
+   When `companion` is set, `artifactsRoot` is the companion clone and
+   `companion.worktree` is this session's **companion half**, created in the
+   companion clone with `git -C <artifactsRoot> worktree add …` as each mode says.
+   A companion path that exists but is not that clone's registered worktree is
+   refused exactly like a product path.
+4. When the pair exists, write the workspace file at the `workspace` path after both
+   halves exist: a JSON document with `folders: [{ "path": <product worktree> },
+   { "path": <companion worktree> }]` (absolute paths, product first) and
+   `settings: {}`; overwrite a stale file with the same content on resume. Unless
+   `--no-open` was supplied, finish by running `code --new-window <workspace>` (the
+   pair) or `code --new-window <path>` (product-only). The VS Code CLI may reuse an
+   already-running editor session instead of visibly creating a second window; treat a
+   successful worktree as a valid result, say so explicitly, and never infer a Git
+   worktree lock or branch conflict from that behavior. If the `code` CLI is
+   unavailable or opening fails, apply the declared `code` fallback (§10), printing
+   the same argument (workspace file or path).
 
 ## Plan mode
 
@@ -65,9 +80,15 @@ Session IDs identify worktrees only and never determine the eventual delivery sl
      planner already created its final delivery branch.
 3. For a new session, run `git worktree add --detach <path> origin/main` and verify it
    is clean, detached, and exactly at `origin/main`. Never create a temporary branch.
-4. Report the path, created or resumed, its branch or detached state, and the exact
-   next command for the new window: `/agento new-feature <description>` or
-   `/agento new-issue <description>`.
+   With a pair, create the companion half the same way in the companion clone:
+   `git -C <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> worktree add
+   --detach <companion.worktree> origin/<default>` (the companion's default branch;
+   detached, mirroring the product half). A companion half that is already
+   registered — for example on a resume whose product half was promoted — is reused
+   untouched. Then write the workspace file per shared precondition 4.
+4. Report the path (and companion half and workspace file when they exist), created
+   or resumed, its branch or detached state, and the exact next command for the new
+   window: `/agento new-feature <description>` or `/agento new-issue <description>`.
 
 Different session IDs may run concurrently. Do not run a planner in this primary
 window or infer the delivery slug from the session ID.
@@ -93,9 +114,18 @@ window or infer the delivery slug from the session ID.
    <slug>` on the exact roadmap branch. If the branch exists only as `origin/<branch>`,
    create the local tracking branch as part of `git worktree add`. If it exists
    nowhere, stop and report that the delivery planner must publish it. Never use a
-   detached HEAD or a differently named branch.
-4. Report the worktree path, branch, created or resumed, and the exact next command
-   for the new window: `/agento build-feature <slug>` or `/agento build-issue <slug>`.
+   detached HEAD or a differently named branch. With a pair, also create the
+   companion half on the **same branch name** in the companion clone: `git -C
+   <artifactsRoot> fetch origin`; when `origin/<branch>` exists there, `git -C
+   <artifactsRoot> worktree add <companion.worktree> <branch>` (tracking it); when it
+   does not yet exist in the companion (deliveries planned before the companion
+   branch mirroring landed), `git -C <artifactsRoot> worktree add -b <branch>
+   <companion.worktree> origin/<default>` and say so. A companion half already
+   registered at that path (whatever its branch) is reused untouched — never switch
+   it. Then write the workspace file per shared precondition 4.
+4. Report the worktree path, branch, created or resumed (plus the companion half, its
+   branch, and the workspace file when they exist), and the exact next command for
+   the new window: `/agento build-feature <slug>` or `/agento build-issue <slug>`.
 
 Do not run the build in this session. Do not install dependencies automatically; note
 that the new worktree may require installing dependencies per the project's AGENTS.md.

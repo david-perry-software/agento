@@ -16,7 +16,8 @@ from `origin/<branch>`) is valid and must not be treated as a hard block; `confl
 `branch-mismatch`, and `missing` are — report the `message` verbatim and stop. This
 prompt authorizes marking the PR ready, merging it through the repository ruleset,
 deleting the merged branch, syncing the default branch, and removing the build
-worktree that owned the branch — after the audit and confirmation steps below. Read
+worktree that owned the branch (with its companion half and `.code-workspace` file in
+companion mode) — after the audit and confirmation steps below. Read the
 the default branch and post-ship prefix from `agento.mjs config` (`branches.default`,
 `branches.postShip`); `main` below stands for the configured default.
 
@@ -34,9 +35,12 @@ Window check per §11: requires role `primary`.
 
 **Ownership.** Read `owner` from the `ship-preflight` result (`{ path, role,
 dirPrefix, id } | null`, derived by the CLI from `git worktree list --porcelain` for
-the roadmap's branch). It selects one of two paths for every git operation below;
-`role: "primary"` means the primary worktree itself sits on the branch — stop and
-return it to `main` first.
+the roadmap's branch) together with `companion` (`{ path, branch, detached, dirty,
+ahead, registered } | null` — the owner's companion half in companion mode, read from
+the companion clone's own `git worktree list --porcelain`; `null` in the in-repo
+layout) and `companionGaps[]` (`dirty`, `unpushed`). `owner` selects one of two paths
+for every git operation below; `role: "primary"` means the primary worktree itself
+sits on the branch — stop and return it to `main` first.
 
 - `owner !== null` (a managed `plan` or `build` worktree still owns the branch — the
   normal case straight after `Verdict: approve`). The audit is read-only from the
@@ -88,8 +92,9 @@ Ownership does not apply when resuming only the post-ship epilogue.
 2. **Sort the gaps** into the two pinned lists; nothing else counts as a gap.
    - **Hard-reject** — any of: unticked steps that are not `(manual, post-ship)`;
      falsely ticked steps; review.md missing, stale, or `request-changes`; an issue's
-     regression test failing; the owner worktree dirty or unpushed; PR
-     `CONFLICTING`. Write nothing (the only permitted cleanup is the `merge --abort`
+     regression test failing; the owner worktree dirty or unpushed; a non-empty
+     `companionGaps[]` (the companion half dirty or unpushed — name `companion.path`);
+     PR `CONFLICTING`. Write nothing (the only permitted cleanup is the `merge --abort`
      above) and end with the §9 failed result line carrying `<gaps>; next: <command>`,
      where `<command>` is `/agento review-<type> <slug>` when the review is the only
      gap, otherwise `/agento build-<type> <slug>` (the Builder fix handoff) — both run
@@ -130,21 +135,27 @@ Ownership does not apply when resuming only the post-ship epilogue.
      record the outcome. Otherwise skip this step. A failed, cancelled, or timed out
      release run is a resumable hard stop; never substitute a run for another commit
      or trigger a duplicate release.
-   - **Teardown** (only when `owner !== null`): `git worktree remove <owner.path>`
-     with the literal resolved path, then `git worktree prune`, then `git branch -d
-     <branch>` (safe: the remote branch is gone and the local one is an ancestor of
-     `origin/main`). The removal triggers the delivery guard's occupant check; never
-     answer that ask yourself. If the guard reports the VS Code window or a process
-     still occupying the path, stop here with the §9 completed result line whose state
-     and next step read exactly
+   - **Teardown** (only when `owner !== null`): first, when `companion.registered`,
+     `git -C <artifactsRoot> worktree remove <companion.path>` (the companion clone
+     is `artifactsRoot` from `agento.mjs paths <type> <slug>`; literal resolved path)
+     then `git -C <artifactsRoot> worktree prune`; next `git worktree remove
+     <owner.path>` with the literal resolved path, then `git worktree prune`, then
+     `git branch -d <branch>` (safe: the remote branch is gone and the local one is an
+     ancestor of `origin/main`); finally delete the pair's workspace file
+     (`<worktrees.dir>/<owner.dirPrefix>-<owner.id>.code-workspace`, the `workspace`
+     path from `paths`) when it exists. Each removal triggers the delivery guard's
+     occupant check; never answer that ask yourself. If the guard reports the VS Code
+     window or a process still occupying either path, stop here with the §9 completed
+     result line whose state and next step read exactly
      `paused at teardown (worktree <path> still open); next: close that VS Code window, then /agento ship <slug>`
-     — `main` is already merged and synced, and the re-send resumes at this bullet
-     per the §9 row. When `owner === null`, delete the merged local branch from the
-     primary as before.
+     — `<path>` being whichever half the guard flagged; `main` is already merged and
+     synced, and the re-send resumes at this bullet per the §9 row (halves already
+     removed are skipped). When `owner === null`, delete the merged local branch from
+     the primary as before.
 4. **Report** merge result, PR number, release workflow result and run URL (or that no
-   release workflow is configured), the removed worktree path (or that none was
-   registered), and any accepted gaps carried into Follow-ups. Do not call the work
-   shipped while its release workflow is pending.
+   release workflow is configured), the removed worktree path(s) and workspace file
+   (or that none was registered), and any accepted gaps carried into Follow-ups. Do
+   not call the work shipped while its release workflow is pending.
 5. **Post-ship verification epilogue** (only if unticked `(manual, post-ship)` steps
    remain; runs after the merge, `main` sync, and teardown):
    - After any configured release workflow succeeds (or right away when none is

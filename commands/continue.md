@@ -62,12 +62,17 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      is the first thing to run in the window `start-session` opens.
    - `primary` or `secondary` → the transition belongs to another window. Locate it
      from the record: `primary` is `worktrees[0].path`; `secondary` is the managed
-     entry in `worktrees[]` whose `branch` equals `delivery.branch`. When the `code`
-     CLI is available (doctor check `code` is `ok`), run `code <path>` — it reuses an
-     already-open window — and name `next.invocation` as the command to run there;
-     otherwise apply the `code` fallback from §10 and name the same command. Do not
-     run the command in this window, and never run `/agento ship` from anywhere but
-     the primary window.
+     entry in `worktrees[]` whose `branch` equals `delivery.branch` (its `repo` is
+     `product`). For `secondary`, open the pair's workspace file when it exists —
+     `<path>.code-workspace` next to that entry, written by `/agento start-session` in
+     companion mode (the record's own `workspace.path` when this window is inside the
+     pair) — otherwise the folder path; `primary` is always the folder path (the
+     primary window has no pair). When the `code` CLI is available (doctor check
+     `code` is `ok`), run `code <workspace-or-path>` — it reuses an already-open
+     window — and name `next.invocation` as the command to run there; otherwise apply
+     the `code` fallback from §10 and name the same command. Do not run the command
+     in this window, and never run `/agento ship` from anywhere but the primary
+     window.
 5. **Result.** The response carries one receipt (this command's) and one result line:
    the dispatched command's own outcome when it ran here, otherwise this command's
    completed state naming the window that was opened. Its `next:` is `next.then` when

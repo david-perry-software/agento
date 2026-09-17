@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const guardScript = path.join(repoRoot, "scripts", "hooks", "delivery-guard.sh");
 
-function decide(command, { cwd, filePath, tool = "run_in_terminal" } = {}) {
+function decide(command, { cwd, filePath, tool = "run_in_terminal", env } = {}) {
   const payload = {
     tool_name: tool,
     tool_input: filePath ? { filePath } : { command },
@@ -19,6 +19,7 @@ function decide(command, { cwd, filePath, tool = "run_in_terminal" } = {}) {
     input: JSON.stringify(payload),
     encoding: "utf8",
     timeout: 20000,
+    env: env ? { ...process.env, ...env } : process.env,
   });
   assert.equal(result.status, 0, `guard exited ${result.status}: ${result.stderr}`);
   const stdout = result.stdout.trim();
@@ -262,6 +263,45 @@ test("companion: a commit run in the companion on a delivery branch keeps today'
 test("allows worktree removal with no occupants", () => {
   const missing = path.join(os.tmpdir(), `agento-no-such-worktree-${process.pid}`);
   assert.equal(decide(`git worktree remove ${missing}`).decision, "allow");
+});
+
+// Stub `code --status` on PATH so the occupant scan sees the given window lines.
+function withCodeStatus(statusText) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-guard-code-"));
+  const stub = path.join(bin, "code");
+  fs.writeFileSync(stub, `#!/bin/sh\ncat <<'EOF'\n${statusText}\nEOF\n`, { mode: 0o755 });
+  return { PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+}
+
+test("asks before removing a worktree whose pair is open as a .code-workspace window", () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-guard-pair-"));
+  const product = path.join(base, "agento-worktrees", "feature-x");
+  const companion = path.join(base, "agento-docs-worktrees", "feature-x");
+  const clone = path.join(base, "agento-docs");
+  // Observed `code --status` output for an open <name>.code-workspace window (plan.md
+  // step 4.1): a Window title carrying `<name> (Workspace)`, then one Folder per half.
+  const env = withCodeStatus([
+    "|  Window (Welcome - feature-x (Workspace) - Visual Studio Code)",
+    "|    Folder (feature-x): 166 files",
+    "|    Folder (feature-x): 12 files",
+  ].join("\n"));
+  const productVerdict = decide(`git worktree remove ${product}`, { env });
+  assert.equal(productVerdict.decision, "ask");
+  assert.match(productVerdict.reason, /VS Code/u);
+  assert.equal(decide(`git -C ${clone} worktree remove ${companion}`, { env }).decision, "ask");
+
+  // Title-only match (no Folder lines) and the expected `Workspace (<name>)` form.
+  const titleOnly = withCodeStatus("|  Window (roadmap.md - feature-x (Workspace) - Visual Studio Code)");
+  assert.equal(decide(`git worktree remove ${product}`, { env: titleOnly }).decision, "ask");
+  const labelled = withCodeStatus("|  Workspace (feature-x): 2 folders");
+  assert.equal(decide(`git -C ${clone} worktree remove ${companion}`, { env: labelled }).decision, "ask");
+
+  // A different workspace or folder name does not match.
+  const other = withCodeStatus([
+    "|  Window (Welcome - feature-y (Workspace) - Visual Studio Code)",
+    "|    Folder (feature-y): 1 files",
+  ].join("\n"));
+  assert.equal(decide(`git worktree remove ${product}`, { env: other }).decision, "allow");
 });
 
 test("denies a main commit reached through a tilde-prefixed cd", () => {

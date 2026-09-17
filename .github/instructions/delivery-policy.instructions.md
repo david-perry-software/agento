@@ -141,8 +141,9 @@ historical artifacts solely to adopt it.
 
 ## 8. Cross-window handoff
 
-Build and review happen in the secondary (worktree) window; close and ship happen in
-the primary window. Every Builder completion, Reviewer verdict, and Autopilot stop ends
+Build and review happen in the secondary (worktree) window — in companion mode
+(`artifacts.repo` set) that is the pair's `<kind>-<id>.code-workspace` window holding
+the product half and its companion half; close and ship happen in the primary window. Every Builder completion, Reviewer verdict, and Autopilot stop ends
 with the exact commands:
 
 1. In this window: `/agento review-feature <slug>` or `/agento review-issue <slug>` after a build
@@ -315,7 +316,9 @@ lives in the CLI (`deriveAllowed`), never here or in a prompt.
    worktree inspection. Only commands that create or remove worktrees
    (`/agento start-session`, `/agento start-freehand`, `/agento close-session`, and
    `/agento ship` for its post-merge teardown) may additionally
-   read `git worktree list --porcelain`, and only for that mutation. Ownership of a
+   read `git worktree list --porcelain` — in companion mode also the companion
+   clone's, `git -C <companion> worktree list --porcelain`, for the paired half —
+   and only for that mutation. Ownership of a
    delivery branch comes from `worktrees[]` or from `close-decision` /
    `ship-preflight` `owner` (`{ path, role, dirPrefix, id } | null`; reasons
    `managed-worktree-present`, `primary-owns-branch`, `remote-roadmap-only`).

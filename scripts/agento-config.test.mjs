@@ -103,28 +103,46 @@ const withRepo = (rootDir, repo) => {
 test("resolveArtifactsRoot keeps the in-repo layout when artifacts.repo is unset", () => {
   const rootDir = path.resolve("/srv/project");
   const config = defaultConfig(rootDir);
-  assert.deepEqual(resolveArtifactsRoot({ config, rootDir }), { external: false, name: null, dir: null, root: rootDir });
+  assert.deepEqual(resolveArtifactsRoot({ config, rootDir }), { external: false, name: null, dir: null, root: rootDir, worktreesDir: null });
   // A config without the key at all (older agento.json merged by hand) is also in-repo.
   delete config.artifacts.repo;
-  assert.deepEqual(resolveArtifactsRoot({ config, rootDir }), { external: false, name: null, dir: null, root: rootDir });
+  assert.deepEqual(resolveArtifactsRoot({ config, rootDir }), { external: false, name: null, dir: null, root: rootDir, worktreesDir: null });
 });
 
 test("resolveArtifactsRoot derives ../<name> from the primary checkout when only name is set", () => {
   const rootDir = path.resolve("/srv/project");
   const result = resolveArtifactsRoot({ config: withRepo(rootDir, { name: "project-docs" }), rootDir });
-  assert.deepEqual(result, { external: true, name: "project-docs", dir: path.resolve("/srv/project-docs"), root: path.resolve("/srv/project-docs") });
+  assert.deepEqual(result, {
+    external: true,
+    name: "project-docs",
+    dir: path.resolve("/srv/project-docs"),
+    root: path.resolve("/srv/project-docs"),
+    worktreesDir: path.resolve("/srv/project-docs-worktrees"),
+  });
 });
 
 test("resolveArtifactsRoot derives name from the resolved dir when only dir is set", () => {
   const rootDir = path.resolve("/srv/project");
   const result = resolveArtifactsRoot({ config: withRepo(rootDir, { dir: "../planning-docs" }), rootDir });
-  assert.deepEqual(result, { external: true, name: "planning-docs", dir: path.resolve("/srv/planning-docs"), root: path.resolve("/srv/planning-docs") });
+  assert.deepEqual(result, {
+    external: true,
+    name: "planning-docs",
+    dir: path.resolve("/srv/planning-docs"),
+    root: path.resolve("/srv/planning-docs"),
+    worktreesDir: path.resolve("/srv/planning-docs-worktrees"),
+  });
 });
 
 test("resolveArtifactsRoot takes both fields as given, resolving dir against the primary checkout", () => {
   const rootDir = path.resolve("/srv/project");
   const result = resolveArtifactsRoot({ config: withRepo(rootDir, { name: "docs", dir: "../elsewhere/docs-checkout" }), rootDir });
-  assert.deepEqual(result, { external: true, name: "docs", dir: path.resolve("/srv/elsewhere/docs-checkout"), root: path.resolve("/srv/elsewhere/docs-checkout") });
+  assert.deepEqual(result, {
+    external: true,
+    name: "docs",
+    dir: path.resolve("/srv/elsewhere/docs-checkout"),
+    root: path.resolve("/srv/elsewhere/docs-checkout"),
+    worktreesDir: path.resolve("/srv/elsewhere/docs-checkout-worktrees"),
+  });
 });
 
 test("resolveArtifactsRoot resolves against primaryRoot, not the worktree that runs the command", () => {
@@ -133,6 +151,11 @@ test("resolveArtifactsRoot resolves against primaryRoot, not the worktree that r
   const result = resolveArtifactsRoot({ config: withRepo(primaryRoot, { name: "project-docs" }), rootDir, primaryRoot });
   assert.equal(result.root, path.resolve("/srv/project-docs"));
   assert.notEqual(result.root, path.resolve("/srv/project-worktrees/project-docs"));
+  // The companion worktrees dir sits next to the companion clone, not under the product worktrees dir.
+  assert.equal(result.worktreesDir, path.resolve("/srv/project-docs-worktrees"));
+  assert.notEqual(result.worktreesDir, path.resolve("/srv/project-worktrees/project-docs-worktrees"));
   // In-repo mode still names the worktree itself as the root.
-  assert.equal(resolveArtifactsRoot({ config: defaultConfig(primaryRoot), rootDir, primaryRoot }).root, rootDir);
+  const inRepo = resolveArtifactsRoot({ config: defaultConfig(primaryRoot), rootDir, primaryRoot });
+  assert.equal(inRepo.root, rootDir);
+  assert.equal(inRepo.worktreesDir, null);
 });

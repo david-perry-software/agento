@@ -87,21 +87,31 @@ if target:
         pass
 
     window_open = False
+    workspace_open = False
     try:
         status = subprocess.run(
             ["code", "--status"], capture_output=True, text=True, timeout=5
         ).stdout
+        name = os.path.basename(target)
         folder_names = re.findall(r"^\|\s+Folder \(([^)]+)\):", status, re.MULTILINE)
-        window_open = os.path.basename(target) in folder_names
+        window_open = name in folder_names
+        # An open <name>.code-workspace window (a session pair) shows up in `code
+        # --status` as `Window (... <name> (Workspace) ...)` (observed) or as
+        # `Workspace (<name>)` (expected form); both halves of a pair share <name>.
+        workspace_names = re.findall(r"^\|\s+Workspace \(([^)]+)\)", status, re.MULTILINE)
+        workspace_names += re.findall(r"^\|\s+Window \(.*?(\S+) \(Workspace\)", status, re.MULTILINE)
+        workspace_open = name in workspace_names
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
 
-    if occupants or window_open:
+    if occupants or window_open or workspace_open:
         details = occupants[:3]
         if len(occupants) > 3:
             details.append(f"and {len(occupants) - 3} more processes")
         if window_open:
             details.append("a matching VS Code folder")
+        if workspace_open:
+            details.append("a matching VS Code workspace window")
         decide("ask", "Active worktree occupants detected - " + ", ".join(details)
                + ". Close their terminals or VS Code window before removal. Proceed anyway?")
 
@@ -280,9 +290,11 @@ def resolve_artifacts(product_root):
     # (name and dir both null) keeps the in-repo layout with no extra git call; else
     # the companion path resolves against the primary checkout (first `git worktree
     # list` entry) and its config, so managed worktrees never point into worktrees.dir.
+    # Returns (external, companion_path, name, companion_worktrees_dir, primary_root);
+    # the companion's session halves live under `<companion_path>-worktrees/<kind>-<id>`.
     repo = load_config(product_root)["artifacts"]["repo"]
     if repo.get("name") is None and repo.get("dir") is None:
-        return False, None, None
+        return False, None, None, None, product_root
     primary_root = product_root
     for line in run_git(product_root, "worktree", "list", "--porcelain").splitlines():
         if line.startswith("worktree "):
@@ -291,9 +303,9 @@ def resolve_artifacts(product_root):
     if os.path.realpath(primary_root) != os.path.realpath(product_root):
         repo = load_config(primary_root)["artifacts"]["repo"]
         if repo.get("name") is None and repo.get("dir") is None:
-            return False, None, None
+            return False, None, None, None, primary_root
     path = os.path.abspath(os.path.join(primary_root, repo.get("dir") or os.path.join("..", repo["name"])))
-    return True, path, repo.get("name") or os.path.basename(path)
+    return True, path, repo.get("name") or os.path.basename(path), path + "-worktrees", primary_root
 # --- end shared helpers ---
 
 
@@ -306,7 +318,7 @@ config = load_config(target_root)
 product_root = run_git(hook_cwd, "rev-parse", "--show-toplevel") if isinstance(hook_cwd, str) and hook_cwd else ""
 companion_external, companion_path, target_is_companion = False, None, False
 if product_root:
-    companion_external, companion_path, _ = resolve_artifacts(product_root)
+    companion_external, companion_path, _, _, _ = resolve_artifacts(product_root)
     if companion_external and os.path.realpath(target_root) == os.path.realpath(companion_path):
         target_is_companion = True
         if os.path.realpath(product_root) != os.path.realpath(target_root):
