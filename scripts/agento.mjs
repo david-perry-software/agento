@@ -935,7 +935,7 @@ switch (command) {
     const prBranch = delivery?.branch ?? worktree.branch;
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
     const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
-    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr });
+    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
     emit({
       status: "ok",
@@ -977,7 +977,7 @@ switch (command) {
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const roadmaps = allRoadmaps(null, companionHalfOf(describeCompanion(worktree)));
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
-    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null });
+    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null, companionPr: null });
     warnings.unshift(...anchor.warnings);
     if (hostedReason) warnings.unshift(hostedReason);
     const ownerOf = (branch) => findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch, config });

@@ -1148,6 +1148,13 @@ test("session --pr: companionPr is null with no extra gh call in-repo, and the c
   assert.equal(degraded.json.companionPr, null);
   assert.deepEqual(degraded.json.warnings.length, 1);
   assert.match(degraded.json.warnings[0], /^companionPr: gh pr view feature\/widget failed: no pull requests found/);
+
+  // Half-shipped: the code PR merged while the companion PR is still open → companion-pr-open warning, lifecycle unchanged.
+  const halfShippedEnv = restrictedPath({ gh: prStub(path.join(pair.wt, "gh-half"), { product: "MERGED", companion: "OPEN" }) }).env;
+  const halfShipped = runWith({ cwd: product, env: halfShippedEnv }, "session", "--pr");
+  assert.equal(halfShipped.json.lifecycle, "building");
+  assert.deepEqual(halfShipped.json.warnings.map((w) => w.split(":")[0]), ["merged-but-not-complete", "companion-pr-open"]);
+  assert.match(halfShipped.json.warnings[1], /^companion-pr-open: PR #15 for feature\/widget is merged but companion PR #7 is still open$/);
 });
 
 // A stub gh answering `pr view` with a per-repo state: `product` for the product
