@@ -212,3 +212,66 @@ test("companion: a managed worktree resolves the companion relative to the prima
   assert.doesNotMatch(context, new RegExp(worktreesDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/project-docs"));
   assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
 });
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Product primary + companion clone, a managed product half on feature/widget, and
+// (when `pair` is set) the companion half at <companion>-worktrees/feature-widget.
+function makePair({ pair = true } = {}) {
+  const worktreesDir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-wt-"));
+  const { product, companion } = makeRepo({ branch: "main", companion: true, config: { worktrees: { dir: worktreesDir } } });
+  const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  git(product, "add", "-A");
+  git(product, "commit", "-q", "-m", "config");
+  const build = path.join(worktreesDir, "feature-widget");
+  git(product, "worktree", "add", "-q", "-b", "feature/widget", build);
+  const half = path.join(`${companion}-worktrees`, "feature-widget");
+  if (pair) git(companion, "worktree", "add", "-q", "-b", "feature/widget", half);
+  return { product, companion, build, half };
+}
+
+test("companion pair: from the product half, Artifacts: names the companion half and its branch and roadmaps are read from it", () => {
+  const { companion, build, half } = makePair();
+  writeRoadmap(half, "features/2026/09/widget", 'status: in-progress\nbranch: feature/widget\nnext-step: "1.1 step"');
+  writeRoadmap(companion, "features/2026/09/clone-only", "status: in-progress\nbranch: feature/clone-only\nnext-step: x");
+
+  const lines = run(build).split("\n");
+  const artifactLines = lines.filter((l) => l.startsWith("Artifacts: "));
+  assert.equal(artifactLines.length, 1);
+  assert.equal(artifactLines[0], `Artifacts: ${half} (branch feature/widget)`);
+  assert.equal(lines[lines.findIndex((l) => l.startsWith("Session: ")) + 1], artifactLines[0]);
+  const context = lines.join("\n");
+  assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
+  assert.doesNotMatch(context, /clone-only/);
+});
+
+test("companion pair: a detached companion half is reported as (branch detached)", () => {
+  const { build, half } = makePair();
+  execFileSync("git", ["-C", half, "switch", "-q", "--detach", "HEAD"]);
+  assert.match(run(build), new RegExp(`^Artifacts: ${escapeRe(half)} \\(branch detached\\)$`, "m"));
+});
+
+test("companion pair: without a companion half the product half still names the clone", () => {
+  const { companion, build, half } = makePair({ pair: false });
+  const context = run(build);
+  assert.match(context, new RegExp(`^Artifacts: ${escapeRe(companion)} \\(branch main\\)$`, "m"));
+  assert.doesNotMatch(context, new RegExp(escapeRe(half)));
+});
+
+test("companion pair: the primary names the clone, not a half, even when halves exist", () => {
+  const { product, companion } = makePair();
+  const context = run(product);
+  assert.match(context, new RegExp(`^Artifacts: ${escapeRe(companion)} \\(branch main\\)$`, "m"));
+  assert.doesNotMatch(context, /-worktrees\/feature-widget/);
+});
+
+test("companion pair: the no-node fallback equals the with-node output minus Session:", () => {
+  const { build, half } = makePair();
+  writeRoadmap(half, "features/2026/09/widget", 'status: in-progress\nbranch: feature/widget\nnext-step: "1.1 step"');
+  const withNode = run(build);
+  assert.match(withNode, /^Session: /m);
+  const withoutNode = run(build, pathWithoutNode());
+  assert.doesNotMatch(withoutNode, /^Session: /m);
+  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
+  assert.match(withoutNode, new RegExp(`^Artifacts: ${escapeRe(half)} \\(branch feature/widget\\)$`, "m"));
+});
