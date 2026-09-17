@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/mirrored-artifact-branches
 last-updated: 2026-09-16
-next-step: "3.3 Merge origin/main, promote to in-review, refresh plan.md acceptance checklist, add Follow-ups"
+next-step: ""
 initiative: "external-artifact-repo"
 ```
 
@@ -25,4 +25,11 @@ initiative: "external-artifact-repo"
 
 - [x] 3.1 ~Add the companion-side merge gate to `/agento ship` and make the merge order explicit: code PR first, companion PR second — verify: the ship preflight reports both `product` and `companion` PR owners and the roadmap step remains aligned.~ (obsolete: the companion merge gate, `ship-preflight { product, companion }`, and the code-then-companion merge order are the `ship-dual-merge` member's scope per the breakdown; this feature only produces the `artifact-pr` header ship-dual-merge consumes. Until it lands, `/agento ship` in companion mode merges the code PR and leaves the companion PR open, which docs/commands.md and the CHANGELOG state.)
 - [x] 3.2 Update `docs/commands.md` (`session --pr` → `companionPr`, `artifactPr`, the two-PR flow, the interim ship limitation), `docs/artifacts.md` (`artifact-pr` header, artifacts live on the mirrored branch), `docs/concurrency.md` (integrate both defaults), and `CHANGELOG.md` `## Unreleased`; then run the full-repository gate against the plan's green baseline (gate run 2026-09-16 vs baseline 185/185/0: `node --test` exit 0 `# tests 188`, `# pass 188`, `# fail 0` — the +3 are this feature's new CLI tests; shellcheck exit 0 silent; `replay-guard.sh` exit 0; `REPLAY_COMPANION=1 replay-guard.sh` exit 0 — no new or pre-existing findings) — verify: `grep -c 'artifact-pr\|companionPr' docs/commands.md docs/artifacts.md CHANGELOG.md` ≥ 1 each; `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` exit 0 with `# fail 0`; `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh` exit 0 silent; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt` exit 0.
-- [ ] 3.3 Promote the feature to review and confirm the initiative member reports `state: in-review` with `errors: []` — verify: `git merge-base --is-ancestor origin/main HEAD` exit 0; `node scripts/agento.mjs initiative external-artifact-repo` lists `mirrored-artifact-branches` as `in-review` with `errors: []`.
+- [x] 3.3 Promote the feature to review and confirm the initiative member reports `state: in-review` with `errors: []` — verify: `git merge-base --is-ancestor origin/main HEAD` exit 0; `node scripts/agento.mjs initiative external-artifact-repo` lists `mirrored-artifact-branches` as `in-review` with `errors: []`.
+
+## Follow-ups
+
+- `ship-dual-merge` (initiative member): `ship-preflight` gains `{ product, companion }` PR blocks read from `artifact-pr`; `/agento ship` merges the code PR first, then the companion PR, and its audit rejects a companion PR that is missing, closed, or not mergeable. Until then `/agento ship` in companion mode merges only the code PR and leaves the companion PR open (stated in docs/commands.md and the CHANGELOG).
+- `ship-dual-merge`: `close-decision`/`ship-preflight` should also report a companion branch whose `origin/<branch>` is behind the half (not just dirty/ahead) so a stale mirrored branch is caught before teardown.
+- `artifact-history-migration` (initiative member): move this repository's own in-repo `features/`, `issues/`, and `initiatives/` history into the companion repository and switch `.github/agento.json` to `artifacts.repo`; the `status` subcommand still walks only the companion clone's working tree, so a roadmap that exists only on a mirrored branch is visible to `resolve`/`find`/`next`/`session` but not to `status` (found in 2.4) — decide there whether `status` should walk registered halves too.
+- `session --pr` runs `gh --version` once per lookup (product and companion); a shared probe would save one process spawn per call.
