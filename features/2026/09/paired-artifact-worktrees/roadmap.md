@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "6.1 end-to-end pair drive against a /tmp product + companion pair"
+next-step: "6.2 full lint gate"
 initiative: "external-artifact-repo"
 ```
 
@@ -41,7 +41,7 @@ initiative: "external-artifact-repo"
 
 ## Phase 6: End-to-end and gate
 
-- [ ] 6.1 Drive the real prompts against a throwaway `/tmp` product + companion pair (product `.github/agento.json` with `artifacts.repo.name`, both with bare origins): `start-session` plan mode with `--no-open` creates `<wt>/plan-<id>`, `<companion>-worktrees/plan-<id>`, and `<wt>/plan-<id>.code-workspace`; `session` from both halves agrees; `start-session feature/<slug>` (after planting a roadmap on the companion's default branch) creates a same-branch pair; `close-session` removes all three in each case — verify: transcript and `git worktree list` for both repos before/after saved to `features/2026/09/paired-artifact-worktrees/evidence/step-6-1-pair-e2e.txt` and committed.
+- [x] 6.1 Drive the real prompts against a throwaway `/tmp` product + companion pair (product `.github/agento.json` with `artifacts.repo.name`, both with bare origins): `start-session` plan mode with `--no-open` creates `<wt>/plan-<id>`, `<companion>-worktrees/plan-<id>`, and `<wt>/plan-<id>.code-workspace`; `session` from both halves agrees; `start-session feature/<slug>` (after planting a roadmap on the companion's default branch) creates a same-branch pair; `close-session` removes all three in each case — verify: transcript and `git worktree list` for both repos before/after saved to `features/2026/09/paired-artifact-worktrees/evidence/step-6-1-pair-e2e.txt` and committed. (2026-09-16: driven by hand with the prompts' git + CLI sequence, no `code` windows; evidence [step-6-1-pair-e2e.txt](evidence/step-6-1-pair-e2e.txt) also shows `close-decision` stopping with `companion-unpushed` while the companion half is ahead.)
 - [ ] 6.2 Full lint gate: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'`, `shellcheck scripts/hooks/delivery-guard.sh scripts/hooks/replay-guard.sh scripts/hooks/session-context.sh scripts/wait-for-checks.sh`, `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`, `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt` — verify: all exit 0; `# fail 0`, `# pass` ≥ 166; compared against the plan.md baseline (no new or undocumented findings).
 - [ ] 6.3 Integrate `origin/main` (merge), set `status: in-review`, `next-step: ""`, push — verify: `git status --porcelain` empty; `git rev-list --count @{upstream}..HEAD` is 0; `node scripts/agento.mjs initiative external-artifact-repo` reports this member `state: in-review` with `errors: []`.
 
