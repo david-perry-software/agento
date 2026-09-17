@@ -146,14 +146,19 @@ Ownership does not apply when resuming only the post-ship epilogue.
      these without the user's answer. A missing `Fixes #<n>` on an issue PR is not a
      question: fix it with `gh pr edit <n> --body` and note it in the report.
 3. **On confirmation (or a clean audit)** — writes go through `git -C <owner.path>`
-   when an owner exists, else the primary checkout:
+   when an owner exists, else the primary checkout (*companion mode*: artifact
+   writes go through `git -C <companion.path>` when an owner exists, else the
+   companion clone `artifactsRoot` on the mirrored branch):
    - Set roadmap `status: complete`; record any user-accepted gaps under the
      `## Follow-ups (accepted at ship)` section in roadmap.md. **Changelog date
      stamp:** when the branch changes the plugin version (audit above) and
      `CHANGELOG.md` contains the heading `## <version> (unreleased)`, replace
      `(unreleased)` on that heading with `(<date>)` where `<date>` is the output of
      `date -u +%Y-%m-%d` — in this same commit, immediately before checks and merge,
-     never as a manual step. Commit and push.
+     never as a manual step. Commit and push. *Companion mode*: the roadmap commit
+     is a companion commit (`git -C <companion.path> commit` then `git -C
+     <companion.path> push`); the changelog stamp, when due, stays a product commit
+     in the owner worktree because CHANGELOG.md lives in the product.
    - Mark the draft PR ready for review; wait for every required check with
      `scripts/wait-for-checks.sh pr <n>` in the foreground (exit 2 = still pending:
      rerun it; bounded polls only, per delivery-policy.instructions.md §6).
@@ -161,11 +166,31 @@ Ownership does not apply when resuming only the post-ship epilogue.
      them and they must not be bypassed; report them as a resumable blocker. If
      shipping resumes on a later UTC date after such a stop, refresh the stamped
      heading to the new `date -u +%Y-%m-%d` in one more commit before the successful
-     merge.
+     merge. *Companion mode*: also mark the companion PR ready now — `gh pr ready
+     <m>` run from inside the companion clone (`cd <artifactsRoot> && gh pr ready
+     <m>`, or `--repo <nameWithOwner>` where `<nameWithOwner>` is `gh repo view
+     --json nameWithOwner -q .nameWithOwner` evaluated inside the clone; the
+     directory name in `artifacts.repo.name` is never a `--repo` value) — but wait
+     only on the code PR's checks here.
    - Merge with a normal merge commit through the ruleset (no admin, no bypass) and
      delete the remote work branch. In the primary: switch to `main` (it already is
      on the owner path), `git fetch --prune`, fast-forward, and verify a clean tree
      with zero ahead/behind.
+   - *Companion mode* — **mark the companion PR ready, wait, merge** (the resume
+     point of the §9 `MERGED`/`OPEN` case; `gh pr ready <m>` is a no-op when the
+     bullet above already ran): `scripts/wait-for-checks.sh pr <m> --repo
+     <nameWithOwner>` in the foreground (exit 2 = rerun), then merge the companion
+     PR from inside the clone with a normal merge commit through its ruleset and
+     delete its remote branch. Code first, companion second, because the code PR's
+     required checks are the real gate while the companion carries only artifacts.
+     A failed companion merge is a resumable hard stop: write nothing further and end
+     with the §9 failed result line reading exactly
+     `code PR #<n> merged, companion PR #<m> open at <url>; re-send /agento ship <slug> to resume at the companion merge`.
+   - *Companion mode* — **sync the companion default**: `git -C <artifactsRoot>
+     switch <default>`, `git -C <artifactsRoot> fetch --prune`, `git -C
+     <artifactsRoot> merge --ff-only origin/<default>`, then verify a clean tree with
+     zero ahead/behind there too, so both defaults carry the merged delivery before
+     teardown.
    - Release workflow: if the target repo's `.github/agento.json` sets
      `checks.releaseWorkflow`, dispatch that workflow (or resolve its existing run
      whose `headSha` exactly matches the merge commit, allowing for GitHub's short
@@ -180,7 +205,10 @@ Ownership does not apply when resuming only the post-ship epilogue.
      then `git -C <artifactsRoot> worktree prune`; next `git worktree remove
      <owner.path>` with the literal resolved path, then `git worktree prune`, then
      `git branch -d <branch>` (safe: the remote branch is gone and the local one is an
-     ancestor of `origin/main`); finally delete the pair's workspace file
+     ancestor of `origin/main`); *companion mode*: then `git -C <artifactsRoot>
+     branch -d <branch>` for the merged companion local branch (same safety: it is
+     an ancestor of the companion's `origin/<default>`); finally delete the pair's
+     workspace file
      (`<worktrees.dir>/<owner.dirPrefix>-<owner.id>.code-workspace`, the `workspace`
      path from `paths`) when it exists. Each removal triggers the delivery guard's
      occupant check; never answer that ask yourself. If the guard reports the VS Code
@@ -210,8 +238,10 @@ Ownership does not apply when resuming only the post-ship epilogue.
 
 Never force-push, rebase, squash, amend, or create additional content commits beyond
 the roadmap status commit (which carries the changelog date stamp when the plugin
-version changed), a refresh of that stamp when the merge lands on a later UTC date, a
-ruleset-required integration merge of `origin/main`, and the single post-ship
-evidence commit from step 5. Never `git worktree remove --force` or otherwise discard
-the owner worktree's state; on a rejected audit the only permitted cleanup is the
+version changed; *companion mode*: the roadmap commit in the companion half and, when
+due, the stamp commit in the product), a refresh of that stamp when the merge lands
+on a later UTC date, a ruleset-required integration merge of `origin/main` (or of the
+companion's `origin/<default>` in its half), and the single post-ship evidence commit
+from step 5. Never `git worktree remove --force` or otherwise discard the owner
+worktree's state; on a rejected audit the only permitted cleanup is the
 `git -C <owner.path> merge --abort` that restores the pre-merge state.
