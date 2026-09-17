@@ -238,7 +238,7 @@ roadmap.
 | `/agento new-feature`, `/agento new-issue` | An existing roadmap for the slug enters the Planner resume protocol; no second branch, worktree, or PR. An existing GitHub issue is linked, not duplicated. |
 | `/agento build-feature`, `/agento build-issue` | The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone. |
 | `/agento review-feature`, `/agento review-issue` | A fresh verdict overwrites review.md; no second PR comment thread. |
-| `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it. |
+| `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it; in companion mode, a code PR merged while the companion PR is still open resumes at the companion merge, then sync, teardown, epilogue. |
 | `/agento ap` | Re-enters the build or review resume protocol wherever the roadmap stands. |
 | `/agento continue` | Re-derives the transition from git + roadmap state and performs whatever is legal now; never a second worktree, branch, or PR — the dispatched command's own row governs the rest. |
 | `/agento start-session`, `/agento start-freehand` | A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened. |
