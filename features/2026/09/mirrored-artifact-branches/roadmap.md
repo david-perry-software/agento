@@ -1,8 +1,8 @@
 ```yaml
-status: in-progress
+status: in-review
 branch: feature/mirrored-artifact-branches
 last-updated: 2026-09-17
-next-step: "final gate rerun and promotion to in-review (review round 1 fixes done)"
+next-step: ""
 initiative: "external-artifact-repo"
 ```
 
