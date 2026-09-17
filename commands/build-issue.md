@@ -28,10 +28,17 @@ Window check per §11: requires role `build` with `delivery.slug` equal to the a
   record that `worktree.branch` is `issue/<slug>`, integrate origin, audit ticked
   checkboxes against the code, repair drift, push the repaired roadmap. If the
   record's `worktrees[]` shows another entry on the branch, stop and report the
-  record's alternatives (`/agento start-session issue/<slug> --resume`).
+  record's alternatives (`/agento start-session issue/<slug> --resume`). In companion
+  mode (`companion` not `null`) the roadmap, plan, and evidence live in the companion
+  half at `companion.path` on the same branch: read and write them there, fetch and
+  integrate that half too, and commit artifacts with `git -C <companion.path>`.
 - Execute roadmap steps in order: skill-first, implement, run the step's `verify:`
-  check, tick the box, commit (step + roadmap together), push. Ensure a draft PR
-  exists whose body starts with `Fixes #<github-issue>` from the roadmap header.
+  check, tick the box, commit (step + roadmap together — in companion mode the code
+  commit here and the roadmap commit in the companion half, pushed product first),
+  push. Ensure a draft PR
+  exists whose body starts with `Fixes #<github-issue>` from the roadmap header (and,
+  in companion mode, the companion draft PR named by the roadmap's `artifact-pr:`
+  header).
   The exposing regression test must be observed FAILING at its introduction step and
   stay green from the fix step onward.
 - Apply delivery-policy.instructions.md throughout: you run everything CLI-executable

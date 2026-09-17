@@ -32,7 +32,11 @@ being run.
 
 - **Artifacts are truth, subagent messages are hints.** After every subagent run, read
   roadmap.md `status:`/`next-step` (and review.md `Verdict:`) from the working tree —
-  never advance the loop on the subagent's summary alone.
+  never advance the loop on the subagent's summary alone. The working tree that holds
+  them is the artifact checkout: this worktree in the in-repo layout, the companion
+  half at `companion.path` (same branch) when the session record's `companion` is not
+  `null`; `agento.mjs session` reports `delivery.status` and `delivery.nextStep` from
+  it either way.
 - **You never run /agento ship, merge, close, or mark the PR ready.** Autopilot ends at
   `Verdict: approve`; the user runs `/agento ship <slug>` from the primary window, which
   audits this worktree in place and tears it down once the PR is merged.

@@ -64,8 +64,13 @@ reaches one — or discovers one mid-step, in which case it is first added as
 2. **Collect proof**: the user confirms completion and attaches a screenshot.
 3. **Document**: save it as `evidence/step-<N-M>-<short-name>.png` inside the slug
    directory, link it from the step line, note the completion date on that line.
+   The slug directory is in the artifact checkout: this worktree in the in-repo
+   layout, the companion half (`companion.path` in the session record, on the
+   mirrored branch) in companion mode — evidence never lands in the product half
+   there.
 4. **Verify and advance**: run the machine-checkable part of `verify:`, tick, commit
-   evidence + roadmap together, push, continue.
+   evidence + roadmap together (one companion commit in companion mode), push,
+   continue.
 5. If the user cannot act now: pause protocol, with the manual step named in
    `next-step`.
 
@@ -91,8 +96,9 @@ a `<post-ship-prefix><slug>` PR. Evidence rules are identical to §3.
 ## 5. Lint baseline gate
 
 During planning, run the full-repository lint command from AGENTS.md and record its
-command, exit status, and findings in plan.md `## Research`. A red baseline is never
-silently waived:
+command, exit status, and findings in plan.md `## Research` (the plan.md in the
+artifact checkout — the companion half in companion mode; the lint itself always runs
+in the product checkout). A red baseline is never silently waived:
 
 - A finding that overlaps the delivery's files or behavior → cleanup is a prerequisite
   or explicitly in scope.
@@ -131,9 +137,18 @@ historical artifacts solely to adopt it.
   (`--no-verify`, `--admin`).
 - Integrate `origin/main` by merge — never rebase — before every push and before
   setting `status: in-review`; conflict recipes are in
-  concurrent-delivery.instructions.md.
+  concurrent-delivery.instructions.md. In companion mode integrate both defaults:
+  the product's `origin/main` into the product branch and the companion's
+  `origin/<default>` into the mirrored companion branch (`git -C <companion.path>
+  merge origin/<default>`).
 - Commit each roadmap step together with its roadmap.md update, as a Conventional
   Commit. Small, frequent, integrated, pushed commits are the pause/resume mechanism.
+  **Two-commit rule (companion mode):** a step is one code commit in the product half
+  and one artifact commit (roadmap tick, evidence, plan/review edits) in the companion
+  half, both Conventional Commits naming the step, pushed product first then
+  companion; the companion half must end every step with `dirty: false`, `ahead: 0`
+  in the session record. Both repositories carry the same branch name and each has
+  its own draft PR (`artifact-pr:` in the roadmap header names the companion's).
 - Only the user's /agento ship marks a PR ready or merges it; Builder, Reviewer, and Autopilot
   never do.
 - Keep unrelated changes out; record unrelated problems as Follow-ups in roadmap.md

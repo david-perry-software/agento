@@ -68,9 +68,14 @@ configured `branches.default` for `main` throughout):
 - **Before every push** of a roadmap step: `git fetch origin`; if `origin/main` is
   not an ancestor of `HEAD` (`git merge-base --is-ancestor origin/main HEAD` fails),
   `git merge origin/main` into the branch first (never rebase), resolve conflicts with
-  the step's context fresh, rerun the step's `verify:`, then push.
+  the step's context fresh, rerun the step's `verify:`, then push. In companion mode
+  repeat it for the companion half on the same step: `git -C <companion.path> fetch
+  origin`, then `git -C <companion.path> merge origin/<default>` when the companion's
+  default is not an ancestor of the half's HEAD, before pushing the half — the
+  companion PR must stay mergeable alongside the code PR.
 - **Before setting `status: in-review`** and again **before /agento ship marks the PR ready**,
-  the branch must contain `origin/main`. Check `gh pr view <n> --json
+  the branch must contain `origin/main` (and, in companion mode, the companion branch
+  must contain the companion's `origin/<default>`). Check `gh pr view <n> --json
   mergeStateStatus`: `BEHIND` means merge main; `DIRTY` means conflicts to resolve
   on the branch; `BLOCKED` means required checks still pending.
 - **Known hotspots** (most-changed files across recent PR merges) and their recipes:
@@ -83,6 +88,7 @@ configured `branches.default` for `main` throughout):
     affected e2e or UI spec locally.
   - Delivery artifacts never conflict across slugs (each has its own directory); a
     conflict there means the same slug was edited from two sessions — stop and
-    reconcile with the roadmap as truth.
+    reconcile with the roadmap as truth. In companion mode that directory is in the
+    companion half, so the same rule applies to the companion merge.
 - Never resolve a conflict by discarding the other side wholesale, and never use
   `--force`, `rebase`, or `--ours`/`--theirs` on source files without reading both.
