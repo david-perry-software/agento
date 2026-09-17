@@ -1,5 +1,5 @@
 ```yaml
-status: in-review
+status: complete
 branch: feature/mirrored-artifact-branches
 last-updated: 2026-09-17
 next-step: ""
