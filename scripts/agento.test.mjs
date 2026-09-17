@@ -317,7 +317,7 @@ test("session from a companion half anchors on the product primary and matches t
   assert.match(fromHalf.warnings[0], /^anchored-from-companion: .*project-docs-worktrees\/feature-widget is a companion checkout of .*project; the record describes .*wt\/feature-widget$/);
 
   // companion / workspace describe the pair from either side.
-  assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
   assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false });
   fs.writeFileSync(path.join(wt, "feature-widget.code-workspace"), JSON.stringify({ folders: [{ path: product }, { path: half }], settings: {} }));
   assert.equal(run(half, "session").json.workspace.exists, true);
@@ -360,7 +360,7 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
 
   const both = run(plan, "session").json;
   assert.equal(both.role, "plan");
-  assert.deepEqual(both.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(both.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, behind: 0, registered: true });
   const fromHalf = run(planHalf, "session").json;
   assert.equal(fromHalf.role, "plan");
   assert.deepEqual(fromHalf.worktree, both.worktree);
@@ -371,7 +371,7 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
   const promoted = run(plan, "session").json;
   assert.equal(promoted.role, "build");
   assert.equal(promoted.delivery.slug, "thing");
-  assert.deepEqual(promoted.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(promoted.companion, { path: planHalf, branch: null, detached: true, dirty: false, ahead: 0, behind: 0, registered: true });
   const promotedHalf = run(planHalf, "session").json;
   assert.equal(promotedHalf.role, "build");
   assert.equal(promotedHalf.worktree.branch, "feature/thing");
@@ -381,7 +381,7 @@ test("session: plan pair (both detached), half-promoted pair, and a product half
   // A product half with no companion half registered (pre-pair session).
   const lone = path.join(wt, "feature-lone");
   git(repo, "worktree", "add", "-q", "-b", "feature/lone", lone);
-  assert.deepEqual(run(lone, "session").json.companion, { path: path.join(docsWt, "feature-lone"), branch: null, detached: false, dirty: false, ahead: 0, registered: false });
+  assert.deepEqual(run(lone, "session").json.companion, { path: path.join(docsWt, "feature-lone"), branch: null, detached: false, dirty: false, ahead: 0, behind: 0, registered: false });
 });
 
 test("session: a plan pair promoted on both halves is one delivery from either side", () => {
@@ -405,7 +405,7 @@ test("session: a plan pair promoted on both halves is one delivery from either s
   assert.deepEqual(fromHalf.delivery, fromProduct.delivery);
   assert.deepEqual(fromHalf.worktree, fromProduct.worktree);
   assert.equal(fromProduct.worktree.dirPrefix, "plan", "promotion keeps the plan-* directory");
-  assert.deepEqual(fromProduct.companion, { path: planHalf, branch: "feature/mirror", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(fromProduct.companion, { path: planHalf, branch: "feature/mirror", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
   assert.equal(fromProduct.companion.branch, fromProduct.delivery.branch);
   assert.deepEqual(fromHalf.companion, fromProduct.companion);
   assert.deepEqual(fromHalf.worktrees, fromProduct.worktrees);
@@ -504,14 +504,14 @@ test("close-decision and ship-preflight report the companion half and refuse a d
   const none = run(repo, "close-decision", "feature", "widget").json;
   assert.equal(none.status, "ok");
   assert.equal(none.reason, "managed-worktree-present");
-  assert.deepEqual(none.companion, { path: half, branch: null, detached: false, dirty: false, ahead: 0, registered: false });
+  assert.deepEqual(none.companion, { path: half, branch: null, detached: false, dirty: false, ahead: 0, behind: 0, registered: false });
 
   git(docs, "worktree", "add", "-q", "-b", "feature/widget", half);
   const clean = run(repo, "close-decision", "feature", "widget");
   assert.equal(clean.code, 0);
   assert.equal(clean.json.reason, "managed-worktree-present");
   assert.equal(clean.json.owner.path, product);
-  assert.deepEqual(clean.json.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, registered: true });
+  assert.deepEqual(clean.json.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
   const ship = run(repo, "ship-preflight", "feature", "widget").json;
   assert.equal(ship.status, "ok");
   assert.deepEqual(ship.companion, clean.json.companion);
@@ -541,6 +541,28 @@ test("close-decision and ship-preflight report the companion half and refuse a d
   git(half, "push", "-q", "-u", "origin", "feature/widget");
   assert.equal(run(repo, "close-decision", "feature", "widget").json.reason, "managed-worktree-present");
   assert.equal(run(repo, "close-decision", "feature", "widget").json.companion.ahead, 0);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, []);
+
+  // Behind its upstream: a second commit pushed to origin/feature/widget from the clone.
+  git(docs, "fetch", "-q", "origin");
+  git(docs, "switch", "-q", "-c", "feature/widget-elsewhere", "origin/feature/widget");
+  fs.writeFileSync(path.join(docs, "elsewhere.md"), "from another machine\n");
+  git(docs, "add", "-A");
+  git(docs, "commit", "-q", "-m", "docs: elsewhere");
+  git(docs, "push", "-q", "origin", "HEAD:feature/widget");
+  git(docs, "switch", "-q", "main");
+  git(docs, "branch", "-q", "-D", "feature/widget-elsewhere");
+  git(half, "fetch", "-q", "origin");
+  const behind = run(repo, "close-decision", "feature", "widget");
+  assert.equal(behind.code, 3);
+  assert.equal(behind.json.reason, "companion-unpushed");
+  assert.equal(behind.json.companion.behind, 1);
+  assert.equal(behind.json.companion.ahead, 0);
+  assert.match(behind.json.message, /is behind its upstream; run git -C .* merge origin\/feature\/widget/);
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, ["behind"]);
+  git(half, "merge", "-q", "origin/feature/widget");
+  assert.equal(run(repo, "close-decision", "feature", "widget").json.reason, "managed-worktree-present");
+  assert.equal(run(repo, "close-decision", "feature", "widget").json.companion.behind, 0);
   assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.companionGaps, []);
 
   // Dirty and unpushed together.

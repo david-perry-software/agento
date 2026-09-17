@@ -177,16 +177,18 @@ function companionWorktrees() {
 }
 
 // The companion half paired with a managed product worktree, with the git facts the
-// close and ship decisions need: `dirty` (uncommitted changes) and `ahead` (commits
-// not on the upstream, or on no remote ref at all when there is no upstream).
+// close and ship decisions need: `dirty` (uncommitted changes), `ahead` (commits
+// not on the upstream, or on no remote ref at all when there is no upstream), and
+// `behind` (upstream commits not in HEAD; 0 without an upstream).
 function describeCompanion(worktree) {
   const pair = pairFor({ worktree, companionWorktreesDir, companionWorktrees: companionWorktrees() });
   if (!pair) return null;
-  if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0 };
+  if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0, behind: 0 };
   const dirty = git(pair.path, "status", "--porcelain") !== "";
   const upstream = git(pair.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
   const count = upstream ? git(pair.path, "rev-list", "--count", "@{upstream}..HEAD") : git(pair.path, "rev-list", "--count", "HEAD", "--not", "--remotes");
-  return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, registered: true };
+  const behind = upstream ? git(pair.path, "rev-list", "--count", "HEAD..@{upstream}") : "0";
+  return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, behind: Number.parseInt(behind, 10) || 0, registered: true };
 }
 
 // The multi-root workspace file a paired session opens (product side, next to the
@@ -206,7 +208,7 @@ function companionOfOwner(owner) {
 
 function companionGaps(companion) {
   if (!companion?.registered) return [];
-  return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : [])];
+  return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : []), ...(companion.behind > 0 ? ["behind"] : [])];
 }
 
 function requireType(type) {
@@ -815,12 +817,17 @@ switch (command) {
     const companion = companionOfOwner(decision.owner);
     const gaps = companionGaps(companion);
     if (gaps.length) {
+      const behindOnly = gaps.length === 1 && gaps[0] === "behind";
+      const fix = behindOnly
+        ? `run git -C ${companion.path} merge origin/${companion.branch} (a fast-forward) before closing ${type}/${slug}`
+        : `commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost`;
+      const state = gaps.map((g) => (g === "behind" ? "behind its upstream" : g)).join(" and ");
       withExit({
         status: "error",
         reason: "companion-unpushed",
         owner: decision.owner,
         companion,
-        message: `The companion half at ${companion.path} is ${gaps.join(" and ")}; commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost.`,
+        message: `The companion half at ${companion.path} is ${state}; ${fix}.`,
       });
     }
     withExit({ ...decision, companion });
