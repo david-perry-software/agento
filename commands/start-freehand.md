@@ -38,8 +38,16 @@ Window check per §11: requires role `primary` on the default branch, clean.
    under the repository policy.
 3. Managed worktrees live under the managed worktrees directory: the `worktrees.dir`
    value from the target repository's `.github/agento.json`, defaulting to a sibling
-   directory named `<repo-name>-worktrees/` (e.g. `../myrepo-worktrees/`). Refuse to
-   touch a path that exists but is not the registered worktree expected here.
+   directory named `<repo-name>-worktrees/` (e.g. `../myrepo-worktrees/`). Read the
+   canonical paths from the Agento CLI: `node <agento-root>/scripts/agento.mjs paths
+   freehand <slug>` (path announced in the session context as `Agento CLI:`) returns
+   `worktree`, `branch`, and the **pair** fields `companion` (`{ worktreesDir,
+   worktree, branch } | null`) and `workspace` (`…/freehand-<slug>.code-workspace |
+   null`); both are `null` in the in-repo layout, in which case the session is
+   product-only and nothing else below changes. When `companion` is set,
+   `artifactsRoot` is the companion clone and `companion.worktree` this session's
+   companion half. Refuse to touch a path (either half) that exists but is not the
+   registered worktree expected here.
 
 **Session:**
 
@@ -61,19 +69,30 @@ Window check per §11: requires role `primary` on the default branch, clean.
    is only the starting point, so `--no-track` is required to keep the branch from
    adopting the wrong upstream. If `changes/<slug>` already exists locally or on
    origin without a registered worktree, reuse that exact branch instead of creating
-   it. Verify the new worktree is clean and on the expected branch.
-4. Unless `--no-open` was supplied, finish by running `code --new-window <path>`. The
-   VS Code CLI may reuse an already-running editor session instead of visibly creating
-   a second window; treat a successful worktree as a valid result, say so explicitly,
-   and never infer a Git worktree lock or branch conflict from that behavior. If the
-   `code` CLI is unavailable or opening fails, apply the declared `code` fallback (§10).
+   it. Verify the new worktree is clean and on the expected branch. With a pair,
+   create the companion half on the same branch in the companion clone: `git -C
+   <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> worktree add --no-track
+   -b changes/<slug> <companion.worktree> origin/<default>` (reusing an existing
+   `changes/<slug>` there under the same rule; a companion half already registered at
+   that path is reused untouched). Then write the workspace file at the `workspace`
+   path: a JSON document with `folders: [{ "path": <product worktree> }, { "path":
+   <companion worktree> }]` (absolute paths, product first) and `settings: {}`;
+   overwrite a stale file with the same content on resume.
+4. Unless `--no-open` was supplied, finish by running `code --new-window <workspace>`
+   (the pair) or `code --new-window <path>` (product-only). The VS Code CLI may reuse
+   an already-running editor session instead of visibly creating a second window;
+   treat a successful worktree as a valid result, say so explicitly, and never infer a
+   Git worktree lock or branch conflict from that behavior. If the `code` CLI is
+   unavailable or opening fails, apply the declared `code` fallback (§10), printing
+   the same argument (workspace file or path).
 
 Do not create plan.md, roadmap.md, review.md, or any `features/`/`issues/` directory,
 and do not start the work in this primary window. Do not install dependencies
 automatically; note that the new worktree may require installing dependencies per the
 project's AGENTS.md.
 
-Report the worktree path, the branch, whether it was created or resumed, and the exact
+Report the worktree path, the branch, whether it was created or resumed (plus the
+companion half and the workspace file when they exist), and the exact
 follow-up commands: work freely in the new window, then `/agento finish-freehand` there to
 commit, publish, and merge, and finally `/agento close-session changes/<slug>` from this
 primary window.
