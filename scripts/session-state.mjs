@@ -189,7 +189,7 @@ export function findOwner({ worktrees, worktreesDir, branch, config }) {
   return null;
 }
 
-const ROADMAP_FIELDS = ["dir", "roadmap", "plan", "review", "reviewVerdict", "status", "lastUpdated", "nextStep", "githubIssue", "initiative", "steps"];
+const ROADMAP_FIELDS = ["dir", "roadmap", "plan", "review", "reviewVerdict", "status", "lastUpdated", "nextStep", "githubIssue", "artifactPr", "initiative", "steps"];
 
 // Type/slug come from the branch prefix; a detached managed `feature-`/`issue-`
 // worktree falls back to its directory name. Roadmap fields are null until one exists.

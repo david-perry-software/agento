@@ -56,12 +56,20 @@ branch: feature/<slug> # or issue/<slug> (with the configured branch prefixes)
 last-updated: YYYY-MM-DD
 next-step: "<free-text pointer to the next unchecked step, or ''"
 github-issue: "#<number>"  # issues only; omit for features
+artifact-pr: "#<number>"   # companion mode only: the draft PR carrying this delivery's artifacts in the artifact repository; omit in the in-repo layout
 initiative: "<initiative-slug>"  # features that belong to an initiative only; omit otherwise
 ```
 
 The optional `initiative:` field names the breakdown the feature is a member of. The
 CLI treats a member roadmap without it, or with a different slug, as invalid delivery
 state for that initiative.
+
+The optional `artifact-pr:` field is written by the Planner in companion mode
+(`artifacts.repo` set) once the companion draft PR exists: the artifacts live on the
+mirrored branch (`<branch>` in the artifact repository) and that PR is the one
+`/agento ship` merges after the code PR. The CLI exposes it as `artifactPr` on every
+describe record (`status`, `session.delivery`, `initiative`, `next`) and `session --pr`
+reports the live PR as `companionPr`. Never set it in the in-repo layout.
 
 Then `## Phase N: <name>` sections containing steps:
 

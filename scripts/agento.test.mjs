@@ -545,7 +545,7 @@ test("doctor artifact-repo warns when the companion worktrees dir exists but is 
 
 test("status lists roadmaps with progress, verdicts, and duplicate slugs", () => {
   const repo = makeRepo();
-  writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nlast-updated: 2026-09-01\nnext-step: \"1.2 todo\"");
+  writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nlast-updated: 2026-09-01\nnext-step: \"1.2 todo\"\nartifact-pr: \"#7\"");
   writeRoadmap(repo, "issues/2026/09/beta", "status: in-review\nbranch: issue/beta\nnext-step: review\ngithub-issue: \"#12\"");
   fs.writeFileSync(path.join(repo, "issues/2026/09/beta/review.md"), "# Review: beta\n\nVerdict: request-changes\n");
   writeRoadmap(repo, "features/2026/08/beta", "status: complete\nbranch: feature/beta\nnext-step: \"\"");
@@ -556,9 +556,11 @@ test("status lists roadmaps with progress, verdicts, and duplicate slugs", () =>
   const alpha = json.items[0];
   assert.deepEqual(alpha.steps, { ticked: 1, total: 2 });
   assert.equal(alpha.nextStep, "1.2 todo");
+  assert.equal(alpha.artifactPr, "#7");
   const betaIssue = json.items.find((i) => i.type === "issue");
   assert.equal(betaIssue.reviewVerdict, "request-changes");
   assert.equal(betaIssue.githubIssue, "#12");
+  assert.equal(betaIssue.artifactPr, null);
   assert.equal(json.duplicates.length, 1);
   assert.equal(json.duplicates[0].slug, "beta");
   assert.deepEqual([...json.duplicates[0].paths].sort(), ["features/2026/08/beta/roadmap.md", "issues/2026/09/beta/roadmap.md"]);
@@ -1026,6 +1028,57 @@ test("session never invokes gh without --pr and reads its JSON with --pr", () =>
   const merged = runWith({ cwd: build, env }, "session", "--pr");
   assert.equal(merged.json.lifecycle, "building");
   assert.match(merged.json.warnings[0], /^merged-but-not-complete: PR #15/);
+});
+
+test("session --pr: companionPr is null with no extra gh call in-repo, and the companion clone's PR in companion mode", () => {
+  // In-repo: exactly one gh pr view, companionPr null, artifactPr read from the header.
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: x\nartifact-pr: \"#7\"");
+  const marker = path.join(wt, "gh-invoked");
+  const ghScript = `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7;; *) n=15;; esac\necho "{\\"number\\":$n,\\"state\\":\\"OPEN\\",\\"isDraft\\":true,\\"mergeStateStatus\\":\\"CLEAN\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
+  const { env } = restrictedPath({ gh: ghScript });
+  const inRepo = runWith({ cwd: build, env }, "session", "--pr");
+  assert.equal(inRepo.code, 0);
+  assert.equal(inRepo.json.pr.number, 15);
+  assert.equal(inRepo.json.companionPr, null);
+  assert.equal(inRepo.json.delivery.artifactPr, "#7");
+  assert.deepEqual(inRepo.json.warnings, []);
+  assert.equal(fs.readFileSync(marker, "utf8").trim().split("\n").length, 1, "in-repo mode runs gh pr view once");
+  assert.equal(runWith({ cwd: build, env }, "session").json.companionPr, null, "without --pr companionPr is null too");
+
+  // Companion mode: one gh pr view per repo, the companion one run from the companion clone.
+  const pair = makePairRepo();
+  const product = path.join(pair.wt, "feature-widget");
+  const half = path.join(pair.docsWt, "feature-widget");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(pair.docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  writeRoadmap(pair.docs, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: x\nartifact-pr: \"#7\"");
+  const pairMarker = path.join(pair.wt, "gh-invoked");
+  const pairEnv = restrictedPath({ gh: ghScript.replace(JSON.stringify(marker), JSON.stringify(pairMarker)) }).env;
+  const both = runWith({ cwd: product, env: pairEnv }, "session", "--pr");
+  assert.equal(both.code, 0);
+  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/7" });
+  assert.equal(both.json.delivery.artifactPr, "#7");
+  assert.deepEqual(both.json.warnings, []);
+  const calls = fs.readFileSync(pairMarker, "utf8").trim().split("\n");
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], new RegExp(`^${product} pr view feature/widget `));
+  assert.match(calls[1], new RegExp(`^${pair.docs} pr view feature/widget `));
+  assert.equal(git(pair.docs, "branch", "--show-current"), "main", "the companion clone is never switched");
+  assert.equal(git(half, "branch", "--show-current"), "feature/widget");
+
+  // The companion lookup degrades like pr: a failing gh there yields companionPr: null and one companionPr: warning.
+  const failingEnv = restrictedPath({
+    gh: `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\ncase "$PWD" in *project-docs*) echo 'no pull requests found for branch' >&2; exit 1;; esac\necho '{"number":15,"state":"OPEN","isDraft":true,"mergeStateStatus":"CLEAN","url":"u"}'\n`,
+  }).env;
+  const degraded = runWith({ cwd: product, env: failingEnv }, "session", "--pr");
+  assert.equal(degraded.json.pr.number, 15);
+  assert.equal(degraded.json.companionPr, null);
+  assert.deepEqual(degraded.json.warnings.length, 1);
+  assert.match(degraded.json.warnings[0], /^companionPr: gh pr view feature\/widget failed: no pull requests found/);
 });
 
 const chain = [{ slug: "a" }, { slug: "b", recommendedAfter: ["a"] }, { slug: "c", requires: ["b"] }];
