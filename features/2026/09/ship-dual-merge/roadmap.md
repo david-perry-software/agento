@@ -1,5 +1,5 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/ship-dual-merge
 last-updated: 2026-09-17
 next-step: "1.1 — add `behind` to describeCompanion and companionGaps"
