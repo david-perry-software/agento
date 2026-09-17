@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/ship-dual-merge
 last-updated: 2026-09-17
-next-step: "3.2 — docs/commands.md, README.md, CHANGELOG.md dual-merge docs"
+next-step: "4.1 — /tmp pair end-to-end drive with a logging stub gh"
 initiative: "external-artifact-repo"
 ```
 
@@ -21,7 +21,7 @@ initiative: "external-artifact-repo"
 ## Phase 3: Policy and docs
 
 - [x] 3.1 Add the Decision Q2 case to the `/agento ship` row of `.github/instructions/delivery-policy.instructions.md` §9 idempotency table (`code PR merged while the companion PR is still open resumes at the companion merge, then sync, teardown, epilogue`); no new `§` sections — verify: `grep -c 'companion' .github/instructions/delivery-policy.instructions.md` greater than `git show origin/main:.github/instructions/delivery-policy.instructions.md | grep -c 'companion'`; `node --test tests/customizations.test.mjs` exit 0.
-- [ ] 3.2 Update `docs/commands.md` (the `ship-preflight` paragraph: `--pr` adds `pr`, `companionPr`, `warnings[]`; `companion` gains `behind`; `companionGaps[]` tokens `dirty`, `unpushed`, `behind`, `missing-pr`, `pr-not-open`, `conflicting-pr`; replace the "Interim limitation" sentence with the dual-merge flow; `session`'s `companion-pr-open` warning), `README.md` `### 5. Ship — primary window` (one companion-mode paragraph: both PRs ready, code first then companion, both defaults synced, epilogue in the companion, resume-at-companion-merge on failure), and `CHANGELOG.md` `## Unreleased` (new **Ship dual merge** bullet; drop the "Interim: … until `ship-dual-merge` lands" sentence from the mirrored-branches bullet) — verify: `grep -c 'Interim limitation' docs/commands.md` = 0; `grep -c 'leaves the companion PR open' CHANGELOG.md` = 0; `grep -c 'Ship dual merge' CHANGELOG.md` = 1; `grep -c 'behind' docs/commands.md` ≥ 1; `grep -c 'companion' README.md` greater than `git show origin/main:README.md | grep -c 'companion'`; `node --test tests/customizations.test.mjs` exit 0.
+- [x] 3.2 Update `docs/commands.md` (the `ship-preflight` paragraph: `--pr` adds `pr`, `companionPr`, `warnings[]`; `companion` gains `behind`; `companionGaps[]` tokens `dirty`, `unpushed`, `behind`, `missing-pr`, `pr-not-open`, `conflicting-pr`; replace the "Interim limitation" sentence with the dual-merge flow; `session`'s `companion-pr-open` warning), `README.md` `### 5. Ship — primary window` (one companion-mode paragraph: both PRs ready, code first then companion, both defaults synced, epilogue in the companion, resume-at-companion-merge on failure), and `CHANGELOG.md` `## Unreleased` (new **Ship dual merge** bullet; drop the "Interim: … until `ship-dual-merge` lands" sentence from the mirrored-branches bullet) — verify: `grep -c 'Interim limitation' docs/commands.md` = 0; `grep -c 'leaves the companion PR open' CHANGELOG.md` = 0; `grep -c 'Ship dual merge' CHANGELOG.md` = 1; `grep -c 'behind' docs/commands.md` ≥ 1; `grep -c 'companion' README.md` greater than `git show origin/main:README.md | grep -c 'companion'`; `node --test tests/customizations.test.mjs` exit 0.
 
 ## Phase 4: End-to-end drive and gate
 

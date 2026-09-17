@@ -279,6 +279,17 @@ still open, the delivery guard blocks the removal and ship pauses with `main` al
 merged and synced; close that window and re-send `/agento ship <slug>` to finish the
 teardown.
 
+**Companion mode.** With `artifacts.repo` set, ship handles both halves: it reads
+roadmap, review, and plan from the companion's `origin/<branch>`, requires the
+companion half to be clean, pushed, and not behind, and its PR to exist, be open, and
+be mergeable; commits `status: complete` in the companion half; marks both PRs
+ready; merges the code PR first (its required checks are the gate) and then the
+companion PR from inside the companion clone; syncs both default branches; tears
+down both halves and the `.code-workspace` file; and lands any post-ship evidence
+on the companion's `post-ship/<slug>`. If the companion merge fails after the code
+merge, ship stops naming both PRs, and re-sending `/agento ship <slug>` resumes at
+the companion merge.
+
 **Closing without shipping.** `/agento close-session feature/<slug>` from the primary
 window removes a clean, pushed worktree and keeps the branch (its PR stays open). Use
 it to abandon or park a build; a later `/agento ship <slug>` then checks the branch
