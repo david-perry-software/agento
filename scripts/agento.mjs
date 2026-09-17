@@ -271,9 +271,9 @@ function describeContent({ type, dir, roadmap, content, planExists, reviewConten
   };
 }
 
-function describe(file, type) {
+function describe(file, type, base = artifactsRoot) {
   const dir = path.dirname(file);
-  const rel = (p) => path.relative(artifactsRoot, p).split(path.sep).join("/");
+  const rel = (p) => path.relative(base, p).split(path.sep).join("/");
   const review = path.join(dir, "review.md");
   return describeContent({
     type,
@@ -302,14 +302,33 @@ function describeFromRef(ref, roadmap, type) {
   });
 }
 
-function allRoadmaps(typeFilter) {
+// `half`: companion mode only — the registered companion half's working tree, whose
+// mirrored branch carries the delivery's own roadmap; its roadmaps take precedence
+// over the clone's same-path copies (the clone sits on <default>). Null → the
+// artifacts root alone, which is today's behaviour in the in-repo layout.
+function allRoadmaps(typeFilter, half = null) {
   const out = [];
-  for (const type of ["feature", "issue"]) {
-    if (typeFilter && type !== typeFilter) continue;
-    const base = path.join(artifactsRoot, type === "feature" ? config.artifacts.features : config.artifacts.issues);
-    for (const file of walkRoadmaps(base)) out.push(describe(file, type));
+  const seen = new Set();
+  const bases = half && fs.existsSync(half) ? [half, artifactsRoot] : [artifactsRoot];
+  for (const base of bases) {
+    for (const type of ["feature", "issue"]) {
+      if (typeFilter && type !== typeFilter) continue;
+      const top = path.join(base, type === "feature" ? config.artifacts.features : config.artifacts.issues);
+      for (const file of walkRoadmaps(top)) {
+        const record = describe(file, type, base);
+        if (seen.has(record.roadmap)) continue;
+        seen.add(record.roadmap);
+        out.push(record);
+      }
+    }
   }
   return out;
+}
+
+// The companion half a session reads roadmaps from, or null (primary, unregistered
+// pair, in-repo layout).
+function companionHalfOf(companion) {
+  return companion?.registered && fs.existsSync(companion.path) ? companion.path : null;
 }
 
 function withExit(result) {
@@ -893,7 +912,8 @@ switch (command) {
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(), config });
+    const companion = describeCompanion(worktree);
+    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, companionHalfOf(companion)), config });
     const prBranch = delivery?.branch ?? worktree.branch;
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
     const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
@@ -905,7 +925,7 @@ switch (command) {
       hosted,
       worktree,
       worktrees: classified,
-      companion: describeCompanion(worktree),
+      companion,
       workspace: describeWorkspace(worktree, sessionWorktreesDir),
       delivery,
       pr,
@@ -937,7 +957,7 @@ switch (command) {
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-    const roadmaps = allRoadmaps();
+    const roadmaps = allRoadmaps(null, companionHalfOf(describeCompanion(worktree)));
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null });
     warnings.unshift(...anchor.warnings);

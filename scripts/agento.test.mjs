@@ -423,6 +423,44 @@ test("session: a plan pair promoted on both halves is one delivery from either s
   assert.equal(run(planHalf, "session").json.companion.ahead, 0);
 });
 
+test("session and next read the delivery roadmap from the registered companion half, not only the clone", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const product = path.join(wt, "feature-mirror");
+  const half = path.join(docsWt, "feature-mirror");
+  git(repo, "worktree", "add", "-q", "-b", "feature/mirror", product);
+  git(docs, "worktree", "add", "-q", "--no-track", "-b", "feature/mirror", half, "origin/main");
+  // The roadmap is committed only on the companion half's mirrored branch; the clone (main) has none.
+  writeRoadmap(half, "features/2026/09/mirror", "status: in-progress\nbranch: feature/mirror\nnext-step: \"1.2 todo\"\nartifact-pr: \"#7\"");
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "docs(feature): mirror");
+  assert.ok(!fs.existsSync(path.join(docs, "features")));
+  // A same-path roadmap in the clone is shadowed by the half's copy.
+  writeRoadmap(docs, "features/2026/09/other", "status: planned\nbranch: feature/other\nnext-step: \"1.1\"");
+
+  for (const cwd of [product, half]) {
+    const session = run(cwd, "session").json;
+    assert.equal(session.role, "build", cwd);
+    assert.equal(session.delivery.slug, "mirror");
+    assert.equal(session.delivery.branch, "feature/mirror");
+    assert.equal(session.delivery.roadmap, "features/2026/09/mirror/roadmap.md");
+    assert.equal(session.delivery.status, "in-progress");
+    assert.equal(session.delivery.artifactPr, "#7");
+    assert.equal(session.lifecycle, "building");
+    assert.ok(session.allowed.includes("/agento build-feature mirror"), JSON.stringify(session.allowed));
+    assert.equal(session.companion.branch, "feature/mirror");
+    const next = run(cwd, "next").json;
+    assert.equal(next.status, "ok");
+    assert.equal(next.next.invocation, "/agento build-feature mirror");
+    assert.equal(next.artifactPr, "#7");
+  }
+  // Precedence: the half's copy of a shared path wins over the clone's.
+  writeRoadmap(docs, "features/2026/09/mirror", "status: planned\nbranch: feature/mirror\nnext-step: \"1.1\"");
+  assert.equal(run(product, "session").json.delivery.status, "in-progress");
+  assert.equal(run(product, "session").json.delivery.artifactPr, "#7");
+  // The primary and the clone-only readers are unchanged: status walks the clone.
+  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["mirror", "planned"], ["other", "planned"]]);
+});
+
 test("session: an unrelated repo and an ambiguous companion stay put; a half nobody names is that repo's own managed worktree", () => {
   const { repo, docs } = makePairRepo();
   const base = path.dirname(repo);
