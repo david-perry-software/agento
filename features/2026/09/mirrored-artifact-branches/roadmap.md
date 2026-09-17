@@ -1,14 +1,14 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/mirrored-artifact-branches
 last-updated: 2026-09-16
-next-step: "Create the mirrored companion branch and define the planner/build/reviewer state transition for artifact PRs"
+next-step: "Verify session state cross-repo mirroring from both halves and then update planner/build/reviewer artifact path handling"
 initiative: "external-artifact-repo"
 ```
 
 ## Phase 1: Branch and session mirroring
 
-- [ ] 1.1 Create the mirrored artifact branch in the companion repo when the planner creates the product feature branch — verify: `git branch --all --list 'feature/mirrored-artifact-branches' 'origin/feature/mirrored-artifact-branches'` shows the branch in both repos after creation.
+- [x] 1.1 Create the mirrored artifact branch in the companion repo when the planner creates the product feature branch — verify: `git branch --all --list 'feature/mirrored-artifact-branches' 'origin/feature/mirrored-artifact-branches'` shows the branch in both repos after creation.
 - [ ] 1.2 Ensure the session state reports the product half and companion half as the same logical delivery, with `repo: product|companion` values and a shared branch name — verify: `node scripts/agento.mjs session` from both worktree halves reports the same `delivery.slug` and `delivery.branch`.
 - [ ] 1.3 Add the companion PR metadata to the session result and ensure `session --pr` can report both PRs without re-creating the branch — verify: `node scripts/agento.mjs session --pr` includes the companion PR object when present.
 
