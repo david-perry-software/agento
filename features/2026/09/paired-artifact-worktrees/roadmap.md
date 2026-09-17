@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/paired-artifact-worktrees
 last-updated: 2026-09-16
-next-step: "2.6 byte-for-byte check"
+next-step: "3.1 start-session prompt"
 initiative: "external-artifact-repo"
 ```
 
@@ -18,7 +18,7 @@ initiative: "external-artifact-repo"
 - [x] 2.3 `session` and `next`: pass `companionWorktreesDir` and the companion worktree list into `deriveRole`/`classifyWorktrees`; emit `companion: { path, branch, detached, dirty, ahead, registered } | null` (`dirty` from `git -C <half> status --porcelain`, `ahead` from `rev-list --count @{upstream}..HEAD`, `0` when no upstream) and `workspace: { path, exists } | null`; append companion-half entries with `repo: "companion"` after all product entries — verify: `scripts/agento.test.mjs` asserts equal `role`/`worktree.path`/`delivery`/`allowed` from both halves, `worktrees[0].repo === "product"` and `isPrimary`, and `next` from the companion half returns the same `next.invocation` as from the product half.
 - [x] 2.4 `close-decision` and `ship-preflight`: add `companion` (same shape) and, for `close-decision`, `status: "error", reason: "companion-unpushed"` when the companion half is dirty or `ahead > 0`; `ship-preflight` adds `companionGaps[]` (`dirty`, `unpushed`); `null`/`[]` in in-repo mode — verify: `scripts/agento.test.mjs` cases for clean pair (ok), dirty companion half (error), ahead companion half (error), no companion half registered (`companion: null`, ok).
 - [x] 2.5 `doctor` `artifact-repo`: `warn` when `<dir>-worktrees` exists but is not writable, fallback naming the directory; unchanged otherwise — verify: `scripts/agento.test.mjs` case with a read-only `project-docs-worktrees` directory yields `warn`; existing doctor tests pass.
-- [ ] 2.6 Byte-for-byte check in in-repo mode: run `origin/main`'s `scripts/agento.mjs` and this branch's against this checkout for `paths plan x`, `paths feature x`, `session`, `close-decision feature x`, `ship-preflight feature x`, `config`, `doctor --for close-session` and diff — verify: only the additive fields listed in plan.md `## Risks` differ; record the diff summary in this step's commit message body.
+- [x] 2.6 Byte-for-byte check in in-repo mode: run `origin/main`'s `scripts/agento.mjs` and this branch's against this checkout for `paths plan x`, `paths feature x`, `session`, `close-decision feature x`, `ship-preflight feature x`, `config`, `doctor --for close-session` and diff — verify: only the additive fields listed in plan.md `## Risks` differ; record the diff summary in this step's commit message body.
 
 ## Phase 3: Prompts (mirrored to commands/)
 
