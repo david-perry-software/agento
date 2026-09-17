@@ -58,7 +58,10 @@ ahead, registered }` — and `workspace: { path, exists }`, both `null` from the
 primary or in the in-repo layout; a cwd inside a companion half or the companion
 clone is anchored on its product checkout and yields the same record, with an
 `anchored-from-companion` entry in `warnings[]`; `--pr` adds the branch's PR via `gh`,
-degrading to `pr: null` plus a warning when `gh` is absent),
+degrading to `pr: null` plus a warning when `gh` is absent, and in companion mode also
+`companionPr` — the same branch name looked up with `gh pr view` in the companion
+clone, degrading to `null` plus a `companionPr:` warning the same way; always `null`
+with no extra `gh` call in the in-repo layout),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
@@ -80,6 +83,31 @@ document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `non
 1 = usage error. Every window-sensitive command runs `session` first and compares
 `role` with its `Window check per §11: requires role …` line (policy §11); a mismatch
 is a `rejected` receipt listing the record's alternatives.
+
+### Mirrored artifact branches (companion mode)
+
+With `artifacts.repo` set, a delivery is one slug on two branches of the same name:
+the product repository's `feature/<slug>` (or `issue/<slug>`) carries the code, the
+companion repository's `feature/<slug>` carries `plan.md`, `roadmap.md`, `review.md`,
+and `evidence/`. The Planner creates the companion branch right after the product
+branch (`git -C <companion.path> switch -c <branch>` from the plan half's detached
+`origin/<default>`), pushes it, and opens two draft PRs — the code PR to the
+product default branch and a companion PR titled `docs(<type>): <slug>` — cross-linked
+in their bodies; the companion PR's number lands in the roadmap header as
+`artifact-pr: "#<n>"`. Every describe record that reads a roadmap (`status`,
+`resolve`, `find`, `session.delivery`, `initiative` members, `next` and its
+`candidates[]`) carries that header as `artifactPr` (`null` when absent), and
+`resolve`/`find`/`next` read a roadmap that exists only on the companion's
+`origin/<branch>` with `source: remote`. `session` and `next` read the delivery
+roadmap from the registered companion half (its working tree on the mirrored branch
+takes precedence over the companion clone's same-path copy), so a pair whose roadmap
+lives only on the branch still reports `delivery`, `lifecycle`, and the build/review
+commands in `allowed[]`. Builder, Reviewer, Architect, and `/agento triage-followups`
+commit artifacts with `git -C <companion.path>` (policy §7 two-commit rule);
+`/agento delivery-status` shows `companionPr` beside `pr`. Interim limitation: until
+the `ship-dual-merge` initiative member lands, `/agento ship` in companion mode merges
+the code PR and leaves the companion PR open for the user to merge by hand — the
+`artifact-pr` header is what that member will consume.
 
 ## Invocation
 

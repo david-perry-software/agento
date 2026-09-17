@@ -13,7 +13,7 @@ decomposes into several features gets an initiative directory,
 | File | Written by | Purpose |
 |---|---|---|
 | `plan.md` | Planner | Problem, evidence (issues), decisions, research (incl. skills consulted), approach, risks, acceptance checklist |
-| `roadmap.md` | Planner, then Builder | The resumable state machine: YAML header (`status`, `branch`, `last-updated`, `next-step`, optional `github-issue`, optional `initiative`) + checkbox steps with `verify:` lines |
+| `roadmap.md` | Planner, then Builder | The resumable state machine: YAML header (`status`, `branch`, `last-updated`, `next-step`, optional `github-issue`, optional `initiative`, optional `artifact-pr` — the companion draft PR `"#<n>"` in companion mode) + checkbox steps with `verify:` lines |
 | `review.md` | Reviewer | Verdict (`approve` / `request-changes`), checklist scoring, roadmap audit, findings, follow-ups |
 | `evidence/` | Builder / user | Screenshots and logs; `step-N-M-<name>.png` for `(manual)` steps |
 | `brief.md` | 🏛️ Architect | The verbatim intake text under a one-line `Source: <argument\|file path> — <date>` header |
@@ -23,6 +23,16 @@ Key rules:
 
 - The roadmap is the only durable progress record. Builders commit the roadmap tick
   **in the same commit** as the step's code.
+- **Companion mode mirrors the branch.** With `artifacts.repo` set, the artifacts of a
+  delivery are committed in the companion half on a branch of the same name as the
+  product branch (`feature/<slug>` / `issue/<slug>`), never on the companion's default
+  branch. The Planner creates that branch beside the product branch, pushes it, and
+  opens a **draft** companion PR titled `docs(<type>): <slug>` cross-linked with the
+  code PR; its number is recorded in the roadmap header as `artifact-pr: "#<n>"`. A
+  step is then two commits — code in the product half, roadmap tick + evidence in the
+  companion half (`git -C <companion.path>`), pushed product first — and `review.md`
+  lands in the companion half too. Evidence files live in the artifact checkout, never
+  in the product half.
 - `- [ ]` ticks only after the step's verify check passes. On resume, ticked boxes
   are audited against the codebase — code is truth.
 - `(manual)` steps need the user; `(manual, post-ship)` steps stay unticked until

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Mirrored artifact branches.** In companion mode a delivery's artifacts follow the
+  code branch: the Planner creates the companion branch of the same name right after
+  the product branch (`git -C <companion.path> switch -c <branch>` from the plan
+  half's detached `origin/<default>`; `/agento start-session` build mode adds
+  `--no-track`), writes `plan.md`/`roadmap.md`/`evidence/` there, pushes it, publishes
+  the product branch with one empty Conventional Commit, and opens two cross-linked
+  draft PRs — the code PR and a companion PR titled `docs(<type>): <slug>` — recording
+  the latter in the new optional roadmap header `artifact-pr: "#<n>"`. Builder steps
+  become two commits (code in the product half, roadmap tick + evidence in the
+  companion half, pushed product first — policy §7 two-commit rule); the Reviewer
+  writes `review.md` in the companion half and posts one verdict comment on the code
+  PR (`gh pr comment --edit-last` on re-review); the Architect and `/agento
+  triage-followups` branch and merge in the companion; both halves integrate their
+  own origin default before every push. CLI: every describe record (`status`,
+  `resolve`, `find`, `session.delivery`, `initiative` members, `next` and its
+  `candidates[]`) carries `artifactPr`; `session --pr` adds `companionPr` (the branch
+  looked up in the companion clone, `null` with no extra `gh` call in the in-repo
+  layout); `session`/`next` read the delivery roadmap from the registered companion
+  half, so a roadmap living only on the mirrored branch still yields `delivery`,
+  `lifecycle`, and the build/review commands. Interim: `/agento ship` still merges
+  only the code PR and leaves the companion PR open until `ship-dual-merge` lands.
+  In-repo layout unchanged.
 - **Paired companion worktrees.** In companion mode every managed session is a pair:
   `/agento start-session` and `/agento start-freehand` create the product half in
   `worktrees.dir` and a companion half of the same `<kind>-<id>` name under the

@@ -48,7 +48,13 @@ Full policy: `.github/instructions/concurrent-delivery.instructions.md`. Summary
    staging backends, machine-wide local services, fixed ports. Read-only sharing is
    fine; destructive operations are exclusive.
 4. **Integrate the default branch before every push** (merge, never rebase), so
-   /agento ship inherits no conflicts.
+   /agento ship inherits no conflicts. In companion mode integrate **both** defaults:
+   the product's `origin/main` into the product branch and the companion's
+   `origin/<default>` into the mirrored companion branch (`git -C <companion.path>
+   merge origin/<default>`), then push product first, companion second — the
+   two-commit rule (policy §7) means a roadmap tick in the companion half never
+   precedes the code commit it records, and the companion half ends every step with
+   `dirty: false`, `ahead: 0` in the session record.
 
 ## Merge-conflict recipes
 
