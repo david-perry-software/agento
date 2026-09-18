@@ -1,7 +1,7 @@
 ```yaml
-status: planned
+status: in-progress
 branch: feature/artifact-history-migration
-last-updated: 2026-09-17
+last-updated: 2026-09-18
 next-step: "1.1 layout rule in resolveArtifacts()"
 initiative: "external-artifact-repo"
 ```
