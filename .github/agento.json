@@ -1,0 +1,24 @@
+{
+  "artifacts": {
+    "features": "features",
+    "issues": "issues",
+    "initiatives": "initiatives",
+    "repo": {
+      "name": "agento-docs",
+      "dir": null
+    }
+  },
+  "worktrees": {
+    "dir": null
+  },
+  "branches": {
+    "default": "main",
+    "feature": "feature/",
+    "issue": "issue/",
+    "freehand": "changes/",
+    "postShip": "post-ship/"
+  },
+  "checks": {
+    "releaseWorkflow": null
+  }
+}
