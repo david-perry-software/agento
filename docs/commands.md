@@ -204,7 +204,10 @@ receipts). The receipt names a deterministic operation ID
 (`<command>:<subject>:<short-sha>`); a rejection lists the alternatives from
 `agento.mjs session`; the result names the resulting state and the concrete next
 command. Re-sending any command is safe: §9's idempotency table says, per command,
-what a duplicate submission does, all derived from git + roadmap state.
+what a duplicate submission does, all derived from git + roadmap state. Every
+`/agento …` command the user is asked to run — the result's `next:`, handoff and
+resume commands, a rejection's alternatives — is also emitted as its own one-command
+fenced block with no language tag, so chat offers a copy button on it (§12).
 
 ## Preflight
 
