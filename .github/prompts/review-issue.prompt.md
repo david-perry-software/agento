@@ -13,7 +13,8 @@ the Agento CLI (`node <agento-root>/scripts/agento.mjs resolve issue <slug>`; pa
 the session context line `Agento CLI:`) and stop on any `status` other than `ok`.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (a fresh verdict overwrites review.md; no second PR comment thread).
 Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for review-issue` and map

@@ -54,7 +54,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
      per <visibility>> --description "Agento delivery artifacts for <owner>/<repo>"`;
      note `created`. A nonzero `gh repo create` stops the command: report the exact
      failure and the alternative (create the repository in the GitHub UI, then re-run
-     `/agento agento-init` to adopt it). Never retry with elevated scopes.
+     `/agento agento-init` to adopt it, that command emitted as its own block per
+     policy §12). Never retry with elevated scopes.
    - `../<name>` (relative to the product root) does not exist → `git clone
      <clone-url> ../<name>` (an empty repository clones with a warning; that is
      fine). It exists → adopt it only if `git -C ../<name> rev-parse --show-toplevel`

@@ -32,7 +32,8 @@ Window check per §11: requires role `primary` on the default branch, clean.
 
 ## Refuse when the change does not fit
 
-Stop and name the right command instead of proceeding if any of these hold:
+Stop and name the right command instead of proceeding if any of these hold; the
+named command is emitted as its own block per policy §12 (one block per command):
 
 - The argument is empty — ask for the change and stop.
 - The working tree is dirty with unrelated changes — name `/agento commit-current-changes`.

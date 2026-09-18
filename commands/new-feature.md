@@ -65,8 +65,9 @@ exact argument.
 6. Report slug, branch, PR number (and the companion PR number in companion mode), and
    roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or
-   reinstalling dependencies. Explain that the promoted session is later torn down by
-   `/agento ship <slug>` from the primary window once the PR is merged
-   (`/agento close-session feature/<slug>` only to abandon it).
+   reinstalling dependencies, with the `/agento build-feature <slug>` alternative
+   emitted as its own block per policy §12. Explain that the promoted session is
+   later torn down by `/agento ship <slug>` from the primary window once the PR is
+   merged (`/agento close-session feature/<slug>` only to abandon it).
 
 If the argument is empty, ask for a feature description and stop.

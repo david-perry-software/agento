@@ -33,4 +33,5 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    overall status; a `fail` is not an error of this command — it is the finding.
 
 The result line's `next:` is `/agento doctor` again after the user applies a
-fallback, or the command they were about to run when every check is `ok`.
+fallback, or the command they were about to run when every check is `ok`; either
+way it is repeated as its own block directly above the result line per policy §12.

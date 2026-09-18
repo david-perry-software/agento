@@ -15,7 +15,8 @@ request, and deleting the merged remote branch. Treat any provided argument as
 supplemental context, but ground the commit message in the actual diff.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
 step 2 recovers it from repository state). Before the first write, run `node
 <agento-root>/scripts/agento.mjs doctor --for finish-freehand` and map `fail`/`warn`

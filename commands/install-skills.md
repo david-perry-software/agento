@@ -12,7 +12,8 @@ not the Agento clone). Skills inject instructions into agent sessions, so nothin
 is installed without explicit per-skill approval.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (already-installed skills are excluded from the batch, step 3).
 Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for install-skills` and map

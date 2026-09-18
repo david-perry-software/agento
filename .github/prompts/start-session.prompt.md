@@ -17,7 +17,8 @@ modes chosen by the argument, not VS Code chat modes; this command runs in Agent
 chat mode because it needs a terminal.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row: a registered worktree for the same subject is resumed with `--resume`
 semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
 Before the first write, run
