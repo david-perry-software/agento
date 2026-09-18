@@ -181,7 +181,8 @@ mode. Never modify source code, configuration, or other directories.
    mode; and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current
    planning worktree in place without moving or recreating it; that handoff (or
-   `/agento build-<type> <slug>`, emitted as its own block per policy §12) is the
+   `/agento build-<type> <slug>`, emitted as its own block per policy §12 and followed
+   by `/agento ap <slug>` in its own block as the unattended alternative) is the
    `next:` of the §9 result line. After promotion, the
    record reports this worktree as `role: build` (its `dirPrefix` stays `plan`) — a
    build-session reservation even though the directory is unchanged; once the review

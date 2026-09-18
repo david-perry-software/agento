@@ -106,7 +106,9 @@ review, fixes belong to the Builder.
    End with the cross-window sequence from policy §8,
    its first command being the `next:` of the §9 result line, each command in its
    own block per policy §12:
-   the Builder fix handoff in this window on request-changes; `/agento ship <slug>` from
+   the Builder fix handoff in this window on request-changes (its
+   `/agento build-<type> <slug>` block followed by `/agento ap <slug>` in its own
+   block as the unattended alternative); `/agento ship <slug>` from
    the primary window on approval (it audits while this worktree is open and tears it
    down once the PR is merged).
 

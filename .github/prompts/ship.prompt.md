@@ -146,7 +146,9 @@ Ownership does not apply when resuming only the post-ship epilogue.
      in the still-open secondary window at `owner.path`; when `owner === null`, name
      `/agento start-session <type>/<slug> --resume` instead. Emit that `<command>`
      as its own block per policy §12 directly above the result line, preceded by
-     one line naming the window it runs in.
+     one line naming the window it runs in; when it is the review or build command,
+     follow it with `/agento ap <slug>` in its own block as the unattended
+     alternative.
    - **Confirmation path** — unstamped changelog, PR body/title nits, undocumented
      unrelated drift. Present them in one summary, ask the user explicitly whether to
      proceed (default is do not proceed), and on yes record them under

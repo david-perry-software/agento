@@ -60,6 +60,12 @@ idempotency row (read-only: a fresh read). Window check per §11: requires role
       /agento build-feature <feature-slug>
       ```
 
+      Or unattended, in the same window (builds, reviews, and fixes until approve):
+
+      ```
+      /agento ap <feature-slug>
+      ```
+
    4. In the secondary window, after the build completes:
 
       ```

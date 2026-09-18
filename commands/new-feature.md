@@ -66,7 +66,8 @@ exact argument.
    roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or
    reinstalling dependencies, with the `/agento build-feature <slug>` alternative
-   emitted as its own block per policy §12. Explain that the promoted session is
+   emitted as its own block per policy §12, followed by `/agento ap <slug>` in its
+   own block as the unattended alternative. Explain that the promoted session is
    later torn down by `/agento ship <slug>` from the primary window once the PR is
    merged (`/agento close-session feature/<slug>` only to abandon it).
 

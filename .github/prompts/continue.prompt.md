@@ -71,7 +71,9 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      `code` is `ok`), run `code <workspace-or-path>` — it reuses an already-open
      window — and name `next.invocation` as the command to run there, emitted as its
      own block per policy §12 (and `next.then`, when set, as a second block after
-     it); otherwise apply the `code` fallback from §10 and name the same command. Do
+     it; when `next.invocation` is a build or review command, `/agento ap <slug>`
+     follows in its own block as the unattended alternative); otherwise apply the
+     `code` fallback from §10 and name the same command. Do
      not run the command in this window, and never run `/agento ship` from anywhere
      but the primary window.
 5. **Result.** The response carries one receipt (this command's) and one result line:

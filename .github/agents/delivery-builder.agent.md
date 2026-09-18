@@ -113,7 +113,8 @@ blocker if any), commit, push (both halves in companion mode: the product half f
 then the companion half carrying the roadmap — `agento.mjs session` must show
 `companion.dirty: false` and `companion.ahead: 0`), and report the exact resume point
 — a pause is a `completed` §9 result whose state is `paused` and whose `next:` names
-the resume command, emitted as a block per policy §12 directly above the result line.
+the resume command, emitted as a block per policy §12 directly above the result line,
+followed by `/agento ap <slug>` in its own block as the unattended alternative (§12).
 
 ## Completion
 
@@ -128,7 +129,8 @@ cause, what changed, proof the exposing test passes) and ensure the PR body cont
 cross-window sequence from policy §8 (review here; `/agento ship <slug>` from the
 primary window on approval, which tears this worktree down), its first command being
 the `next:` of the §9 result line; every command the user is to run is its own block
-per policy §12.
+per policy §12, and the `/agento review-<type> <slug>` block is followed by
+`/agento ap <slug>` in its own block as the unattended alternative.
 
 ## Non-negotiable rules
 

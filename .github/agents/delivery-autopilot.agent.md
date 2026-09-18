@@ -93,4 +93,5 @@ After every phase, emit a one-line progress note: phase, round number (e.g. roun
 roadmap status, and verdict if any. On any stop — approve, manual pause, auth halt,
 stall, or cap — state precisely what the user must do next in the §9 result line's
 `next:` command, repeated as a block per policy §12 directly above it (the Builder's
-relayed resume command likewise).
+relayed resume command likewise — when it is `/agento build-<type> <slug>`, followed
+by `/agento ap <slug>` in its own block as the unattended alternative).
