@@ -20,20 +20,26 @@ build worktree that owned the branch — and, in companion mode, the same for th
 companion PR, the companion default branch, the companion half, and the
 `.code-workspace` file — after the audit and confirmation steps below. Read the
 default branch and post-ship prefix from `agento.mjs config` (`branches.default`,
-`branches.postShip`, and `artifactsRoot` — the companion clone when it differs from
-`root`); `main` below stands for the configured default of whichever repository the
-sentence is about.
+`branches.postShip`); read `artifactsRoot` and `layout` from the `ship-preflight`
+result — `artifactsRoot` is the companion clone when it differs from `root`, and
+`layout: "branch"` means the delivery branch's own `.github/agento.json` named it
+while the primary is still in-repo (a migrated repository whose migration PR has
+not merged yet). Fall back to `artifactsRoot` from `agento.mjs config` only when the
+preflight result lacks the field. `main` below stands for the configured default of
+whichever repository the sentence is about.
 
 **Companion mode** is on when `companionPr !== null` in the `ship-preflight` result
-(or, when `gh` degraded and `companionPr` is `null` with a `companionPr:` warning,
-when `agento.mjs config` reports `artifactsRoot` ≠ `root`). The delivery is then one
+or when its `layout` is `"branch"` (or, when `gh` degraded and `companionPr` is
+`null` with a `companionPr:` warning, when the preflight's `artifactsRoot` ≠
+`root`). The delivery is then one
 slug on two branches of the same name: the product's `<branch>` carries the code and
 its PR `pr`, the companion's `<branch>` carries roadmap.md, review.md, plan.md, and
 `evidence/` and its PR `companionPr` (the roadmap header's `artifact-pr`). Every
 artifact read below comes from the companion's `origin/<branch>` (`git -C
 <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> show
 origin/<branch>:<path>`); every code read stays on the product. With `companionPr
-=== null` and no `companionPr:` warning (the in-repo layout), skip every sentence
+=== null`, `layout: "checkout"`, and no `companionPr:` warning (the in-repo layout),
+skip every sentence
 marked *companion mode* — the flow is byte-for-byte the single-repository one.
 
 Open with the acceptance receipt and close with the terminal result line per
