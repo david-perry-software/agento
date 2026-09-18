@@ -129,7 +129,7 @@ value. The product checkout stays on `main`, untouched. The in-repo layout
    clean, with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
-   the §9 result line's `next:` command:
+   the §9 result line's `next:` command, emitted as its own block per policy §12:
    `/agento next-feature <slug>` (from the primary window) to see which member to plan and
    the commands that plan it.
 
