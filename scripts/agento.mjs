@@ -146,16 +146,20 @@ const gitAdapter = {
   show: (spec) => git(root, "show", spec),
 };
 
-// Artifact roots may live in a sibling companion checkout (artifacts.repo). Like
-// worktrees.dir, the path is relative to the primary checkout and read from the
-// primary's config when this root is a secondary worktree. Unset → the checkout
-// itself, with no extra git call.
+// Artifact roots may live in a sibling companion checkout (artifacts.repo). The
+// layout rule: the checkout decides, the primary anchors. This checkout's own
+// config unset → in-repo, with no extra git call. Set → companion mode, resolved
+// against the primary checkout (like worktrees.dir); the primary's own
+// `artifacts.repo` wins when it is set too, else this checkout's values are used —
+// so a delivery branch that flips a project to a companion reads it before `main` does.
 function resolveArtifacts() {
   const repo = config.artifacts.repo ?? {};
   if (repo.name == null && repo.dir == null) return resolveArtifactsRoot({ config, rootDir: root });
   const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
   const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
-  return resolveArtifactsRoot({ config: primaryConfig, rootDir: root, primaryRoot });
+  const primaryRepo = primaryConfig.artifacts.repo ?? {};
+  const anchored = primaryRepo.name != null || primaryRepo.dir != null ? primaryConfig : config;
+  return resolveArtifactsRoot({ config: anchored, rootDir: root, primaryRoot });
 }
 const artifacts = resolveArtifacts();
 const artifactsRoot = artifacts.root;

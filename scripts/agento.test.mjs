@@ -251,6 +251,38 @@ test("a managed worktree resolves the companion beside the primary checkout, not
   assert.equal(run(plan, "resolve", "feature", "alpha").json.path, path.join(docs, "features", "2026", "09", "alpha", "roadmap.md"));
 });
 
+test("layout rule: a worktree whose own branch sets artifacts.repo is companion mode anchored on the primary, while the unset primary stays in-repo", () => {
+  const repo = makeRepo({ config: { worktrees: { dir: "../wt" } }, companion: true });
+  const docs = companionOf(repo);
+  const wt = path.join(path.dirname(repo), "wt");
+  fs.mkdirSync(wt);
+  const plan = path.join(wt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(plan, "switch", "-q", "-c", "feature/flip");
+  fs.writeFileSync(path.join(plan, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: "../wt" }, artifacts: { repo: { name: "project-docs" } } }));
+  git(plan, "add", "-A");
+  git(plan, "commit", "-q", "-m", "chore: flip to companion");
+
+  // The worktree: its own config decides, the primary anchors the path (never <wt>/project-docs).
+  const config = run(plan, "config").json;
+  assert.equal(config.root, plan);
+  assert.equal(config.artifactsRoot, docs);
+  assert.notEqual(config.artifactsRoot, path.join(wt, "project-docs"));
+  assert.deepEqual(config.config.artifacts.repo, { name: "project-docs", dir: docs });
+  const session = run(plan, "session").json;
+  assert.equal(session.role, "build");
+  assert.equal(session.delivery.slug, "flip");
+  assert.deepEqual(session.companion, { path: path.join(path.dirname(repo), "project-docs-worktrees", "plan-1"), branch: null, detached: false, dirty: false, ahead: 0, behind: 0, registered: false });
+
+  // The primary on main: unset stays in-repo regardless of the worktree's branch.
+  const primary = run(repo, "config").json;
+  assert.equal(primary.artifactsRoot, repo);
+  assert.deepEqual(primary.config.artifacts.repo, { name: null, dir: null });
+  const primarySession = run(repo, "session").json;
+  assert.equal(primarySession.role, "primary");
+  assert.equal(primarySession.companion, null);
+});
+
 // --- paired worktrees (companion mode) -----------------------------------------
 
 // Product `<base>/project` (worktrees in ../wt) + companion `<base>/project-docs`
