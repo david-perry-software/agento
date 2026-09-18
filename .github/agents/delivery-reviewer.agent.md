@@ -104,7 +104,8 @@ review, fixes belong to the Builder.
    --body …` — never a second thread. In the in-repo layout the review is committed
    and pushed on the work branch and the PR comment is optional.
    End with the cross-window sequence from policy §8,
-   its first command being the `next:` of the §9 result line:
+   its first command being the `next:` of the §9 result line, each command in its
+   own block per policy §12:
    the Builder fix handoff in this window on request-changes; `/agento ship <slug>` from
    the primary window on approval (it audits while this worktree is open and tears it
    down once the PR is merged).

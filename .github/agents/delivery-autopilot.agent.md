@@ -79,7 +79,8 @@ Repeat until approve, human-needed, or cycle cap:
    procedure and commit review.md with an explicit verdict".
 4. **Read verdict** from review.md:
    - `Verdict: approve` → done. Report the verdict summary and the cross-window
-     sequence from policy §8: `/agento ship <slug>` from the primary window (it audits
+     sequence from policy §8, each command in its own block per policy §12:
+     `/agento ship <slug>` from the primary window (it audits
      this open worktree first and tears it down once the PR is merged).
    - `Verdict: request-changes` → if under the cycle cap, invoke the Builder with:
      "address the request-changes findings in review.md — add each finding as a
@@ -91,4 +92,5 @@ Repeat until approve, human-needed, or cycle cap:
 After every phase, emit a one-line progress note: phase, round number (e.g. round 2/3),
 roadmap status, and verdict if any. On any stop — approve, manual pause, auth halt,
 stall, or cap — state precisely what the user must do next in the §9 result line's
-`next:` command.
+`next:` command, repeated as a block per policy §12 directly above it (the Builder's
+relayed resume command likewise).
