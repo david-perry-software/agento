@@ -4,11 +4,24 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { defaultConfig, loadAgentoConfig, resolveArtifactsRoot } from "./agento-config.mjs";
+import { defaultConfig, loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 
 function tmpRoot(prefix = "agento-config-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
+
+test("parseConfigText merges a JSON text over the defaults for the given root: nulls keep defaults, nested repo is set", () => {
+  const root = path.join("tmp", "my-project");
+  const nulls = parseConfigText(JSON.stringify({ worktrees: { dir: null }, branches: { default: null }, artifacts: { repo: { name: null, dir: null } } }), root);
+  assert.deepEqual(nulls, defaultConfig(root));
+  const nested = parseConfigText(JSON.stringify({ artifacts: { repo: { name: "my-project-docs" } }, branches: { default: "trunk" } }), root);
+  assert.deepEqual(nested.artifacts.repo, { name: "my-project-docs", dir: null });
+  assert.equal(nested.artifacts.features, "features");
+  assert.equal(nested.branches.default, "trunk");
+  assert.equal(nested.branches.feature, "feature/");
+  assert.match(nested.worktrees.dir.replace(/\\/g, "/"), /^\.\.\/my-project-worktrees$/);
+  assert.throws(() => parseConfigText("not json", root), SyntaxError);
+});
 
 test("defaults derive the worktree dir from the repository directory name", () => {
   const root = tmpRoot();

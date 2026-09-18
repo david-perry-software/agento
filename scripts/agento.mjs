@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadAgentoConfig, resolveArtifactsRoot } from "./agento-config.mjs";
+import { loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
   closeBuildSessionDecision,
   evaluateShipPreflight,
@@ -178,6 +178,46 @@ function companionWorktrees() {
   if (!artifacts.external) return [];
   companionWorktreesCache ??= parseWorktreeList(git(artifacts.dir, "worktree", "list", "--porcelain"));
   return companionWorktreesCache;
+}
+
+// The artifact objects a slug-targeted read works against. `layout: "checkout"` is
+// this checkout's own resolution (the module-level objects). `layout: "branch"` is
+// the branch-aware fallback: from an in-repo checkout, the delivery branch's own
+// committed `.github/agento.json` (origin/<branch>, then <branch>) names a companion
+// that exists beside the primary, so the read is redone against that clone —
+// `/agento ship` from a `main` that is still in-repo finds a migrated roadmap this
+// way. Null when the branch sets no companion; `absent: true` (with `artifactsRoot`
+// naming the missing clone) when it names one that is not on disk — never auto-cloned.
+function checkoutLayout() {
+  return { layout: "checkout", artifacts, artifactsRoot, artifactsGit, companionWorktreesDir, companionWorktrees: companionWorktrees(), absent: false };
+}
+
+function layoutFor(branch) {
+  if (artifacts.external) return checkoutLayout();
+  if (!branch) return null;
+  const text = git(root, "show", `origin/${branch}:.github/agento.json`) || git(root, "show", `${branch}:.github/agento.json`);
+  if (!text) return null;
+  let branchConfig;
+  try {
+    branchConfig = parseConfigText(text, root);
+  } catch {
+    return null;
+  }
+  const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+  const resolved = resolveArtifactsRoot({ config: branchConfig, rootDir: root, primaryRoot });
+  if (!resolved.external) return null;
+  const dir = resolved.dir;
+  const toplevel = git(dir, "rev-parse", "--show-toplevel");
+  if (!toplevel || !samePath(toplevel, dir)) return { layout: "branch", artifacts: resolved, artifactsRoot: dir, artifactsGit: null, companionWorktreesDir: resolved.worktreesDir, companionWorktrees: [], absent: true };
+  return {
+    layout: "branch",
+    artifacts: resolved,
+    artifactsRoot: dir,
+    artifactsGit: { lsTree: (ref) => git(dir, "ls-tree", "-r", "--name-only", ref), show: (spec) => git(dir, "show", spec) },
+    companionWorktreesDir: resolved.worktreesDir,
+    companionWorktrees: parseWorktreeList(git(dir, "worktree", "list", "--porcelain")),
+    absent: false,
+  };
 }
 
 // The companion half paired with a managed product worktree, with the git facts the
