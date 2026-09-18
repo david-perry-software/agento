@@ -154,7 +154,7 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
 test("policy section references (§N) point at sections that exist", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
-  assert.ok(sections.size >= 11, "policy file lost sections");
+  assert.ok(sections.size >= 12, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, n] of text.matchAll(/§(\d+)/g)) {
@@ -177,6 +177,14 @@ test("every command and agent declares its window check (§11)", () => {
     if (!/Window check per .*§11.*requires role/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
   }
   assert.deepEqual(missing, [], `files that do not declare a §11 window check (requires role):\n${missing.join("\n")}`);
+});
+
+test("every command and agent cites the §12 command presentation rule", () => {
+  const missing = [];
+  for (const file of [...promptFiles, ...agentFiles]) {
+    if (!/§12\b/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
+  }
+  assert.deepEqual(missing, [], `files that do not cite policy §12 (command presentation):\n${missing.join("\n")}`);
 });
 
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
@@ -279,6 +287,7 @@ test("the policy file is the only place the shared rules are spelled out", () =>
     /^Preflight: /m,
     /; fallback: </,
     /switch to Agent mode/,
+    /copyable command block/,
   ];
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     if (file.endsWith("delivery-policy.instructions.md")) continue;
