@@ -379,6 +379,17 @@ an unusable paste.
   window; the Build-in-this-worktree offer's `/agento build-<type> <slug>`
   alternative.
 
+**Unattended alternative.** Whenever one of those blocks holds
+`/agento build-<type> <slug>` or `/agento review-<type> <slug>` — the §8 handoff,
+the Builder fix handoff, the Builder pause resume command, the ship reject-back
+handoff, the Build-in-this-worktree offer, the next-feature report, and
+`/agento continue` when it names one of those — the response also offers
+`/agento ap <slug>` in its own block directly after it, preceded by one line naming
+it as the unattended alternative (for example "Or unattended, in this window:").
+The ap block follows build and review commands only — never `/agento ship`,
+`/agento start-session`, or any other command — and the §9 result line's `next:`
+stays the build or review command.
+
 **Where it does not apply.** Descriptive mentions — what a command does, what an agent
 never runs, the redirect sentence, table rows, headers — stay inline in backticks.
 Repository prose (README, docs, templates, AGENTS.md) is out of scope and keeps inline
