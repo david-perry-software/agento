@@ -183,15 +183,19 @@ Ownership does not apply when resuming only the post-ship epilogue.
      directory name in `artifacts.repo.name` is never a `--repo` value) — but wait
      only on the code PR's checks here.
    - Merge with a normal merge commit through the ruleset (no admin, no bypass) and
-     delete the remote work branch. In the primary: switch to `main` (it already is
-     on the owner path), `git fetch --prune`, fast-forward, and verify a clean tree
-     with zero ahead/behind.
+     delete the remote work branch: `git push origin --delete <branch>`, run from
+     the primary on `main` (the guard allows deleting a non-default branch there);
+     `gh pr merge --delete-branch` is not an alternative because it also deletes the
+     local branch, which the owner worktree has checked out. In the primary: switch
+     to `main` (it already is on the owner path), `git fetch --prune`, fast-forward,
+     and verify a clean tree with zero ahead/behind.
    - *Companion mode* — **mark the companion PR ready, wait, merge** (the resume
      point of the §9 `MERGED`/`OPEN` case; `gh pr ready <m>` is a no-op when the
      bullet above already ran): `scripts/wait-for-checks.sh pr <m> --repo
      <nameWithOwner>` in the foreground (exit 2 = rerun), then merge the companion
      PR from inside the clone with a normal merge commit through its ruleset and
-     delete its remote branch. Code first, companion second, because the code PR's
+     delete its remote branch: `git -C <artifactsRoot> push origin --delete <branch>`.
+     Code first, companion second, because the code PR's
      required checks are the real gate while the companion carries only artifacts.
      A failed companion merge is a resumable hard stop: write nothing further and end
      with the §9 failed result line reading exactly

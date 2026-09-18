@@ -102,3 +102,11 @@ allow git log --oneline -- scripts/hooks/
 allow cat scripts/hooks/delivery-guard.sh > /tmp/copy.sh
 allow code scripts/hooks/delivery-guard.sh
 allow shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh
+
+# Deleting a non-default remote branch is allowed even from the default branch (#47 guard-branch-delete-on-main)
+allow git switch main && git push origin --delete feature/x
+allow git switch main && git push origin :feature/x
+allow git switch main && git push origin -d feature/x
+deny  git switch main && git push origin --delete main
+deny  git switch main && git push origin :main
+deny  git switch main && git push origin HEAD:feature/x

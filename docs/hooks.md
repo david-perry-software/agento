@@ -49,7 +49,7 @@ tracking branch switches earlier in the same line.
 |---|---|
 | Commit, push, or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain — or a push whose refspec targets it | deny |
 | `git push --force` / `--force-with-lease` / `--force-if-includes` / `-f` / `+refspec` | deny |
-| `git push --delete <default>` / `:<default>` | deny |
+| `git push --delete <default>` / `:<default>` — deleting any **non-default** remote branch (`--delete <ref>` / `:<ref>`) is allowed even while the checkout is on the default branch (#47) | deny |
 | `git commit --no-verify` / `-n`, `git push --no-verify` | deny |
 | `gh pr merge --admin` | deny |
 | `gh pr merge --squash` / `--rebase` | ask |

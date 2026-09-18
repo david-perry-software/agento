@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2 (2026-09-18)
+
+- **Fixed.** The delivery guard no longer denies `git push --delete <branch>` /
+  `git push :<branch>` of a non-default branch while the checkout is on the default
+  branch, so `/agento ship`'s post-merge teardown runs from the primary; deleting the
+  default branch itself and content pushes from it stay denied. `/agento ship` now
+  names the delete command (`git push origin --delete <branch>` from the primary,
+  `git -C <artifactsRoot> push origin --delete <branch>` for the companion) and
+  notes that `gh pr merge --delete-branch` is not an alternative. (#47)
+
 ## 0.5.1 (2026-09-18)
 
 - **Copyable command blocks.** New delivery-policy §12 (command presentation):
