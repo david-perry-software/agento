@@ -189,7 +189,7 @@ function companionWorktrees() {
 // way. Null when the branch sets no companion; `absent: true` (with `artifactsRoot`
 // naming the missing clone) when it names one that is not on disk — never auto-cloned.
 function checkoutLayout() {
-  return { layout: "checkout", artifacts, artifactsRoot, artifactsGit, companionWorktreesDir, companionWorktrees: companionWorktrees(), absent: false };
+  return { layout: "checkout", config, artifacts, artifactsRoot, artifactsGit, agit, companionWorktreesDir, companionWorktrees: companionWorktrees(), absent: false };
 }
 
 function layoutFor(branch) {
@@ -208,24 +208,68 @@ function layoutFor(branch) {
   if (!resolved.external) return null;
   const dir = resolved.dir;
   const toplevel = git(dir, "rev-parse", "--show-toplevel");
-  if (!toplevel || !samePath(toplevel, dir)) return { layout: "branch", artifacts: resolved, artifactsRoot: dir, artifactsGit: null, companionWorktreesDir: resolved.worktreesDir, companionWorktrees: [], absent: true };
+  const bound = (...args) => git(dir, ...args);
+  if (!toplevel || !samePath(toplevel, dir)) {
+    return { layout: "branch", config: branchConfig, artifacts: resolved, artifactsRoot: dir, artifactsGit: null, agit: bound, companionWorktreesDir: resolved.worktreesDir, companionWorktrees: [], absent: true };
+  }
   return {
     layout: "branch",
+    config: branchConfig,
     artifacts: resolved,
     artifactsRoot: dir,
-    artifactsGit: { lsTree: (ref) => git(dir, "ls-tree", "-r", "--name-only", ref), show: (spec) => git(dir, "show", spec) },
+    artifactsGit: { lsTree: (ref) => bound("ls-tree", "-r", "--name-only", ref), show: (spec) => bound("show", spec) },
+    agit: bound,
     companionWorktreesDir: resolved.worktreesDir,
-    companionWorktrees: parseWorktreeList(git(dir, "worktree", "list", "--porcelain")),
+    companionWorktrees: parseWorktreeList(bound("worktree", "list", "--porcelain")),
     absent: false,
   };
+}
+
+const deliveryBranch = (type, slug) => `${type === "feature" ? config.branches.feature : config.branches.issue}${slug}`;
+
+// The slug-targeted read: this checkout's layout first; when that is `missing` in
+// an in-repo checkout, the delivery branch's own layout (`layoutFor`). Returns the
+// resolution and the layout it came from; an absent companion stays `missing` with
+// the clone named in the message.
+function resolveWithLayout(type, slug) {
+  const base = checkoutLayout();
+  const first = resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config });
+  if (first.status !== "missing" || artifacts.external) return { result: first, layout: base };
+  const branch = deliveryBranch(type, slug);
+  const alt = layoutFor(branch);
+  if (!alt) return { result: first, layout: base };
+  if (alt.absent) {
+    return { result: { ...first, message: `${first.message} ${branch} sets artifacts.repo to ${alt.artifacts.name}, but the companion checkout ${alt.artifactsRoot} is not on disk; clone it with /agento agento-init.` }, layout: base };
+  }
+  const second = resolveRoadmapArtifact({ rootDir: root, artifactsRoot: alt.artifactsRoot, type, slug, currentBranch, git: alt.artifactsGit, config: alt.config });
+  return second.status === "missing" ? { result: first, layout: base } : { result: second, layout: alt };
+}
+
+const withLayout = (result, layout) => ({ ...result, layout: layout.layout, artifactsRoot: layout.artifactsRoot });
+
+// The same retry for the resolver's decision helpers (close-decision, ship-preflight),
+// which report a missing roadmap as `reason: "no-resolvable-roadmap"`.
+function decideWithLayout(type, slug, decide) {
+  const base = checkoutLayout();
+  const first = decide(base);
+  if (first.reason !== "no-resolvable-roadmap" || artifacts.external) return { decision: first, layout: base };
+  const branch = deliveryBranch(type, slug);
+  const alt = layoutFor(branch);
+  if (!alt) return { decision: first, layout: base };
+  if (alt.absent) {
+    return { decision: { ...first, message: `${first.message} ${branch} sets artifacts.repo to ${alt.artifacts.name}, but the companion checkout ${alt.artifactsRoot} is not on disk; clone it with /agento agento-init.` }, layout: base };
+  }
+  const second = decide(alt);
+  return second.reason === "no-resolvable-roadmap" ? { decision: first, layout: base } : { decision: second, layout: alt };
 }
 
 // The companion half paired with a managed product worktree, with the git facts the
 // close and ship decisions need: `dirty` (uncommitted changes), `ahead` (commits
 // not on the upstream, or on no remote ref at all when there is no upstream), and
-// `behind` (upstream commits not in HEAD; 0 without an upstream).
-function describeCompanion(worktree) {
-  const pair = pairFor({ worktree, companionWorktreesDir, companionWorktrees: companionWorktrees() });
+// `behind` (upstream commits not in HEAD; 0 without an upstream). `layout` names
+// the companion objects (this checkout's by default; a branch's for the fallback).
+function describeCompanion(worktree, layout = checkoutLayout()) {
+  const pair = pairFor({ worktree, companionWorktreesDir: layout.companionWorktreesDir, companionWorktrees: layout.companionWorktrees });
   if (!pair) return null;
   if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0, behind: 0 };
   const dirty = git(pair.path, "status", "--porcelain") !== "";
@@ -245,9 +289,9 @@ function describeWorkspace(worktree, sessionWorktreesDir) {
 
 // close-decision / ship-preflight: the companion half owned alongside the product
 // half, or null when no managed worktree owns the branch (or in-repo mode).
-function companionOfOwner(owner) {
+function companionOfOwner(owner, layout) {
   if (!owner || owner.role === "primary" || !owner.dirPrefix) return null;
-  return describeCompanion({ isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id });
+  return describeCompanion({ isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id }, layout);
 }
 
 function companionGaps(companion) {
@@ -332,19 +376,20 @@ function describe(file, type, base = artifactsRoot) {
 }
 
 // The same record read from a git ref (`origin/<branch>` or a local branch), for
-// roadmaps that exist only on a delivery branch. `roadmap` is repository-relative.
-function describeFromRef(ref, roadmap, type) {
-  const content = agit("show", `${ref}:${roadmap}`);
+// roadmaps that exist only on a delivery branch. `roadmap` is repository-relative;
+// `g` is the git binding of the checkout that holds the ref (the artifacts root).
+function describeFromRef(ref, roadmap, type, g = agit) {
+  const content = g("show", `${ref}:${roadmap}`);
   if (!content) return null;
   const dir = path.posix.dirname(roadmap);
-  const tree = new Set(agit("ls-tree", "--name-only", ref, `${dir}/`).split("\n").filter(Boolean));
+  const tree = new Set(g("ls-tree", "--name-only", ref, `${dir}/`).split("\n").filter(Boolean));
   return describeContent({
     type,
     dir,
     roadmap,
     content,
     planExists: tree.has(`${dir}/plan.md`),
-    reviewContent: tree.has(`${dir}/review.md`) ? agit("show", `${ref}:${dir}/review.md`) : null,
+    reviewContent: tree.has(`${dir}/review.md`) ? g("show", `${ref}:${dir}/review.md`) : null,
   });
 }
 
@@ -401,11 +446,11 @@ function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
   }
 }
 
-// The mirrored artifact PR: the same branch name looked up in the companion clone.
-// In-repo layout → null with no gh call, so today's output is unchanged.
-function lookupCompanionPullRequest(branch) {
-  if (!artifacts.external) return { pr: null, warnings: [] };
-  return lookupPullRequest(branch, { cwd: artifactsRoot, label: "companionPr" });
+// The mirrored artifact PR: the same branch name looked up in the companion clone
+// the layout names. In-repo layout → null with no gh call, so today's output is unchanged.
+function lookupCompanionPullRequest(branch, layout = checkoutLayout()) {
+  if (!layout.artifacts.external) return { pr: null, warnings: [] };
+  return lookupPullRequest(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
 }
 
 // worktrees.dir is relative to the primary checkout; resolving it against a
@@ -750,10 +795,11 @@ function deriveInitiative(breakdown, roadmaps) {
 // --- next ------------------------------------------------------------------
 
 // The ref a delivery branch is judged from: origin/<branch> when fetched, else the
-// local branch (with a warning: no fetch happens here), else HEAD.
-function refFor(branch) {
-  if (branch && agit("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) return { ref: `origin/${branch}`, warning: null };
-  if (branch && agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
+// local branch (with a warning: no fetch happens here), else HEAD. `g` binds the
+// checkout holding the artifacts (this one's, or a branch layout's companion).
+function refFor(branch, g = agit) {
+  if (branch && g("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) return { ref: `origin/${branch}`, warning: null };
+  if (branch && g("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
     return { ref: branch, warning: `${branch}: origin/${branch} is absent, so review freshness and roadmap state reflect the local branch as of the last fetch` };
   }
   return { ref: "HEAD", warning: null };
@@ -761,31 +807,33 @@ function refFor(branch) {
 
 // review.md is fresh when its last commit is not older than the last commit that
 // touched anything else on the branch; null when the branch has no review.md.
-function reviewFreshness(branch, dir) {
-  const { ref, warning } = refFor(branch);
-  const reviewTs = agit("log", "-1", "--format=%ct", ref, "--", `${dir}/review.md`);
+function reviewFreshness(branch, dir, g = agit) {
+  const { ref, warning } = refFor(branch, g);
+  const reviewTs = g("log", "-1", "--format=%ct", ref, "--", `${dir}/review.md`);
   if (!reviewTs) return { reviewFresh: null, ref, warning };
-  const otherTs = agit("log", "-1", "--format=%ct", ref, "--", ".", `:(exclude)${dir}/review.md`);
+  const otherTs = g("log", "-1", "--format=%ct", ref, "--", ".", `:(exclude)${dir}/review.md`);
   return { reviewFresh: Number(reviewTs) >= Number(otherTs || 0), ref, warning };
 }
 
 // A roadmap that lives only on its delivery branch: origin/<branch> first (via the
-// shared resolver), then the unpushed local branch. Never fetches.
+// shared resolver, branch-aware), then the unpushed local branch. Never fetches.
+// The record carries the layout it was read from.
 function roadmapOnBranch(type, slug) {
-  const resolved = resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config });
+  const { result: resolved, layout } = resolveWithLayout(type, slug);
+  const tag = (record) => ({ ...record, layout: layout.layout, artifactsRoot: layout.artifactsRoot });
   if (resolved.status === "ok" && resolved.source === "remote") {
-    const record = describeFromRef(`origin/${resolved.branch}`, resolved.path, type);
-    if (record) return { record, source: "origin" };
+    const record = describeFromRef(`origin/${resolved.branch}`, resolved.path, type, layout.agit);
+    if (record) return { record: tag(record), source: "origin", layout };
   }
-  const branch = `${type === "feature" ? config.branches.feature : config.branches.issue}${slug}`;
-  if (!agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
-  const top = type === "feature" ? config.artifacts.features : config.artifacts.issues;
-  const roadmap = agit("ls-tree", "-r", "--name-only", branch)
+  const branch = deliveryBranch(type, slug);
+  if (!layout.agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
+  const top = type === "feature" ? layout.config.artifacts.features : layout.config.artifacts.issues;
+  const roadmap = layout.agit("ls-tree", "-r", "--name-only", branch)
     .split("\n")
     .find((p) => p.startsWith(`${top}/`) && p.endsWith(`/${slug}/roadmap.md`));
   if (!roadmap) return null;
-  const record = describeFromRef(branch, roadmap, type);
-  return record ? { record, source: "local-branch" } : null;
+  const record = describeFromRef(branch, roadmap, type, layout.agit);
+  return record ? { record: tag(record), source: "local-branch", layout } : null;
 }
 
 // Where `/agento continue` finds the files to follow for the emitted command: the
@@ -823,16 +871,17 @@ switch (command) {
   case "resolve": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    withExit(resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config }));
+    const { result, layout } = resolveWithLayout(type, slug);
+    withExit(withLayout(result, layout));
     break;
   }
 
   case "find": {
     const slug = requireSlug(rest[0]);
-    const results = ["feature", "issue"].map((type) => ({
-      type,
-      ...resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config }),
-    }));
+    const results = ["feature", "issue"].map((type) => {
+      const { result, layout } = resolveWithLayout(type, slug);
+      return { type, ...withLayout(result, layout) };
+    });
     const found = results.filter((r) => r.status !== "missing");
     if (found.length === 0) withExit({ status: "missing", message: `No roadmap for slug ${slug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin.` });
     if (found.length > 1) withExit({ status: "conflict", candidates: found, message: `Slug ${slug} exists as both a feature and an issue; specify the type.` });
@@ -856,9 +905,12 @@ switch (command) {
   case "close-decision": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    const decision = closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: git(root, "worktree", "list", "--porcelain"), git: artifactsGit, rootDir: root, artifactsRoot, config });
-    if (decision.status !== "ok") withExit(decision);
-    const companion = companionOfOwner(decision.owner);
+    const worktreeList = git(root, "worktree", "list", "--porcelain");
+    const { decision, layout } = decideWithLayout(type, slug, (l) =>
+      closeBuildSessionDecision({ type, slug, currentBranch, worktreeList, git: l.artifactsGit, rootDir: root, artifactsRoot: l.artifactsRoot, config: l.config }),
+    );
+    if (decision.status !== "ok") withExit(withLayout(decision, layout));
+    const companion = companionOfOwner(decision.owner, layout);
     const gaps = companionGaps(companion);
     if (gaps.length) {
       const behindOnly = gaps.length === 1 && gaps[0] === "behind";
@@ -866,35 +918,43 @@ switch (command) {
         ? `run git -C ${companion.path} merge origin/${companion.branch} (a fast-forward) before closing ${type}/${slug}`
         : `commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost`;
       const state = gaps.map((g) => (g === "behind" ? "behind its upstream" : g)).join(" and ");
-      withExit({
-        status: "error",
-        reason: "companion-unpushed",
-        owner: decision.owner,
-        companion,
-        message: `The companion half at ${companion.path} is ${state}; ${fix}.`,
-      });
+      withExit(
+        withLayout(
+          {
+            status: "error",
+            reason: "companion-unpushed",
+            owner: decision.owner,
+            companion,
+            message: `The companion half at ${companion.path} is ${state}; ${fix}.`,
+          },
+          layout,
+        ),
+      );
     }
-    withExit({ ...decision, companion });
+    withExit(withLayout({ ...decision, companion }, layout));
     break;
   }
 
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    const preflight = evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot, currentBranch, git: artifactsGit, config, worktreeList: git(root, "worktree", "list", "--porcelain") });
-    if (preflight.status !== "ok") withExit(preflight);
-    const companion = companionOfOwner(preflight.owner);
+    const worktreeList = git(root, "worktree", "list", "--porcelain");
+    const { decision: preflight, layout } = decideWithLayout(type, slug, (l) =>
+      evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot: l.artifactsRoot, currentBranch, git: l.artifactsGit, config: l.config, worktreeList }),
+    );
+    if (preflight.status !== "ok") withExit(withLayout(preflight, layout));
+    const companion = companionOfOwner(preflight.owner, layout);
     const gaps = companionGaps(companion);
-    if (!options.pr) withExit({ ...preflight, companion, companionGaps: gaps });
+    if (!options.pr) withExit(withLayout({ ...preflight, companion, companionGaps: gaps }, layout));
     const { pr, warnings: prWarnings } = lookupPullRequest(preflight.branch);
-    const { pr: companionPr, warnings: companionPrWarnings } = lookupCompanionPullRequest(preflight.branch);
+    const { pr: companionPr, warnings: companionPrWarnings } = lookupCompanionPullRequest(preflight.branch, layout);
     // A MERGED companion PR is the resume-at-teardown case, not a gap.
-    if (artifacts.external) {
+    if (layout.artifacts.external) {
       if (!companionPr) gaps.push("missing-pr");
       else if (companionPr.state === "CLOSED") gaps.push("pr-not-open");
       else if (companionPr.mergeStateStatus === "CONFLICTING") gaps.push("conflicting-pr");
     }
-    withExit({ ...preflight, companion, companionGaps: gaps, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] });
+    withExit(withLayout({ ...preflight, companion, companionGaps: gaps, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] }, layout));
     break;
   }
 
@@ -1026,8 +1086,8 @@ switch (command) {
     if (hostedReason) warnings.unshift(hostedReason);
     const ownerOf = (branch) => findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch, config });
 
-    const toCandidate = (record, sourceKind) => {
-      const fresh = reviewFreshness(record.branch, record.dir);
+    const toCandidate = (record, sourceKind, layout = checkoutLayout()) => {
+      const fresh = reviewFreshness(record.branch, record.dir, layout.agit);
       if (fresh.warning) warnings.push(fresh.warning);
       return {
         kind: "delivery",
@@ -1044,6 +1104,8 @@ switch (command) {
         reviewFresh: fresh.reviewFresh,
         source: sourceKind,
         ref: fresh.ref,
+        layout: layout.layout,
+        artifactsRoot: layout.artifactsRoot,
       };
     };
 
@@ -1064,7 +1126,7 @@ switch (command) {
       if (d.roadmap) add(toCandidate(roadmaps.find((r) => r.type === d.type && r.slug === d.slug), "local"));
       else {
         const found = roadmapOnBranch(d.type, d.slug);
-        if (found) add(toCandidate(found.record, found.source));
+        if (found) add(toCandidate(found.record, found.source, found.layout));
       }
     }
     const members = [];
@@ -1090,7 +1152,7 @@ switch (command) {
             break;
           }
         }
-        if (resolved) add(toCandidate(resolved.record, resolved.source));
+        if (resolved) add(toCandidate(resolved.record, resolved.source, resolved.layout));
         else missingMessage = `No roadmap for slug ${requestedSlug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin, and no initiative member with that slug is ready.`;
       }
     }
@@ -1119,6 +1181,8 @@ switch (command) {
         slug: target?.slug ?? requestedSlug ?? null,
         type: target?.type ?? null,
         artifactPr: target?.artifactPr ?? null,
+        layout: target ? (target.layout ?? "checkout") : null,
+        artifactsRoot: target ? (target.artifactsRoot ?? artifactsRoot) : null,
         next: result.next,
         candidates: result.candidates,
         reviewFresh: targetFresh,

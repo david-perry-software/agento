@@ -283,6 +283,133 @@ test("layout rule: a worktree whose own branch sets artifacts.repo is companion 
   assert.equal(primarySession.companion, null);
 });
 
+// In-repo primary; product `feature/flip` commits only the companion config; the
+// companion's `feature/flip` (pushed to its origin) carries the roadmap.
+function makeFlipRepo() {
+  const repo = makeRepo({ config: { worktrees: { dir: "../wt" } }, companion: true });
+  const docs = companionOf(repo);
+  fs.mkdirSync(path.join(path.dirname(repo), "wt"));
+  git(repo, "switch", "-q", "-c", "feature/flip");
+  fs.writeFileSync(path.join(repo, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: "../wt" }, artifacts: { repo: { name: "project-docs" } } }));
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "chore: flip to companion");
+  git(repo, "push", "-q", "-u", "origin", "feature/flip");
+  git(repo, "switch", "-q", "main");
+  git(docs, "switch", "-q", "-c", "feature/flip");
+  writeRoadmap(docs, "features/2026/09/flip", "status: in-review\nbranch: feature/flip\nnext-step: review\nartifact-pr: \"#7\"");
+  git(docs, "add", "-A");
+  git(docs, "commit", "-q", "-m", "docs(feature): flip");
+  git(docs, "push", "-q", "-u", "origin", "feature/flip");
+  git(docs, "switch", "-q", "main");
+  assert.ok(!fs.existsSync(path.join(docs, "features")));
+  assert.ok(!fs.existsSync(path.join(repo, "features")));
+  return { repo, docs };
+}
+
+test("branch-aware resolution: from an in-repo primary, a branch whose config names the companion resolves its roadmap there with layout: branch", () => {
+  const { repo, docs } = makeFlipRepo();
+
+  const resolved = run(repo, "resolve", "feature", "flip");
+  assert.equal(resolved.code, 0);
+  assert.equal(resolved.json.status, "ok");
+  assert.equal(resolved.json.source, "remote");
+  assert.equal(resolved.json.branch, "feature/flip");
+  assert.equal(resolved.json.artifactPr, "#7");
+  assert.equal(resolved.json.layout, "branch");
+  assert.equal(resolved.json.artifactsRoot, docs);
+  assert.equal(resolved.json.root, repo);
+
+  const found = run(repo, "find", "flip");
+  assert.equal(found.json.type, "feature");
+  assert.equal(found.json.source, "remote");
+  assert.equal(found.json.layout, "branch");
+  assert.equal(found.json.artifactsRoot, docs);
+
+  const close = run(repo, "close-decision", "feature", "flip");
+  assert.equal(close.code, 0);
+  assert.equal(close.json.reason, "remote-roadmap-only");
+  assert.equal(close.json.layout, "branch");
+  assert.equal(close.json.artifactsRoot, docs);
+  assert.equal(close.json.companion, null);
+
+  const plain = run(repo, "ship-preflight", "feature", "flip");
+  assert.equal(plain.code, 0);
+  assert.equal(plain.json.resolutionSource, "remote");
+  assert.equal(plain.json.layout, "branch");
+  assert.equal(plain.json.artifactsRoot, docs);
+  assert.deepEqual(plain.json.companionGaps, []);
+
+  const marker = path.join(path.dirname(repo), "gh-invoked");
+  const { env } = restrictedPath({ gh: prStub(marker) });
+  const ship = runWith({ cwd: repo, env }, "ship-preflight", "feature", "flip", "--pr");
+  assert.equal(ship.code, 0);
+  assert.equal(ship.json.pr.number, 15);
+  assert.equal(ship.json.companionPr.number, 7);
+  assert.deepEqual(ship.json.companionGaps, []);
+  assert.deepEqual(ship.json.warnings, []);
+  const calls = fs.readFileSync(marker, "utf8").trim().split("\n");
+  assert.equal(calls.length, 2);
+  assert.match(calls[0], new RegExp(`^${repo} pr view feature/flip `));
+  assert.match(calls[1], new RegExp(`^${docs} pr view feature/flip `));
+  assert.deepEqual(runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker, { companion: "NONE" }) }).env }, "ship-preflight", "feature", "flip", "--pr").json.companionGaps, ["missing-pr"]);
+
+  const next = run(repo, "next", "flip");
+  assert.equal(next.code, 0);
+  assert.equal(next.json.status, "ok");
+  assert.equal(next.json.slug, "flip");
+  assert.equal(next.json.artifactPr, "#7");
+  assert.equal(next.json.layout, "branch");
+  assert.equal(next.json.artifactsRoot, docs);
+  assert.equal(next.json.next.invocation, "/agento start-session feature/flip");
+
+  // A branch naming a companion that is not on disk stays missing and names the path.
+  git(repo, "switch", "-q", "-c", "feature/ghost");
+  fs.writeFileSync(path.join(repo, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: "../wt" }, artifacts: { repo: { name: "nowhere-docs" } } }));
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "chore: ghost");
+  git(repo, "push", "-q", "-u", "origin", "feature/ghost");
+  git(repo, "switch", "-q", "main");
+  const ghost = run(repo, "resolve", "feature", "ghost");
+  assert.equal(ghost.code, 3);
+  assert.equal(ghost.json.status, "missing");
+  assert.equal(ghost.json.layout, "checkout");
+  assert.equal(ghost.json.artifactsRoot, repo);
+  assert.match(ghost.json.message, new RegExp(`companion checkout ${path.join(path.dirname(repo), "nowhere-docs")} is not on disk; clone it with /agento agento-init`));
+  assert.match(run(repo, "ship-preflight", "feature", "ghost").json.message, /nowhere-docs/);
+  assert.match(run(repo, "close-decision", "feature", "ghost").json.message, /nowhere-docs/);
+
+  // A plain in-repo branch: today's fields plus layout: checkout.
+  git(repo, "switch", "-q", "-c", "feature/plain");
+  writeRoadmap(repo, "features/2026/09/plain", "status: in-review\nbranch: feature/plain\nnext-step: review");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "plan");
+  git(repo, "push", "-q", "-u", "origin", "feature/plain");
+  git(repo, "switch", "-q", "main");
+  const plainBranch = run(repo, "resolve", "feature", "plain").json;
+  assert.equal(plainBranch.status, "ok");
+  assert.equal(plainBranch.source, "remote");
+  assert.equal(plainBranch.layout, "checkout");
+  assert.equal(plainBranch.artifactsRoot, repo);
+  assert.equal(plainBranch.artifactPr, null);
+  assert.equal(run(repo, "find", "plain").json.layout, "checkout");
+  const plainShip = run(repo, "ship-preflight", "feature", "plain").json;
+  assert.equal(plainShip.layout, "checkout");
+  assert.equal(plainShip.companion, null);
+  assert.equal(run(repo, "close-decision", "feature", "plain").json.layout, "checkout");
+  const nextPlain = run(repo, "next", "plain").json;
+  assert.equal(nextPlain.layout, "checkout");
+  assert.equal(nextPlain.artifactsRoot, repo);
+  // Branch-only deliveries become candidates once a managed worktree owns them; each summary carries its layout.
+  const wt = path.join(path.dirname(repo), "wt");
+  git(repo, "worktree", "add", "-q", path.join(wt, "feature-flip"), "feature/flip");
+  git(repo, "worktree", "add", "-q", path.join(wt, "feature-plain"), "feature/plain");
+  const ambiguous = run(repo, "next").json;
+  assert.equal(ambiguous.status, "ambiguous");
+  assert.deepEqual(ambiguous.candidates.map((c) => [c.slug, c.layout, c.artifactsRoot]).sort(), [["flip", "branch", docs], ["plain", "checkout", repo]]);
+  // The companion clone is never switched by any of the reads.
+  assert.equal(git(docs, "branch", "--show-current"), "main");
+});
+
 // --- paired worktrees (companion mode) -----------------------------------------
 
 // Product `<base>/project` (worktrees in ../wt) + companion `<base>/project-docs`
