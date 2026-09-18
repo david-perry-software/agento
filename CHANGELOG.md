@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.2 (unreleased)
+## 0.5.2 (2026-09-18)
 
 - **Fixed.** The delivery guard no longer denies `git push --delete <branch>` /
   `git push :<branch>` of a non-default branch while the checkout is on the default
