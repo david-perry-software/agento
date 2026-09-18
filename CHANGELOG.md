@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.1 (unreleased)
+## 0.5.1 (2026-09-18)
 
 - **Copyable command blocks.** New delivery-policy §12 (command presentation):
   every `/agento …` command a response asks the user to run — the §9 result's
