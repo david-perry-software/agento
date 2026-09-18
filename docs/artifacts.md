@@ -5,8 +5,13 @@ Each planned unit of work gets an immutable creation-month directory in the
 of the product checkout (`../<repo>-docs`, named by `.github/agento.json`
 `artifacts.repo.name`): `features/YYYY/MM/<slug>/` or `issues/YYYY/MM/<slug>/`
 (roots are configurable). Projects initialised before the companion existed keep
-the roots inside the product repository (`artifacts.repo` unset); once
-`artifacts.repo` is set, any in-repo copies are ignored. A large brief that
+the roots inside the product repository (`artifacts.repo` unset) — the in-repo
+layout is the pre-migration state; `/agento agento-init --migrate` moves the whole
+tree into the companion as one import commit. Once
+`artifacts.repo` is set, any in-repo copies are ignored. Plans written before a
+migration keep their historical links (`../../../../<path>` relative to their old
+location in the product tree); they are not rewritten, and the companion README's
+`## Migrated history` note says which repository to read them against. A large brief that
 decomposes into several features gets an initiative directory,
 `initiatives/YYYY/MM/<slug>/`.
 

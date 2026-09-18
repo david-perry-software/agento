@@ -2,7 +2,7 @@
 
 | Command | Agent | Purpose |
 |---|---|---|
-| `/agento agento-init` | default | Scaffold Agento into the current project (companion artifact repository created and cloned, config, AGENTS.md section, CI poller) |
+| `/agento agento-init [--force] [--migrate]` | default | Scaffold Agento into the current project (companion artifact repository created and cloned, config, AGENTS.md section, CI poller); `--migrate` also moves an existing in-repo artifact tree into the companion through a companion PR and a product PR |
 | `/agento install-skills` | default | Detect the project stack, propose matching agent skills, install approved ones, update the AGENTS.md skills table |
 | `/agento start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
 | `/agento new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
@@ -29,10 +29,21 @@ Prompts never re-derive slug resolution or config lookups in prose; they call th
 hook announces as `Agento CLI:`. Subcommands: `config` (the merged config with
 `worktrees.dir` and `artifacts.repo.dir` resolved to absolute paths, plus
 `artifactsRoot` — the checkout the artifact roots are read from: the repository
-itself, or the sibling companion checkout when `artifacts.repo` is set),
+itself, or the sibling companion checkout when `artifacts.repo` is set; the
+**layout rule** is "the checkout decides, the primary anchors": the current
+checkout's own `.github/agento.json` decides whether companion mode is on, the
+companion path is resolved against the primary checkout, and the primary's
+`artifacts.repo` values win when the primary sets them too),
 `resolve <type> <slug>`,
 `find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>` and
-`ship-preflight <type> <slug> [--pr]` (both report `owner` — `{ path, role, dirPrefix, id }`
+`ship-preflight <type> <slug> [--pr]` (all four report `layout` — `"checkout"`
+when the record came from the current checkout's layout, `"branch"` when an
+in-repo checkout found no roadmap and fell back to the delivery branch's own
+`.github/agento.json`, which named a companion that exists beside the primary — and
+`artifactsRoot`, the checkout the artifact was read from; the fallback lets
+`/agento ship` run from a primary whose `main` has not merged the migration PR yet;
+`close-decision` and `ship-preflight`
+both report `owner` — `{ path, role, dirPrefix, id }`
 or `null` — for the delivery branch, resolved exactly from `git worktree list
 --porcelain`; `close-decision` reasons are `managed-worktree-present`,
 `primary-owns-branch` (return the primary to the default branch first — nothing to
@@ -51,7 +62,9 @@ companion mode the same branch name in the companion clone as `companionPr`
 under it; in companion mode also `companion: { worktreesDir, worktree, branch }` —
 the paired half at `<artifacts.repo.dir>-worktrees/<kind>-<id>` — and `workspace`,
 the `<worktrees.dir>/<kind>-<id>.code-workspace` file the pair opens as; both `null`
-in the in-repo layout), `ports <slug>`,
+in the in-repo layout; for `feature`/`issue` kinds an in-repo checkout consults the
+delivery branch's own config the same way as `resolve`, so the pair is reported for
+a migrated branch too), `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
@@ -83,7 +96,20 @@ the named command's `Needs:` line requires and echoes them as `for.needs`),
 `status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`
 `{ command, args, invocation, window: here | primary | secondary, then, reason }`,
 `candidates[]`, and `dispatch { prompt, agent }` — the absolute paths of the command
-file and its agent file; never `/agento ap`; never fetches). Every call prints one JSON
+file and its agent file; never `/agento ap`; never fetches),
+`migrate <companion-checkout> [--apply]` (move the in-repo artifact roots into a
+companion checkout — the clone or one of its halves, whose clone must be a sibling
+of the primary checkout; filesystem work only, no git writes: the default dry run
+reports `roots[]`, `records` (every roadmap and breakdown found), and `conflicts[]`
+— any non-`.gitkeep` destination file the copy would overwrite is `status:
+"conflict"`, exit 3, nothing written; `--apply` copies every file byte-identically,
+removes the source roots, writes `artifacts.repo.name` into `.github/agento.json`
+(created from the template when absent, every other key preserved otherwise),
+appends a `## Migrated history` note to the companion `README.md` once, and reports
+`records.identical` plus `records.diff[]`, `moved[]`, `configWritten`, and
+`readmeNoteAdded`; a re-run with the roots already gone is `mode:
+"nothing-to-migrate"`, exit 0; `/agento agento-init --migrate` drives it and
+handles the commits and PRs). Every call prints one JSON
 document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`),
 3 = resolution failure
 (`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`,
