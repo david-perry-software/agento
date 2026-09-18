@@ -977,19 +977,24 @@ switch (command) {
     const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
     const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
     const branch = kind === "plan" ? null : `${prefixes[kind]}${id}`;
+    // Deliveries are branch-aware: an in-repo checkout whose delivery branch flips to
+    // a companion reports that companion's roots and pair (plan/freehand unchanged).
+    const branchLayout = artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
+    const layout = branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout();
     emit({
       status: "ok",
       worktreesDir,
       worktree: path.join(worktreesDir, `${kind}-${id}`),
       branch,
-      artifactsRoot,
-      artifactRoot: artifactRel === null ? null : path.join(artifactsRoot, artifactRel),
+      artifactsRoot: layout.artifactsRoot,
+      artifactRoot: artifactRel === null ? null : path.join(layout.artifactsRoot, artifactRel),
+      layout: layout.layout,
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
       // Companion mode: the paired companion half (same <kind>-<id>, same branch) and the
       // two-folder workspace file the session opens; both null in the in-repo layout.
-      companion: artifacts.external ? { worktreesDir: companionWorktreesDir, worktree: path.join(companionWorktreesDir, `${kind}-${id}`), branch } : null,
-      workspace: artifacts.external ? path.join(worktreesDir, `${kind}-${id}.code-workspace`) : null,
+      companion: layout.artifacts.external ? { worktreesDir: layout.companionWorktreesDir, worktree: path.join(layout.companionWorktreesDir, `${kind}-${id}`), branch } : null,
+      workspace: layout.artifacts.external ? path.join(worktreesDir, `${kind}-${id}.code-workspace`) : null,
     });
     break;
   }

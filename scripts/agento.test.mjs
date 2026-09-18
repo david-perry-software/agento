@@ -439,6 +439,7 @@ test("paths in companion mode adds the companion half and the workspace file; in
     assert.equal(json.branch, branch);
     assert.deepEqual(json.companion, { worktreesDir: docsWt, worktree: path.join(docsWt, `${kind}-${id}`), branch });
     assert.equal(json.workspace, path.join(wt, `${kind}-${id}.code-workspace`));
+    assert.equal(json.layout, "checkout");
   }
   const inRepo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
   for (const [kind, id] of [["plan", "20260916-1"], ["feature", "widget"], ["freehand", "tidy"]]) {
@@ -446,8 +447,41 @@ test("paths in companion mode adds the companion half and the workspace file; in
     assert.equal(json.status, "ok");
     assert.equal(json.companion, null);
     assert.equal(json.workspace, null);
+    assert.equal(json.layout, "checkout");
+    assert.equal(json.artifactsRoot, inRepo);
   }
   assert.match(run(repo).json.usage.join("\n"), /companion half and \.code-workspace/);
+});
+
+test("paths is branch-aware: from an in-repo primary a delivery branch that flips to the companion reports the pair; a plain branch stays in-repo", () => {
+  const { repo, docs } = makeFlipRepo();
+  const wt = path.join(path.dirname(repo), "wt");
+  const docsWt = path.join(path.dirname(repo), "project-docs-worktrees");
+  const flip = run(repo, "paths", "feature", "flip").json;
+  assert.equal(flip.status, "ok");
+  assert.equal(flip.layout, "branch");
+  assert.equal(flip.artifactsRoot, docs);
+  assert.equal(flip.artifactRoot, path.join(docs, "features"));
+  assert.equal(flip.worktree, path.join(wt, "feature-flip"));
+  assert.deepEqual(flip.companion, { worktreesDir: docsWt, worktree: path.join(docsWt, "feature-flip"), branch: "feature/flip" });
+  assert.equal(flip.workspace, path.join(wt, "feature-flip.code-workspace"));
+  // In-repo control: no config on the branch → today's output.
+  git(repo, "switch", "-q", "-c", "feature/plain");
+  writeRoadmap(repo, "features/2026/09/plain", "status: in-progress\nbranch: feature/plain\nnext-step: \"1.1\"");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "plan");
+  git(repo, "push", "-q", "-u", "origin", "feature/plain");
+  git(repo, "switch", "-q", "main");
+  const plain = run(repo, "paths", "feature", "plain").json;
+  assert.equal(plain.layout, "checkout");
+  assert.equal(plain.artifactsRoot, repo);
+  assert.equal(plain.artifactRoot, path.join(repo, "features"));
+  assert.equal(plain.companion, null);
+  assert.equal(plain.workspace, null);
+  // Plan and freehand kinds never consult a branch.
+  assert.equal(run(repo, "paths", "plan", "20260916-1").json.companion, null);
+  assert.equal(run(repo, "paths", "freehand", "tidy").json.companion, null);
+  assert.equal(git(docs, "branch", "--show-current"), "main");
 });
 
 test("session from a companion half anchors on the product primary and matches the product half", () => {
