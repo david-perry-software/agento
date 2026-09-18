@@ -405,7 +405,9 @@ for segment in segments:
     is_merge = (re.search(GIT + r"\s+(merge|cherry-pick|revert)\b", segment) is not None
                 and "--ff-only" not in segment and "--abort" not in segment)
     push_to_default = re.search(r"\spush\b.*(?:\s|:)" + DEFAULT + r"\b", segment) is not None
-    if (branch == default_branch and (is_commit or is_push or is_merge)) or (is_push and push_to_default):
+    # A delete-only push of another ref (--delete/-d <ref> or a bare :<ref>) is exempt from the on-default rule (#47).
+    is_delete_push = re.search(r"\spush\b.*\s(?:--delete\s+\S+|-d\s+\S+|:[\w./-]+)", segment) is not None
+    if (branch == default_branch and (is_commit or (is_push and not is_delete_push) or is_merge)) or (is_push and push_to_default):
         decide("deny", f"Direct commits/pushes to {default_branch} are forbidden; use a work branch and a pull request.")
 
     if is_commit and (branch.startswith(feature_prefix) or branch.startswith(issue_prefix)):
