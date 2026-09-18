@@ -207,7 +207,9 @@ command. Re-sending any command is safe: §9's idempotency table says, per comma
 what a duplicate submission does, all derived from git + roadmap state. Every
 `/agento …` command the user is asked to run — the result's `next:`, handoff and
 resume commands, a rejection's alternatives — is also emitted as its own one-command
-fenced block with no language tag, so chat offers a copy button on it (§12).
+fenced block with no language tag, so chat offers a copy button on it (§12), and
+every build or review command block is followed by an `/agento ap <slug>` block as
+the unattended alternative.
 
 ## Preflight
 

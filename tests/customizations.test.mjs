@@ -215,6 +215,29 @@ test("next-feature prints one command per fenced block", () => {
   assert.ok(blocks >= 5, `next-feature.prompt.md: expected the five-step command list, found ${blocks} blocks`);
 });
 
+test("build and review handoffs offer the /agento ap alternative", () => {
+  // Policy §12: every build-<type>/review-<type> command block is followed by an
+  // `/agento ap <slug>` block as the unattended alternative.
+  const files = [
+    rel(".github", "agents", "delivery-builder.agent.md"),
+    rel(".github", "agents", "delivery-reviewer.agent.md"),
+    rel(".github", "agents", "delivery-planner.agent.md"),
+    rel(".github", "prompts", "next-feature.prompt.md"),
+    rel(".github", "prompts", "ship.prompt.md"),
+    rel(".github", "prompts", "new-feature.prompt.md"),
+    rel(".github", "prompts", "new-issue.prompt.md"),
+  ];
+  const missing = files
+    .filter((file) => !/\/agento ap <(?:feature-)?slug>/.test(splitFrontmatter(file).body))
+    .map((file) => path.relative(repoRoot, file));
+  assert.deepEqual(missing, [], `files whose build/review handoff lacks the /agento ap alternative:\n${missing.join("\n")}`);
+  assert.match(
+    fs.readFileSync(rel("docs", "commands.md"), "utf8"),
+    /## Receipts[\s\S]*?\/agento ap[\s\S]*?\n## /,
+    "docs/commands.md ## Receipts must mention the /agento ap alternative",
+  );
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). `ship` stays here until
   // `ship-audit-first` removes its worktree precondition, then the list shrinks to three.

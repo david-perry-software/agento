@@ -10,8 +10,11 @@
   teardown-pause commands, and the Build-in-this-worktree alternative — is emitted
   as its own fenced block with no language tag holding exactly that one command, so
   VS Code chat offers a one-click copy button. Descriptive mentions stay inline.
+  Every build or review command block is followed by an `/agento ap <slug>` block
+  as the unattended alternative.
   Every agent and prompt cites §12; `tests/customizations.test.mjs` enforces the
-  citation and that `next-feature` prints one command per block.
+  citation, that `next-feature` prints one command per block, and that the
+  build/review handoffs offer the ap alternative.
 
 ## 0.5.0 (2026-09-18)
 
