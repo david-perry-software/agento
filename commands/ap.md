@@ -11,7 +11,8 @@ Capability vocabulary, hard/soft classification, and standard fallbacks: deliver
 Run the delivery named by the argument unattended.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (re-enter the build or review resume protocol wherever the roadmap
 stands). Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for ap` and map `fail`/`warn` per §10.

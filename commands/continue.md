@@ -69,15 +69,19 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      pair) — otherwise the folder path; `primary` is always the folder path (the
      primary window has no pair). When the `code` CLI is available (doctor check
      `code` is `ok`), run `code <workspace-or-path>` — it reuses an already-open
-     window — and name `next.invocation` as the command to run there; otherwise apply
-     the `code` fallback from §10 and name the same command. Do not run the command
-     in this window, and never run `/agento ship` from anywhere but the primary
-     window.
+     window — and name `next.invocation` as the command to run there, emitted as its
+     own block per policy §12 (and `next.then`, when set, as a second block after
+     it; when `next.invocation` is a build or review command, `/agento ap <slug>`
+     follows in its own block as the unattended alternative); otherwise apply the
+     `code` fallback from §10 and name the same command. Do
+     not run the command in this window, and never run `/agento ship` from anywhere
+     but the primary window.
 5. **Result.** The response carries one receipt (this command's) and one result line:
    the dispatched command's own outcome when it ran here, otherwise this command's
    completed state naming the window that was opened. Its `next:` is `next.then` when
    set; else `/agento continue <slug>` (the slug that was acted on) when a further
-   transition may follow; else the dispatched command's own `next:`.
+   transition may follow; else the dispatched command's own `next:` — repeated as a
+   block directly above the result line per policy §12.
 
 ## What continue never does
 
@@ -98,8 +102,8 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
   `/agento build-feature <slug>`, `window: here`: the Builder resumes in this window
   from `dispatch.prompt` + `dispatch.agent`.
 - Build worktree, `status: in-review`, fresh `Verdict: approve` → `/agento ship <slug>`,
-  `window: primary`: open the primary window and name the command; `ship` audits this
-  worktree first and tears it down after the merge.
+  `window: primary`: open the primary window and name the command in its own block
+  (§12); `ship` audits this worktree first and tears it down after the merge.
 - Primary window, one delivery in flight → `/agento start-session <type>/<slug> --resume`,
   `then: /agento continue <slug>`: reopen its worktree window; the result's `next:` is
   the `then`.

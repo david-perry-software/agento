@@ -11,7 +11,8 @@ Capability vocabulary, hard/soft classification, and standard fallbacks: deliver
 
 Report the state of all delivery work, read-only. Do not modify any files or branches.
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (read-only: a fresh read). Window check per §11: requires role
 `any` (read-only / not window-sensitive).
 

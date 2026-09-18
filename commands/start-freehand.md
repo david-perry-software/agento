@@ -93,6 +93,7 @@ project's AGENTS.md.
 
 Report the worktree path, the branch, whether it was created or resumed (plus the
 companion half and the workspace file when they exist), and the exact
-follow-up commands: work freely in the new window, then `/agento finish-freehand` there to
-commit, publish, and merge, and finally `/agento close-session changes/<slug>` from this
-primary window.
+follow-up commands as a numbered list with one block per item per policy §12, each
+item naming its window in prose: work freely in the new window, then
+`/agento finish-freehand` there to commit, publish, and merge, and finally
+`/agento close-session changes/<slug>` from this primary window.

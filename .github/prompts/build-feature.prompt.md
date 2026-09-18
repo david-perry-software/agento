@@ -15,7 +15,8 @@ path is announced in the session context as `Agento CLI:`) — and act on the JS
 are hard stops — report the `message` verbatim.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (the Builder resume/audit protocol below — ticked steps are audited,
 never redone). Before the first write, run `node <agento-root>/scripts/agento.mjs
 doctor --for build-feature` and map `fail`/`warn` per §10.

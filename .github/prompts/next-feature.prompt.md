@@ -37,20 +37,57 @@ idempotency row (read-only: a fresh read). Window check per §11: requires role
 3. If `next` is `null`: when `done` is `true`, say the initiative is fully delivered
    and stop; otherwise name the in-flight members that must reach `status: complete`
    before anything else becomes ready, and stop.
-4. Otherwise print the exact commands for `next`, with the slugs substituted:
+4. Otherwise print the exact commands for `next`, with the slugs substituted, as a
+   numbered list — one locating line, then one bare fenced block holding exactly one
+   command, per policy §12:
 
-   ```text
-   /agento start-session                                        # primary window → new plan-<id> worktree + window
-   /agento new-feature initiative:<initiative-slug>/<feature-slug>   # secondary window → plan.md + roadmap.md + draft PR
-   Build in this worktree  (Planner handoff)  — or —  /agento build-feature <feature-slug>   # secondary window
-   /agento review-feature <feature-slug>                        # secondary window; then, from the primary window:
-   /agento ship <feature-slug>                                  # audits in place, merges, tears the worktree down
+   1. In the primary window (creates a new `plan-<id>` worktree and window):
+
+      ```
+      /agento start-session
+      ```
+
+   2. In the new secondary window (writes plan.md, roadmap.md, and the draft PR):
+
+      ```
+      /agento new-feature initiative:<initiative-slug>/<feature-slug>
+      ```
+
+   3. In the secondary window, take the Planner's **Build in this worktree** handoff,
+      or run:
+
+      ```
+      /agento build-feature <feature-slug>
+      ```
+
+      Or unattended, in the same window (builds, reviews, and fixes until approve):
+
+      ```
+      /agento ap <feature-slug>
+      ```
+
+   4. In the secondary window, after the build completes:
+
+      ```
+      /agento review-feature <feature-slug>
+      ```
+
+   5. From the primary window, after `Verdict: approve` (audits in place, merges,
+      tears the worktree down):
+
+      ```
+      /agento ship <feature-slug>
+      ```
+
+   Then list every other `ready` member as plannable concurrently — each needs its own
+   `/agento start-session` first (identical to block 1), then one block per member:
+
+   ```
+   /agento new-feature initiative:<initiative-slug>/<other-feature-slug>
    ```
 
-   Then list every other `ready` member as plannable concurrently, each with its own
-   `/agento start-session` → `/agento new-feature initiative:<initiative-slug>/<feature-slug>`
-   pair, and note that members in the same wave with no `Requires:` between them can
-   be planned and built in separate sessions at the same time.
+   Note that members in the same wave with no `Requires:` between them can be planned
+   and built in separate sessions at the same time.
 
 Never run `/agento start-session` or `/agento new-feature` yourself, and never modify the breakdown
 — progress is derived from the member roadmaps, not recorded here.

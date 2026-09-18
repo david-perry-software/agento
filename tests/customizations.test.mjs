@@ -154,7 +154,7 @@ test("relative links inside agents, prompts, and instructions resolve", () => {
 test("policy section references (§N) point at sections that exist", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
-  assert.ok(sections.size >= 11, "policy file lost sections");
+  assert.ok(sections.size >= 12, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, n] of text.matchAll(/§(\d+)/g)) {
@@ -177,6 +177,65 @@ test("every command and agent declares its window check (§11)", () => {
     if (!/Window check per .*§11.*requires role/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
   }
   assert.deepEqual(missing, [], `files that do not declare a §11 window check (requires role):\n${missing.join("\n")}`);
+});
+
+test("every command and agent cites the §12 command presentation rule", () => {
+  const missing = [];
+  for (const file of [...promptFiles, ...agentFiles]) {
+    if (!/§12\b/.test(splitFrontmatter(file).body)) missing.push(path.relative(repoRoot, file));
+  }
+  assert.deepEqual(missing, [], `files that do not cite policy §12 (command presentation):\n${missing.join("\n")}`);
+});
+
+test("next-feature prints one command per fenced block", () => {
+  // The only prompt that scripts a multi-command report; policy §12 wants one bare
+  // block per command so the chat copy button yields a paste-ready command.
+  const file = rel(".github", "prompts", "next-feature.prompt.md");
+  const lines = splitFrontmatter(file).body.split(/\r?\n/);
+  let block = null;
+  let blocks = 0;
+  lines.forEach((line, index) => {
+    const fence = line.match(/^\s*(```.*)$/);
+    if (!fence) {
+      if (block && line.trim()) block.push(line.trim());
+      return;
+    }
+    if (!block) {
+      assert.equal(fence[1], "```", `next-feature.prompt.md:${index + 1}: fenced block must have no language tag`);
+      block = [];
+      return;
+    }
+    blocks += 1;
+    assert.equal(block.length, 1, `next-feature.prompt.md:${index + 1}: fenced block must hold exactly one command, got ${JSON.stringify(block)}`);
+    assert.match(block[0], /^\/agento /, `next-feature.prompt.md:${index + 1}: block content must be an /agento command`);
+    assert.doesNotMatch(block[0], /#/, `next-feature.prompt.md:${index + 1}: block content must not carry a # comment`);
+    block = null;
+  });
+  assert.equal(block, null, "next-feature.prompt.md: unterminated fenced block");
+  assert.ok(blocks >= 5, `next-feature.prompt.md: expected the five-step command list, found ${blocks} blocks`);
+});
+
+test("build and review handoffs offer the /agento ap alternative", () => {
+  // Policy §12: every build-<type>/review-<type> command block is followed by an
+  // `/agento ap <slug>` block as the unattended alternative.
+  const files = [
+    rel(".github", "agents", "delivery-builder.agent.md"),
+    rel(".github", "agents", "delivery-reviewer.agent.md"),
+    rel(".github", "agents", "delivery-planner.agent.md"),
+    rel(".github", "prompts", "next-feature.prompt.md"),
+    rel(".github", "prompts", "ship.prompt.md"),
+    rel(".github", "prompts", "new-feature.prompt.md"),
+    rel(".github", "prompts", "new-issue.prompt.md"),
+  ];
+  const missing = files
+    .filter((file) => !/\/agento ap <(?:feature-)?slug>/.test(splitFrontmatter(file).body))
+    .map((file) => path.relative(repoRoot, file));
+  assert.deepEqual(missing, [], `files whose build/review handoff lacks the /agento ap alternative:\n${missing.join("\n")}`);
+  assert.match(
+    fs.readFileSync(rel("docs", "commands.md"), "utf8"),
+    /## Receipts[\s\S]*?\/agento ap[\s\S]*?\n## /,
+    "docs/commands.md ## Receipts must mention the /agento ap alternative",
+  );
 });
 
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
@@ -279,6 +338,7 @@ test("the policy file is the only place the shared rules are spelled out", () =>
     /^Preflight: /m,
     /; fallback: </,
     /switch to Agent mode/,
+    /copyable command block/,
   ];
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     if (file.endsWith("delivery-policy.instructions.md")) continue;

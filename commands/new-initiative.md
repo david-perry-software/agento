@@ -12,7 +12,8 @@ Create a new **initiative** from the brief in the argument, following the Archit
 procedure end to end in the **current (primary) window**.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; a
 merged one is rejected naming the existing breakdown), which takes precedence over
 the slug reservation in step 5. Before the first write, run

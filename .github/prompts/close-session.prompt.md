@@ -129,4 +129,5 @@ idempotency row (shared rule 6 below). Window check per §11: requires role `pri
    clone (`git -C <artifactsRoot> branch -d changes/<slug>`).
 4. Report the removed path(s), the retained or deleted local branch(es), and whether
    the work was already merged or still needs `/agento finish-freehand` in a resumed
-   session (`/agento start-freehand <slug> --resume`).
+   session; when it does, emit `/agento start-freehand <slug> --resume` as its own
+   block per policy §12, preceded by one line saying it runs from this primary window.

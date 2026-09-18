@@ -53,7 +53,10 @@ flowchart TD
   of any command needing `gh`, `code`, or `network`), and the window check (§11: every
   command names the `role` it requires and checks it against `agento.mjs session` — a
   mismatch is a `rejected` receipt with the record's alternatives; the roles table
-  itself lives in the CLI); agents and prompts cite its numbered sections
+  itself lives in the CLI), and command presentation (§12: every `/agento …`
+  command a response asks the user to run is emitted as its own one-command fenced
+  block with no language tag, giving it a copy button in chat); agents and prompts
+  cite its numbered sections
   (`§2`) instead of restating them, and a test fails if a rule is spelled out twice.
   The **artifact contract** holds only formats; **concurrent-delivery** holds only
   mechanics (ports, previews, shared resources, integration recipes); **ai-skills**

@@ -16,7 +16,8 @@ artifacts with the Agento CLI (`node <agento-root>/scripts/agento.mjs`; path in 
 session context line `Agento CLI:`).
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (already-annotated follow-up lines and already-flagged issues are
 skipped). Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for triage-followups` and map

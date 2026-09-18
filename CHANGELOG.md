@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.1 (2026-09-18)
+
+- **Copyable command blocks.** New delivery-policy §12 (command presentation):
+  every `/agento …` command a response asks the user to run — the §9 result's
+  `next:` (repeated directly above the result line), §8 cross-window handoff items,
+  pause resume commands, `rejected` receipt alternatives, `/agento next-feature`'s
+  sequence, `/agento continue`'s named command, `/agento ship`'s reject-back and
+  teardown-pause commands, and the Build-in-this-worktree alternative — is emitted
+  as its own fenced block with no language tag holding exactly that one command, so
+  VS Code chat offers a one-click copy button. Descriptive mentions stay inline.
+  Every build or review command block is followed by an `/agento ap <slug>` block
+  as the unattended alternative.
+  Every agent and prompt cites §12; `tests/customizations.test.mjs` enforces the
+  citation, that `next-feature` prints one command per block, and that the
+  build/review handoffs offer the ap alternative.
+
 ## 0.5.0 (2026-09-18)
 
 - **Artifact history migration.** New `agento.mjs migrate <companion-checkout>

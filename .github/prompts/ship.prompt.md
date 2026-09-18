@@ -144,7 +144,11 @@ Ownership does not apply when resuming only the post-ship epilogue.
      where `<command>` is `/agento review-<type> <slug>` when the review is the only
      gap, otherwise `/agento build-<type> <slug>` (the Builder fix handoff) — both run
      in the still-open secondary window at `owner.path`; when `owner === null`, name
-     `/agento start-session <type>/<slug> --resume` instead.
+     `/agento start-session <type>/<slug> --resume` instead. Emit that `<command>`
+     as its own block per policy §12 directly above the result line, preceded by
+     one line naming the window it runs in; when it is the review or build command,
+     follow it with `/agento ap <slug>` in its own block as the unattended
+     alternative.
    - **Confirmation path** — unstamped changelog, PR body/title nits, undocumented
      unrelated drift. Present them in one summary, ask the user explicitly whether to
      proceed (default is do not proceed), and on yes record them under
@@ -223,8 +227,10 @@ Ownership does not apply when resuming only the post-ship epilogue.
      `paused at teardown (worktree <path> still open); next: close that VS Code window, then /agento ship <slug>`
      — `<path>` being whichever half the guard flagged; `main` is already merged and
      synced, and the re-send resumes at this bullet per the §9 row (halves already
-     removed are skipped). When `owner === null`, delete the merged local branch from
-     the primary as before.
+     removed are skipped). Directly above that result line, emit the resume command
+     `/agento ship <slug>` as its own block per policy §12, preceded by one line
+     saying to close the flagged window first. When `owner === null`, delete the
+     merged local branch from the primary as before.
 4. **Report** merge result, PR number, release workflow result and run URL (or that no
    release workflow is configured), the removed worktree path(s) and workspace file
    (or that none was registered), and any accepted gaps carried into Follow-ups.
