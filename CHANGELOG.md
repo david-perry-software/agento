@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.5.0 (2026-09-18)
 
 - **Artifact history migration.** New `agento.mjs migrate <companion-checkout>
   [--apply]` subcommand moves an in-repo `features/`, `issues/`, `initiatives/`
