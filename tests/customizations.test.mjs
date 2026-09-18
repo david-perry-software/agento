@@ -187,6 +187,34 @@ test("every command and agent cites the §12 command presentation rule", () => {
   assert.deepEqual(missing, [], `files that do not cite policy §12 (command presentation):\n${missing.join("\n")}`);
 });
 
+test("next-feature prints one command per fenced block", () => {
+  // The only prompt that scripts a multi-command report; policy §12 wants one bare
+  // block per command so the chat copy button yields a paste-ready command.
+  const file = rel(".github", "prompts", "next-feature.prompt.md");
+  const lines = splitFrontmatter(file).body.split(/\r?\n/);
+  let block = null;
+  let blocks = 0;
+  lines.forEach((line, index) => {
+    const fence = line.match(/^\s*(```.*)$/);
+    if (!fence) {
+      if (block && line.trim()) block.push(line.trim());
+      return;
+    }
+    if (!block) {
+      assert.equal(fence[1], "```", `next-feature.prompt.md:${index + 1}: fenced block must have no language tag`);
+      block = [];
+      return;
+    }
+    blocks += 1;
+    assert.equal(block.length, 1, `next-feature.prompt.md:${index + 1}: fenced block must hold exactly one command, got ${JSON.stringify(block)}`);
+    assert.match(block[0], /^\/agento /, `next-feature.prompt.md:${index + 1}: block content must be an /agento command`);
+    assert.doesNotMatch(block[0], /#/, `next-feature.prompt.md:${index + 1}: block content must not carry a # comment`);
+    block = null;
+  });
+  assert.equal(block, null, "next-feature.prompt.md: unterminated fenced block");
+  assert.ok(blocks >= 5, `next-feature.prompt.md: expected the five-step command list, found ${blocks} blocks`);
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). `ship` stays here until
   // `ship-audit-first` removes its worktree precondition, then the list shrinks to three.
