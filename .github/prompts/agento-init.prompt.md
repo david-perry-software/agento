@@ -1,6 +1,6 @@
 ---
-description: "Scaffold Agento in the current project: create and clone the companion artifact repository (<repo>-docs), .github/agento.json pointing at it, an ## Agento section in AGENTS.md, and scripts/wait-for-checks.sh"
-argument-hint: "[--force]"
+description: "Scaffold Agento in the current project: create and clone the companion artifact repository (<repo>-docs), .github/agento.json pointing at it, an ## Agento section in AGENTS.md, and scripts/wait-for-checks.sh; --migrate also moves an existing in-repo features/, issues/, initiatives/ tree into the companion"
+argument-hint: "[--force] [--migrate]"
 ---
 
 Needs: terminal, ask-questions, gh, network
@@ -14,12 +14,16 @@ clones it as the sibling `../<name>`, scaffolds the artifact roots there, and po
 the product's `.github/agento.json` at it. `--force` rewrites scaffold files that
 already exist (in both repositories); without it, leave existing files untouched and
 report what was kept. `--force` never deletes, resets, or recreates a repository or
-clone.
+clone. `--migrate` additionally moves a pre-existing in-repo artifact tree
+(`features/`, `issues/`, `initiatives/`) into the companion — see
+`## Migration (--migrate)` below.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (existing files are kept unless `--force`; an existing companion
-repository or clone is adopted). Before the first write, run
+repository or clone is adopted; with `--migrate`, roots already moved report nothing
+to migrate and existing `changes/agento-init` PRs in either repository are resumed).
+Before the first write, run
 `node <agento-root>/scripts/agento.mjs doctor --for agento-init` and map
 `fail`/`warn` per §10. `<agento-root>` comes from the session context line
 `Agento CLI: node <agento-root>/scripts/agento.mjs` (fallback: the user-level
@@ -205,7 +209,10 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 10. **Self-check.** From the product root run `node <agento-root>/scripts/agento.mjs
     doctor` and read the `artifact-repo` check. `ok` → continue. `warn` naming stale
     in-repo roots (a project initialised before the companion layout) → continue and
-    report it as pre-existing; do not move or delete anything. `fail` → stop before
+    report it as pre-existing; do not move or delete anything here — that is what
+    `/agento agento-init --migrate` is for (`## Migration (--migrate)` below), and
+    with `--migrate` given this check must read `ok` because the roots are gone from
+    the working tree. `fail` → stop before
     committing and report the check's `detail` and `fallback` verbatim.
 
 11. **Commit, PR, report.** Commit the product scaffold on a `changes/agento-init`
@@ -228,3 +235,68 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
     "chat.plugins.enabled": true,
     "chat.pluginLocations": { "<path to the Agento clone>": true }
     ```
+
+## Migration (--migrate)
+
+With `--migrate`, the product repository already carries delivery history inside
+its own tree (`features/`, `issues/`, `initiatives/` — the roots `doctor` reports as
+stale once a companion is configured). Steps 1–5 run unchanged (companion name,
+create or adopt, scaffold, ruleset). Then, instead of going straight to step 6, run
+the M-steps below; steps 6–10 follow, and step 11 is replaced by M7–M9. The
+`migrate` subcommand does filesystem work only — every stage, commit, and push
+below is yours, so the delivery guard keeps governing them.
+
+- **M1 — Dry run.** From the product root run `node <agento-root>/scripts/agento.mjs
+  migrate ../<name>` and read the JSON: `mode: "dry-run"` lists `roots[]` (files
+  and bytes per root), `records` (every roadmap and breakdown found), and
+  `conflicts[]`. `status: "conflict"` (exit 3) names destination files the move
+  would overwrite: stop and report them — nothing is written until they are
+  resolved. `mode: "nothing-to-migrate"` means the roots are already gone: skip
+  M2–M6, note it in the report, and resume any existing `changes/agento-init` PRs
+  (M7–M9) instead of opening new ones. `reason: "not-sibling"` means `../<name>`
+  is not a sibling of the primary checkout — step 3 put it there, so re-check the
+  clone path before continuing.
+- **M2 — In-flight deliveries.** Run `gh pr list --state open --json headRefName`
+  in the product. Any open branch carrying the configured `branches.feature` or
+  `branches.issue` prefix is an in-flight delivery whose in-repo artifacts the move
+  would strand (its branch keeps the roots, the default branch loses them). List
+  them and stop unless the user explicitly accepts the move now — ask with the
+  ask-questions tool (or its declared fallback, §10) and record the answer in the
+  report. The clean path is to ship those deliveries first and re-run.
+- **M3 — Companion branch.** `git -C ../<name> switch -c changes/agento-init
+  origin/<default>` (resume it with `git -C ../<name> switch changes/agento-init`
+  when it already exists). The companion's default branch is never written by this
+  flow.
+- **M4 — Apply.** `node <agento-root>/scripts/agento.mjs migrate ../<name> --apply`.
+  Expect `mode: "applied"`, `records.identical: true` (same roadmaps and breakdowns
+  read from the destination as from the source), `configWritten` naming the
+  product's `.github/agento.json` (created from the template with
+  `artifacts.repo.name: "<name>"`, or that one key set in an existing config), and
+  `readmeNoteAdded: true` (the companion `README.md` gains a `## Migrated history`
+  note explaining that pre-migration plans link relative to the product tree at the
+  time of writing). `records.identical: false` → stop; report `records.diff[]`
+  and do not commit either side. The product working tree now has the roots
+  removed and the config added — step 6 finds the config already present.
+- **M5 — Commit and push the companion.** `git -C ../<name> add -A`, then commit
+  `docs(migration): import delivery artifacts from <owner>/<repo>` and `git -C
+  ../<name> push -u origin changes/agento-init`.
+- **M6 — Companion PR.** `cd ../<name> && gh pr create --draft --base <default>
+  --head changes/agento-init --title "docs(migration): import delivery artifacts
+  from <owner>/<repo>" --body "<one paragraph: what moved, from which repository,
+  and that the product PR follows>"` (run inside the clone so `gh` targets the
+  companion). Resume an existing open PR on that branch instead of creating a
+  second one. Record its URL as `<companion-pr>`.
+- **M7 — Product commit and PR.** Run steps 6–10 (step 10 must read `artifact-repo`
+  `ok`), then commit everything on `changes/agento-init` in the product —
+  `chore(agento-init): move delivery artifacts to <name>` — push, and open the
+  product PR whose body links `<companion-pr>` and says **merge the companion PR
+  first** (a product default branch that points at an empty companion default
+  branch reads no history until the companion PR lands). Resume an existing open
+  PR on `changes/agento-init` instead of creating a second one.
+- **M8 — Cross-link.** `gh pr edit <companion-pr> --body "<existing body> +
+  <product PR URL>"` inside the clone so each PR names the other.
+- **M9 — Report.** Everything step 11 reports, plus: both PR URLs and the merge
+  order (companion first, then product), the roots moved (`moved[]`), the record
+  counts from `records`, whether the README note was added, and the reminder that
+  full per-file history stays in the product repository's log (the companion carries
+  one import commit). Init never merges either PR.
