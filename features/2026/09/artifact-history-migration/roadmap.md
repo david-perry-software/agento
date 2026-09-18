@@ -2,7 +2,7 @@
 status: in-progress
 branch: feature/artifact-history-migration
 last-updated: 2026-09-18
-next-step: "3.2 session-context layout rule"
+next-step: "4.1 agento-init prompt --migrate"
 initiative: "external-artifact-repo"
 ```
 
@@ -22,7 +22,7 @@ initiative: "external-artifact-repo"
 ## Phase 3: Hooks — layout rule (approval-gated edits)
 
 - [x] 3.1 In `scripts/hooks/delivery-guard.sh` `resolve_artifacts()`: when the primary differs from the product root and the primary's `artifacts.repo` is unset, keep the product root's own `repo` instead of returning in-repo (one edit; comment updated to state the rule); add `tests/guard.test.mjs` tests with `makeGitRepo({ companion: true })`: a managed worktree on `feature/widget` (config `worktrees.dir`) whose branch commits the companion config while the primary has none → `git -C <companion> push origin main` from that worktree is `deny` naming `main`, and `git commit -m x` there with only `code.js` staged is `ask` with a reason matching `/companion|project-docs/` — verify: `shellcheck scripts/hooks/delivery-guard.sh` silent (no output redirection); `node --test tests/guard.test.mjs` exit 0 with the new tests listed; `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt` exit 0; `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt` exit 0.
-- [ ] 3.2 In `scripts/hooks/session-context.sh` apply the identical helper change (keep both copies byte-identical between the `shared with` markers); add `tests/session-context.test.mjs` test: the same worktree setup prints `Artifacts: <companion> (branch main)` directly after `Session:` and lists a companion roadmap while ignoring a product one; the no-node fallback equals with-node minus `Session:` — verify: `shellcheck scripts/hooks/session-context.sh` silent; `node --test tests/session-context.test.mjs` exit 0 with the new test listed; `diff <(sed -n '/--- shared with/,/--- end shared helpers/p' scripts/hooks/session-context.sh) <(sed -n '/--- shared with/,/--- end shared helpers/p' scripts/hooks/delivery-guard.sh)` empty.
+- [x] 3.2 In `scripts/hooks/session-context.sh` apply the identical helper change (keep both copies byte-identical between the `shared with` markers); add `tests/session-context.test.mjs` test: the same worktree setup prints `Artifacts: <companion> (branch main)` directly after `Session:` and lists a companion roadmap while ignoring a product one; the no-node fallback equals with-node minus `Session:` — verify: `shellcheck scripts/hooks/session-context.sh` silent; `node --test tests/session-context.test.mjs` exit 0 with the new test listed; `diff <(sed -n '/--- shared with/,/--- end shared helpers/p' scripts/hooks/session-context.sh) <(sed -n '/--- shared with/,/--- end shared helpers/p' scripts/hooks/delivery-guard.sh)` empty (Builder note 2026-09-18: the opening marker line itself names the other file and differs on `main` too; the diff is empty after `sed '1d'` on both sides — bodies byte-identical).
 
 ## Phase 4: Prompts, policy, docs, changelog, version
 
