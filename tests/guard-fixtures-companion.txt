@@ -43,3 +43,8 @@ deny  git switch trunk && git commit -m x
 allow git push origin main
 allow git push origin feature/replay
 allow git status
+
+# Companion: deleting a non-default remote branch from the product default is allowed (#47 guard-branch-delete-on-main)
+allow git -C {companion} switch trunk && git -C {companion} push origin --delete feature/x
+allow git -C {companion} switch trunk && git -C {companion} push origin :feature/x
+deny  git -C {companion} switch trunk && git -C {companion} push origin --delete trunk
