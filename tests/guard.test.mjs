@@ -260,6 +260,64 @@ test("companion: a commit run in the companion on a delivery branch keeps today'
   assert.equal(decide(`git -C ${companion} commit -m x`, { cwd: product }).decision, "allow");
 });
 
+// A managed worktree whose branch commits the companion config while the primary
+// has none: the layout rule ("the checkout decides, the primary anchors") resolves
+// the companion beside the primary. `branches.default` differs between the halves'
+// configs so the companion push check is only satisfied through the product config.
+function makeFlippedWorktree({ defaultBranch = "main" } = {}) {
+  const { product, companion } = makeGitRepo({ companion: true });
+  const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  fs.writeFileSync(path.join(product, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: "../wt" } }));
+  git(product, "add", "-A");
+  git(product, "commit", "-q", "-m", "primary config without artifacts.repo");
+  const worktree = path.join(path.dirname(product), "wt", "plan-1");
+  fs.mkdirSync(path.dirname(worktree), { recursive: true });
+  git(product, "worktree", "add", "-q", "-b", "feature/widget", worktree);
+  fs.writeFileSync(
+    path.join(worktree, ".github", "agento.json"),
+    JSON.stringify({ worktrees: { dir: "../wt" }, branches: { default: defaultBranch }, artifacts: { repo: { name: "project-docs" } } }),
+  );
+  git(worktree, "add", "-A");
+  git(worktree, "commit", "-q", "-m", "flip to the companion");
+  return { product, companion, worktree, git };
+}
+
+test("companion: a worktree whose branch sets artifacts.repo denies pushing the companion's default branch when the primary has none", () => {
+  const { companion, worktree } = makeFlippedWorktree();
+  const denied = decide(`git -C ${companion} push origin main`, { cwd: worktree });
+  assert.equal(denied.decision, "deny");
+  assert.match(denied.reason, /main/);
+
+  // The product config governs the companion only through the layout rule: with
+  // `trunk` as the product default, a `trunk` push is denied and `main` passes.
+  const flipped = makeFlippedWorktree({ defaultBranch: "trunk" });
+  const trunk = decide(`git -C ${flipped.companion} push origin trunk`, { cwd: flipped.worktree });
+  assert.equal(trunk.decision, "deny");
+  assert.match(trunk.reason, /trunk/);
+  assert.equal(decide(`git -C ${flipped.companion} push origin main`, { cwd: flipped.worktree }).decision, "allow");
+  assert.equal(decide(`git -C ${flipped.companion} push origin feature/widget`, { cwd: flipped.worktree }).decision, "allow");
+});
+
+test("companion: a worktree whose branch sets artifacts.repo consults the companion for the roadmap nudge", () => {
+  const { companion, worktree, git } = makeFlippedWorktree();
+  fs.writeFileSync(path.join(worktree, "code.js"), "export {};\n");
+  git(worktree, "add", "code.js");
+  const nudged = decide("git commit -m x", { cwd: worktree });
+  assert.equal(nudged.decision, "ask");
+  assert.match(nudged.reason, /companion|project-docs/);
+  assert.match(nudged.reason, /roadmap\.md/);
+
+  // A roadmap staged in the companion satisfies it; one in the product tree does not.
+  fs.mkdirSync(path.join(worktree, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(worktree, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(worktree, "add", "features/widget/roadmap.md");
+  assert.equal(decide("git commit -m x", { cwd: worktree }).decision, "ask");
+  fs.mkdirSync(path.join(companion, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(companion, "add", "features/widget/roadmap.md");
+  assert.equal(decide("git commit -m x", { cwd: worktree }).decision, "allow");
+});
+
 test("allows worktree removal with no occupants", () => {
   const missing = path.join(os.tmpdir(), `agento-no-such-worktree-${process.pid}`);
   assert.equal(decide(`git worktree remove ${missing}`).decision, "allow");
