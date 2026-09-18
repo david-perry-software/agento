@@ -109,3 +109,19 @@ matches → today's behaviour (`unmanaged`); several → `unmanaged` plus a warn
 listing them. The hooks pass `--root <cwd>` unchanged, so a terminal sitting in the
 companion folder of a pair window prints the same `Session:` line as the product
 folder.
+
+**Layout rule — the checkout decides, the primary anchors.** Companion mode is on for
+a checkout when *its own* `.github/agento.json` sets `artifacts.repo`; the companion
+path always resolves against the primary checkout, and when the primary's config
+also sets `artifacts.repo` the primary's values win. Own config unset → in-repo,
+regardless of the primary (a worktree on a pre-companion branch keeps reading its own
+roots). The CLI (`resolveArtifacts()`) and the Python `resolve_artifacts()` shared by
+both hooks apply the same rule. On top of it, the slug-targeted readers (`resolve`,
+`find`, `close-decision`, `ship-preflight`, `next <slug>`, `paths <feature|issue>
+<slug>`) fall back to the **delivery branch's** config when an in-repo checkout finds
+no roadmap: they read `origin/<branch>:.github/agento.json` (then `<branch>:…`) and,
+when it names a companion that exists beside the primary, redo the read against that
+clone and report `layout: "branch"` with `artifactsRoot` set to it. This is what lets
+`/agento ship` run from a primary whose `main` is still in-repo while the migration
+PR (`/agento agento-init --migrate`) is open; a branch naming an absent companion
+stays `missing` — nothing is cloned implicitly.

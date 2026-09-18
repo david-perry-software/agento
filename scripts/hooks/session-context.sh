@@ -79,10 +79,13 @@ def load_config(root):
 
 
 def resolve_artifacts(product_root):
-    # Mirror scripts/agento-config.mjs resolveArtifactsRoot(): `artifacts.repo` unset
-    # (name and dir both null) keeps the in-repo layout with no extra git call; else
-    # the companion path resolves against the primary checkout (first `git worktree
-    # list` entry) and its config, so managed worktrees never point into worktrees.dir.
+    # Mirror scripts/agento.mjs resolveArtifacts(): the checkout decides, the primary
+    # anchors. `artifacts.repo` unset (name and dir both null) in the checkout's own
+    # config keeps the in-repo layout with no extra git call; else the companion path
+    # resolves against the primary checkout (first `git worktree list` entry), using
+    # the primary's `repo` when it sets one and the checkout's own otherwise, so
+    # managed worktrees never point into worktrees.dir and a branch that introduces
+    # the companion resolves it before the primary carries the config.
     # Returns (external, companion_path, name, companion_worktrees_dir, primary_root);
     # the companion's session halves live under `<companion_path>-worktrees/<kind>-<id>`.
     repo = load_config(product_root)["artifacts"]["repo"]
@@ -94,9 +97,9 @@ def resolve_artifacts(product_root):
             primary_root = line[len("worktree "):].strip()
             break
     if os.path.realpath(primary_root) != os.path.realpath(product_root):
-        repo = load_config(primary_root)["artifacts"]["repo"]
-        if repo.get("name") is None and repo.get("dir") is None:
-            return False, None, None, None, primary_root
+        primary_repo = load_config(primary_root)["artifacts"]["repo"]
+        if primary_repo.get("name") is not None or primary_repo.get("dir") is not None:
+            repo = primary_repo
     path = os.path.abspath(os.path.join(primary_root, repo.get("dir") or os.path.join("..", repo["name"])))
     return True, path, repo.get("name") or os.path.basename(path), path + "-worktrees", primary_root
 # --- end shared helpers ---

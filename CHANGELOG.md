@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-09-18)
+
+- **Artifact history migration.** New `agento.mjs migrate <companion-checkout>
+  [--apply]` subcommand moves an in-repo `features/`, `issues/`, `initiatives/`
+  tree into the companion checkout (dry run with `roots[]`, `records`, and
+  `conflicts[]`; `--apply` copies byte-identically, removes the source roots,
+  writes `artifacts.repo.name` into `.github/agento.json`, appends a `## Migrated
+  history` note to the companion README, and reports `records.identical`;
+  re-runs report `nothing-to-migrate`). `/agento agento-init --migrate` drives it:
+  in-flight delivery PRs are refused unless accepted, the import lands as one
+  commit on the companion's `changes/agento-init` with a draft PR, and the product
+  PR removes the roots and says to merge the companion PR first. Layout rule —
+  "the checkout decides, the primary anchors": a checkout whose own config sets
+  `artifacts.repo` is in companion mode even while the primary's default branch is
+  not, in the CLI (`resolveArtifacts()`) and in both hooks' `resolve_artifacts()`.
+  Branch-aware resolution: `resolve`, `find`, `close-decision`, `ship-preflight`,
+  `next <slug>`, and `paths` fall back to the delivery branch's own
+  `.github/agento.json` when an in-repo checkout finds no roadmap and report
+  `layout: "branch"` with `artifactsRoot`; `/agento ship` reads both from the
+  preflight. This repository's own artifacts moved to
+  `david-perry-software/agento-docs`. Minor version bump for the layout change.
 
 - **Ship dual merge.** In companion mode `/agento ship` merges both PRs: it audits
   with the new `agento.mjs ship-preflight <type> <slug> --pr` (adds `pr`,

@@ -843,8 +843,8 @@ test("deriveNext: primary window with no slug — none, one initiative member, a
   assert.equal(two.status, "ambiguous");
   assert.equal(two.next, null);
   assert.deepEqual(two.candidates, [
-    { kind: "delivery", slug: "widget", type: "feature", status: "in-progress", initiative: null, artifactPr: null, owner: managedOwner, invocation: "/agento continue widget" },
-    { kind: "initiative-member", slug: "other", type: "feature", status: "unplanned", initiative: "orchestration", artifactPr: null, owner: null, invocation: "/agento continue other" },
+    { kind: "delivery", slug: "widget", type: "feature", status: "in-progress", initiative: null, artifactPr: null, layout: "checkout", artifactsRoot: null, owner: managedOwner, invocation: "/agento continue widget" },
+    { kind: "initiative-member", slug: "other", type: "feature", status: "unplanned", initiative: "orchestration", artifactPr: null, layout: null, artifactsRoot: null, owner: null, invocation: "/agento continue other" },
   ]);
   const chosen = next({ ...primaryWindow, candidates: two.candidates.length ? [deliveryCandidate("feature", "widget", "in-progress", { owner: managedOwner }), member("other")] : [], requestedSlug: "other" });
   assert.equal(chosen.status, "ok");

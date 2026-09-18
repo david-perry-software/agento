@@ -275,3 +275,40 @@ test("companion pair: the no-node fallback equals the with-node output minus Ses
   assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
   assert.match(withoutNode, new RegExp(`^Artifacts: ${escapeRe(half)} \\(branch feature/widget\\)$`, "m"));
 });
+
+test("companion: a worktree whose branch sets artifacts.repo resolves the companion while the primary has none", () => {
+  // The layout rule: the checkout decides, the primary anchors. Only the worktree's
+  // branch commits `artifacts.repo`; the primary stays in-repo.
+  const worktreesDir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-wt-"));
+  const { product, companion } = makeRepo({ branch: "main", companion: true });
+  const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  fs.writeFileSync(path.join(product, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: worktreesDir } }));
+  git(product, "add", "-A");
+  git(product, "commit", "-q", "-m", "primary config without artifacts.repo");
+  const build = path.join(worktreesDir, "plan-1");
+  git(product, "worktree", "add", "-q", "-b", "feature/widget", build);
+  fs.writeFileSync(path.join(build, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: worktreesDir }, artifacts: { repo: { name: "project-docs" } } }));
+  git(build, "add", "-A");
+  git(build, "commit", "-q", "-m", "flip to the companion");
+  writeRoadmap(companion, "features/2026/09/widget", 'status: in-progress\nbranch: feature/widget\nnext-step: "1.1 step"');
+  writeRoadmap(build, "features/2026/09/product-only", "status: in-progress\nbranch: feature/product-only\nnext-step: x");
+
+  const withNode = run(build);
+  const lines = withNode.split("\n");
+  const artifactLines = lines.filter((l) => l.startsWith("Artifacts: "));
+  assert.equal(artifactLines.length, 1);
+  assert.equal(artifactLines[0], `Artifacts: ${companion} (branch main)`);
+  assert.equal(lines[lines.findIndex((l) => l.startsWith("Session: ")) + 1], artifactLines[0]);
+  assert.doesNotMatch(withNode, new RegExp(escapeRe(worktreesDir) + "/project-docs"));
+  assert.match(withNode, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
+  assert.doesNotMatch(withNode, /product-only/);
+
+  const withoutNode = run(build, pathWithoutNode());
+  assert.doesNotMatch(withoutNode, /^Session: /m);
+  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
+
+  // The primary itself stays in-repo: no Artifacts: line, and it reads its own roots.
+  const primary = run(product);
+  assert.doesNotMatch(primary, /^Artifacts: /m);
+  assert.doesNotMatch(primary, /Delivery work: features\/2026\/09\/widget/);
+});

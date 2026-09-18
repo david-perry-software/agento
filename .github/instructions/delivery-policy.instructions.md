@@ -246,7 +246,7 @@ roadmap.
 | `/agento finish-freehand`, `/agento commit-current-changes` | The existing commit, PR, or check-wait phase is reused; never a second commit or PR for the same changes. |
 | `/agento quick-fix` | An open PR on `changes/<slug>` from the same base is resumed; the `-2`, `-3` suffix applies only when that branch's PR is merged or closed. |
 | `/agento new-initiative` | An open `changes/initiative-<slug>` PR is resumed; a merged one is rejected naming the existing breakdown. |
-| `/agento agento-init` | Existing files are kept unless `--force`; an existing companion repository or clone is adopted, never recreated or reset. |
+| `/agento agento-init` | Existing files are kept unless `--force`; an existing companion repository or clone is adopted, never recreated or reset. With `--migrate`, roots already moved report nothing to migrate and existing `changes/agento-init` PRs in either repository are resumed, never duplicated. |
 | `/agento install-skills` | Already-installed skills are excluded from the batch. |
 | `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
 | `/agento delivery-status`, `/agento next-feature`, `/agento doctor` | Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks). |

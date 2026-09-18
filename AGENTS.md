@@ -16,14 +16,19 @@ delivery system. Layout:
 - `.github/hooks/` — workspace-mode hook wiring (relative `./scripts/hooks` paths)
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,
-  close-decision, ship-preflight, paths, ports, session, next, initiative, doctor),
-  `agento-config.mjs`, `session-state.mjs`,
+  close-decision, ship-preflight, paths, ports, session, next, initiative, doctor,
+  migrate), `agento-config.mjs`, `session-state.mjs`,
   `delivery-roadmap-resolver.mjs`,
   `wait-for-checks.sh`, `hooks/{delivery-guard,session-context,replay-guard}.sh`.
 - `templates/` — files `/agento agento-init` scaffolds into target repositories.
 - `tests/` — guard fixtures and node:test suites.
 - `docs/` — user and architecture documentation.
 - `examples/` — a filled-in project profile as reference.
+- This repository's own delivery artifacts — `features/`, `issues/`, `initiatives/`
+  — live in the companion repository `david-perry-software/agento-docs`, cloned as
+  the sibling `../agento-docs`; `.github/agento.json` names it
+  (`artifacts.repo.name`). Add `../agento-docs` to the primary window's workspace
+  to edit them there; managed sessions open as a two-folder `.code-workspace`.
 
 ## Commands
 

@@ -36,15 +36,20 @@ function mergeConfig(base, override) {
   return merged;
 }
 
+// The config a JSON text denotes for `rootDir`: null keeps the default (the
+// template ships nulls). Shared by the file loader and by readers of a branch's
+// committed `.github/agento.json` (`git show <ref>:.github/agento.json`).
+export function parseConfigText(text, rootDir) {
+  return mergeConfig(defaultConfig(rootDir), JSON.parse(text));
+}
+
 export function loadAgentoConfig(rootDir) {
-  const defaults = defaultConfig(rootDir);
   for (const rel of CONFIG_RELATIVE_PATHS) {
     const file = path.join(rootDir, rel);
     if (!fs.existsSync(file)) continue;
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    return { config: mergeConfig(defaults, parsed), source: file };
+    return { config: parseConfigText(fs.readFileSync(file, "utf8"), rootDir), source: file };
   }
-  return { config: defaults, source: null };
+  return { config: defaultConfig(rootDir), source: null };
 }
 
 // Where delivery artifacts live. `artifacts.repo` unset (both null) keeps the
