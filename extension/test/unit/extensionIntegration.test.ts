@@ -14,11 +14,16 @@ test("manifest contributes the Deliveries view and roadmap command", async () =>
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openRoadmap"));
 });
 
-test("extension refreshes Deliveries from status --pr without polling", async () => {
+test("extension refreshes one latest-only dashboard snapshot without polling", async () => {
   const source = await readFile("src/extension.ts", "utf8");
 
-  assert.match(source, /registerTreeDataProvider\("agento\.deliveries", deliveries\)/);
+  assert.match(source, /createTreeView\("agento\.deliveries", \{ treeDataProvider: deliveries \}\)/);
+  assert.match(source, /createTreeView\("agento\.sessionDoctor", \{ treeDataProvider: sessionDoctor \}\)/);
+  assert.match(source, /client\.run\(\["session", "--pr"\]/);
+  assert.match(source, /client\.run\(\["doctor"\]/);
   assert.match(source, /client\.run\(\["status", "--pr"\]/);
+  assert.match(source, /Promise\.all\(/);
+  assert.match(source, /sessionDoctorView\.onDidChangeVisibility/);
   assert.match(source, /scheduler\.onDidRefresh/);
   assert.doesNotMatch(source, /setInterval\s*\(/);
 });
