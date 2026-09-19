@@ -468,7 +468,17 @@ test("plugin manifest uses suffix-less command names and hook wiring points at e
     );
   }
   const pkg = JSON.parse(fs.readFileSync(rel("package.json"), "utf8"));
-  assert.equal(plugin.version, pkg.version, ".claude-plugin/plugin.json and package.json versions differ");
+  const extensionPkg = JSON.parse(fs.readFileSync(rel("extension", "package.json"), "utf8"));
+  assert.equal(
+    plugin.version,
+    pkg.version,
+    ".claude-plugin/plugin.json, package.json, and extension/package.json versions differ",
+  );
+  assert.equal(
+    extensionPkg.version,
+    pkg.version,
+    ".claude-plugin/plugin.json, package.json, and extension/package.json versions differ",
+  );
 
   const checkHooks = (file, resolve) => {
     const wiring = JSON.parse(fs.readFileSync(file, "utf8"));
