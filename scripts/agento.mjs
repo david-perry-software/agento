@@ -395,27 +395,56 @@ function describeFromRef(ref, roadmap, type, g = agit) {
   });
 }
 
-// `half`: companion mode only — the registered companion half's working tree, whose
-// mirrored branch carries the delivery's own roadmap; its roadmaps take precedence
-// over the clone's same-path copies (the clone sits on <default>). Null → the
-// artifacts root alone, which is today's behaviour in the in-repo layout.
-function allRoadmaps(typeFilter, half = null) {
-  const out = [];
-  const seen = new Set();
-  const bases = half && fs.existsSync(half) ? [half, artifactsRoot] : [artifactsRoot];
+// `halves`: extra bases walked before the artifacts root — registered companion
+// halves (companion mode) or managed build worktrees (in-repo), whose working trees
+// carry roadmaps the artifact checkout's <default> has not merged yet. One
+// repository-relative roadmap path seen in several bases resolves to the copy whose
+// `branch:` header equals its base's checked-out branch (that delivery's own half is
+// its truth); else the artifacts root's copy; else the first base listed. Null and
+// missing bases are skipped, so `[]` is today's behaviour in the in-repo layout.
+function allRoadmaps(typeFilter, halves = []) {
+  const bases = [];
+  for (const base of [...halves, artifactsRoot]) {
+    if (base && fs.existsSync(base) && !bases.some((b) => samePath(b, base))) bases.push(base);
+  }
+  const candidates = new Map();
   for (const base of bases) {
+    const isRoot = samePath(base, artifactsRoot);
+    let baseBranch = null;
     for (const type of ["feature", "issue"]) {
       if (typeFilter && type !== typeFilter) continue;
       const top = path.join(base, type === "feature" ? config.artifacts.features : config.artifacts.issues);
       for (const file of walkRoadmaps(top)) {
         const record = describe(file, type, base);
-        if (seen.has(record.roadmap)) continue;
-        seen.add(record.roadmap);
-        out.push(record);
+        baseBranch ??= git(base, "branch", "--show-current");
+        const entry = { record, matched: Boolean(baseBranch) && record.branch === baseBranch, isRoot };
+        const list = candidates.get(record.roadmap);
+        if (list) list.push(entry);
+        else candidates.set(record.roadmap, [entry]);
       }
     }
   }
+  const out = [];
+  for (const list of candidates.values()) {
+    const pick = list.find((e) => e.matched) ?? list.find((e) => e.isRoot) ?? list[0];
+    out.push(pick.record);
+  }
   return out;
+}
+
+// The extra roadmap bases `status` walks so an in-flight delivery is visible from
+// the primary: in companion mode every registered companion half that is a managed
+// `<kind>-<id>` directory under the companion worktrees dir; in the in-repo layout
+// every managed product worktree with role build. Only bases present on disk.
+function managedHalves(worktrees) {
+  if (artifacts.external) {
+    if (!companionWorktreesDir) return [];
+    return companionWorktrees()
+      .filter((w) => MANAGED_HALF.test(path.basename(w.path)) && samePath(path.dirname(w.path), companionWorktreesDir) && fs.existsSync(w.path))
+      .map((w) => w.path);
+  }
+  const classified = classifyWorktrees({ worktrees, worktreesDir: primaryWorktreesDir(worktrees), config });
+  return classified.filter((w) => w.isManaged && w.role === "build" && fs.existsSync(w.path)).map((w) => w.path);
 }
 
 // The companion half a session reads roadmaps from, or null (primary, unregistered
@@ -997,7 +1026,8 @@ switch (command) {
   case "status": {
     const typeFilter = rest[0] ? requireType(rest[0]) : null;
     const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
-    const items = allRoadmaps(typeFilter).filter((r) => !slugFilter || r.slug === slugFilter);
+    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const items = allRoadmaps(typeFilter, managedHalves(worktrees)).filter((r) => !slugFilter || r.slug === slugFilter);
     const bySlug = new Map();
     for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
     const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
@@ -1145,7 +1175,7 @@ switch (command) {
     const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const companion = describeCompanion(worktree);
-    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, companionHalfOf(companion)), config });
+    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
     const prBranch = delivery?.branch ?? worktree.branch;
     const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
     const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
@@ -1189,7 +1219,7 @@ switch (command) {
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-    const roadmaps = allRoadmaps(null, companionHalfOf(describeCompanion(worktree)));
+    const roadmaps = allRoadmaps(null, [companionHalfOf(describeCompanion(worktree))]);
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr: null, companionPr: null });
     warnings.unshift(...anchor.warnings);

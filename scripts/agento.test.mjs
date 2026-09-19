@@ -650,8 +650,67 @@ test("session and next read the delivery roadmap from the registered companion h
   writeRoadmap(docs, "features/2026/09/mirror", "status: planned\nbranch: feature/mirror\nnext-step: \"1.1\"");
   assert.equal(run(product, "session").json.delivery.status, "in-progress");
   assert.equal(run(product, "session").json.delivery.artifactPr, "#7");
-  // The primary and the clone-only readers are unchanged: status walks the clone.
-  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["mirror", "planned"], ["other", "planned"]]);
+  // status from the primary walks the registered halves too: the half on feature/mirror shadows the clone's copy.
+  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["mirror", "in-progress"], ["other", "planned"]]);
+});
+
+test("status walks registered companion halves and managed build worktrees; the branch-matching copy wins, a detached half loses to the clone", () => {
+  // Companion mode: a roadmap committed only on a registered half's branch.
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const product = path.join(wt, "feature-xray");
+  const half = path.join(docsWt, "feature-xray");
+  git(repo, "worktree", "add", "-q", "-b", "feature/xray", product);
+  git(docs, "worktree", "add", "-q", "--no-track", "-b", "feature/xray", half, "origin/main");
+  writeRoadmap(half, "features/2026/09/xray", "status: in-progress\nbranch: feature/xray\nnext-step: \"1.2\"");
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "docs(feature): xray");
+  assert.ok(!fs.existsSync(path.join(docs, "features")));
+  const only = run(repo, "status");
+  assert.equal(only.code, 0);
+  assert.deepEqual(only.json.items.map((i) => [i.slug, i.status, i.roadmap]), [["xray", "in-progress", "features/2026/09/xray/roadmap.md"]]);
+  assert.deepEqual(only.json.duplicates, []);
+  assert.deepEqual(only.json.resumable, ["xray"]);
+
+  // A same-path clone copy with another status is shadowed by the half whose branch matches the header.
+  writeRoadmap(docs, "features/2026/09/xray", "status: planned\nbranch: feature/xray\nnext-step: \"1.1\"");
+  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["xray", "in-progress"]]);
+  assert.deepEqual(run(repo, "status", "feature", "xray").json.items.map((i) => i.status), ["in-progress"]);
+
+  // A detached half (plan pair, not promoted on the companion side) loses the tie to the clone copy.
+  const plan = path.join(wt, "plan-1");
+  const planHalf = path.join(docsWt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", planHalf, "origin/main");
+  writeRoadmap(docs, "features/2026/09/yank", "status: in-review\nbranch: feature/yank\nnext-step: review");
+  writeRoadmap(planHalf, "features/2026/09/yank", "status: planned\nbranch: feature/yank\nnext-step: \"1.1\"");
+  const tie = run(repo, "status").json;
+  assert.deepEqual(tie.items.map((i) => [i.slug, i.status]), [["xray", "in-progress"], ["yank", "in-review"]]);
+  // A roadmap only the detached half carries is still listed (its sole copy).
+  writeRoadmap(planHalf, "features/2026/09/zeta", "status: planned\nbranch: feature/zeta\nnext-step: \"1.1\"");
+  assert.deepEqual(run(repo, "status").json.items.map((i) => i.slug), ["xray", "yank", "zeta"]);
+  // A half whose branch differs from the header also loses to the clone copy.
+  git(planHalf, "switch", "-q", "-c", "feature/elsewhere");
+  assert.deepEqual(run(repo, "status", "feature", "yank").json.items.map((i) => i.status), ["in-review"]);
+  assert.equal(git(docs, "branch", "--show-current"), "main", "the companion clone is never switched");
+
+  // In-repo layout: a roadmap present only in a managed build worktree's working tree is listed from the primary.
+  const inRepo = makeWorktreeRepo();
+  const build = path.join(inRepo.wt, "feature-widget");
+  git(inRepo.repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  writeRoadmap(inRepo.repo, "features/2026/09/main-only", "status: planned\nbranch: feature/main-only\nnext-step: \"1.1\"");
+  const fromPrimary = run(inRepo.repo, "status").json;
+  assert.deepEqual(fromPrimary.items.map((i) => [i.slug, i.status]), [["widget", "in-progress"], ["main-only", "planned"]]);
+  assert.deepEqual(fromPrimary.resumable, ["widget"]);
+  // The worktree's copy of a shared path wins on its own branch; a plan worktree (no delivery branch) is not walked.
+  writeRoadmap(inRepo.repo, "features/2026/09/widget", "status: planned\nbranch: feature/widget\nnext-step: \"1.1\"");
+  assert.deepEqual(run(inRepo.repo, "status", "feature", "widget").json.items.map((i) => i.status), ["in-progress"]);
+  const planWt = path.join(inRepo.wt, "plan-2");
+  git(inRepo.repo, "worktree", "add", "-q", "--detach", planWt, "origin/main");
+  writeRoadmap(planWt, "features/2026/09/draft", "status: planned\nbranch: feature/draft\nnext-step: \"1.1\"");
+  assert.ok(!run(inRepo.repo, "status").json.items.some((i) => i.slug === "draft"));
+  // From the build worktree itself the listing agrees.
+  assert.deepEqual(run(build, "status", "feature", "widget").json.items.map((i) => i.status), ["in-progress"]);
 });
 
 test("session: an unrelated repo and an ambiguous companion stay put; a half nobody names is that repo's own managed worktree", () => {
