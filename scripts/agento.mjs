@@ -7,7 +7,7 @@
 //   node scripts/agento.mjs config
 //   node scripts/agento.mjs resolve <feature|issue> <slug>
 //   node scripts/agento.mjs find <slug>                 (type-agnostic)
-//   node scripts/agento.mjs status [feature|issue] [slug]
+//   node scripts/agento.mjs status [feature|issue] [slug] [--pr]   (--pr adds pr + companionPr per non-complete item)
 //   node scripts/agento.mjs close-decision <feature|issue> <slug>
 //   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (--pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
 //   node scripts/agento.mjs ports <slug>
@@ -1038,16 +1038,20 @@ switch (command) {
     const warnings = [];
     const layout = checkoutLayout();
     for (const item of items) {
-      const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr: null, companionPr: null });
+      // Complete roadmaps skip the lookup: their PRs are merged history, not dashboard state.
+      const lookup = options.pr && item.status !== "complete";
+      const { pr, warnings: prWarnings } = lookup ? lookupPullRequest(item.branch) : { pr: null, warnings: [] };
+      const { pr: companionPr, warnings: companionPrWarnings } = lookup ? lookupCompanionPullRequest(item.branch, layout) : { pr: null, warnings: [] };
+      const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr, companionPr });
       const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
       const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
       item.lifecycle = lifecycle;
       item.owner = owner;
       item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
       item.companion = companionOfOwner(owner, layout);
-      item.pr = null;
-      item.companionPr = null;
-      warnings.push(...lifecycleWarnings.map((w) => `${item.slug}: ${w}`));
+      item.pr = pr;
+      item.companionPr = companionPr;
+      warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));
     }
     emit({
       status: "ok",

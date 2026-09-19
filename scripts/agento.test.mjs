@@ -978,6 +978,75 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true });
 });
 
+test("status --pr looks up PRs for non-complete items only, warns per slug on failure, and never changes lifecycle", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2\"");
+  writeRoadmap(repo, "issues/2026/09/bug", "status: in-review\nbranch: issue/bug\nnext-step: review");
+  writeRoadmap(repo, "features/2026/08/done", "status: complete\nbranch: feature/done\nnext-step: \"\"");
+  const marker = path.join(wt, "gh-invoked");
+  const calls = () => (fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim().split("\n") : []);
+
+  // Without --pr: no gh process, every pr/companionPr null.
+  const plain = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker) }).env }, "status");
+  assert.equal(plain.code, 0);
+  assert.ok(!fs.existsSync(marker), "gh was invoked without --pr");
+  assert.ok(plain.json.items.every((i) => i.pr === null && i.companionPr === null));
+
+  // With --pr in the in-repo layout: one call per non-complete item, none for the complete one.
+  const withPr = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker) }).env }, "status", "--pr");
+  assert.equal(withPr.code, 0);
+  assert.deepEqual(withPr.json.items.map((i) => i.slug), ["alpha", "bug", "done"]);
+  for (const slug of ["alpha", "bug"]) {
+    const item = withPr.json.items.find((i) => i.slug === slug);
+    assert.deepEqual(item.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+    assert.equal(item.companionPr, null);
+  }
+  const done = withPr.json.items.find((i) => i.slug === "done");
+  assert.equal(done.pr, null);
+  assert.equal(done.companionPr, null);
+  assert.equal(done.lifecycle, "shipped");
+  assert.deepEqual(withPr.json.warnings, []);
+  assert.deepEqual(
+    calls().sort(),
+    [`${repo} pr view feature/alpha --json number,state,isDraft,mergeStateStatus,url`, `${repo} pr view issue/bug --json number,state,isDraft,mergeStateStatus,url`],
+  );
+
+  // A failing gh: pr null plus one slug-prefixed warning; exit code and lifecycle unchanged.
+  fs.rmSync(marker, { force: true });
+  const failing = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker, { product: "NONE" }) }).env }, "status", "feature", "alpha", "--pr");
+  assert.equal(failing.code, 0);
+  assert.equal(failing.json.items[0].pr, null);
+  assert.equal(failing.json.items[0].lifecycle, "building");
+  assert.deepEqual(failing.json.warnings, ["alpha: pr: gh pr view feature/alpha failed: no pull requests found for branch"]);
+
+  // A merged PR on an in-progress roadmap warns but keeps lifecycle building.
+  const merged = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker, { product: "MERGED" }) }).env }, "status", "feature", "alpha", "--pr");
+  assert.equal(merged.json.items[0].lifecycle, "building");
+  assert.equal(merged.json.items[0].pr.state, "MERGED");
+  assert.deepEqual(merged.json.warnings, ["alpha: merged-but-not-complete: PR #15 for feature/alpha is merged but features/2026/09/alpha/roadmap.md has status in-progress"]);
+
+  // Companion mode: one call from the product checkout and one from inside the companion clone per item.
+  const pair = makePairRepo();
+  writeRoadmap(pair.docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review\nartifact-pr: \"#7\"");
+  writeRoadmap(pair.docs, "features/2026/08/done", "status: complete\nbranch: feature/done\nnext-step: \"\"");
+  const pairMarker = path.join(pair.wt, "gh-invoked");
+  const both = runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker) }).env }, "status", "--pr");
+  assert.equal(both.code, 0);
+  const widget = both.json.items.find((i) => i.slug === "widget");
+  assert.equal(widget.pr.number, 15);
+  assert.equal(widget.companionPr.number, 7);
+  const pairDone = both.json.items.find((i) => i.slug === "done");
+  assert.equal(pairDone.pr, null);
+  assert.equal(pairDone.companionPr, null);
+  assert.deepEqual(
+    fs.readFileSync(pairMarker, "utf8").trim().split("\n").sort(),
+    [`${pair.repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`, `${pair.docs} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`],
+  );
+  assert.deepEqual(both.json.warnings, []);
+
+  assert.match(run(repo).json.usage.join("\n"), /status \[feature\|issue\] \[slug\] \[--pr\]/);
+});
+
 test("resolve falls back to the origin branch when the checkout has no roadmap", () => {
   const repo = makeRepo();
   git(repo, "switch", "-q", "-c", "feature/widget");
