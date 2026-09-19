@@ -4,6 +4,31 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { ExtensionApi } from "../../src/extension.js";
+import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
+
+async function waitForReadyTree(api: ExtensionApi): Promise<void> {
+  if (api.deliveries.current.model.kind === "ready") {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      subscription.dispose();
+      reject(new Error(`Timed out waiting for Deliveries tree; current state: ${api.deliveries.current.model.kind}`));
+    }, 15_000);
+    const subscription = api.deliveries.onDidChangeTreeData(() => {
+      if (api.deliveries.current.model.kind !== "ready") {
+        return;
+      }
+      clearTimeout(timeout);
+      subscription.dispose();
+      resolve();
+    });
+  });
+}
+
+function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): DeliveryTreeElement[] {
+  return api.deliveries.getChildren(group);
+}
 
 async function waitForRoadmapRefresh(api: ExtensionApi, roadmap: vscode.Uri): Promise<void> {
   const observedReasons: string[] = [];
@@ -42,6 +67,7 @@ export async function run(): Promise<void> {
   const commands = await vscode.commands.getCommands(true);
   assert.ok(commands.includes("agento.refresh"));
   assert.ok(commands.includes("agento.showOutput"));
+  assert.ok(commands.includes("agento.openRoadmap"));
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
@@ -49,9 +75,27 @@ export async function run(): Promise<void> {
   assert.equal(session.code, 0);
   assert.equal(typeof (session.json as { role?: unknown }).role, "string");
 
+  await waitForReadyTree(api);
+  const groups = api.deliveries.getChildren();
+  assert.deepEqual(
+    groups.map((group) => api.deliveries.getTreeItem(group).label),
+    ["Planned", "Building"],
+  );
+  const items = groups.flatMap((group) => deliveryElements(api, group));
+  assert.deepEqual(
+    items.map((item) => api.deliveries.getTreeItem(item).label),
+    ["planned-delivery", "building-delivery"],
+  );
+  assert.equal(api.deliveries.getTreeItem(items[0]!).description, "feature | 1/3 | planned | PR #101 draft");
+  if (process.env.AGENTO_ELECTRON_SCENARIO === "companion") {
+    assert.match(String(api.deliveries.getTreeItem(items[0]!).tooltip), /Companion PR: #202 OPEN draft CLEAN/);
+  } else {
+    assert.match(String(api.deliveries.getTreeItem(items[0]!).tooltip), /Companion PR: none/);
+  }
+
   const deliveryDir = path.join(fixture, "features", "2026", "09", "x");
   const roadmapPath = path.join(deliveryDir, "roadmap.md");
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(deliveryDir));
   await waitForRoadmapRefresh(api, vscode.Uri.file(roadmapPath));
-  console.log("Extension activation test passed: active, commands, CLI session, watcher refresh");
+  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: deliveries, metadata, watcher refresh`);
 }
