@@ -14,7 +14,7 @@
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
-//   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, dispatch paths)
+//   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //
@@ -32,7 +32,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -1343,6 +1343,15 @@ switch (command) {
     if (result.status === "missing" && missingMessage) result.reason = missingMessage;
     const target = requestedSlug ? candidates.find((c) => c.slug === requestedSlug) ?? null : delivery && lifecycle !== "no-delivery" ? delivery : candidates.length === 1 ? candidates[0] : null;
     const targetFresh = target === delivery ? active?.reviewFresh ?? null : target?.kind === "delivery" ? target.reviewFresh : null;
+    if (result.next) {
+      result.next.target = resolveNextTarget({
+        next: result.next,
+        worktrees: classified,
+        primaryPath: worktrees[0]?.path ?? root,
+        branch: target?.branch ?? delivery?.branch ?? null,
+        workspaceFor: (w) => describeWorkspace(w, sessionWorktreesDir),
+      });
+    }
     emit(
       {
         status: result.status,

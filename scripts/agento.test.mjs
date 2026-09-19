@@ -533,7 +533,18 @@ test("session from a companion half anchors on the product primary and matches t
   assert.equal(nextProduct.next.invocation, "/agento build-feature widget");
   assert.equal(nextHalf.next.invocation, nextProduct.next.invocation);
   assert.equal(nextHalf.role, "build");
+  assert.equal(nextProduct.next.target, null);
   assert.ok(nextHalf.warnings.some((w) => w.startsWith("anchored-from-companion:")));
+
+  // A fresh approve in the half sends ship to the primary window, targeting the product primary.
+  writeRoadmap(half, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  fs.writeFileSync(path.join(half, "features/2026/09/widget/review.md"), "# Review\n\nVerdict: approve\n");
+  commitAt(half, "review: approve", T1);
+  git(half, "push", "-q", "-u", "origin", "feature/widget");
+  const approved = run(product, "next").json;
+  assert.equal(approved.lifecycle, "approved");
+  assert.equal(approved.next.window, "primary");
+  assert.deepEqual(approved.next.target, { path: repo, workspace: null });
 
   // The primary and the companion clone: primary → primary with companion: null; clone → unmanaged, anchored on the product primary.
   const primary = run(repo, "session").json;
@@ -1885,6 +1896,7 @@ test("next from the primary: one in-progress roadmap → start-session --resume 
     window: "here",
     then: "/agento continue widget",
     reason: one.json.next.reason,
+    target: null,
   });
   assert.match(one.json.next.reason, /in-progress/);
   assertDispatch(one.json, null);
@@ -1937,6 +1949,7 @@ test("next in a build worktree: in-progress → build-feature here with dispatch
   assert.equal(json.next.invocation, "/agento build-feature widget");
   assert.equal(json.next.window, "here");
   assert.equal(json.next.then, null);
+  assert.equal(json.next.target, null, "window here carries no target");
   assert.equal(json.reviewFresh, null);
   assertDispatch(json, "delivery-builder.agent.md");
 
@@ -1979,12 +1992,14 @@ test("next: review freshness decides between ship, re-review, and the fix handof
   assert.equal(approved.reviewFresh, true);
   assert.equal(approved.next.invocation, "/agento ship widget");
   assert.equal(approved.next.window, "primary");
+  assert.deepEqual(approved.next.target, { path: repo, workspace: null }, "window primary targets the primary checkout");
   assertDispatch(approved, null);
   const fromPrimary = run(repo, "next").json;
   assert.equal(fromPrimary.status, "ok");
   assert.equal(fromPrimary.next.invocation, "/agento ship widget");
   assert.equal(fromPrimary.next.window, "here");
   assert.equal(fromPrimary.next.then, null);
+  assert.equal(fromPrimary.next.target, null);
   assert.equal(fromPrimary.reviewFresh, true);
 
   // A code commit after the approve makes it stale: re-review here; the primary reopens the window.
@@ -2082,6 +2097,7 @@ test("next: ready initiative members drive start-session from the primary and ne
   assert.deepEqual(picked.json.next.args, []);
   assert.equal(picked.json.next.invocation, "/agento start-session");
   assert.equal(picked.json.next.then, "/agento continue alpha");
+  assert.equal(picked.json.next.target, null, "start-session runs here: no target");
   assert.equal(picked.json.slug, "alpha");
   assertDispatch(picked.json, null);
 
