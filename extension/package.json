@@ -33,17 +33,11 @@
     "views": {
       "agento": [
         {
-          "id": "agento.overview",
-          "name": "Overview"
+          "id": "agento.deliveries",
+          "name": "Deliveries"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "agento.overview",
-        "contents": "Agento reads delivery state from the bundled CLI. Views arrive in later releases.\n[Refresh](command:agento.refresh) · [Show output](command:agento.showOutput)"
-      }
-    ],
     "commands": [
       {
         "command": "agento.refresh",
@@ -53,6 +47,11 @@
       {
         "command": "agento.showOutput",
         "title": "Show Output",
+        "category": "Agento"
+      },
+      {
+        "command": "agento.openRoadmap",
+        "title": "Open Roadmap",
         "category": "Agento"
       }
     ],

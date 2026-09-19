@@ -70,7 +70,7 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
     item.command = {
       command: "agento.openRoadmap",
       title: "Open Roadmap",
-      arguments: [vscode.Uri.file(path.resolve(this.snapshot.roadmapRoot, element.item.roadmap))],
+      arguments: [vscode.Uri.file(path.resolve(element.item.roadmapRoot ?? this.snapshot.roadmapRoot, element.item.roadmap))],
     };
     return item;
   }

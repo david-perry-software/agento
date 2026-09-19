@@ -39,6 +39,7 @@ export interface DeliveryTreeItem {
   lifecycle: string;
   status: string;
   roadmap: string;
+  roadmapRoot?: string;
   description: string;
   tooltip: string;
 }
@@ -225,6 +226,7 @@ function parseItem(value: unknown): DeliveryTreeItem {
     lifecycle,
     status,
     roadmap,
+    roadmapRoot: companion?.path,
     description: `${type} | ${progress} | ${status} | ${compactPullRequest}`,
     tooltip: [
       `Type: ${type}`,
