@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import type { ExtensionApi } from "../../src/extension.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
+import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
 
 async function waitForReadyTree(api: ExtensionApi): Promise<void> {
   if (api.deliveries.current.model.kind === "ready") {
@@ -18,6 +19,26 @@ async function waitForReadyTree(api: ExtensionApi): Promise<void> {
     }, 15_000);
     const subscription = api.deliveries.onDidChangeTreeData(() => {
       if (api.deliveries.current.model.kind !== "ready") {
+        return;
+      }
+      clearTimeout(timeout);
+      subscription.dispose();
+      resolve();
+    });
+  });
+}
+
+async function waitForReadyInitiatives(api: ExtensionApi): Promise<void> {
+  if (api.initiatives.current.model.kind === "ready") {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      subscription.dispose();
+      reject(new Error(`Timed out waiting for Initiatives tree; current state: ${api.initiatives.current.model.kind}`));
+    }, 15_000);
+    const subscription = api.initiatives.onDidChangeTreeData(() => {
+      if (api.initiatives.current.model.kind !== "ready") {
         return;
       }
       clearTimeout(timeout);
@@ -93,6 +114,7 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.refresh"));
   assert.ok(commands.includes("agento.showOutput"));
   assert.ok(commands.includes("agento.openRoadmap"));
+  assert.ok(commands.includes("agento.openBreakdown"));
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
@@ -101,15 +123,16 @@ export async function run(): Promise<void> {
   assert.equal(typeof (session.json as { role?: unknown }).role, "string");
 
   await waitForReadyTree(api);
+  await waitForReadyInitiatives(api);
   const groups = api.deliveries.getChildren();
   assert.deepEqual(
     groups.map((group) => api.deliveries.getTreeItem(group).label),
-    ["Planned", "Building"],
+    ["Planned", "Building", "In Review", "Shipped"],
   );
   const items = groups.flatMap((group) => deliveryElements(api, group));
   assert.deepEqual(
     items.map((item) => api.deliveries.getTreeItem(item).label),
-    ["planned-delivery", "building-delivery"],
+    ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery"],
   );
   assert.equal(api.deliveries.getTreeItem(items[0]!).description, "feature | 1/3 | planned | PR #101 draft");
   if (process.env.AGENTO_ELECTRON_SCENARIO === "companion") {
@@ -129,6 +152,53 @@ export async function run(): Promise<void> {
   assert.ok(roadmapEditor, "delivery activation opens its roadmap");
   assert.equal(activeEditor.viewColumn, vscode.ViewColumn.One);
   assert.equal(roadmapEditor.viewColumn, vscode.ViewColumn.Two);
+
+  const initiative = api.initiatives.getChildren()[0];
+  assert.ok(initiative?.kind === "initiative");
+  const initiativeItem = api.initiatives.getTreeItem(initiative);
+  assert.equal(initiativeItem.label, "agento-extension");
+  assert.equal(initiativeItem.description, "1/6 complete | 3 in flight | 1 ready");
+  const initiativeChildren = api.initiatives.getChildren(initiative);
+  const diagnostic = initiativeChildren.find((element) => element.kind === "diagnostic");
+  assert.ok(diagnostic);
+  assert.match(String(api.initiatives.getTreeItem(diagnostic).label), /anomalous-delivery: merged-but-not-complete/);
+  const initiativeGroups = initiativeChildren.filter((element): element is Extract<InitiativeTreeElement, { kind: "group" }> => element.kind === "group");
+  assert.deepEqual(initiativeGroups.map((group) => api.initiatives.getTreeItem(group).label), [
+    "Ready (1)",
+    "In flight (3)",
+    "Blocked (1)",
+    "Complete (1)",
+  ]);
+  const initiativeMembers = initiativeGroups.flatMap((group) => api.initiatives.getChildren(group));
+  assert.deepEqual(initiativeMembers.map((member) => api.initiatives.getTreeItem(member).label), [
+    "ready-delivery",
+    "planned-delivery",
+    "building-delivery",
+    "anomalous-delivery",
+    "blocked-delivery",
+    "complete-delivery",
+  ]);
+  const blockedMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "blocked-delivery");
+  assert.ok(blockedMember);
+  assert.match(String(api.initiatives.getTreeItem(blockedMember).tooltip), /Wave: 2/);
+  assert.match(String(api.initiatives.getTreeItem(blockedMember).tooltip), /Blocked by: building-delivery/);
+  const readyMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "ready-delivery");
+  assert.ok(readyMember);
+  assert.match(String(api.initiatives.getTreeItem(readyMember).tooltip), /Ready: yes\nNext: yes/);
+
+  const memberTreeItem = api.initiatives.getTreeItem(readyMember);
+  assert.ok(memberTreeItem.command);
+  await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
+  await vscode.commands.executeCommand(memberTreeItem.command.command, ...(memberTreeItem.command.arguments ?? []));
+  const breakdownUri = memberTreeItem.command.arguments?.[0];
+  assert.ok(breakdownUri instanceof vscode.Uri);
+  const expectedArtifactRoot = process.env.AGENTO_ELECTRON_SCENARIO === "companion"
+    ? path.join(path.dirname(fixture), "artifacts")
+    : fixture;
+  assert.equal(breakdownUri.fsPath, path.join(expectedArtifactRoot, "initiatives", "2026", "09", "agento-extension", "breakdown.md"));
+  const breakdownEditor = vscode.window.visibleTextEditors.find((editor) => editor.document.uri.fsPath === breakdownUri.fsPath);
+  assert.ok(breakdownEditor, "initiative member activation opens its breakdown");
+  assert.equal(breakdownEditor.viewColumn, vscode.ViewColumn.Two);
 
   const roadmapContents = Buffer.from(await vscode.workspace.fs.readFile(roadmapUri)).toString("utf8");
   await waitForTree(
@@ -162,5 +232,5 @@ export async function run(): Promise<void> {
   const errorItem = api.deliveries.getTreeItem(api.deliveries.getChildren()[0]!);
   assert.equal(errorItem.label, "Unable to load deliveries: fixture status failure");
   assert.equal(errorItem.contextValue, "agento.error");
-  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: beside-open, refreshed tree, empty/error rows, watcher refresh`);
+  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: delivery and initiative rendering, diagnostics, beside-open, refreshed tree, empty/error rows, watcher refresh`);
 }
