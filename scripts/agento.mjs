@@ -32,7 +32,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -1027,13 +1027,39 @@ switch (command) {
     const typeFilter = rest[0] ? requireType(rest[0]) : null;
     const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const items = allRoadmaps(typeFilter, managedHalves(worktrees)).filter((r) => !slugFilter || r.slug === slugFilter);
     const bySlug = new Map();
     for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
     const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
     const order = ["in-progress", "paused", "in-review", "planned", "complete"];
     items.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.slug.localeCompare(b.slug));
-    emit({ status: "ok", root, currentBranch, defaultBranch: config.branches.default, items, duplicates, resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug) });
+    // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
+    const warnings = [];
+    const layout = checkoutLayout();
+    for (const item of items) {
+      const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr: null, companionPr: null });
+      const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
+      const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
+      item.lifecycle = lifecycle;
+      item.owner = owner;
+      item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
+      item.companion = companionOfOwner(owner, layout);
+      item.pr = null;
+      item.companionPr = null;
+      warnings.push(...lifecycleWarnings.map((w) => `${item.slug}: ${w}`));
+    }
+    emit({
+      status: "ok",
+      root,
+      currentBranch,
+      defaultBranch: config.branches.default,
+      items,
+      duplicates,
+      resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug),
+      lifecycles: LIFECYCLES,
+      warnings,
+    });
     break;
   }
 

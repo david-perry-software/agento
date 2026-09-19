@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { LIFECYCLES } from "./session-state.mjs";
+
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(repoRoot, "scripts", "agento.mjs");
 
@@ -889,6 +891,91 @@ test("status lists roadmaps with progress, verdicts, and duplicate slugs", () =>
 
   const filtered = run(repo, "status", "issue");
   assert.deepEqual(filtered.json.items.map((i) => i.type), ["issue"]);
+});
+
+test("status adds lifecycle, owner, workspace, companion, pr/companionPr per item and lifecycles/warnings on top; sort and resumable unchanged", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  const postShip = "- [x] 1.1 done — verify: x\n- [ ] 1.2 (manual, post-ship) rotate — verify: y\n";
+  writeRoadmap(repo, "features/2026/09/planned", "status: planned\nbranch: feature/planned\nnext-step: \"1.1\"");
+  writeRoadmap(repo, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  writeRoadmap(repo, "features/2026/09/paused", "status: paused\nbranch: feature/paused\nnext-step: \"1.2\"");
+  writeRoadmap(repo, "issues/2026/09/review", "status: in-review\nbranch: issue/review\nnext-step: review");
+  writeRoadmap(repo, "features/2026/09/approved", "status: in-review\nbranch: feature/approved\nnext-step: ship");
+  fs.writeFileSync(path.join(repo, "features/2026/09/approved/review.md"), "# Review\n\nVerdict: approve\n");
+  writeRoadmap(repo, "features/2026/09/changes", "status: in-review\nbranch: feature/changes\nnext-step: fix");
+  fs.writeFileSync(path.join(repo, "features/2026/09/changes/review.md"), "# Review\n\nVerdict: request-changes\n");
+  writeRoadmap(repo, "features/2026/08/shipped", "status: complete\nbranch: feature/shipped\nnext-step: \"\"");
+  writeRoadmap(repo, "features/2026/08/pending", "status: complete\nbranch: feature/pending\nnext-step: \"1.2\"", postShip);
+  writeRoadmap(repo, "features/2026/09/bogus", "status: wat\nbranch: feature/bogus\nnext-step: \"1.1\"");
+
+  const { code, json } = run(repo, "status");
+  assert.equal(code, 0);
+  // Today's sort (unknown status first, then in-progress, paused, in-review, planned, complete; slug within) and resumable.
+  assert.deepEqual(json.items.map((i) => i.slug), ["bogus", "widget", "paused", "approved", "changes", "review", "planned", "pending", "shipped"]);
+  assert.deepEqual(json.resumable, ["widget", "paused", "approved", "changes", "review"]);
+  assert.deepEqual(json.duplicates, []);
+  const lifecycleOf = Object.fromEntries(json.items.map((i) => [i.slug, i.lifecycle]));
+  assert.deepEqual(lifecycleOf, {
+    planned: "planned",
+    widget: "building",
+    paused: "paused",
+    review: "in-review",
+    changes: "in-review",
+    approved: "approved",
+    shipped: "shipped",
+    pending: "post-ship-pending",
+    bogus: "no-delivery",
+  });
+  assert.deepEqual(json.lifecycles, LIFECYCLES);
+  assert.deepEqual(json.warnings, [`bogus: unknown-roadmap-status: features/2026/09/bogus/roadmap.md has status "wat"`]);
+  const widget = json.items.find((i) => i.slug === "widget");
+  assert.deepEqual(widget.owner, { path: build, role: "build", dirPrefix: "feature", id: "widget" });
+  for (const item of json.items) {
+    if (item.slug !== "widget") assert.equal(item.owner, null, item.slug);
+    assert.equal(item.workspace, null, item.slug);
+    assert.equal(item.companion, null, item.slug);
+    assert.equal(item.pr, null, item.slug);
+    assert.equal(item.companionPr, null, item.slug);
+    // Every pre-existing field is still there with its type.
+    assert.deepEqual(Object.keys(item.steps), ["ticked", "total"]);
+    assert.equal(typeof item.status, "string");
+    assert.equal(typeof item.branch, "string");
+  }
+  // A clean listing has no warnings.
+  fs.rmSync(path.join(repo, "features/2026/09/bogus"), { recursive: true });
+  const clean = run(repo, "status").json;
+  assert.deepEqual(clean.warnings, []);
+  assert.deepEqual(clean.items.map((i) => i.slug), ["widget", "paused", "approved", "changes", "review", "planned", "pending", "shipped"]);
+
+  // Companion mode: an item on an owned branch reports its half and the pair's workspace file.
+  const pair = makePairRepo();
+  const product = path.join(pair.wt, "feature-widget");
+  const half = path.join(pair.docsWt, "feature-widget");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(pair.docs, "worktree", "add", "-q", "--no-track", "-b", "feature/widget", half, "origin/main");
+  writeRoadmap(half, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "docs(feature): widget");
+  writeRoadmap(pair.docs, "features/2026/09/unowned", "status: planned\nbranch: feature/unowned\nnext-step: \"1.1\"");
+  const workspaceFile = path.join(pair.wt, "feature-widget.code-workspace");
+  let items = run(pair.repo, "status").json.items;
+  let owned = items.find((i) => i.slug === "widget");
+  assert.deepEqual(owned.owner, { path: product, role: "build", dirPrefix: "feature", id: "widget" });
+  assert.deepEqual(owned.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 1, behind: 0, registered: true });
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: false });
+  const unowned = items.find((i) => i.slug === "unowned");
+  assert.equal(unowned.owner, null);
+  assert.equal(unowned.companion, null);
+  assert.equal(unowned.workspace, null);
+  fs.writeFileSync(path.join(half, "scratch.md"), "wip\n");
+  fs.writeFileSync(workspaceFile, "{}\n");
+  items = run(pair.repo, "status").json.items;
+  owned = items.find((i) => i.slug === "widget");
+  assert.equal(owned.companion.dirty, true);
+  assert.equal(owned.companion.ahead, 1);
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true });
 });
 
 test("resolve falls back to the origin branch when the checkout has no roadmap", () => {
