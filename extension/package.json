@@ -10,7 +10,7 @@
     "url": "https://github.com/david-perry-software/agento.git"
   },
   "engines": {
-    "vscode": "^1.132.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "Other"
@@ -82,5 +82,12 @@
     "test": "npm run test:unit && npm run test:electron",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.125.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2",
+    "typescript": "^5.9.2"
   }
 }
