@@ -1,0 +1,86 @@
+{
+  "name": "agento-dashboard",
+  "displayName": "Agento",
+  "description": "Dashboard and command launcher for Agento delivery workflows.",
+  "version": "0.5.2",
+  "publisher": "david-perry-software",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/david-perry-software/agento.git"
+  },
+  "engines": {
+    "vscode": "^1.132.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agento",
+          "title": "Agento",
+          "icon": "media/agento.svg"
+        }
+      ]
+    },
+    "views": {
+      "agento": [
+        {
+          "id": "agento.overview",
+          "name": "Overview"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "agento.overview",
+        "contents": "Agento reads delivery state from the bundled CLI. Views arrive in later releases.\n[Refresh](command:agento.refresh) · [Show output](command:agento.showOutput)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "agento.refresh",
+        "title": "Refresh",
+        "category": "Agento"
+      },
+      {
+        "command": "agento.showOutput",
+        "title": "Show Output",
+        "category": "Agento"
+      }
+    ],
+    "configuration": {
+      "title": "Agento",
+      "properties": {
+        "agento.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Node.js executable used to run the bundled Agento CLI."
+        },
+        "agento.refreshDebounceMs": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 3000,
+          "description": "Delay in milliseconds before file changes refresh Agento state."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "copy-cli": "node scripts/copy-cli.mjs",
+    "build": "npm run copy-cli && tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "typecheck": "tsc --noEmit -p ./",
+    "test:unit": "npm run build && tsc -p tsconfig.test.json && node --test 'out/test/unit/**/*.test.js'",
+    "test:electron": "npm run build && tsc -p tsconfig.test.json && node out/test/electron/runTest.js",
+    "test": "npm run test:unit && npm run test:electron",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build"
+  }
+}
