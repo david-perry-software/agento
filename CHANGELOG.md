@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Initiatives tree.** The extension now renders CLI-derived initiative progress,
+  Ready, In flight, Blocked, and Complete member groups, and per-initiative errors
+  and anomalies without re-deriving dependency state. Initiative and member rows
+  open the CLI-supplied breakdown beside the active editor in both in-repo and
+  companion layouts, and existing watcher events refresh the view without polling.
 - **Deliveries tree.** The extension now renders the CLI's `status --pr` lifecycle
   groups as compact delivery rows with complete PR, ownership, workspace, companion,
   and initiative tooltips. Selecting a row opens its roadmap beside the active
