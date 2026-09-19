@@ -19,4 +19,6 @@ dispatch by the extension.
 ## Development
 
 Run `npm ci`, `npm run build`, `npm run test:unit`, `npm run test:electron`, or
-`npm run package` from this directory.
+`npm run package` from this directory. Packaging also validates the VSIX runtime
+contents and confirms that VSCE's `extension/LICENSE.txt` entry is byte-identical to
+the generated `extension/LICENSE` source.

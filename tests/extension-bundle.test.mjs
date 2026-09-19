@@ -38,8 +38,11 @@ test("extension manifest preserves packaging invariants", () => {
 
 test("copy-cli is the only extension script that writes the CLI bundle", () => {
   const scriptsDirectory = path.join(extensionRoot, "scripts");
-  const mentions = fs
+  const writers = fs
     .readdirSync(scriptsDirectory)
-    .filter((name) => fs.readFileSync(path.join(scriptsDirectory, name), "utf8").includes("cli"));
-  assert.deepEqual(mentions, ["copy-cli.mjs"]);
+    .filter((name) => {
+      const source = fs.readFileSync(path.join(scriptsDirectory, name), "utf8");
+      return source.includes("cli") && /\b(?:copyFile|rm)\s*\(/.test(source);
+    });
+  assert.deepEqual(writers, ["copy-cli.mjs"]);
 });

@@ -81,7 +81,7 @@
     "test:unit": "npm run build && tsc -p tsconfig.test.json && node --test 'out/test/unit/**/*.test.js'",
     "test:electron": "npm run build && tsc -p tsconfig.test.json && node out/test/electron/runTest.js",
     "test": "npm run test:unit && npm run test:electron",
-    "package": "vsce package --no-dependencies",
+    "package": "vsce package --no-dependencies && node scripts/assert-vsix.mjs",
     "vscode:prepublish": "npm run build"
   },
   "devDependencies": {
