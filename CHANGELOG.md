@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Added.** A VS Code extension scaffold under `extension/` with an Agento activity
+  bar container, refresh and output commands, bundled CLI client, debounced delivery
+  watchers, activation coverage, and VSIX packaging.
 - **Added.** Additive CLI JSON for dashboards: `agento.mjs status [--pr]` reads
   roadmaps from managed companion halves (or managed build worktrees in the in-repo
   layout) before the artifact checkout, adds per-item `lifecycle`, `owner`,
