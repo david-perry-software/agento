@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Added.** Additive CLI JSON for dashboards: `agento.mjs status [--pr]` reads
+  roadmaps from managed companion halves (or managed build worktrees in the in-repo
+  layout) before the artifact checkout, adds per-item `lifecycle`, `owner`,
+  `workspace`, `companion`, `pr`, and `companionPr` (the last two filled only with
+  `--pr` and only for non-complete items) plus top-level `lifecycles[]` and
+  `warnings[]`; `agento.mjs next` adds `next.target` (`{ path, workspace } | null`)
+  naming the checkout the transition's `window` refers to. No existing field, order,
+  or exit code changes.
+
 ## 0.5.2 (2026-09-18)
 
 - **Fixed.** The delivery guard no longer denies `git push --delete <branch>` /
