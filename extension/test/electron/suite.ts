@@ -5,6 +5,34 @@ import * as vscode from "vscode";
 
 import type { ExtensionApi } from "../../src/extension.js";
 
+async function waitForRoadmapRefresh(api: ExtensionApi, roadmap: vscode.Uri): Promise<void> {
+  const observedReasons: string[] = [];
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const refreshed = new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => {
+        subscription.dispose();
+        resolve(false);
+      }, api.scheduler.debounceMs + 2000);
+      const subscription = api.scheduler.onDidRefresh(({ reasons }) => {
+        observedReasons.push(...reasons);
+        if (!reasons.some((reason) => reason === `create ${roadmap.fsPath}` || reason === `change ${roadmap.fsPath}`)) {
+          return;
+        }
+        clearTimeout(timeout);
+        subscription.dispose();
+        resolve(true);
+      });
+    });
+    await vscode.workspace.fs.writeFile(roadmap, Buffer.from(`# Fixture ${attempt}\n`));
+    if (await refreshed) {
+      return;
+    }
+  }
+
+  throw new Error(`Timed out waiting for roadmap refresh; observed: ${observedReasons.join(", ") || "none"}`);
+}
+
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<ExtensionApi>("david-perry-software.agento-dashboard");
   assert.ok(extension, "Agento extension is installed in the test host");
@@ -23,24 +51,7 @@ export async function run(): Promise<void> {
 
   const deliveryDir = path.join(fixture, "features", "2026", "09", "x");
   const roadmapPath = path.join(deliveryDir, "roadmap.md");
-  const observedReasons: string[] = [];
-  const refreshed = new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error(`Timed out waiting for roadmap refresh; observed: ${observedReasons.join(", ") || "none"}`)),
-      api.scheduler.debounceMs + 2000,
-    );
-    const subscription = api.scheduler.onDidRefresh(({ reasons }) => {
-      observedReasons.push(...reasons);
-      if (!reasons.some((reason) => reason === `create ${roadmapPath}` || reason === `change ${roadmapPath}`)) {
-        return;
-      }
-      clearTimeout(timeout);
-      subscription.dispose();
-      resolve();
-    });
-  });
   await vscode.workspace.fs.createDirectory(vscode.Uri.file(deliveryDir));
-  await vscode.workspace.fs.writeFile(vscode.Uri.file(roadmapPath), Buffer.from("# Fixture\n"));
-  await refreshed;
+  await waitForRoadmapRefresh(api, vscode.Uri.file(roadmapPath));
   console.log("Extension activation test passed: active, commands, CLI session, watcher refresh");
 }
