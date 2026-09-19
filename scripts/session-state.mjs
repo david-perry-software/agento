@@ -489,3 +489,12 @@ export function deriveNext({ role, worktree, delivery, lifecycle, owner = null, 
   const result = primaryTransition({ target, owner, reviewFresh, config });
   return result.status === "ok" ? ok(result.next) : finish(result.status, result.reason);
 }
+
+// Resolves a `deriveNext` window kind to the checkout a launcher opens:
+// `{ path, workspace: { path, exists } | null } | null`. `here` needs no target.
+export function resolveNextTarget({ next, worktrees, primaryPath, branch, workspaceFor }) {
+  if (!next || next.window === "here") return null;
+  if (next.window === "primary") return { path: primaryPath, workspace: null };
+  const entry = branch ? worktrees.find((w) => w.repo === "product" && w.isManaged && w.branch === branch) : null;
+  return entry ? { path: entry.path, workspace: workspaceFor(entry) } : null;
+}

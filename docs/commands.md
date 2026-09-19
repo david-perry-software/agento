@@ -35,7 +35,20 @@ checkout's own `.github/agento.json` decides whether companion mode is on, the
 companion path is resolved against the primary checkout, and the primary's
 `artifacts.repo` values win when the primary sets them too),
 `resolve <type> <slug>`,
-`find <slug>`, `status [type] [slug]`, `close-decision <type> <slug>` and
+`find <slug>`, `status [type] [slug] [--pr]` (every roadmap as `items[]` in the
+order in-progress, paused, in-review, planned, complete then slug, plus `duplicates`
+and `resumable`; roadmaps are read from every managed companion half — or, in the
+in-repo layout, every managed build worktree — before the artifact checkout, and when
+the same roadmap path exists in several places the copy whose `branch:` header equals
+that checkout's checked-out branch wins, else the first source listed, the
+clone/primary copy last; each item additionally carries `lifecycle`, `owner` —
+`{ path, role, dirPrefix, id } | null` for the worktree holding the item's branch —
+`workspace { path, exists } | null` and `companion { path, branch, detached, dirty,
+ahead, behind, registered } | null` for a managed owner in companion mode, and `pr`
+and `companionPr`, both `null` unless `--pr` is given and the item's `status` is not
+`complete` — complete items are never looked up; the top level adds `lifecycles[]`,
+the lifecycle vocabulary in order, and `warnings[]`, every lifecycle or lookup warning
+prefixed `<slug>: `; no `gh` process runs without `--pr`), `close-decision <type> <slug>` and
 `ship-preflight <type> <slug> [--pr]` (all four report `layout` — `"checkout"`
 when the record came from the current checkout's layout, `"branch"` when an
 in-repo checkout found no roadmap and fell back to the delivery branch's own
@@ -94,9 +107,13 @@ the named command's `Needs:` line requires and echoes them as `for.needs`),
 `next [<slug>]` (the one legal delivery transition derived from the same record as
 `session` plus roadmap ownership, review freshness, and initiative readiness:
 `status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`
-`{ command, args, invocation, window: here | primary | secondary, then, reason }`,
-`candidates[]`, and `dispatch { prompt, agent }` — the absolute paths of the command
-file and its agent file; never `/agento ap`; never fetches),
+`{ command, args, invocation, window: here | primary | secondary, then, reason,
+target }` — `target` is `null` for `window: here`, `{ path: <primary path>,
+workspace: null }` for `primary`, and for `secondary` the owning managed product
+worktree's `{ path, workspace: { path, exists } | null }` (`null` when no such
+worktree is registered) — `candidates[]`, and `dispatch { prompt, agent }` — the
+absolute paths of the command file and its agent file; never `/agento ap`; never
+fetches),
 `migrate <companion-checkout> [--apply]` (move the in-repo artifact roots into a
 companion checkout — the clone or one of its halves, whose clone must be a sibling
 of the primary checkout; filesystem work only, no git writes: the default dry run

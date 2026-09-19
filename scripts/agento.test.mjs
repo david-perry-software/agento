@@ -6,6 +6,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { LIFECYCLES } from "./session-state.mjs";
+
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(repoRoot, "scripts", "agento.mjs");
 
@@ -531,7 +533,18 @@ test("session from a companion half anchors on the product primary and matches t
   assert.equal(nextProduct.next.invocation, "/agento build-feature widget");
   assert.equal(nextHalf.next.invocation, nextProduct.next.invocation);
   assert.equal(nextHalf.role, "build");
+  assert.equal(nextProduct.next.target, null);
   assert.ok(nextHalf.warnings.some((w) => w.startsWith("anchored-from-companion:")));
+
+  // A fresh approve in the half sends ship to the primary window, targeting the product primary.
+  writeRoadmap(half, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  fs.writeFileSync(path.join(half, "features/2026/09/widget/review.md"), "# Review\n\nVerdict: approve\n");
+  commitAt(half, "review: approve", T1);
+  git(half, "push", "-q", "-u", "origin", "feature/widget");
+  const approved = run(product, "next").json;
+  assert.equal(approved.lifecycle, "approved");
+  assert.equal(approved.next.window, "primary");
+  assert.deepEqual(approved.next.target, { path: repo, workspace: null });
 
   // The primary and the companion clone: primary → primary with companion: null; clone → unmanaged, anchored on the product primary.
   const primary = run(repo, "session").json;
@@ -650,8 +663,67 @@ test("session and next read the delivery roadmap from the registered companion h
   writeRoadmap(docs, "features/2026/09/mirror", "status: planned\nbranch: feature/mirror\nnext-step: \"1.1\"");
   assert.equal(run(product, "session").json.delivery.status, "in-progress");
   assert.equal(run(product, "session").json.delivery.artifactPr, "#7");
-  // The primary and the clone-only readers are unchanged: status walks the clone.
-  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["mirror", "planned"], ["other", "planned"]]);
+  // status from the primary walks the registered halves too: the half on feature/mirror shadows the clone's copy.
+  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["mirror", "in-progress"], ["other", "planned"]]);
+});
+
+test("status walks registered companion halves and managed build worktrees; the branch-matching copy wins, a detached half loses to the clone", () => {
+  // Companion mode: a roadmap committed only on a registered half's branch.
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const product = path.join(wt, "feature-xray");
+  const half = path.join(docsWt, "feature-xray");
+  git(repo, "worktree", "add", "-q", "-b", "feature/xray", product);
+  git(docs, "worktree", "add", "-q", "--no-track", "-b", "feature/xray", half, "origin/main");
+  writeRoadmap(half, "features/2026/09/xray", "status: in-progress\nbranch: feature/xray\nnext-step: \"1.2\"");
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "docs(feature): xray");
+  assert.ok(!fs.existsSync(path.join(docs, "features")));
+  const only = run(repo, "status");
+  assert.equal(only.code, 0);
+  assert.deepEqual(only.json.items.map((i) => [i.slug, i.status, i.roadmap]), [["xray", "in-progress", "features/2026/09/xray/roadmap.md"]]);
+  assert.deepEqual(only.json.duplicates, []);
+  assert.deepEqual(only.json.resumable, ["xray"]);
+
+  // A same-path clone copy with another status is shadowed by the half whose branch matches the header.
+  writeRoadmap(docs, "features/2026/09/xray", "status: planned\nbranch: feature/xray\nnext-step: \"1.1\"");
+  assert.deepEqual(run(repo, "status").json.items.map((i) => [i.slug, i.status]), [["xray", "in-progress"]]);
+  assert.deepEqual(run(repo, "status", "feature", "xray").json.items.map((i) => i.status), ["in-progress"]);
+
+  // A detached half (plan pair, not promoted on the companion side) loses the tie to the clone copy.
+  const plan = path.join(wt, "plan-1");
+  const planHalf = path.join(docsWt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", planHalf, "origin/main");
+  writeRoadmap(docs, "features/2026/09/yank", "status: in-review\nbranch: feature/yank\nnext-step: review");
+  writeRoadmap(planHalf, "features/2026/09/yank", "status: planned\nbranch: feature/yank\nnext-step: \"1.1\"");
+  const tie = run(repo, "status").json;
+  assert.deepEqual(tie.items.map((i) => [i.slug, i.status]), [["xray", "in-progress"], ["yank", "in-review"]]);
+  // A roadmap only the detached half carries is still listed (its sole copy).
+  writeRoadmap(planHalf, "features/2026/09/zeta", "status: planned\nbranch: feature/zeta\nnext-step: \"1.1\"");
+  assert.deepEqual(run(repo, "status").json.items.map((i) => i.slug), ["xray", "yank", "zeta"]);
+  // A half whose branch differs from the header also loses to the clone copy.
+  git(planHalf, "switch", "-q", "-c", "feature/elsewhere");
+  assert.deepEqual(run(repo, "status", "feature", "yank").json.items.map((i) => i.status), ["in-review"]);
+  assert.equal(git(docs, "branch", "--show-current"), "main", "the companion clone is never switched");
+
+  // In-repo layout: a roadmap present only in a managed build worktree's working tree is listed from the primary.
+  const inRepo = makeWorktreeRepo();
+  const build = path.join(inRepo.wt, "feature-widget");
+  git(inRepo.repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  writeRoadmap(inRepo.repo, "features/2026/09/main-only", "status: planned\nbranch: feature/main-only\nnext-step: \"1.1\"");
+  const fromPrimary = run(inRepo.repo, "status").json;
+  assert.deepEqual(fromPrimary.items.map((i) => [i.slug, i.status]), [["widget", "in-progress"], ["main-only", "planned"]]);
+  assert.deepEqual(fromPrimary.resumable, ["widget"]);
+  // The worktree's copy of a shared path wins on its own branch; a plan worktree (no delivery branch) is not walked.
+  writeRoadmap(inRepo.repo, "features/2026/09/widget", "status: planned\nbranch: feature/widget\nnext-step: \"1.1\"");
+  assert.deepEqual(run(inRepo.repo, "status", "feature", "widget").json.items.map((i) => i.status), ["in-progress"]);
+  const planWt = path.join(inRepo.wt, "plan-2");
+  git(inRepo.repo, "worktree", "add", "-q", "--detach", planWt, "origin/main");
+  writeRoadmap(planWt, "features/2026/09/draft", "status: planned\nbranch: feature/draft\nnext-step: \"1.1\"");
+  assert.ok(!run(inRepo.repo, "status").json.items.some((i) => i.slug === "draft"));
+  // From the build worktree itself the listing agrees.
+  assert.deepEqual(run(build, "status", "feature", "widget").json.items.map((i) => i.status), ["in-progress"]);
 });
 
 test("session: an unrelated repo and an ambiguous companion stay put; a half nobody names is that repo's own managed worktree", () => {
@@ -830,6 +902,160 @@ test("status lists roadmaps with progress, verdicts, and duplicate slugs", () =>
 
   const filtered = run(repo, "status", "issue");
   assert.deepEqual(filtered.json.items.map((i) => i.type), ["issue"]);
+});
+
+test("status adds lifecycle, owner, workspace, companion, pr/companionPr per item and lifecycles/warnings on top; sort and resumable unchanged", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  const postShip = "- [x] 1.1 done — verify: x\n- [ ] 1.2 (manual, post-ship) rotate — verify: y\n";
+  writeRoadmap(repo, "features/2026/09/planned", "status: planned\nbranch: feature/planned\nnext-step: \"1.1\"");
+  writeRoadmap(repo, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  writeRoadmap(repo, "features/2026/09/paused", "status: paused\nbranch: feature/paused\nnext-step: \"1.2\"");
+  writeRoadmap(repo, "issues/2026/09/review", "status: in-review\nbranch: issue/review\nnext-step: review");
+  writeRoadmap(repo, "features/2026/09/approved", "status: in-review\nbranch: feature/approved\nnext-step: ship");
+  fs.writeFileSync(path.join(repo, "features/2026/09/approved/review.md"), "# Review\n\nVerdict: approve\n");
+  writeRoadmap(repo, "features/2026/09/changes", "status: in-review\nbranch: feature/changes\nnext-step: fix");
+  fs.writeFileSync(path.join(repo, "features/2026/09/changes/review.md"), "# Review\n\nVerdict: request-changes\n");
+  writeRoadmap(repo, "features/2026/08/shipped", "status: complete\nbranch: feature/shipped\nnext-step: \"\"");
+  writeRoadmap(repo, "features/2026/08/pending", "status: complete\nbranch: feature/pending\nnext-step: \"1.2\"", postShip);
+  writeRoadmap(repo, "features/2026/09/bogus", "status: wat\nbranch: feature/bogus\nnext-step: \"1.1\"");
+
+  const { code, json } = run(repo, "status");
+  assert.equal(code, 0);
+  // Today's sort (unknown status first, then in-progress, paused, in-review, planned, complete; slug within) and resumable.
+  assert.deepEqual(json.items.map((i) => i.slug), ["bogus", "widget", "paused", "approved", "changes", "review", "planned", "pending", "shipped"]);
+  assert.deepEqual(json.resumable, ["widget", "paused", "approved", "changes", "review"]);
+  assert.deepEqual(json.duplicates, []);
+  const lifecycleOf = Object.fromEntries(json.items.map((i) => [i.slug, i.lifecycle]));
+  assert.deepEqual(lifecycleOf, {
+    planned: "planned",
+    widget: "building",
+    paused: "paused",
+    review: "in-review",
+    changes: "in-review",
+    approved: "approved",
+    shipped: "shipped",
+    pending: "post-ship-pending",
+    bogus: "no-delivery",
+  });
+  assert.deepEqual(json.lifecycles, LIFECYCLES);
+  assert.deepEqual(json.warnings, [`bogus: unknown-roadmap-status: features/2026/09/bogus/roadmap.md has status "wat"`]);
+  const widget = json.items.find((i) => i.slug === "widget");
+  assert.deepEqual(widget.owner, { path: build, role: "build", dirPrefix: "feature", id: "widget" });
+  for (const item of json.items) {
+    if (item.slug !== "widget") assert.equal(item.owner, null, item.slug);
+    assert.equal(item.workspace, null, item.slug);
+    assert.equal(item.companion, null, item.slug);
+    assert.equal(item.pr, null, item.slug);
+    assert.equal(item.companionPr, null, item.slug);
+    // Every pre-existing field is still there with its type.
+    assert.deepEqual(Object.keys(item.steps), ["ticked", "total"]);
+    assert.equal(typeof item.status, "string");
+    assert.equal(typeof item.branch, "string");
+  }
+  // A clean listing has no warnings.
+  fs.rmSync(path.join(repo, "features/2026/09/bogus"), { recursive: true });
+  const clean = run(repo, "status").json;
+  assert.deepEqual(clean.warnings, []);
+  assert.deepEqual(clean.items.map((i) => i.slug), ["widget", "paused", "approved", "changes", "review", "planned", "pending", "shipped"]);
+
+  // Companion mode: an item on an owned branch reports its half and the pair's workspace file.
+  const pair = makePairRepo();
+  const product = path.join(pair.wt, "feature-widget");
+  const half = path.join(pair.docsWt, "feature-widget");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(pair.docs, "worktree", "add", "-q", "--no-track", "-b", "feature/widget", half, "origin/main");
+  writeRoadmap(half, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "docs(feature): widget");
+  writeRoadmap(pair.docs, "features/2026/09/unowned", "status: planned\nbranch: feature/unowned\nnext-step: \"1.1\"");
+  const workspaceFile = path.join(pair.wt, "feature-widget.code-workspace");
+  let items = run(pair.repo, "status").json.items;
+  let owned = items.find((i) => i.slug === "widget");
+  assert.deepEqual(owned.owner, { path: product, role: "build", dirPrefix: "feature", id: "widget" });
+  assert.deepEqual(owned.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 1, behind: 0, registered: true });
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: false });
+  const unowned = items.find((i) => i.slug === "unowned");
+  assert.equal(unowned.owner, null);
+  assert.equal(unowned.companion, null);
+  assert.equal(unowned.workspace, null);
+  fs.writeFileSync(path.join(half, "scratch.md"), "wip\n");
+  fs.writeFileSync(workspaceFile, "{}\n");
+  items = run(pair.repo, "status").json.items;
+  owned = items.find((i) => i.slug === "widget");
+  assert.equal(owned.companion.dirty, true);
+  assert.equal(owned.companion.ahead, 1);
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true });
+});
+
+test("status --pr looks up PRs for non-complete items only, warns per slug on failure, and never changes lifecycle", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2\"");
+  writeRoadmap(repo, "issues/2026/09/bug", "status: in-review\nbranch: issue/bug\nnext-step: review");
+  writeRoadmap(repo, "features/2026/08/done", "status: complete\nbranch: feature/done\nnext-step: \"\"");
+  const marker = path.join(wt, "gh-invoked");
+  const calls = () => (fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim().split("\n") : []);
+
+  // Without --pr: no gh process, every pr/companionPr null.
+  const plain = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker) }).env }, "status");
+  assert.equal(plain.code, 0);
+  assert.ok(!fs.existsSync(marker), "gh was invoked without --pr");
+  assert.ok(plain.json.items.every((i) => i.pr === null && i.companionPr === null));
+
+  // With --pr in the in-repo layout: one call per non-complete item, none for the complete one.
+  const withPr = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker) }).env }, "status", "--pr");
+  assert.equal(withPr.code, 0);
+  assert.deepEqual(withPr.json.items.map((i) => i.slug), ["alpha", "bug", "done"]);
+  for (const slug of ["alpha", "bug"]) {
+    const item = withPr.json.items.find((i) => i.slug === slug);
+    assert.deepEqual(item.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+    assert.equal(item.companionPr, null);
+  }
+  const done = withPr.json.items.find((i) => i.slug === "done");
+  assert.equal(done.pr, null);
+  assert.equal(done.companionPr, null);
+  assert.equal(done.lifecycle, "shipped");
+  assert.deepEqual(withPr.json.warnings, []);
+  assert.deepEqual(
+    calls().sort(),
+    [`${repo} pr view feature/alpha --json number,state,isDraft,mergeStateStatus,url`, `${repo} pr view issue/bug --json number,state,isDraft,mergeStateStatus,url`],
+  );
+
+  // A failing gh: pr null plus one slug-prefixed warning; exit code and lifecycle unchanged.
+  fs.rmSync(marker, { force: true });
+  const failing = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker, { product: "NONE" }) }).env }, "status", "feature", "alpha", "--pr");
+  assert.equal(failing.code, 0);
+  assert.equal(failing.json.items[0].pr, null);
+  assert.equal(failing.json.items[0].lifecycle, "building");
+  assert.deepEqual(failing.json.warnings, ["alpha: pr: gh pr view feature/alpha failed: no pull requests found for branch"]);
+
+  // A merged PR on an in-progress roadmap warns but keeps lifecycle building.
+  const merged = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker, { product: "MERGED" }) }).env }, "status", "feature", "alpha", "--pr");
+  assert.equal(merged.json.items[0].lifecycle, "building");
+  assert.equal(merged.json.items[0].pr.state, "MERGED");
+  assert.deepEqual(merged.json.warnings, ["alpha: merged-but-not-complete: PR #15 for feature/alpha is merged but features/2026/09/alpha/roadmap.md has status in-progress"]);
+
+  // Companion mode: one call from the product checkout and one from inside the companion clone per item.
+  const pair = makePairRepo();
+  writeRoadmap(pair.docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review\nartifact-pr: \"#7\"");
+  writeRoadmap(pair.docs, "features/2026/08/done", "status: complete\nbranch: feature/done\nnext-step: \"\"");
+  const pairMarker = path.join(pair.wt, "gh-invoked");
+  const both = runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker) }).env }, "status", "--pr");
+  assert.equal(both.code, 0);
+  const widget = both.json.items.find((i) => i.slug === "widget");
+  assert.equal(widget.pr.number, 15);
+  assert.equal(widget.companionPr.number, 7);
+  const pairDone = both.json.items.find((i) => i.slug === "done");
+  assert.equal(pairDone.pr, null);
+  assert.equal(pairDone.companionPr, null);
+  assert.deepEqual(
+    fs.readFileSync(pairMarker, "utf8").trim().split("\n").sort(),
+    [`${pair.repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`, `${pair.docs} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`],
+  );
+  assert.deepEqual(both.json.warnings, []);
+
+  assert.match(run(repo).json.usage.join("\n"), /status \[feature\|issue\] \[slug\] \[--pr\]/);
 });
 
 test("resolve falls back to the origin branch when the checkout has no roadmap", () => {
@@ -1670,6 +1896,7 @@ test("next from the primary: one in-progress roadmap → start-session --resume 
     window: "here",
     then: "/agento continue widget",
     reason: one.json.next.reason,
+    target: null,
   });
   assert.match(one.json.next.reason, /in-progress/);
   assertDispatch(one.json, null);
@@ -1722,6 +1949,7 @@ test("next in a build worktree: in-progress → build-feature here with dispatch
   assert.equal(json.next.invocation, "/agento build-feature widget");
   assert.equal(json.next.window, "here");
   assert.equal(json.next.then, null);
+  assert.equal(json.next.target, null, "window here carries no target");
   assert.equal(json.reviewFresh, null);
   assertDispatch(json, "delivery-builder.agent.md");
 
@@ -1764,12 +1992,14 @@ test("next: review freshness decides between ship, re-review, and the fix handof
   assert.equal(approved.reviewFresh, true);
   assert.equal(approved.next.invocation, "/agento ship widget");
   assert.equal(approved.next.window, "primary");
+  assert.deepEqual(approved.next.target, { path: repo, workspace: null }, "window primary targets the primary checkout");
   assertDispatch(approved, null);
   const fromPrimary = run(repo, "next").json;
   assert.equal(fromPrimary.status, "ok");
   assert.equal(fromPrimary.next.invocation, "/agento ship widget");
   assert.equal(fromPrimary.next.window, "here");
   assert.equal(fromPrimary.next.then, null);
+  assert.equal(fromPrimary.next.target, null);
   assert.equal(fromPrimary.reviewFresh, true);
 
   // A code commit after the approve makes it stale: re-review here; the primary reopens the window.
@@ -1867,6 +2097,7 @@ test("next: ready initiative members drive start-session from the primary and ne
   assert.deepEqual(picked.json.next.args, []);
   assert.equal(picked.json.next.invocation, "/agento start-session");
   assert.equal(picked.json.next.then, "/agento continue alpha");
+  assert.equal(picked.json.next.target, null, "start-session runs here: no target");
   assert.equal(picked.json.slug, "alpha");
   assertDispatch(picked.json, null);
 

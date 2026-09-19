@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList, resolveNextTarget } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -860,4 +860,33 @@ test("deriveNext: every command it ever emitted exists as a prompt and is never 
   assert.deepEqual(distinct, ["build-feature", "build-issue", "new-feature", "review-feature", "review-issue", "ship", "start-session"]);
   for (const c of distinct) assert.ok(promptNames.has(c), c);
   assert.ok(!distinct.includes("ap"));
+});
+
+test("resolveNextTarget: here and null → null; primary → primary path; secondary → the managed product worktree on the branch or null", () => {
+  const product = { path: "/wt/feature-widget", branch: "feature/widget", detached: false, repo: "product", isManaged: true, dirPrefix: "feature", id: "widget" };
+  const companion = { path: "/docs-wt/feature-widget", branch: "feature/widget", detached: false, repo: "companion", isManaged: true, dirPrefix: "feature", id: "widget" };
+  const primary = { path: "/project", branch: "main", detached: false, repo: "product", isManaged: false, dirPrefix: null, id: null };
+  const workspace = { path: "/wt/feature-widget.code-workspace", exists: true };
+  const seen = [];
+  const workspaceFor = (w) => {
+    seen.push(w.path);
+    return workspace;
+  };
+  const resolve = (window, worktrees, branch = "feature/widget") =>
+    resolveNextTarget({ next: window ? { window } : null, worktrees, primaryPath: "/project", branch, workspaceFor });
+
+  const table = [
+    [null, [primary, product], null],
+    ["here", [primary, product], null],
+    ["primary", [primary, product], { path: "/project", workspace: null }],
+    ["secondary", [primary, product, companion], { path: "/wt/feature-widget", workspace }],
+    ["secondary", [primary, companion], null],
+    ["secondary", [primary], null],
+    ["secondary", [primary, { ...product, branch: "feature/other" }], null],
+  ];
+  for (const [window, worktrees, expected] of table) {
+    assert.deepEqual(resolve(window, worktrees), expected, `window ${window} with ${worktrees.length} worktrees`);
+  }
+  assert.equal(resolve("secondary", [primary, product], null), null, "a null branch never matches");
+  assert.deepEqual(seen, ["/wt/feature-widget"], "workspaceFor runs only for the matched product entry");
 });
