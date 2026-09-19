@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import type { ExtensionApi } from "../../src/extension.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
+import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
 import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
 
 async function waitForReadyTree(api: ExtensionApi): Promise<void> {
@@ -64,6 +65,30 @@ async function waitForTree(
       reject(new Error(`Timed out waiting for Deliveries tree ${description}`));
     }, api.scheduler.debounceMs + 12_000);
     const subscription = api.deliveries.onDidChangeTreeData(() => {
+      if (!predicate()) {
+        return;
+      }
+      clearTimeout(timeout);
+      subscription.dispose();
+      resolve();
+    });
+  });
+  await action();
+  await refreshed;
+}
+
+async function waitForInitiativeTree(
+  api: ExtensionApi,
+  predicate: () => boolean,
+  description: string,
+  action: () => Thenable<void>,
+): Promise<void> {
+  const refreshed = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      subscription.dispose();
+      reject(new Error(`Timed out waiting for Initiatives tree ${description}`));
+    }, api.scheduler.debounceMs + 12_000);
+    const subscription = api.initiatives.onDidChangeTreeData(() => {
       if (!predicate()) {
         return;
       }
@@ -200,6 +225,27 @@ export async function run(): Promise<void> {
   assert.ok(breakdownEditor, "initiative member activation opens its breakdown");
   assert.equal(breakdownEditor.viewColumn, vscode.ViewColumn.Two);
 
+  const buildingRoadmap = vscode.Uri.file(path.join(expectedArtifactRoot, "features", "2026", "09", "building-delivery", "roadmap.md"));
+  const buildingContents = Buffer.from(await vscode.workspace.fs.readFile(buildingRoadmap)).toString("utf8");
+  await waitForInitiativeTree(
+    api,
+    () => {
+      const current = api.initiatives.getChildren()[0];
+      return current?.kind === "initiative"
+        && api.initiatives.getTreeItem(current).description === "2/6 complete | 2 in flight | 2 ready";
+    },
+    "to reflect a completed member roadmap",
+    () => vscode.workspace.fs.writeFile(buildingRoadmap, Buffer.from(buildingContents.replace("status: in-progress", "status: complete"))),
+  );
+  const refreshedInitiative = api.initiatives.getChildren()[0];
+  assert.ok(refreshedInitiative?.kind === "initiative");
+  const refreshedGroups = api.initiatives.getChildren(refreshedInitiative).filter(
+    (element): element is Extract<InitiativeTreeElement, { kind: "group" }> => element.kind === "group",
+  );
+  assert.deepEqual(refreshedGroups.map((group) => api.initiatives.getTreeItem(group).label), ["Ready (2)", "In flight (2)", "Complete (2)"]);
+  const refreshedDeliveryLabels = api.deliveries.getChildren().flatMap((group) => deliveryElements(api, group)).map((item) => api.deliveries.getTreeItem(item).label);
+  assert.ok(refreshedDeliveryLabels.includes("building-delivery"), "Deliveries remains populated after initiative refresh");
+
   const roadmapContents = Buffer.from(await vscode.workspace.fs.readFile(roadmapUri)).toString("utf8");
   await waitForTree(
     api,
@@ -232,5 +278,52 @@ export async function run(): Promise<void> {
   const errorItem = api.deliveries.getTreeItem(api.deliveries.getChildren()[0]!);
   assert.equal(errorItem.label, "Unable to load deliveries: fixture status failure");
   assert.equal(errorItem.contextValue, "agento.error");
-  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: delivery and initiative rendering, diagnostics, beside-open, refreshed tree, empty/error rows, watcher refresh`);
+
+  const artifactRoot = api.initiatives.current.artifactRoot;
+  const healthyModel = api.initiatives.current.model;
+  assert.equal(healthyModel.kind, "ready");
+  if (healthyModel.kind !== "ready") return;
+  api.initiatives.update({ model: { kind: "empty", message: "No initiatives found." }, artifactRoot });
+  const emptyInitiative = api.initiatives.getTreeItem(api.initiatives.getChildren()[0]!);
+  assert.equal(emptyInitiative.label, "No initiatives found.");
+  assert.equal(emptyInitiative.contextValue, "agento.empty");
+
+  api.initiatives.update({
+    model: createInitiativeTreeModel({ status: "ok", items: [{ slug: "malformed" }] }, new Map()),
+    artifactRoot,
+  });
+  const malformedInitiative = api.initiatives.getTreeItem(api.initiatives.getChildren()[0]!);
+  assert.match(String(malformedInitiative.label), /Invalid initiative list response/);
+  assert.equal(malformedInitiative.contextValue, "agento.error");
+
+  api.initiatives.update({ model: createInitiativeTreeError(new Error("fixture initiative failure")), artifactRoot });
+  const errorInitiative = api.initiatives.getTreeItem(api.initiatives.getChildren()[0]!);
+  assert.equal(errorInitiative.label, "Unable to load initiatives: fixture initiative failure");
+  assert.equal(errorInitiative.contextValue, "agento.error");
+
+  const healthy = healthyModel.items[0]!;
+  api.initiatives.update({
+    model: {
+      kind: "ready",
+      items: [
+        {
+          ...healthy,
+          slug: "invalid-initiative",
+          valid: false,
+          groups: [],
+          diagnostics: [{ kind: "error", message: "dependency cycle among: a, b" }],
+        },
+        healthy,
+      ],
+    },
+    artifactRoot,
+  });
+  const partialRoots = api.initiatives.getChildren();
+  assert.deepEqual(partialRoots.map((element) => api.initiatives.getTreeItem(element).label), ["invalid-initiative", "agento-extension"]);
+  const invalidDiagnostic = api.initiatives.getChildren(partialRoots[0]).find((element) => element.kind === "diagnostic");
+  assert.ok(invalidDiagnostic);
+  assert.equal(api.initiatives.getTreeItem(invalidDiagnostic).label, "dependency cycle among: a, b");
+  assert.ok(api.initiatives.getChildren(partialRoots[1]).some((element) => element.kind === "group"), "healthy initiative remains usable");
+
+  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: rendering, navigation, roadmap refresh, partial diagnostics, empty/error rows, Deliveries retained`);
 }
