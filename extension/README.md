@@ -1,8 +1,21 @@
 # Agento
 
 Agento is a VS Code dashboard and command launcher for the Agento delivery workflow.
-This scaffold contributes the Agento activity-bar container, refresh command, and
-output channel. Delivery views and command routing arrive in later releases.
+The Agento activity-bar container includes a read-only Deliveries view, refresh
+command, and output channel.
+
+## Deliveries
+
+The Deliveries view reads `agento.mjs status --pr` and shows each non-empty lifecycle
+group in CLI order. Delivery rows keep the label compact: slug, type, roadmap
+progress, status, and pull request state. Hover over a row for the full product and
+companion pull request, worktree owner, workspace, companion checkout, and initiative
+details supplied by the CLI. Selecting a delivery opens its roadmap beside the active
+editor.
+
+The view refreshes after roadmap, review, and Git changes or when you run the Refresh
+command. Empty results and load failures appear directly in the tree; CLI warnings
+and errors are also written to the Agento output channel.
 
 ## Settings
 
