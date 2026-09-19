@@ -3,6 +3,7 @@
   "displayName": "Agento",
   "description": "Dashboard and command launcher for Agento delivery workflows.",
   "version": "0.5.2",
+  "type": "module",
   "publisher": "david-perry-software",
   "license": "MIT",
   "repository": {
