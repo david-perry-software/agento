@@ -35,6 +35,10 @@
         {
           "id": "agento.deliveries",
           "name": "Deliveries"
+        },
+        {
+          "id": "agento.initiatives",
+          "name": "Initiatives"
         }
       ]
     },
@@ -52,6 +56,11 @@
       {
         "command": "agento.openRoadmap",
         "title": "Open Roadmap",
+        "category": "Agento"
+      },
+      {
+        "command": "agento.openBreakdown",
+        "title": "Open Breakdown",
         "category": "Agento"
       }
     ],

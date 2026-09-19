@@ -186,6 +186,9 @@ function parseMember(value: unknown, next: string | null): InitiativeMemberItem 
 }
 
 function parseDetail(value: unknown, expectedSlug: string): InitiativeDetail {
+  if (value instanceof Error) {
+    throw value;
+  }
   if (!isRecord(value) || (value.status !== "ok" && value.status !== "invalid")) {
     throw new Error("status must be ok or invalid");
   }
@@ -297,6 +300,13 @@ export function createInitiativeTreeModel(listValue: unknown, detailValues: Read
   } catch (error) {
     return createInitiativeTreeError(error, "Invalid initiative list response");
   }
+}
+
+export function initiativeSlugs(listValue: unknown): string[] {
+  if (!isRecord(listValue) || listValue.status !== "ok" || !Array.isArray(listValue.items)) {
+    return [];
+  }
+  return listValue.items.flatMap((item) => isRecord(item) && typeof item.slug === "string" ? [item.slug] : []);
 }
 
 export function createInitiativeTreeError(error: unknown, prefix = "Unable to load initiatives"): InitiativeTreeModel {
