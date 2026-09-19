@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import * as vscode from "vscode";
@@ -22,17 +21,26 @@ export async function run(): Promise<void> {
   assert.equal(session.code, 0);
   assert.equal(typeof (session.json as { role?: unknown }).role, "string");
 
+  const deliveryDir = path.join(fixture, "features", "2026", "09", "x");
+  const roadmapPath = path.join(deliveryDir, "roadmap.md");
+  const observedReasons: string[] = [];
   const refreshed = new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Timed out waiting for roadmap refresh")), api.scheduler.debounceMs + 2000);
-    const subscription = api.scheduler.onDidRefresh(() => {
+    const timeout = setTimeout(
+      () => reject(new Error(`Timed out waiting for roadmap refresh; observed: ${observedReasons.join(", ") || "none"}`)),
+      api.scheduler.debounceMs + 2000,
+    );
+    const subscription = api.scheduler.onDidRefresh(({ reasons }) => {
+      observedReasons.push(...reasons);
+      if (!reasons.some((reason) => reason === `create ${roadmapPath}` || reason === `change ${roadmapPath}`)) {
+        return;
+      }
       clearTimeout(timeout);
       subscription.dispose();
       resolve();
     });
   });
-  const deliveryDir = path.join(fixture, "features", "2026", "09", "x");
-  await mkdir(deliveryDir, { recursive: true });
-  await writeFile(path.join(deliveryDir, "roadmap.md"), "# Fixture\n");
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(deliveryDir));
+  await vscode.workspace.fs.writeFile(vscode.Uri.file(roadmapPath), Buffer.from("# Fixture\n"));
   await refreshed;
   console.log("Extension activation test passed: active, commands, CLI session, watcher refresh");
 }

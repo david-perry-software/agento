@@ -11,11 +11,21 @@ export interface WatcherOptions {
 
 export function createWatchers(options: WatcherOptions): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [];
-  const patterns = new Map<string, vscode.RelativePattern>();
+  const patterns = new Map<string, vscode.GlobPattern>();
+  let hasWorkspaceRoot = false;
 
   for (const root of options.roots) {
-    patterns.set(`${root.fsPath}:roadmap`, new vscode.RelativePattern(root.fsPath, "**/roadmap.md"));
-    patterns.set(`${root.fsPath}:review`, new vscode.RelativePattern(root.fsPath, "**/review.md"));
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(root);
+    if (workspaceFolder?.uri.fsPath === root.fsPath) {
+      hasWorkspaceRoot = true;
+      continue;
+    }
+    patterns.set(`${root.fsPath}:roadmap`, new vscode.RelativePattern(root, "**/roadmap.md"));
+    patterns.set(`${root.fsPath}:review`, new vscode.RelativePattern(root, "**/review.md"));
+  }
+  if (hasWorkspaceRoot) {
+    patterns.set("workspace:roadmap", "**/roadmap.md");
+    patterns.set("workspace:review", "**/review.md");
   }
   for (const directories of options.gitDirs) {
     patterns.set(`${directories.gitDir}:HEAD`, new vscode.RelativePattern(directories.gitDir, "HEAD"));
@@ -30,7 +40,8 @@ export function createWatchers(options: WatcherOptions): vscode.Disposable[] {
       watcher.onDidDelete((uri) => options.onEvent(`delete ${uri.fsPath}`));
       disposables.push(watcher);
     } catch (error) {
-      options.output?.appendLine(`watcher: ${pattern.pattern} failed: ${String(error)}`);
+      const description = typeof pattern === "string" ? pattern : pattern.pattern;
+      options.output?.appendLine(`watcher: ${description} failed: ${String(error)}`);
     }
   }
 
