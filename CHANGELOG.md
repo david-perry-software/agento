@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Deliveries tree.** The extension now renders the CLI's `status --pr` lifecycle
+  groups as compact delivery rows with complete PR, ownership, workspace, companion,
+  and initiative tooltips. Selecting a row opens its roadmap beside the active
+  editor; watcher and command refreshes update the tree, while empty results,
+  warnings, and errors remain explicit. Electron coverage exercises both in-repo and
+  companion layouts.
 - **Added.** A VS Code extension scaffold under `extension/` with an Agento activity
   bar container, refresh and output commands, bundled CLI client, debounced delivery
   watchers, activation coverage, and VSIX packaging.
