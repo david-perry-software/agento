@@ -12,8 +12,12 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function isCanonicalAgentoCommand(value: unknown): value is string {
+  return typeof value === "string" && /^\/agento [a-z][a-z-]*(?: [^\r\n]+)?$/.test(value);
+}
+
 function commandText(value: unknown): string {
-  if (typeof value !== "string" || !/^\/agento [a-z][a-z-]*(?: [^\r\n]+)?$/.test(value)) {
+  if (!isCanonicalAgentoCommand(value)) {
     throw new Error("command must use canonical /agento <name> syntax");
   }
   return value;
