@@ -13,6 +13,13 @@ import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs }
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import {
+  primaryInitiativeTarget,
+  runNewInitiativeFlow,
+  type NewInitiativeFlowDependencies,
+  type NewInitiativeFlowResult,
+  type NewInitiativeInput,
+} from "./newInitiativeFlow.js";
+import {
   createInitiativePlanRequest,
   createNewPlanRequest,
   runNewPlanFlow,
@@ -43,11 +50,20 @@ export interface ExtensionApi {
   ) => Promise<NewPlanFlowResult>;
   setNewPlanRunner: (runner?: (request: NewPlanRequest) => Promise<NewPlanFlowResult>) => void;
   setNewPlanPrompts: (prompts?: NewPlanPrompts) => void;
+  startNewInitiative: (input: NewInitiativeInput, dependencies?: NewInitiativeFlowDependencies) => Promise<NewInitiativeFlowResult>;
+  setNewInitiativeRunner: (runner?: (input: NewInitiativeInput) => Promise<NewInitiativeFlowResult>) => void;
+  setNewInitiativePrompts: (prompts?: NewInitiativePrompts) => void;
 }
 
 interface NewPlanPrompts {
   chooseKind: () => Promise<"feature" | "issue" | undefined>;
   describe: (kind: "feature" | "issue") => Promise<string | undefined>;
+}
+
+interface NewInitiativePrompts {
+  chooseInput: () => Promise<"brief" | "file" | undefined>;
+  enterBrief: () => Promise<string | undefined>;
+  pickFile: (primaryPath: string) => Promise<string | undefined>;
 }
 
 interface ConfigResult {
@@ -321,6 +337,86 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (description === undefined) return;
     return newPlanRunner(createNewPlanRequest(kind, description));
   });
+  const readSession = async (): Promise<unknown> => {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) throw new Error("No workspace folder is open.");
+    return (await client.run(["session"], root)).json;
+  };
+  const productionNewInitiativeDependencies: NewInitiativeFlowDependencies = {
+    readSession,
+    isRegularFile: async (filePath) => ((await vscode.workspace.fs.stat(vscode.Uri.file(filePath))).type & vscode.FileType.File) !== 0,
+    dispatch: (command, target) => dispatchCommandToTarget(
+      command,
+      target,
+      "Continue creating the initiative in the primary window.",
+      {
+        executeCommand: vscode.commands.executeCommand,
+        reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
+        pendingStore,
+        openTarget,
+      },
+      currentTargetPaths().has(target.path),
+    ),
+  };
+  const startNewInitiative = async (
+    input: NewInitiativeInput,
+    dependencies: NewInitiativeFlowDependencies = productionNewInitiativeDependencies,
+  ): Promise<NewInitiativeFlowResult> => runNewInitiativeFlow(input, dependencies);
+  let newInitiativeRunner = (input: NewInitiativeInput) => startNewInitiative(input);
+  const setNewInitiativeRunner = (runner?: (input: NewInitiativeInput) => Promise<NewInitiativeFlowResult>): void => {
+    newInitiativeRunner = runner ?? ((input) => startNewInitiative(input));
+  };
+  const defaultNewInitiativePrompts: NewInitiativePrompts = {
+    chooseInput: async () => (await vscode.window.showQuickPick(
+      [
+        { label: "Enter brief", description: "Write a multi-line initiative brief", inputKind: "brief" as const },
+        { label: "Pick a file", description: "Use a brief from the primary repository", inputKind: "file" as const },
+      ],
+      { title: "New Initiative", placeHolder: "Choose an initiative brief source" },
+    ))?.inputKind,
+    enterBrief: async () => {
+      const document = await vscode.workspace.openTextDocument({ language: "markdown", content: "" });
+      await vscode.window.showTextDocument(document);
+      const selection = await vscode.window.showInformationMessage(
+        "Submit the initiative brief from this editor.",
+        "Submit",
+        "Cancel",
+      );
+      return selection === "Submit" ? document.getText() : undefined;
+    },
+    pickFile: async (primaryPath) => (await vscode.window.showOpenDialog({
+      title: "Select Initiative Brief",
+      defaultUri: vscode.Uri.file(primaryPath),
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+    }))?.[0]?.fsPath,
+  };
+  let newInitiativePrompts = defaultNewInitiativePrompts;
+  const setNewInitiativePrompts = (prompts?: NewInitiativePrompts): void => {
+    newInitiativePrompts = prompts ?? defaultNewInitiativePrompts;
+  };
+  const newInitiativeCommand = vscode.commands.registerCommand("agento.newInitiative", async () => {
+    try {
+      const inputKind = await newInitiativePrompts.chooseInput();
+      if (!inputKind) return;
+      const input = inputKind === "brief"
+        ? { kind: "brief" as const, text: await newInitiativePrompts.enterBrief() }
+        : { kind: "file" as const, path: await newInitiativePrompts.pickFile(primaryInitiativeTarget(await readSession()).path) };
+      if ((input.kind === "brief" ? input.text : input.path) === undefined) return;
+      const result = await newInitiativeRunner(input as NewInitiativeInput);
+      if (result.kind === "failed") {
+        output.appendLine(`new initiative: ${result.reason}`);
+        await vscode.window.showErrorMessage(result.reason);
+      }
+      return result;
+    } catch (error) {
+      const message = `Unable to create initiative: ${error instanceof Error ? error.message : String(error)}`;
+      output.appendLine(message);
+      await vscode.window.showErrorMessage(message);
+      return { kind: "failed", reason: message } satisfies NewInitiativeFlowResult;
+    }
+  });
   const planInitiativeMemberCommand = vscode.commands.registerCommand(
     "agento.planInitiativeMember",
     async (element?: InitiativeTreeElement) => {
@@ -385,6 +481,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     openRoadmapCommand,
     openBreakdownCommand,
     newPlanCommand,
+    newInitiativeCommand,
     planInitiativeMemberCommand,
     dispatchActionCommand,
     showActionsCommand,
@@ -399,7 +496,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   await rebuildWatchers();
   await consumePending();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction, startNewPlan, setNewPlanRunner, setNewPlanPrompts };
+  return {
+    client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction,
+    startNewPlan, setNewPlanRunner, setNewPlanPrompts,
+    startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
+  };
 }
 
 export function deactivate(): void {}
