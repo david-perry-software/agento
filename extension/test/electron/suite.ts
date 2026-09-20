@@ -4,6 +4,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { ExtensionApi } from "../../src/extension.js";
+import { dispatchCommandAction } from "../../src/commandDispatcher.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
@@ -290,6 +291,39 @@ export async function run(): Promise<void> {
     command: "workbench.action.chat.open",
     options: { query: deliveryAction.command, mode: "agent" },
   });
+
+  const routedTargets: string[] = [];
+  const target = process.env.AGENTO_ELECTRON_SCENARIO === "companion"
+    ? { kind: "workspace" as const, path: path.join(path.dirname(fixture), "feature.code-workspace") }
+    : { kind: "folder" as const, path: fixture };
+  const crossWindowRoute = await dispatchCommandAction(
+    { command: "/agento review-feature planned-delivery", window: "secondary", reason: "review there" },
+    "planned-delivery",
+    {
+      currentWindow: () => "primary",
+      loadNext: async () => ({
+        status: "ok",
+        next: {
+          window: "secondary",
+          target: target.kind === "workspace"
+            ? { path: path.dirname(target.path), workspace: { path: target.path, exists: true } }
+            : { path: target.path, workspace: null },
+          reason: "Continue in the delivery window.",
+        },
+      }),
+      executeCommand,
+      reportError: async (message) => { assert.fail(message); },
+      reportInfo: async () => undefined,
+      output: api.output,
+      pendingStore: {
+        get: () => undefined,
+        update: async () => undefined,
+      },
+      openTarget: async (opened) => { routedTargets.push(`${opened.kind}:${opened.path}`); },
+    },
+  );
+  assert.equal(crossWindowRoute.kind, "open");
+  assert.deepEqual(routedTargets, [`${target.kind}:${target.path}`]);
   if (process.env.AGENTO_ELECTRON_SCENARIO === "companion") {
     assert.match(String(api.deliveries.getTreeItem(items[0]!).tooltip), /Companion PR: #202 OPEN draft CLEAN/);
   } else {

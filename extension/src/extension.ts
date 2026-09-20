@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
-import { dispatchCommandAction, type CommandExecutor } from "./commandDispatcher.js";
+import { consumePendingCommands, dispatchCommandAction, type CommandExecutor } from "./commandDispatcher.js";
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
@@ -193,6 +193,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
   const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openBreakdown);
+  const openTarget = (target: { kind: "folder" | "workspace"; path: string }) => vscode.commands.executeCommand(
+    "vscode.openFolder",
+    vscode.Uri.file(target.path),
+    { forceNewWindow: true },
+  );
   const dispatchAction = (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => dispatchCommandAction(
     action,
     slug,
@@ -205,7 +210,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       },
       executeCommand: vscode.commands.executeCommand,
       reportError: (message) => vscode.window.showErrorMessage(message),
+      reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
       output,
+      pendingStore: context.globalState,
+      openTarget,
     },
     executeCommand,
   );
@@ -231,6 +239,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       scheduler.refreshNow("session doctor visible");
     }
   });
+  const consumePending = () => consumePendingCommands(
+    [vscode.workspace.workspaceFile?.fsPath, ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)].filter(
+      (target): target is string => Boolean(target),
+    ),
+    {
+      pendingStore: context.globalState,
+      executeCommand: vscode.commands.executeCommand,
+      reportError: (message) => vscode.window.showErrorMessage(message),
+      output,
+    },
+  );
+  const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {
+    if (focused) void consumePending();
+  });
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => void rebuildWatchers());
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };
 
@@ -252,10 +274,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     initiativesView,
     sessionDoctorView,
     sessionDoctorVisibility,
+    windowFocusSubscription,
     workspaceSubscription,
     watcherManager,
   );
   await rebuildWatchers();
+  await consumePending();
   scheduler.refreshNow("activate");
   return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction };
 }
