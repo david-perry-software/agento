@@ -943,12 +943,16 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   assert.deepEqual(json.warnings, [`bogus: unknown-roadmap-status: features/2026/09/bogus/roadmap.md has status "wat"`]);
   const widget = json.items.find((i) => i.slug === "widget");
   assert.deepEqual(widget.owner, { path: build, role: "build", dirPrefix: "feature", id: "widget" });
+  assert.deepEqual(widget.allowed, ["/agento continue", "/agento build-feature widget", "/agento ap widget", "/agento delivery-status"]);
+  assert.deepEqual(widget.elsewhere.map((entry) => [entry.command, entry.window]), [["/agento ship widget", "primary"]]);
   for (const item of json.items) {
     if (item.slug !== "widget") assert.equal(item.owner, null, item.slug);
     assert.equal(item.workspace, null, item.slug);
     assert.equal(item.companion, null, item.slug);
     assert.equal(item.pr, null, item.slug);
     assert.equal(item.companionPr, null, item.slug);
+    assert.ok(Array.isArray(item.allowed), item.slug);
+    assert.ok(Array.isArray(item.elsewhere), item.slug);
     // Every pre-existing field is still there with its type.
     assert.deepEqual(Object.keys(item.steps), ["ticked", "total"]);
     assert.equal(typeof item.status, "string");
@@ -980,6 +984,8 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   assert.equal(unowned.owner, null);
   assert.equal(unowned.companion, null);
   assert.equal(unowned.workspace, null);
+  assert.ok(unowned.allowed.includes("/agento start-session feature/unowned"));
+  assert.deepEqual(unowned.elsewhere.map((entry) => [entry.command, entry.window]), [["/agento build-feature unowned", "secondary"]]);
   fs.writeFileSync(path.join(half, "scratch.md"), "wip\n");
   fs.writeFileSync(workspaceFile, "{}\n");
   items = run(pair.repo, "status").json.items;

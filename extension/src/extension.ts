@@ -1,9 +1,13 @@
 import path from "node:path";
 import * as vscode from "vscode";
 
+import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
+import { consumePendingCommands, dispatchCommandAction, type CommandExecutor } from "./commandDispatcher.js";
+import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
-import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
+import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
+import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
@@ -22,6 +26,7 @@ export interface ExtensionApi {
   sessionDoctorView: vscode.TreeView<unknown>;
   statusBar: vscode.StatusBarItem;
   output: vscode.OutputChannel;
+  dispatchAction: (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => Promise<unknown>;
 }
 
 interface ConfigResult {
@@ -40,6 +45,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
   const sessionDoctor = new SessionDoctorProvider();
+  const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
   statusBar.text = "Agento: unavailable";
@@ -189,6 +195,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
   const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openBreakdown);
+  const openTarget = (target: { kind: "folder" | "workspace"; path: string }) => vscode.commands.executeCommand(
+    "vscode.openFolder",
+    vscode.Uri.file(target.path),
+    { forceNewWindow: true },
+  );
+  const dispatchAction = (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => dispatchCommandAction(
+    action,
+    slug,
+    {
+      currentWindow: () => sessionDoctor.current.kind === "ready" && sessionDoctor.current.session.role === "primary" ? "primary" : "secondary",
+      loadNext: async (deliverySlug) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) throw new Error("No workspace folder is open.");
+        return (await client.run(["next", deliverySlug], folder.uri.fsPath)).json;
+      },
+      executeCommand: vscode.commands.executeCommand,
+      reportError: (message) => vscode.window.showErrorMessage(message),
+      reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
+      output,
+      pendingStore,
+      openTarget,
+    },
+    executeCommand,
+  );
+  const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
+  const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
+    const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
+      ? { slug: sessionDoctor.current.session.deliverySlug ?? undefined, actions: sessionDoctor.current.actions }
+      : null);
+    if (!source || source.actions.length === 0) {
+      await vscode.window.showInformationMessage("No Agento actions are available in this window.");
+      return;
+    }
+    const action = await pickCommandAction(source);
+    if (action) {
+      await vscode.commands.executeCommand("agento.dispatchAction", action, source.slug);
+    }
+  });
   const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
   const initiativesView = vscode.window.createTreeView("agento.initiatives", { treeDataProvider: initiatives });
   const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
@@ -198,6 +242,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       sessionDoctorWasVisible = true;
       scheduler.refreshNow("session doctor visible");
     }
+  });
+  const consumePending = () => consumePendingCommands(
+    [vscode.workspace.workspaceFile?.fsPath, ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)].filter(
+      (target): target is string => Boolean(target),
+    ),
+    {
+      pendingStore,
+      executeCommand: vscode.commands.executeCommand,
+      reportError: (message) => vscode.window.showErrorMessage(message),
+      output,
+    },
+  );
+  const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {
+    if (focused) void consumePending();
   });
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => void rebuildWatchers());
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };
@@ -214,16 +272,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     showOutputCommand,
     openRoadmapCommand,
     openBreakdownCommand,
+    dispatchActionCommand,
+    showActionsCommand,
     deliveriesView,
     initiativesView,
     sessionDoctorView,
     sessionDoctorVisibility,
+    windowFocusSubscription,
     workspaceSubscription,
     watcherManager,
   );
   await rebuildWatchers();
+  await consumePending();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output };
+  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction };
 }
 
 export function deactivate(): void {}

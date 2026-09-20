@@ -46,7 +46,10 @@ clone/primary copy last; each item additionally carries `lifecycle`, `owner` —
 `workspace { path, exists } | null` and `companion { path, branch, detached, dirty,
 ahead, behind, registered } | null` for a managed owner in companion mode, and `pr`
 and `companionPr`, both `null` unless `--pr` is given and the item's `status` is not
-`complete` — complete items are never looked up; the top level adds `lifecycles[]`,
+`complete` — complete items are never looked up; `allowed[]` and `elsewhere[]` are
+derived from that item's lifecycle and owner role, with unowned items using the
+primary role, and applicable build/review rows place `/agento ap <slug>` immediately
+after their attended command; the top level adds `lifecycles[]`,
 the lifecycle vocabulary in order, and `warnings[]`, every lifecycle or lookup warning
 prefixed `<slug>: `; no `gh` process runs without `--pr`), `close-decision <type> <slug>` and
 `ship-preflight <type> <slug> [--pr]` (all four report `layout` — `"checkout"`

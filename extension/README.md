@@ -1,8 +1,8 @@
 # Agento
 
 Agento is a VS Code dashboard and command launcher for the Agento delivery workflow.
-The Agento activity-bar container includes a read-only Deliveries view, refresh
-command, and output channel.
+The Agento activity-bar container includes Deliveries, Initiatives, and Session &
+Doctor views, plus refresh, command dispatch, and output commands.
 
 ## Deliveries
 
@@ -44,6 +44,25 @@ changes, or when you run the Refresh command. A load failure remains inline and 
 be retried with Refresh. The status bar summarizes the same snapshot as
 `Agento: <role> · <N> active`, using the role from `session --pr` and the active count
 from `status --pr`; selecting it focuses the Session & Doctor view.
+
+## Commands
+
+The play action in a delivery row or the Session & Doctor title opens a picker in
+the exact order returned by the CLI's `allowed[]` and `elsewhere[]` fields. The
+extension does not maintain its own lifecycle command list. Delivery selections are
+revalidated with `agento.mjs next <slug>` immediately before dispatch.
+
+Actions for the current window open Copilot Chat with the exact canonical command
+as the query and agent mode selected. Cross-window actions store `/agento continue
+<slug>` for five minutes under the CLI-selected target path, then open or focus that
+target. A companion delivery prefers its generated `.code-workspace`; other targets
+open the CLI-supplied folder. The target window removes the pending record before
+submitting it on activation or focus, so one command cannot be submitted twice.
+
+After opening another window, a notification can focus it again while the command
+runs. VS Code provides no API for reading or cancelling chat in another window, so
+Agento does neither. Expired, malformed, mismatched, rejected, or failed handoffs are
+discarded without submission and reported in the UI and Agento output channel.
 
 ## Settings
 

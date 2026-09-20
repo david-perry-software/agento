@@ -26,6 +26,11 @@ flowchart TD
     CONT -->|"primary window"| SHIP
     CONT -->|"start-session --resume, then continue"| SS
 
+    EXT[VS Code extension actions] -->|"allowed[] + elsewhere[]"| NEXT[agento.mjs next]
+    NEXT -->|"here"| CHAT[Copilot Chat in agent mode]
+    NEXT -->|"primary / secondary"| PENDING[(target-keyed pending command)]
+    PENDING -->|"open folder / companion workspace"| CHAT
+
     subgraph hooks [Hooks — every session]
         SC[session-context.sh<br/>SessionStart: branch + resumable work]
         DG[delivery-guard.sh<br/>PreToolUse: policy decisions]
@@ -77,6 +82,16 @@ flowchart TD
   derivation, the bounded CI poller, and the guard replay harness. Prompts call the
   CLI rather than re-deriving these algorithms in prose, so the configured branch
   names and artifact roots are honoured everywhere the hooks honour them.
+- **Extension** (`extension/`) renders CLI state and dispatches only the command
+  records supplied by `allowed[]` and `elsewhere[]`. It revalidates delivery actions
+  through `agento.mjs next <slug>`; same-window routes open Copilot Chat with the
+  canonical query in agent mode. Cross-window routes persist `/agento continue
+  <slug>` under the exact CLI target, prefer the generated `.code-workspace` for a
+  companion pair, and open the target window. That window atomically consumes the
+  record on activation or focus before submission. Records expire after five
+  minutes; invalid, mismatched, or failed handoffs are surfaced without submission.
+  The extension can focus another window but cannot read or cancel that window's
+  chat through the public VS Code API.
 
 ## Where state lives
 

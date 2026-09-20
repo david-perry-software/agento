@@ -4,6 +4,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { ExtensionApi } from "../../src/extension.js";
+import { dispatchCommandAction } from "../../src/commandDispatcher.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
@@ -108,10 +109,16 @@ function sessionDoctorRows(api: ExtensionApi, label: string): SessionDoctorEleme
 }
 
 function sessionResponse(role: string, warnings: string[] = []) {
+  const deliverySlug = "session-doctor-panel";
   return {
     status: "ok",
     role,
     lifecycle: "building",
+    allowed: ["/agento delivery-status"],
+    elsewhere: role === "build"
+      ? [{ command: `/agento ship ${deliverySlug}`, window: "primary", reason: "ship from primary" }]
+      : [],
+    delivery: role === "build" ? { type: "feature", slug: deliverySlug } : null,
     worktree: { path: "/fixture/product", branch: "feature/session-doctor-panel", detached: false },
     workspace: { path: "/fixture/session.code-workspace", exists: true },
     companion: {
@@ -237,6 +244,8 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.showOutput"));
   assert.ok(commands.includes("agento.openRoadmap"));
   assert.ok(commands.includes("agento.openBreakdown"));
+  assert.ok(commands.includes("agento.showActions"));
+  assert.ok(commands.includes("agento.dispatchAction"));
   assert.ok(commands.includes("agento.sessionDoctor.focus"));
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -253,6 +262,20 @@ export async function run(): Promise<void> {
   await focusSessionDoctor(api);
   assert.equal(api.sessionDoctorView.visible, true);
 
+  const submitted: Array<{ command: string; options: unknown }> = [];
+  const executeCommand = async (command: string, options: unknown) => {
+    submitted.push({ command, options });
+  };
+  assert.equal(api.sessionDoctor.current.kind, "ready");
+  if (api.sessionDoctor.current.kind !== "ready") return;
+  const sessionAction = api.sessionDoctor.current.actions.find((action) => action.window === "here");
+  assert.ok(sessionAction);
+  await api.dispatchAction(sessionAction, undefined, executeCommand);
+  assert.deepEqual(submitted.pop(), {
+    command: "workbench.action.chat.open",
+    options: { query: sessionAction.command, mode: "agent" },
+  });
+
   const groups = api.deliveries.getChildren();
   assert.deepEqual(
     groups.map((group) => api.deliveries.getTreeItem(group).label),
@@ -264,6 +287,47 @@ export async function run(): Promise<void> {
     ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery"],
   );
   assert.equal(api.deliveries.getTreeItem(items[0]!).description, "feature | 1/3 | planned | PR #101 draft");
+  assert.ok(items[0]?.kind === "delivery");
+  const deliveryAction = items[0].item.actions.find((action) => action.window === "here");
+  assert.ok(deliveryAction);
+  await api.dispatchAction(deliveryAction, items[0].item.slug, executeCommand);
+  assert.deepEqual(submitted.pop(), {
+    command: "workbench.action.chat.open",
+    options: { query: deliveryAction.command, mode: "agent" },
+  });
+
+  const routedTargets: string[] = [];
+  const target = process.env.AGENTO_ELECTRON_SCENARIO === "companion"
+    ? { kind: "workspace" as const, path: path.join(path.dirname(fixture), "feature.code-workspace") }
+    : { kind: "folder" as const, path: fixture };
+  const crossWindowRoute = await dispatchCommandAction(
+    { command: "/agento review-feature planned-delivery", window: "secondary", reason: "review there" },
+    "planned-delivery",
+    {
+      currentWindow: () => "primary",
+      loadNext: async () => ({
+        status: "ok",
+        next: {
+          window: "secondary",
+          target: target.kind === "workspace"
+            ? { path: path.dirname(target.path), workspace: { path: target.path, exists: true } }
+            : { path: target.path, workspace: null },
+          reason: "Continue in the delivery window.",
+        },
+      }),
+      executeCommand,
+      reportError: async (message) => { assert.fail(message); },
+      reportInfo: async () => undefined,
+      output: api.output,
+      pendingStore: {
+        get: () => undefined,
+        update: async () => undefined,
+      },
+      openTarget: async (opened) => { routedTargets.push(`${opened.kind}:${opened.path}`); },
+    },
+  );
+  assert.equal(crossWindowRoute.kind, "open");
+  assert.deepEqual(routedTargets, [`${target.kind}:${target.path}`]);
   if (process.env.AGENTO_ELECTRON_SCENARIO === "companion") {
     assert.match(String(api.deliveries.getTreeItem(items[0]!).tooltip), /Companion PR: #202 OPEN draft CLEAN/);
   } else {
@@ -468,6 +532,36 @@ export async function run(): Promise<void> {
     resolveBatch(1, "build", 1, ["fixture CLI warning"]);
     await newerApplied;
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
+
+    assert.equal(api.sessionDoctor.current.kind, "ready");
+    if (api.sessionDoctor.current.kind !== "ready") return;
+    const sessionCrossWindowAction = api.sessionDoctor.current.actions.find((action) => action.window === "primary");
+    assert.ok(sessionCrossWindowAction);
+    const loadedSlugs: string[] = [];
+    const openedTargets: string[] = [];
+    const route = await dispatchCommandAction(
+      sessionCrossWindowAction,
+      api.sessionDoctor.current.session.deliverySlug ?? undefined,
+      {
+        currentWindow: () => "secondary",
+        loadNext: async (slug) => {
+          loadedSlugs.push(slug);
+          return {
+            status: "ok",
+            next: { window: "primary", target: { path: "/fixture/primary", workspace: null }, reason: "Continue in primary." },
+          };
+        },
+        executeCommand,
+        reportError: async (message) => { assert.fail(message); },
+        reportInfo: async () => undefined,
+        output: api.output,
+        pendingStore: { get: () => undefined, update: async () => undefined },
+        openTarget: async (target) => { openedTargets.push(target.path); },
+      },
+    );
+    assert.equal(route.kind, "open");
+    assert.deepEqual(loadedSlugs, ["session-doctor-panel"]);
+    assert.deepEqual(openedTargets, ["/fixture/primary"]);
 
     assert.deepEqual(
       sessionDoctorRows(api, "Session").map((element) => [api.sessionDoctor.getTreeItem(element).label, api.sessionDoctor.getTreeItem(element).description]),

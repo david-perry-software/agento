@@ -18,6 +18,7 @@ const requiredEntries = [
   "extension/media/agento.svg",
   "extension/out/cliClient.js",
   "extension/out/extension.js",
+  "extension/out/filePendingDispatchStore.js",
   "extension/out/gitDir.js",
   "extension/out/refreshScheduler.js",
   "extension/out/watchers.js",

@@ -7,6 +7,7 @@ const session = {
   status: "ok",
   role: "build",
   lifecycle: "building",
+  delivery: { type: "feature", slug: "session-doctor-panel" },
   worktree: { path: "/repo/worktree", branch: "feature/session-doctor-panel", detached: false },
   workspace: { path: "/repo/session.code-workspace", exists: true },
   companion: {
@@ -19,6 +20,8 @@ const session = {
     registered: true,
   },
   warnings: ["pr: gh unavailable"],
+  allowed: ["/agento continue", "/agento build-feature session-doctor-panel", "/agento ap session-doctor-panel"],
+  elsewhere: [{ command: "/agento ship session-doctor-panel", window: "primary", reason: "ship from primary" }],
 };
 
 const doctor = {
@@ -42,6 +45,7 @@ test("session doctor model preserves complete CLI state and derives status text"
   assert.deepEqual(model.session, {
     role: "build",
     lifecycle: "building",
+    deliverySlug: "session-doctor-panel",
     worktreePath: "/repo/worktree",
     branch: "feature/session-doctor-panel",
     workspace: "/repo/session.code-workspace (exists)",
@@ -54,12 +58,18 @@ test("session doctor model preserves complete CLI state and derives status text"
   });
   assert.deepEqual(model.warnings, ["pr: gh unavailable"]);
   assert.deepEqual(model.checks, doctor.checks);
+  assert.deepEqual(model.actions.map((action) => action.command), [
+    "/agento continue",
+    "/agento build-feature session-doctor-panel",
+    "/agento ap session-doctor-panel",
+    "/agento ship session-doctor-panel",
+  ]);
   assert.equal(model.statusBarText, "Agento: build · 2 active");
 });
 
 test("session doctor model represents absent optional state explicitly", () => {
   const model = createSessionDoctorModel(
-    { ...session, worktree: { ...session.worktree, branch: null, detached: true }, workspace: null, companion: null, warnings: [] },
+    { ...session, delivery: null, worktree: { ...session.worktree, branch: null, detached: true }, workspace: null, companion: null, warnings: [] },
     { status: "ok", checks: [{ id: "node", status: "ok", detail: "", fallback: null }] },
     { status: "ok", resumable: [] },
   );
@@ -69,6 +79,7 @@ test("session doctor model represents absent optional state explicitly", () => {
     return;
   }
   assert.equal(model.session.branch, "detached");
+  assert.equal(model.session.deliverySlug, null);
   assert.equal(model.session.workspace, "none");
   assert.equal(model.companion, null);
   assert.equal(model.checks[0]?.detail, "");

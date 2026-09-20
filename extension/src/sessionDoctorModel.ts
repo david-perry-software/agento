@@ -1,6 +1,9 @@
+import { projectCommandActions, type CommandAction } from "./commandActions.js";
+
 export interface SessionSummary {
   role: string;
   lifecycle: string;
+  deliverySlug: string | null;
   worktreePath: string;
   branch: string;
   workspace: string;
@@ -27,6 +30,7 @@ export type SessionDoctorModel =
       companion: CompanionSummary | null;
       warnings: string[];
       checks: DoctorCheck[];
+      actions: CommandAction[];
       statusBarText: string;
     }
   | { kind: "error"; message: string; statusBarText: string };
@@ -162,6 +166,7 @@ export function createSessionDoctorModel(
     }
 
     const worktree = requiredRecord(sessionValue, "worktree");
+    const delivery = optionalRecord(sessionValue, "delivery");
     const branch = nullableString(worktree, "branch");
     const role = requiredString(sessionValue, "role");
     return {
@@ -169,6 +174,7 @@ export function createSessionDoctorModel(
       session: {
         role,
         lifecycle: requiredString(sessionValue, "lifecycle"),
+        deliverySlug: delivery ? requiredString(delivery, "slug") : null,
         worktreePath: requiredString(worktree, "path"),
         branch: branch ?? "detached",
         workspace: parseWorkspace(sessionValue),
@@ -176,6 +182,7 @@ export function createSessionDoctorModel(
       companion: parseCompanion(sessionValue),
       warnings: [...sessionValue.warnings],
       checks: parseChecks(doctorValue),
+      actions: projectCommandActions(sessionValue),
       statusBarText: `Agento: ${role} · ${statusValue.resumable.length} active`,
     };
   } catch (error) {
