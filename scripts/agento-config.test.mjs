@@ -12,8 +12,9 @@ function tmpRoot(prefix = "agento-config-") {
 
 test("parseConfigText merges a JSON text over the defaults for the given root: nulls keep defaults, nested repo is set", () => {
   const root = path.join("tmp", "my-project");
-  const nulls = parseConfigText(JSON.stringify({ worktrees: { dir: null }, branches: { default: null }, artifacts: { repo: { name: null, dir: null } } }), root);
+  const nulls = parseConfigText(JSON.stringify({ worktrees: { dir: null, autoApprove: null }, branches: { default: null }, artifacts: { repo: { name: null, dir: null } } }), root);
   assert.deepEqual(nulls, defaultConfig(root));
+  assert.equal(nulls.worktrees.autoApprove, true);
   const nested = parseConfigText(JSON.stringify({ artifacts: { repo: { name: "my-project-docs" } }, branches: { default: "trunk" } }), root);
   assert.deepEqual(nested.artifacts.repo, { name: "my-project-docs", dir: null });
   assert.equal(nested.artifacts.features, "features");
@@ -36,6 +37,7 @@ test("defaults derive the worktree dir from the repository directory name", () =
   assert.equal(config.branches.freehand, "changes/");
   assert.equal(config.checks.releaseWorkflow, null);
   assert.match(config.worktrees.dir, /\.\.[/\\].+-worktrees$/);
+  assert.equal(config.worktrees.autoApprove, true);
 });
 
 test("defaultConfig embeds the repository basename in the worktree dir", () => {
@@ -72,13 +74,23 @@ test("null values in agento.json keep the defaults", () => {
   fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(
     path.join(configDir, "agento.json"),
-    JSON.stringify({ worktrees: { dir: null }, branches: { default: null }, checks: null }),
+    JSON.stringify({ worktrees: { dir: null, autoApprove: null }, branches: { default: null }, checks: null }),
   );
 
   const { config } = loadAgentoConfig(root);
   assert.match(config.worktrees.dir, /-worktrees$/);
+  assert.equal(config.worktrees.autoApprove, true);
   assert.equal(config.branches.default, "main");
   assert.equal(config.checks.releaseWorkflow, null);
+});
+
+test("worktrees.autoApprove can be overridden to false", () => {
+  const root = tmpRoot();
+  const configDir = path.join(root, ".github");
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(path.join(configDir, "agento.json"), JSON.stringify({ worktrees: { autoApprove: false } }));
+  const { config } = loadAgentoConfig(root);
+  assert.equal(config.worktrees.autoApprove, false);
 });
 
 test("the shipped templates/agento.json loads without clobbering defaults", () => {
@@ -91,6 +103,7 @@ test("the shipped templates/agento.json loads without clobbering defaults", () =
   const { config } = loadAgentoConfig(root);
   assert.equal(typeof config.worktrees.dir, "string");
   assert.match(config.worktrees.dir, /-worktrees$/);
+  assert.equal(config.worktrees.autoApprove, true);
   assert.equal(config.branches.default, "main");
   assert.equal(config.artifacts.features, "features");
   assert.equal(config.artifacts.initiatives, "initiatives");

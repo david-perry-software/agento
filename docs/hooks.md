@@ -45,6 +45,9 @@ Returns `allow` (silent), `ask` (user confirmation with a reason), or `deny` (wi
 reason). Commands are evaluated one shell segment at a time (`&&`, `;`, `|`, `&`),
 tracking branch switches earlier in the same line.
 
+Inside a managed session window, these `ask` cases should be the only approval
+prompts you normally see once the session `.code-workspace` settings are current.
+
 | Rule | Decision |
 |---|---|
 | Commit, push, or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain — or a push whose refspec targets it | deny |

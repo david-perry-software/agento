@@ -4,6 +4,8 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { ExtensionApi } from "../../src/extension.js";
+// @ts-expect-error generated CLI bundle ships runtime JS only
+import { SESSION_WORKSPACE_SETTINGS } from "../../../cli/session-state.mjs";
 import { dispatchCommandAction, dispatchCommandToTarget } from "../../src/commandDispatcher.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
@@ -398,6 +400,15 @@ export async function run(): Promise<void> {
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
+  if (process.env.AGENTO_ELECTRON_SCENARIO === "workspace") {
+    assert.equal(vscode.workspace.workspaceFile?.fsPath, path.join(path.dirname(fixture), "plan-e2e.code-workspace"));
+    for (const [key, value] of Object.entries(SESSION_WORKSPACE_SETTINGS)) {
+      assert.deepEqual(vscode.workspace.getConfiguration().inspect(key)?.workspaceValue, value);
+    }
+    console.log("Electron workspace scenario passed: workspace file and scoped settings");
+    return;
+  }
+
   const session = await api.client.run(["session"], fixture);
   assert.equal(session.code, 0);
   assert.equal(typeof (session.json as { role?: unknown }).role, "string");
@@ -448,6 +459,7 @@ export async function run(): Promise<void> {
   const target = process.env.AGENTO_ELECTRON_SCENARIO === "companion"
     ? { kind: "workspace" as const, path: path.join(path.dirname(fixture), "feature.code-workspace") }
     : { kind: "folder" as const, path: fixture };
+
   const crossWindowRoute = await dispatchCommandAction(
     { command: "/agento review-feature planned-delivery", window: "secondary", reason: "review there" },
     "planned-delivery",

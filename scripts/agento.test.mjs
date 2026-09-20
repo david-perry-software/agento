@@ -455,6 +455,44 @@ test("paths in companion mode adds the companion half and the workspace file; in
   assert.match(run(repo).json.usage.join("\n"), /companion half and \.code-workspace/);
 });
 
+test("workspace command writes the session pair's .code-workspace with the auto-approve settings block (#58 session-auto-approve)", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const planId = "20260916-1";
+  const product = path.join(wt, `plan-${planId}`);
+  const companion = path.join(docsWt, `plan-${planId}`);
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", companion, "origin/main");
+
+  const command = run(repo, "workspace", "plan", planId, "--write");
+  assert.equal(command.code, 0);
+  assert.equal(command.json.status, "ok");
+  assert.equal(command.json.path, path.join(wt, `plan-${planId}.code-workspace`));
+  assert.equal(command.json.written, true);
+
+  const writtenPath = command.json.path;
+  const before = fs.readFileSync(writtenPath, "utf8");
+  const doc = JSON.parse(before);
+  assert.deepEqual(doc.folders, [{ path: product }, { path: companion }]);
+  assert.deepEqual(doc.settings, command.json.settings);
+
+  const second = run(repo, "workspace", "plan", planId, "--write");
+  assert.equal(second.code, 0);
+  assert.equal(second.json.written, false);
+  assert.equal(fs.readFileSync(writtenPath, "utf8"), before);
+
+  fs.writeFileSync(path.join(repo, ".github", "agento.json"), JSON.stringify({ artifacts: { repo: { name: "project-docs" } }, worktrees: { dir: "../wt", autoApprove: false } }));
+  const disabled = run(repo, "workspace", "plan", planId, "--write");
+  assert.equal(disabled.code, 0);
+  assert.equal(disabled.json.status, "ok");
+  assert.deepEqual(disabled.json.settings, {});
+
+  const inRepo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
+  const none = run(inRepo, "workspace", "plan", planId, "--write");
+  assert.equal(none.code, 0);
+  assert.equal(none.json.status, "not-applicable");
+  assert.equal(fs.existsSync(path.join(path.dirname(inRepo), "wt", `plan-${planId}.code-workspace`)), false);
+});
+
 test("paths is branch-aware: from an in-repo primary a delivery branch that flips to the companion reports the pair; a plain branch stays in-repo", () => {
   const { repo, docs } = makeFlipRepo();
   const wt = path.join(path.dirname(repo), "wt");
@@ -513,9 +551,15 @@ test("session from a companion half anchors on the product primary and matches t
 
   // companion / workspace describe the pair from either side.
   assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
-  assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false });
+  assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false, current: null });
   fs.writeFileSync(path.join(wt, "feature-widget.code-workspace"), JSON.stringify({ folders: [{ path: product }, { path: half }], settings: {} }));
-  assert.equal(run(half, "session").json.workspace.exists, true);
+  const stale = run(half, "session").json.workspace;
+  assert.equal(stale.exists, true);
+  assert.equal(stale.current, false);
+  run(repo, "workspace", "feature", "widget", "--write");
+  const refreshed = run(half, "session").json.workspace;
+  assert.equal(refreshed.exists, true);
+  assert.equal(refreshed.current, true);
 
   // worktrees[]: product entries first (primary at 0), companion entries appended with repo: companion.
   const list = fromProduct.worktrees;
@@ -979,7 +1023,7 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   let owned = items.find((i) => i.slug === "widget");
   assert.deepEqual(owned.owner, { path: product, role: "build", dirPrefix: "feature", id: "widget" });
   assert.deepEqual(owned.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 1, behind: 0, registered: true });
-  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: false });
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: false, current: null });
   const unowned = items.find((i) => i.slug === "unowned");
   assert.equal(unowned.owner, null);
   assert.equal(unowned.companion, null);
@@ -992,7 +1036,7 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   owned = items.find((i) => i.slug === "widget");
   assert.equal(owned.companion.dirty, true);
   assert.equal(owned.companion.ahead, 1);
-  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true });
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true, current: false });
 });
 
 test("status --pr looks up PRs for non-complete items only, warns per slug on failure, and never changes lifecycle", () => {
@@ -1172,14 +1216,14 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports seven ok checks with exit 0 when every capability is present", () => {
+test("doctor reports eight checks and includes session-workspace", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "artifact-repo"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1190,6 +1234,41 @@ test("doctor reports seven ok checks with exit 0 when every capability is presen
   assert.match(checks["git-remote"].detail, /main reachable/);
   assert.match(checks["worktrees-dir"].detail, /project-worktrees absent; .* writable, it will be created/);
   assert.equal(checks["artifact-repo"].detail, "in-repo layout (artifacts.repo unset)");
+  assert.equal(checks["session-workspace"].detail, "not a managed pair");
+});
+
+test("doctor session-workspace is ok for non-pairs, warn for stale/missing, and ok after workspace --write", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const { env } = restrictedPath(okStubs);
+
+  // Non-pair: primary checkout reports ok with a neutral detail.
+  const primaryCheck = byId(runWith({ cwd: repo, env }, "doctor").json)["session-workspace"];
+  assert.equal(primaryCheck.status, "ok");
+  assert.equal(primaryCheck.detail, "not a managed pair");
+
+  // Pair: build worktree with no workspace file warns.
+  const product = path.join(wt, "feature-widget");
+  const half = path.join(docsWt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  writeRoadmap(half, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+
+  const missing = byId(runWith({ cwd: product, env }, "doctor", "--for", "start-session").json)["session-workspace"];
+  assert.equal(missing.status, "warn");
+  assert.match(missing.detail, /feature-widget\.code-workspace lacks the session auto-approve settings$/);
+  assert.match(missing.fallback, /workspace feature widget --write, then Developer: Reload Window$/);
+
+  // Stale file still warns.
+  const workspacePath = path.join(wt, "feature-widget.code-workspace");
+  fs.writeFileSync(workspacePath, "{}\n");
+  const stale = byId(runWith({ cwd: product, env }, "doctor", "--for", "start-session").json)["session-workspace"];
+  assert.equal(stale.status, "warn");
+
+  // CLI-written canonical file is ok.
+  run(repo, "workspace", "feature", "widget", "--write");
+  const current = byId(runWith({ cwd: product, env }, "doctor", "--for", "start-session").json)["session-workspace"];
+  assert.equal(current.status, "ok");
+  assert.match(current.detail, /feature-widget\.code-workspace carries the session auto-approve settings$/);
 });
 
 test("doctor artifact-repo passes a valid companion, fails a missing or broken one naming /agento agento-init, and warns on stale in-repo roots", () => {
@@ -1257,7 +1336,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -1318,13 +1397,13 @@ test("doctor --for runs only the command's declared checks and reports its needs
   const local = runWith({ cwd: repo, env }, "doctor", "--for", "close-session");
   assert.equal(local.code, 0);
   assert.deepEqual(local.json.for, { command: "close-session", needs: ["terminal"] });
-  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "artifact-repo"]);
+  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
   assert.ok(!fs.existsSync(marker), "gh was invoked for a terminal-only command");
 
   const ship = runWith({ cwd: repo, env }, "doctor", "--for", "ship");
   assert.equal(ship.code, 0);
   assert.deepEqual(ship.json.for, { command: "ship", needs: ["terminal", "gh", "network"] });
-  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir", "artifact-repo"]);
+  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
   assert.match(fs.readFileSync(marker, "utf8"), /auth status/);
 
   const unknown = runWith({ cwd: repo, env }, "doctor", "--for", "nope");

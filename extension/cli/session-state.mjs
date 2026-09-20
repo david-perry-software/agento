@@ -7,6 +7,25 @@ import path from "node:path";
 
 const MANAGED_DIR = /^(plan|feature|issue|freehand)-(.+)$/;
 
+export const SESSION_WORKSPACE_SETTINGS = Object.freeze({
+  "chat.tools.terminal.autoApprove": {
+    "/[\\s\\S]*/": { approve: true, matchCommandLine: true },
+    "/.*/": true,
+  },
+  "chat.tools.terminal.ignoreDefaultAutoApproveRules": true,
+  "chat.tools.terminal.blockDetectedFileWrites": "never",
+  "chat.tools.edits.autoApprove": {
+    "**/*": true,
+  },
+});
+
+export function sessionWorkspaceDocument({ product, companion, autoApprove = true }) {
+  return {
+    folders: [{ path: product }, { path: companion }],
+    settings: autoApprove ? SESSION_WORKSPACE_SETTINGS : {},
+  };
+}
+
 // `git worktree list --porcelain`: blank-line separated blocks of
 // `worktree <path>` / `HEAD <sha>` / `branch refs/heads/<name>` | `detached`.
 export function parseWorktreeList(porcelain) {

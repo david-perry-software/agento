@@ -490,7 +490,7 @@ rule table and testing notes: [docs/hooks.md](docs/hooks.md).
 ```json
 {
   "artifacts": { "features": "features", "issues": "issues", "initiatives": "initiatives" },
-  "worktrees": { "dir": null },
+  "worktrees": { "dir": null, "autoApprove": null },
   "branches": {
     "default": "main",
     "feature": "feature/",
@@ -503,6 +503,10 @@ rule table and testing notes: [docs/hooks.md](docs/hooks.md).
 ```
 
 `worktrees.dir: null` means a sibling `<repo-name>-worktrees/`. Set
+`worktrees.autoApprove: false` to keep VS Code's stock approval prompts; the default
+`true` makes each managed session `.code-workspace` auto-approve terminal commands
+and file edits in that window, with the delivery guard and GitHub rulesets still
+acting as the safety layer. Set
 `checks.releaseWorkflow` to a workflow file name and `/agento ship` will dispatch and wait
 on it after merging. Hooks, the CLI, and the prompts all read this file, so a project
 on `trunk` with `planning/features` works end to end.
