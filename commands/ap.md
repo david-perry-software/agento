@@ -31,3 +31,5 @@ Window check per §11: requires role `build` with `delivery.slug` equal to the a
   user's commands. Read roadmap.md and review.md from the artifact checkout the
   session record names: this worktree in the in-repo layout, the companion half
   (`companion.path`) in companion mode.
+- If roadmap status is `in-review`, invoke 🔍 Agento Reviewer directly in the same
+  window; do not reroute to a manual `/agento review-<type> <slug>` step.
