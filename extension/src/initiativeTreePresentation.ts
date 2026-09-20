@@ -16,6 +16,7 @@ interface InitiativeElement {
 interface GroupElement {
   kind: "group";
   group: InitiativeMemberGroup;
+  initiativeSlug: string;
   breakdown?: string;
 }
 
@@ -23,6 +24,7 @@ interface MemberElement {
   kind: "member";
   item: InitiativeMemberItem;
   groupKind: InitiativeMemberGroup["kind"];
+  initiativeSlug: string;
   breakdown?: string;
 }
 
@@ -80,7 +82,12 @@ export function initiativeTreeChildren(model: InitiativeTreeModel, element?: Ini
   if (element.kind === "initiative") {
     return [
       ...element.item.diagnostics.map((diagnostic): DiagnosticElement => ({ kind: "diagnostic", diagnostic })),
-      ...element.item.groups.map((group): GroupElement => ({ kind: "group", group, breakdown: element.item.breakdown })),
+      ...element.item.groups.map((group): GroupElement => ({
+        kind: "group",
+        group,
+        initiativeSlug: element.item.slug,
+        breakdown: element.item.breakdown,
+      })),
     ];
   }
   if (element.kind === "group") {
@@ -88,6 +95,7 @@ export function initiativeTreeChildren(model: InitiativeTreeModel, element?: Ini
       kind: "member",
       item,
       groupKind: element.group.kind,
+      initiativeSlug: element.initiativeSlug,
       breakdown: element.breakdown,
     }));
   }

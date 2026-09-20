@@ -9,6 +9,7 @@ import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
 import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
+import { runNewPlanFlow, type NewPlanTarget } from "../../src/newPlanFlow.js";
 import { createSessionDoctorError } from "../../src/sessionDoctorModel.js";
 import type { SessionDoctorElement } from "../../src/sessionDoctorProvider.js";
 import type { CliResult } from "../../src/cliClient.js";
@@ -153,6 +154,69 @@ function statusResponse(active: number) {
   };
 }
 
+async function assertNewPlanCommand(
+  api: ExtensionApi,
+  expectedCommand: string,
+  fixture: string,
+  companion: boolean,
+  execute: () => Thenable<unknown>,
+  prompts?: string[],
+): Promise<void> {
+  const planPath = path.join(path.dirname(fixture), `plan-${expectedCommand.includes("initiative:") ? "member" : "generic"}`);
+  const workspacePath = `${planPath}.code-workspace`;
+  const primary = { path: fixture, role: "primary", isManaged: false, dirPrefix: null, repo: "product" };
+  const planned = { path: planPath, role: "plan", isManaged: true, dirPrefix: "plan", repo: "product" };
+  const snapshots = [
+    { status: "ok", worktrees: [primary] },
+    { status: "ok", worktrees: [primary, planned] },
+    {
+      status: "ok",
+      worktrees: [primary, planned],
+      companion: companion ? { path: `${planPath}-artifacts`, registered: true } : null,
+      workspace: companion ? { path: workspacePath, exists: true } : null,
+    },
+  ];
+  const submitted: Array<{ command: string; target: NewPlanTarget }> = [];
+  const opened: NewPlanTarget[] = [];
+  const pending = new Map<string, unknown>();
+  let snapshot = 0;
+
+  api.setNewPlanRunner((request) => runNewPlanFlow(request, {
+      readSession: async () => snapshots[Math.min(snapshot++, snapshots.length - 1)],
+      submitCommand: async (command, target) => { submitted.push({ command, target }); },
+      pendingStore: {
+        get: <T>(key: string) => pending.get(key) as T | undefined,
+        update: async (key, value) => {
+          if (value === undefined) pending.delete(key);
+          else pending.set(key, value);
+        },
+      },
+      openTarget: async (target) => { opened.push(target); },
+      sleep: async () => undefined,
+      now: () => 1,
+      isCancellationRequested: () => false,
+      offerRecovery: async () => undefined,
+    }, { pollIntervalMs: 1, timeoutMs: 10 }));
+
+  try {
+    await execute();
+  } finally {
+    api.setNewPlanRunner();
+    api.setNewPlanPrompts();
+  }
+
+  const expectedTarget: NewPlanTarget = companion
+    ? { kind: "workspace", path: workspacePath }
+    : { kind: "folder", path: planPath };
+  assert.deepEqual(submitted, [{ command: "/agento start-session", target: { kind: "folder", path: fixture } }]);
+  assert.deepEqual(opened, [expectedTarget]);
+  assert.equal(
+    [...pending.values()].map((value) => (value as { command: string }).command).at(0),
+    expectedCommand,
+  );
+  if (prompts) assert.deepEqual(prompts, ["quickPick", "input:feature"]);
+}
+
 function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): DeliveryTreeElement[] {
   return api.deliveries.getChildren(group);
 }
@@ -247,6 +311,8 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.showActions"));
   assert.ok(commands.includes("agento.dispatchAction"));
   assert.ok(commands.includes("agento.sessionDoctor.focus"));
+  assert.ok(commands.includes("agento.newPlan"));
+  assert.ok(commands.includes("agento.planInitiativeMember"));
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
@@ -378,6 +444,29 @@ export async function run(): Promise<void> {
   const readyMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "ready-delivery");
   assert.ok(readyMember);
   assert.match(String(api.initiatives.getTreeItem(readyMember).tooltip), /Ready: yes\nNext: yes/);
+
+  const promptEvents: string[] = [];
+  api.setNewPlanPrompts({
+    chooseKind: async () => { promptEvents.push("quickPick"); return "feature"; },
+    describe: async (kind) => { promptEvents.push(`input:${kind}`); return "Add guided planning"; },
+  });
+  await assertNewPlanCommand(
+    api,
+    "/agento new-feature Add guided planning",
+    fixture,
+    process.env.AGENTO_ELECTRON_SCENARIO === "companion",
+    () => vscode.commands.executeCommand("agento.newPlan"),
+    promptEvents,
+  );
+  assert.equal(readyMember.kind, "member");
+  if (readyMember.kind !== "member") return;
+  await assertNewPlanCommand(
+    api,
+    `/agento new-feature initiative:${readyMember.initiativeSlug}/${readyMember.item.slug}`,
+    fixture,
+    process.env.AGENTO_ELECTRON_SCENARIO === "companion",
+    () => vscode.commands.executeCommand("agento.planInitiativeMember", readyMember),
+  );
 
   const memberTreeItem = api.initiatives.getTreeItem(readyMember);
   assert.ok(memberTreeItem.command);

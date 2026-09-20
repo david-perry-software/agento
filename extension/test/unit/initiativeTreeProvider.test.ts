@@ -42,6 +42,7 @@ test("initiative provider presentation builds initiative, diagnostic, group, and
   assert.deepEqual(children.map((element) => element.kind), ["diagnostic", "group"]);
   const members = initiativeTreeChildren(model, children[1]);
   assert.deepEqual(members.map((element) => element.kind), ["member"]);
+  assert.equal(members[0]?.kind === "member" ? members[0].initiativeSlug : undefined, "agento-extension");
   assert.deepEqual(initiativeTreeChildren(model, members[0]), []);
 });
 
