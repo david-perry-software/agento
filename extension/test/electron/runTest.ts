@@ -6,10 +6,11 @@ import path from "node:path";
 import { runTests } from "@vscode/test-electron";
 
 interface Scenario {
-  name: "in-repo" | "companion";
+  name: "in-repo" | "companion" | "workspace";
   workspace: string;
   cleanup: string;
   bin: string;
+  launchArgs: string[];
 }
 
 const roadmap = (slug: string, status: string, ticked: number, total: number) => `\`\`\`yaml
@@ -139,13 +140,13 @@ printf '{"number":%s,"state":"OPEN","isDraft":true,"mergeStateStatus":"CLEAN","u
   return bin;
 }
 
-async function createScenario(sourceFixture: string, name: Scenario["name"]): Promise<Scenario> {
+async function createScenario(sourceFixture: string, extensionDevelopmentPath: string, name: Scenario["name"]): Promise<Scenario> {
   const cleanup = await mkdtemp(path.join(os.tmpdir(), `agento-extension-${name}-`));
   const workspace = path.join(cleanup, "product");
   await cp(sourceFixture, workspace, { recursive: true });
   const bin = await createGhStub(cleanup);
 
-  if (name === "companion") {
+  if (name !== "in-repo") {
     const artifacts = path.join(cleanup, "artifacts");
     await mkdir(artifacts, { recursive: true });
     await writeDeliveries(artifacts);
@@ -170,7 +171,35 @@ async function createScenario(sourceFixture: string, name: Scenario["name"]): Pr
     await writeInitiative(workspace);
   }
   initRepository(workspace);
-  return { name, workspace, cleanup, bin };
+
+  if (name === "workspace") {
+    const productPlan = path.join(cleanup, "product-worktrees", "plan-e2e");
+    const companionPlan = path.join(cleanup, "artifacts-worktrees", "plan-e2e");
+    execFileSync("git", ["worktree", "add", "--detach", productPlan, "HEAD"], { cwd: workspace });
+    execFileSync("git", ["worktree", "add", "--detach", companionPlan, "HEAD"], { cwd: path.join(cleanup, "artifacts") });
+    const cli = path.join(extensionDevelopmentPath, "cli", "agento.mjs");
+    const workspaceWrite = execFileSync(
+      "node",
+      [cli, "workspace", "plan", "e2e", "--write", "--root", workspace],
+      { cwd: extensionDevelopmentPath, encoding: "utf8" },
+    );
+    const document = JSON.parse(workspaceWrite) as { path: string };
+    return {
+      name,
+      workspace: document.path,
+      cleanup,
+      bin,
+      launchArgs: [document.path, "--disable-extensions", "--disable-workspace-trust"],
+    };
+  }
+
+  return {
+    name,
+    workspace,
+    cleanup,
+    bin,
+    launchArgs: [workspace, "--disable-extensions"],
+  };
 }
 
 async function assertRemoved(directory: string): Promise<void> {
@@ -187,14 +216,14 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(import.meta.dirname, "../../..");
   const extensionTestsPath = path.join(import.meta.dirname, "suite.js");
   const sourceFixture = path.join(extensionDevelopmentPath, "test", "fixtures", "workspace");
-  for (const name of ["in-repo", "companion"] as const) {
-    const scenario = await createScenario(sourceFixture, name);
+  for (const name of ["in-repo", "companion", "workspace"] as const) {
+    const scenario = await createScenario(sourceFixture, extensionDevelopmentPath, name);
     try {
       await runTests({
         extensionDevelopmentPath,
         extensionTestsPath,
         version: "1.125.0",
-        launchArgs: [scenario.workspace, "--disable-extensions"],
+        launchArgs: scenario.launchArgs,
         extensionTestsEnv: {
           ...process.env,
           AGENTO_ELECTRON_SCENARIO: scenario.name,
