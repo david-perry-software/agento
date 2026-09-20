@@ -221,7 +221,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   );
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
-    const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready" ? { actions: sessionDoctor.current.actions } : null);
+    const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
+      ? { slug: sessionDoctor.current.session.deliverySlug ?? undefined, actions: sessionDoctor.current.actions }
+      : null);
     if (!source || source.actions.length === 0) {
       await vscode.window.showInformationMessage("No Agento actions are available in this window.");
       return;

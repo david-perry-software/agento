@@ -109,12 +109,16 @@ function sessionDoctorRows(api: ExtensionApi, label: string): SessionDoctorEleme
 }
 
 function sessionResponse(role: string, warnings: string[] = []) {
+  const deliverySlug = "session-doctor-panel";
   return {
     status: "ok",
     role,
     lifecycle: "building",
     allowed: ["/agento delivery-status"],
-    elsewhere: [],
+    elsewhere: role === "build"
+      ? [{ command: `/agento ship ${deliverySlug}`, window: "primary", reason: "ship from primary" }]
+      : [],
+    delivery: role === "build" ? { type: "feature", slug: deliverySlug } : null,
     worktree: { path: "/fixture/product", branch: "feature/session-doctor-panel", detached: false },
     workspace: { path: "/fixture/session.code-workspace", exists: true },
     companion: {
@@ -528,6 +532,36 @@ export async function run(): Promise<void> {
     resolveBatch(1, "build", 1, ["fixture CLI warning"]);
     await newerApplied;
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
+
+    assert.equal(api.sessionDoctor.current.kind, "ready");
+    if (api.sessionDoctor.current.kind !== "ready") return;
+    const sessionCrossWindowAction = api.sessionDoctor.current.actions.find((action) => action.window === "primary");
+    assert.ok(sessionCrossWindowAction);
+    const loadedSlugs: string[] = [];
+    const openedTargets: string[] = [];
+    const route = await dispatchCommandAction(
+      sessionCrossWindowAction,
+      api.sessionDoctor.current.session.deliverySlug ?? undefined,
+      {
+        currentWindow: () => "secondary",
+        loadNext: async (slug) => {
+          loadedSlugs.push(slug);
+          return {
+            status: "ok",
+            next: { window: "primary", target: { path: "/fixture/primary", workspace: null }, reason: "Continue in primary." },
+          };
+        },
+        executeCommand,
+        reportError: async (message) => { assert.fail(message); },
+        reportInfo: async () => undefined,
+        output: api.output,
+        pendingStore: { get: () => undefined, update: async () => undefined },
+        openTarget: async (target) => { openedTargets.push(target.path); },
+      },
+    );
+    assert.equal(route.kind, "open");
+    assert.deepEqual(loadedSlugs, ["session-doctor-panel"]);
+    assert.deepEqual(openedTargets, ["/fixture/primary"]);
 
     assert.deepEqual(
       sessionDoctorRows(api, "Session").map((element) => [api.sessionDoctor.getTreeItem(element).label, api.sessionDoctor.getTreeItem(element).description]),

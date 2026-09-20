@@ -3,6 +3,7 @@ import { projectCommandActions, type CommandAction } from "./commandActions.js";
 export interface SessionSummary {
   role: string;
   lifecycle: string;
+  deliverySlug: string | null;
   worktreePath: string;
   branch: string;
   workspace: string;
@@ -165,6 +166,7 @@ export function createSessionDoctorModel(
     }
 
     const worktree = requiredRecord(sessionValue, "worktree");
+    const delivery = optionalRecord(sessionValue, "delivery");
     const branch = nullableString(worktree, "branch");
     const role = requiredString(sessionValue, "role");
     return {
@@ -172,6 +174,7 @@ export function createSessionDoctorModel(
       session: {
         role,
         lifecycle: requiredString(sessionValue, "lifecycle"),
+        deliverySlug: delivery ? requiredString(delivery, "slug") : null,
         worktreePath: requiredString(worktree, "path"),
         branch: branch ?? "detached",
         workspace: parseWorkspace(sessionValue),
