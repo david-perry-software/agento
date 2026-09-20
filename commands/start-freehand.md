@@ -74,10 +74,12 @@ Window check per §11: requires role `primary` on the default branch, clean.
    <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> worktree add --no-track
    -b changes/<slug> <companion.worktree> origin/<default>` (reusing an existing
    `changes/<slug>` there under the same rule; a companion half already registered at
-   that path is reused untouched). Then write the workspace file at the `workspace`
-   path: a JSON document with `folders: [{ "path": <product worktree> }, { "path":
-   <companion worktree> }]` (absolute paths, product first) and `settings: {}`;
-   overwrite a stale file with the same content on resume.
+   that path is reused untouched). Then run
+   `node <agento-root>/scripts/agento.mjs workspace freehand <slug> --write` to
+   write the workspace file at the `workspace` path; on resume, run the same
+   command again to refresh a stale file. The CLI-written file keeps product-first
+   folders and carries the session auto-approve settings block unless
+   `worktrees.autoApprove` is `false`.
 4. Unless `--no-open` was supplied, finish by running `code --new-window <workspace>`
    (the pair) or `code --new-window <path>` (product-only). The VS Code CLI may reuse
    an already-running editor session instead of visibly creating a second window;

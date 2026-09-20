@@ -54,12 +54,15 @@ Window check per §11: requires role `primary` on the default branch, clean.
    companion clone with `git -C <artifactsRoot> worktree add …` as each mode says.
    A companion path that exists but is not that clone's registered worktree is
    refused exactly like a product path.
-4. When the pair exists, write the workspace file at the `workspace` path after both
-   halves exist: a JSON document with `folders: [{ "path": <product worktree> },
-   { "path": <companion worktree> }]` (absolute paths, product first) and
-   `settings: {}`; overwrite a stale file with the same content on resume. Unless
-   `--no-open` was supplied, finish by running `code --new-window <workspace>` (the
-   pair) or `code --new-window <path>` (product-only). The VS Code CLI may reuse an
+4. When the pair exists and both halves are present, run
+   `node <agento-root>/scripts/agento.mjs workspace <kind> <id> --write` to write
+   the workspace file at the `workspace` path (`workspace plan <session-id>` in
+   plan mode; `workspace <type> <slug>` in build mode). On resume, run the same
+   command again to refresh a stale file. The CLI-written file keeps product-first
+   folders and carries the session auto-approve settings block unless
+   `worktrees.autoApprove` is `false`. Unless `--no-open` was supplied, finish by
+   running `code --new-window <workspace>` (the pair) or
+   `code --new-window <path>` (product-only). The VS Code CLI may reuse an
    already-running editor session instead of visibly creating a second window; treat a
    successful worktree as a valid result, say so explicitly, and never infer a Git
    worktree lock or branch conflict from that behavior. If the `code` CLI is
