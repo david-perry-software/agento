@@ -10,9 +10,10 @@ import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type Deliv
 import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
-import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
+import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import {
+  createInitiativePlanRequest,
   createNewPlanRequest,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
@@ -301,6 +302,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (description === undefined) return;
     await startNewPlan(createNewPlanRequest(selection.planKind, description));
   });
+  const planInitiativeMemberCommand = vscode.commands.registerCommand(
+    "agento.planInitiativeMember",
+    async (element?: InitiativeTreeElement) => {
+      if (!element || element.kind !== "member" || element.groupKind !== "ready") {
+        await vscode.window.showErrorMessage("Only ready initiative members can be planned.");
+        return;
+      }
+      await startNewPlan(createInitiativePlanRequest(element.initiativeSlug, element.item.slug));
+    },
+  );
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
     const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
@@ -355,6 +366,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     openRoadmapCommand,
     openBreakdownCommand,
     newPlanCommand,
+    planInitiativeMemberCommand,
     dispatchActionCommand,
     showActionsCommand,
     deliveriesView,

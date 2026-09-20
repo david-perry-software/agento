@@ -74,6 +74,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "agento.planInitiativeMember",
+        "title": "Plan",
+        "category": "Agento",
+        "icon": "$(play)"
+      },
+      {
         "command": "agento.showActions",
         "title": "Show Actions",
         "category": "Agento",
@@ -122,6 +128,11 @@
         {
           "command": "agento.showActions",
           "when": "view == agento.deliveries && viewItem == agento.delivery",
+          "group": "inline"
+        },
+        {
+          "command": "agento.planInitiativeMember",
+          "when": "view == agento.initiatives && viewItem == agento.initiativeMember.ready",
           "group": "inline"
         }
       ]

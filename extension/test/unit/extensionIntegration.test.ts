@@ -22,6 +22,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openRoadmap"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openBreakdown"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.newPlan"));
+  assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.planInitiativeMember"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.showActions"));
   assert.ok(!manifest.contributes.commands.some((command) => /\.(?:build|review|ship|ap)$/.test(command.command)));
   assert.deepEqual(
@@ -46,6 +47,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   );
   assert.deepEqual(manifest.contributes.menus["view/item/context"], [
     { command: "agento.showActions", when: "view == agento.deliveries && viewItem == agento.delivery", group: "inline" },
+    { command: "agento.planInitiativeMember", when: "view == agento.initiatives && viewItem == agento.initiativeMember.ready", group: "inline" },
   ]);
 });
 
@@ -68,6 +70,7 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /registerCommand\("agento\.showActions"/);
   assert.match(source, /registerCommand\("agento\.dispatchAction"/);
   assert.match(source, /registerCommand\("agento\.newPlan"/);
+  assert.match(source, /registerCommand\(\s*"agento\.planInitiativeMember"/);
   assert.match(source, /showQuickPick/);
   assert.match(source, /showInputBox/);
   assert.match(source, /createNewPlanRequest/);
