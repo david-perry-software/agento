@@ -41,6 +41,13 @@ export interface ExtensionApi {
     dependencies?: NewPlanFlowDependencies,
     options?: NewPlanFlowOptions,
   ) => Promise<NewPlanFlowResult>;
+  setNewPlanRunner: (runner?: (request: NewPlanRequest) => Promise<NewPlanFlowResult>) => void;
+  setNewPlanPrompts: (prompts?: NewPlanPrompts) => void;
+}
+
+interface NewPlanPrompts {
+  chooseKind: () => Promise<"feature" | "issue" | undefined>;
+  describe: (kind: "feature" | "issue") => Promise<string | undefined>;
 }
 
 interface ConfigResult {
@@ -277,30 +284,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       },
     );
   };
-  const newPlanCommand = vscode.commands.registerCommand("agento.newPlan", async () => {
-    const selection = await vscode.window.showQuickPick(
+  let newPlanRunner = (request: NewPlanRequest) => startNewPlan(request);
+  const setNewPlanRunner = (runner?: (request: NewPlanRequest) => Promise<NewPlanFlowResult>): void => {
+    newPlanRunner = runner ?? ((request) => startNewPlan(request));
+  };
+  const defaultNewPlanPrompts: NewPlanPrompts = {
+    chooseKind: async () => (await vscode.window.showQuickPick(
       [
         { label: "Feature", description: "Plan a new capability", planKind: "feature" as const },
         { label: "Issue", description: "Plan a defect fix", planKind: "issue" as const },
       ],
       { title: "New Plan", placeHolder: "Choose the kind of work" },
-    );
-    if (!selection) return;
-    const description = await vscode.window.showInputBox({
-      title: `New ${selection.label}`,
+    ))?.planKind,
+    describe: async (kind) => vscode.window.showInputBox({
+      title: `New ${kind === "feature" ? "Feature" : "Issue"}`,
       prompt: "Describe the work in one line",
-      placeHolder: selection.planKind === "feature" ? "Add a guided planning flow" : "Fix planning window handoff",
+      placeHolder: kind === "feature" ? "Add a guided planning flow" : "Fix planning window handoff",
       validateInput: (value) => {
         try {
-          createNewPlanRequest(selection.planKind, value);
+          createNewPlanRequest(kind, value);
           return undefined;
         } catch (error) {
           return error instanceof Error ? error.message : String(error);
         }
       },
-    });
+    }),
+  };
+  let newPlanPrompts = defaultNewPlanPrompts;
+  const setNewPlanPrompts = (prompts?: NewPlanPrompts): void => {
+    newPlanPrompts = prompts ?? defaultNewPlanPrompts;
+  };
+  const newPlanCommand = vscode.commands.registerCommand("agento.newPlan", async () => {
+    const kind = await newPlanPrompts.chooseKind();
+    if (!kind) return;
+    const description = await newPlanPrompts.describe(kind);
     if (description === undefined) return;
-    await startNewPlan(createNewPlanRequest(selection.planKind, description));
+    return newPlanRunner(createNewPlanRequest(kind, description));
   });
   const planInitiativeMemberCommand = vscode.commands.registerCommand(
     "agento.planInitiativeMember",
@@ -309,7 +328,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         await vscode.window.showErrorMessage("Only ready initiative members can be planned.");
         return;
       }
-      await startNewPlan(createInitiativePlanRequest(element.initiativeSlug, element.item.slug));
+      return newPlanRunner(createInitiativePlanRequest(element.initiativeSlug, element.item.slug));
     },
   );
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
@@ -380,7 +399,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   await rebuildWatchers();
   await consumePending();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction, startNewPlan };
+  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction, startNewPlan, setNewPlanRunner, setNewPlanPrompts };
 }
 
 export function deactivate(): void {}
