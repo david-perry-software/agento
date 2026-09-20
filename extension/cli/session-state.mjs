@@ -265,6 +265,7 @@ const CREATE = [START, "/agento new-feature", "/agento new-issue", "/agento new-
 const RESUME = `${START} <type>/<slug> --resume`;
 const BUILD = "/agento build-<type> <slug>";
 const REVIEW = "/agento review-<type> <slug>";
+const AP = "/agento ap <slug>";
 const CLOSE = "/agento close-session <type>/<slug>";
 const SHIP = "/agento ship <slug>";
 
@@ -296,20 +297,20 @@ const TABLE = {
   },
   build: {
     "no-delivery": { allowed: [STATUS], elsewhere: [primary(START, "no roadmap for this branch yet; plan or start a session from the primary window")] },
-    planned: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
-    building: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
-    paused: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
-    "in-review": { allowed: [REVIEW, STATUS], elsewhere: SHIP_LATER },
+    planned: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
+    building: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
+    paused: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
+    "in-review": { allowed: [REVIEW, AP, STATUS], elsewhere: SHIP_LATER },
     approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
     shipped: { allowed: [STATUS], elsewhere: TEARDOWN },
     "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
   },
   plan: {
     "no-delivery": { allowed: ["/agento new-feature", "/agento new-issue", STATUS], elsewhere: [] },
-    planned: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
-    building: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
-    paused: { allowed: [BUILD, STATUS], elsewhere: SHIP_LATER },
-    "in-review": { allowed: [REVIEW, STATUS], elsewhere: SHIP_LATER },
+    planned: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
+    building: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
+    paused: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
+    "in-review": { allowed: [REVIEW, AP, STATUS], elsewhere: SHIP_LATER },
     approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
     shipped: { allowed: [STATUS], elsewhere: TEARDOWN },
     "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
