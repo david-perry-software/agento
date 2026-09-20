@@ -22,6 +22,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openRoadmap"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openBreakdown"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.newPlan"));
+  assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.newInitiative"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.planInitiativeMember"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.showActions"));
   assert.ok(!manifest.contributes.commands.some((command) => /\.(?:build|review|ship|ap)$/.test(command.command)));
@@ -37,9 +38,12 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.newPlan"),
     [
       { command: "agento.newPlan", when: "view == agento.deliveries", group: "navigation@2" },
-      { command: "agento.newPlan", when: "view == agento.initiatives", group: "navigation@2" },
       { command: "agento.newPlan", when: "view == agento.sessionDoctor", group: "navigation@2" },
     ],
+  );
+  assert.deepEqual(
+    manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.newInitiative"),
+    [{ command: "agento.newInitiative", when: "view == agento.initiatives", group: "navigation@2" }],
   );
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.showActions"),
@@ -70,15 +74,19 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /registerCommand\("agento\.showActions"/);
   assert.match(source, /registerCommand\("agento\.dispatchAction"/);
   assert.match(source, /registerCommand\("agento\.newPlan"/);
+  assert.match(source, /registerCommand\("agento\.newInitiative"/);
   assert.match(source, /registerCommand\(\s*"agento\.planInitiativeMember"/);
   assert.match(source, /showQuickPick/);
   assert.match(source, /showInputBox/);
+  assert.match(source, /openTextDocument\(\{ language: "markdown", content: "" \}\)/);
+  assert.match(source, /showOpenDialog/);
   assert.match(source, /createNewPlanRequest/);
   assert.match(source, /onDidChangeWindowState/);
   assert.match(source, /await consumePending\(\)/);
   assert.match(source, /new FilePendingDispatchStore/);
   assert.match(source, /slug: sessionDoctor\.current\.session\.deliverySlug/);
-  assert.match(source, /return \{ client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction, startNewPlan, setNewPlanRunner, setNewPlanPrompts \}/);
+  assert.match(source, /startNewPlan, setNewPlanRunner, setNewPlanPrompts/);
+  assert.match(source, /startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts/);
   assert.match(source, /scheduler\.onDidRefresh/);
   assert.doesNotMatch(source, /setInterval\s*\(/);
   assert.doesNotMatch(source, /registerCommand\([^\n]*(repair|doctor)/i);

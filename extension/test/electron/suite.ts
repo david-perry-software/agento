@@ -4,11 +4,12 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { ExtensionApi } from "../../src/extension.js";
-import { dispatchCommandAction } from "../../src/commandDispatcher.js";
+import { dispatchCommandAction, dispatchCommandToTarget } from "../../src/commandDispatcher.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
 import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
+import { runNewInitiativeFlow, submittedInitiativeBrief, type NewInitiativeTarget } from "../../src/newInitiativeFlow.js";
 import { runNewPlanFlow, type NewPlanTarget } from "../../src/newPlanFlow.js";
 import { createSessionDoctorError } from "../../src/sessionDoctorModel.js";
 import type { SessionDoctorElement } from "../../src/sessionDoctorProvider.js";
@@ -217,6 +218,86 @@ async function assertNewPlanCommand(
   if (prompts) assert.deepEqual(prompts, ["quickPick", "input:feature"]);
 }
 
+async function assertNewInitiativeCommand(
+  api: ExtensionApi,
+  fixture: string,
+  inputKind: "brief" | "file",
+): Promise<void> {
+  const brief = "Improve planning\n\nPreserve this text exactly. ";
+  const filePath = path.join(fixture, "briefs", "initiative plan.md");
+  const expectedCommand = inputKind === "brief"
+    ? `/agento new-initiative ${brief}`
+    : "/agento new-initiative briefs/initiative plan.md";
+  const promptEvents: string[] = [];
+  const targets: NewInitiativeTarget[] = [];
+  const chatCalls: unknown[][] = [];
+
+  api.setNewInitiativePrompts({
+    chooseInput: async () => { promptEvents.push("quickPick"); return inputKind; },
+    enterBrief: async () => { promptEvents.push("editor"); return brief; },
+    pickFile: async (primaryPath) => { promptEvents.push(`file:${primaryPath}`); return filePath; },
+  });
+  api.setNewInitiativeRunner((input) => runNewInitiativeFlow(input, {
+    readSession: async () => ({
+      status: "ok",
+      worktrees: [{ path: fixture, role: "primary", isManaged: false, dirPrefix: null, repo: "product" }],
+    }),
+    isRegularFile: async () => true,
+    dispatch: async (command, target) => {
+      targets.push(target);
+      await dispatchCommandToTarget(command, target, "Continue in primary.", {
+        executeCommand: async (...args) => { chatCalls.push(args); },
+        reportInfo: async () => undefined,
+        pendingStore: { get: () => undefined, update: async () => undefined },
+        openTarget: async () => undefined,
+      }, true);
+    },
+  }));
+
+  try {
+    await vscode.commands.executeCommand("agento.newInitiative");
+  } finally {
+    api.setNewInitiativeRunner();
+    api.setNewInitiativePrompts();
+  }
+
+  assert.deepEqual(targets, [{ kind: "folder", path: fixture }]);
+  assert.deepEqual(chatCalls, [["workbench.action.chat.open", { query: expectedCommand, mode: "agent" }]]);
+  assert.deepEqual(promptEvents, inputKind === "brief" ? ["quickPick", "editor"] : ["quickPick", `file:${fixture}`]);
+}
+
+async function assertClosedInitiativeBriefRejected(api: ExtensionApi): Promise<void> {
+  const errors: string[] = [];
+  let dispatchAttempts = 0;
+
+  api.setNewInitiativePrompts({
+    chooseInput: async () => "brief",
+    enterBrief: () => submittedInitiativeBrief(
+      {
+        isClosed: true,
+        getText: () => assert.fail("closed document content must not be read"),
+      },
+      "Submit",
+      async (message) => { errors.push(message); },
+    ),
+    pickFile: async () => undefined,
+  });
+  api.setNewInitiativeRunner(async () => {
+    dispatchAttempts += 1;
+    return { kind: "cancelled" };
+  });
+
+  try {
+    await vscode.commands.executeCommand("agento.newInitiative");
+  } finally {
+    api.setNewInitiativeRunner();
+    api.setNewInitiativePrompts();
+  }
+
+  assert.deepEqual(errors, ["The initiative brief editor was closed before submission."]);
+  assert.equal(dispatchAttempts, 0, "closed briefs reach neither Chat nor pending dispatch");
+}
+
 function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): DeliveryTreeElement[] {
   return api.deliveries.getChildren(group);
 }
@@ -312,6 +393,7 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.dispatchAction"));
   assert.ok(commands.includes("agento.sessionDoctor.focus"));
   assert.ok(commands.includes("agento.newPlan"));
+  assert.ok(commands.includes("agento.newInitiative"));
   assert.ok(commands.includes("agento.planInitiativeMember"));
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -458,6 +540,9 @@ export async function run(): Promise<void> {
     () => vscode.commands.executeCommand("agento.newPlan"),
     promptEvents,
   );
+  await assertNewInitiativeCommand(api, fixture, "brief");
+  await assertNewInitiativeCommand(api, fixture, "file");
+  await assertClosedInitiativeBriefRejected(api);
   assert.equal(readyMember.kind, "member");
   if (readyMember.kind !== "member") return;
   await assertNewPlanCommand(

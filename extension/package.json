@@ -74,6 +74,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "agento.newInitiative",
+        "title": "New Initiative",
+        "category": "Agento",
+        "icon": "$(add)"
+      },
+      {
         "command": "agento.planInitiativeMember",
         "title": "Plan",
         "category": "Agento",
@@ -109,7 +115,7 @@
           "group": "navigation@2"
         },
         {
-          "command": "agento.newPlan",
+          "command": "agento.newInitiative",
           "when": "view == agento.initiatives",
           "group": "navigation@2"
         },
