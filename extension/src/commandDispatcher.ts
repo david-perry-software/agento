@@ -40,8 +40,9 @@ export async function dispatchCommandToTarget(
     await dependencies.pendingStore.update(pendingDispatchKey(target.path), undefined);
     throw error;
   }
-  const selection = await dependencies.reportInfo(reason, "Focus target");
-  if (selection === "Focus target") await dependencies.openTarget(target);
+  void Promise.resolve(dependencies.reportInfo(reason, "Focus target"))
+    .then((selection) => selection === "Focus target" ? dependencies.openTarget(target) : undefined)
+    .catch(() => undefined);
 }
 
 export async function dispatchCommandAction(

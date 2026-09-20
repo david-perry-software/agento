@@ -5,6 +5,7 @@ import type { CommandAction } from "../../src/commandActions.js";
 import {
   consumePendingCommands,
   dispatchCommandAction,
+  dispatchCommandToTarget,
   type CommandDispatcherDependencies,
 } from "../../src/commandDispatcher.js";
 import { pendingDispatchKey, type PendingDispatchStore } from "../../src/pendingDispatch.js";
@@ -59,7 +60,32 @@ test("persists cross-window commands before opening and offers to refocus the CL
   }));
   assert.equal(route.kind, "open");
   assert.equal((store.values.get(pendingDispatchKey(target.path)) as { command: string }).command, "/agento continue widget");
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(events, [`open:${target.path}`, "info:Continue there.:Focus target", `open:${target.path}`]);
+});
+
+test("completes cross-window dispatch while the focus notification remains pending", async () => {
+  const store = new MemoryStore();
+  const target = { kind: "folder" as const, path: "/repo/primary" };
+  let notificationShown = false;
+
+  const completed = dispatchCommandToTarget("/agento start-session", target, "Continue there.", {
+    executeCommand: async () => undefined,
+    reportInfo: async () => {
+      notificationShown = true;
+      return new Promise<string | undefined>(() => undefined);
+    },
+    pendingStore: store,
+    openTarget: async () => undefined,
+  }, false);
+  const resolvedBeforeNotification = await Promise.race([
+    completed.then(() => true),
+    new Promise<false>((resolve) => setImmediate(() => resolve(false))),
+  ]);
+
+  assert.equal(resolvedBeforeNotification, true);
+  assert.equal(notificationShown, true);
+  assert.equal((store.values.get(pendingDispatchKey(target.path)) as { command: string }).command, "/agento start-session");
 });
 
 test("consumes one pending command before submission and surfaces discarded records", async () => {
