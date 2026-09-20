@@ -66,6 +66,12 @@
         "command": "agento.openBreakdown",
         "title": "Open Breakdown",
         "category": "Agento"
+            },
+            {
+        "command": "agento.showActions",
+        "title": "Show Actions",
+        "category": "Agento",
+        "icon": "$(play)"
       }
     ],
     "menus": {
@@ -84,6 +90,18 @@
           "command": "agento.refresh",
           "when": "view == agento.sessionDoctor",
           "group": "navigation"
+        },
+        {
+          "command": "agento.showActions",
+          "when": "view == agento.sessionDoctor",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agento.showActions",
+          "when": "view == agento.deliveries && viewItem == agento.delivery",
+          "group": "inline"
         }
       ]
     },

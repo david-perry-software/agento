@@ -24,6 +24,8 @@ const delivery = {
   },
   pr: { number: 51, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/51" },
   companionPr: { number: 8, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/8" },
+  allowed: ["/agento continue", "/agento build-feature deliveries-tree", "/agento ap deliveries-tree"],
+  elsewhere: [{ command: "/agento ship deliveries-tree", window: "primary", reason: "ship from primary" }],
 };
 
 function response(items: unknown[], warnings: string[] = []) {
@@ -62,6 +64,12 @@ test("delivery model includes compact metadata and complete tooltip fields", () 
   const item = model.groups[0]?.items[0];
   assert.ok(item);
   assert.equal(item.description, "feature | 2/8 | in-progress | PR #51 draft");
+  assert.deepEqual(item.actions.map((action) => action.command), [
+    "/agento continue",
+    "/agento build-feature deliveries-tree",
+    "/agento ap deliveries-tree",
+    "/agento ship deliveries-tree",
+  ]);
   for (const text of [
     "Roadmap: features/2026/09/deliveries-tree/roadmap.md",
     "PR: #51 OPEN draft CLEAN https://example.test/pr/51",

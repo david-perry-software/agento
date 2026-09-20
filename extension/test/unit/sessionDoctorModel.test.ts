@@ -19,6 +19,8 @@ const session = {
     registered: true,
   },
   warnings: ["pr: gh unavailable"],
+  allowed: ["/agento continue", "/agento build-feature session-doctor-panel", "/agento ap session-doctor-panel"],
+  elsewhere: [{ command: "/agento ship session-doctor-panel", window: "primary", reason: "ship from primary" }],
 };
 
 const doctor = {
@@ -54,6 +56,12 @@ test("session doctor model preserves complete CLI state and derives status text"
   });
   assert.deepEqual(model.warnings, ["pr: gh unavailable"]);
   assert.deepEqual(model.checks, doctor.checks);
+  assert.deepEqual(model.actions.map((action) => action.command), [
+    "/agento continue",
+    "/agento build-feature session-doctor-panel",
+    "/agento ap session-doctor-panel",
+    "/agento ship session-doctor-panel",
+  ]);
   assert.equal(model.statusBarText, "Agento: build · 2 active");
 });
 

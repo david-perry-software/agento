@@ -1,9 +1,10 @@
 import path from "node:path";
 import * as vscode from "vscode";
 
+import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
-import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
+import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
@@ -189,6 +190,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
   const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openBreakdown);
+  const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
+    const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready" ? { actions: sessionDoctor.current.actions } : null);
+    if (!source || source.actions.length === 0) {
+      await vscode.window.showInformationMessage("No Agento actions are available in this window.");
+      return;
+    }
+    const action = await pickCommandAction(source);
+    if (action) {
+      await vscode.commands.executeCommand("agento.dispatchAction", action, source.slug);
+    }
+  });
   const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
   const initiativesView = vscode.window.createTreeView("agento.initiatives", { treeDataProvider: initiatives });
   const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
@@ -214,6 +226,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     showOutputCommand,
     openRoadmapCommand,
     openBreakdownCommand,
+    showActionsCommand,
     deliveriesView,
     initiativesView,
     sessionDoctorView,

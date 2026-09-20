@@ -1,3 +1,5 @@
+import { projectCommandActions, type CommandAction } from "./commandActions.js";
+
 export interface SessionSummary {
   role: string;
   lifecycle: string;
@@ -27,6 +29,7 @@ export type SessionDoctorModel =
       companion: CompanionSummary | null;
       warnings: string[];
       checks: DoctorCheck[];
+      actions: CommandAction[];
       statusBarText: string;
     }
   | { kind: "error"; message: string; statusBarText: string };
@@ -176,6 +179,7 @@ export function createSessionDoctorModel(
       companion: parseCompanion(sessionValue),
       warnings: [...sessionValue.warnings],
       checks: parseChecks(doctorValue),
+      actions: projectCommandActions(sessionValue),
       statusBarText: `Agento: ${role} · ${statusValue.resumable.length} active`,
     };
   } catch (error) {

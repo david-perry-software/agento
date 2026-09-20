@@ -1,3 +1,5 @@
+import { projectCommandActions, type CommandAction } from "./commandActions.js";
+
 interface DeliverySteps {
   ticked: number;
   total: number;
@@ -42,6 +44,7 @@ export interface DeliveryTreeItem {
   roadmapRoot?: string;
   description: string;
   tooltip: string;
+  actions: CommandAction[];
 }
 
 export interface DeliveryTreeGroup {
@@ -240,6 +243,7 @@ function parseItem(value: unknown): DeliveryTreeItem {
       `Companion: ${formatCompanion(companion)}`,
       `Initiative: ${initiative ?? "none"}`,
     ].join("\n"),
+    actions: projectCommandActions(value),
   };
 }
 
