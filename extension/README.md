@@ -17,6 +17,20 @@ The view refreshes after roadmap, review, and Git changes or when you run the Re
 command. Empty results and load failures appear directly in the tree; CLI warnings
 and errors are also written to the Agento output channel.
 
+## Session & Doctor
+
+The Session & Doctor view reads `agento.mjs session --pr`, `agento.mjs doctor`, and
+`agento.mjs status --pr`. It shows the current role, worktree, branch, lifecycle,
+workspace, companion state, CLI warnings, and every doctor check with its status,
+detail, and fallback. Doctor output is read-only: the extension presents the CLI's
+diagnosis and fallback text but does not repair the environment.
+
+The view refreshes on activation, when it becomes visible, after watched workspace
+changes, or when you run the Refresh command. A load failure remains inline and can
+be retried with Refresh. The status bar summarizes the same snapshot as
+`Agento: <role> · <N> active`, using the role from `session --pr` and the active count
+from `status --pr`; selecting it focuses the Session & Doctor view.
+
 ## Settings
 
 - `agento.nodePath` selects the Node.js executable used for the bundled CLI.

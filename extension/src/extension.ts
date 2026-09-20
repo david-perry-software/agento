@@ -7,12 +7,17 @@ import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeSnapshot } from "./
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import { RefreshScheduler } from "./refreshScheduler.js";
+import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
+import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { createWatchers } from "./watchers.js";
 
 export interface ExtensionApi {
   client: CliClient;
   scheduler: RefreshScheduler;
   deliveries: DeliveryTreeProvider;
+  sessionDoctor: SessionDoctorProvider;
+  sessionDoctorView: vscode.TreeView<unknown>;
+  statusBar: vscode.StatusBarItem;
   output: vscode.OutputChannel;
 }
 
@@ -30,6 +35,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   });
   const scheduler = new RefreshScheduler(configuration.get<number>("refreshDebounceMs", 3000));
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
+  const sessionDoctor = new SessionDoctorProvider();
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBar.name = "Agento Session & Doctor";
+  statusBar.text = "Agento: unavailable";
+  statusBar.tooltip = "Open Session & Doctor";
+  statusBar.command = "agento.sessionDoctor.focus";
+  statusBar.show();
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
@@ -79,24 +91,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (!folder) {
       const message = "No workspace folder is open.";
       deliveries.update({ model: createDeliveryTreeError(message), roadmapRoot: context.extensionPath });
+      const model = createSessionDoctorError(message);
+      sessionDoctor.update(model);
+      statusBar.text = model.statusBarText;
       output.appendLine(message);
       return;
     }
-    void latestDeliveryRefresh.run<DeliveryTreeSnapshot>(
+    void latestDeliveryRefresh.run<{ deliveries: DeliveryTreeSnapshot; sessionDoctor: ReturnType<typeof createSessionDoctorModel> }>(
       async () => {
-        const result = await client.run(["status", "--pr"], folder.uri.fsPath);
+        const [sessionResult, doctorResult, statusResult] = await Promise.all([
+          client.run(["session", "--pr"], folder.uri.fsPath),
+          client.run(["doctor"], folder.uri.fsPath),
+          client.run(["status", "--pr"], folder.uri.fsPath),
+        ]);
         return {
-          model: createDeliveryTreeModel(result.json),
-          roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
+          deliveries: {
+            model: createDeliveryTreeModel(statusResult.json),
+            roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
+          },
+          sessionDoctor: createSessionDoctorModel(sessionResult.json, doctorResult.json, statusResult.json),
         };
       },
       (snapshot) => {
-        deliveries.update(snapshot);
-        for (const warning of snapshot.model.warnings) {
+        deliveries.update(snapshot.deliveries);
+        sessionDoctor.update(snapshot.sessionDoctor);
+        statusBar.text = snapshot.sessionDoctor.statusBarText;
+        for (const warning of snapshot.deliveries.model.warnings) {
           output.appendLine(warning);
         }
-        if (snapshot.model.kind === "error") {
-          output.appendLine(snapshot.model.message);
+        if (snapshot.deliveries.model.kind === "error") {
+          output.appendLine(snapshot.deliveries.model.message);
+        }
+        if (snapshot.sessionDoctor.kind === "ready") {
+          for (const warning of snapshot.sessionDoctor.warnings) {
+            output.appendLine(warning);
+          }
+        } else {
+          output.appendLine(snapshot.sessionDoctor.message);
         }
       },
       (error) => {
@@ -104,6 +135,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
           model: createDeliveryTreeError(error),
           roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
         });
+        const model = createSessionDoctorError(error);
+        sessionDoctor.update(model);
+        statusBar.text = model.statusBarText;
         output.appendLine(String(error));
       },
     );
@@ -112,7 +146,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const refreshCommand = vscode.commands.registerCommand("agento.refresh", () => scheduler.refreshNow("command"));
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
-  const deliveriesView = vscode.window.registerTreeDataProvider("agento.deliveries", deliveries);
+  const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
+  const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
+  let sessionDoctorWasVisible = false;
+  const sessionDoctorVisibility = sessionDoctorView.onDidChangeVisibility(({ visible }) => {
+    if (visible && !sessionDoctorWasVisible) {
+      sessionDoctorWasVisible = true;
+      scheduler.refreshNow("session doctor visible");
+    }
+  });
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => void rebuildWatchers());
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };
 
@@ -120,17 +162,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     output,
     scheduler,
     deliveries,
+    sessionDoctor,
+    statusBar,
     refreshSubscription,
     refreshCommand,
     showOutputCommand,
     openRoadmapCommand,
     deliveriesView,
+    sessionDoctorView,
+    sessionDoctorVisibility,
     workspaceSubscription,
     watcherManager,
   );
   await rebuildWatchers();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, output };
+  return { client, scheduler, deliveries, sessionDoctor, sessionDoctorView, statusBar, output };
 }
 
 export function deactivate(): void {}
