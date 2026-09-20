@@ -7,6 +7,7 @@ import {
   primaryInitiativeTarget,
   repositoryRelativeBriefPath,
   runNewInitiativeFlow,
+  submittedInitiativeBrief,
   type NewInitiativeFlowDependencies,
 } from "../../src/newInitiativeFlow.js";
 import { pendingDispatchKey, type PendingDispatchStore } from "../../src/pendingDispatch.js";
@@ -38,6 +39,21 @@ test("builds the canonical command while preserving multi-line brief text", () =
 test("treats cancellation as no request and rejects empty input", () => {
   assert.equal(createNewInitiativeRequest(undefined), undefined);
   assert.throws(() => createNewInitiativeRequest(" \n\t "), /non-empty/);
+});
+
+test("rejects a closed untitled brief before reading stale content", async () => {
+  const errors: string[] = [];
+  const result = await submittedInitiativeBrief(
+    {
+      isClosed: true,
+      getText: () => assert.fail("closed document content must not be read"),
+    },
+    "Submit",
+    async (message) => { errors.push(message); },
+  );
+
+  assert.equal(result, undefined);
+  assert.deepEqual(errors, ["The initiative brief editor was closed before submission."]);
 });
 
 test("selects the unique CLI-reported product primary checkout", () => {

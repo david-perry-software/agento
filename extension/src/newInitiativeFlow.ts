@@ -6,6 +6,11 @@ export interface NewInitiativeRequest {
   command: string;
 }
 
+export interface InitiativeBriefDocument {
+  readonly isClosed: boolean;
+  getText(): string;
+}
+
 export type NewInitiativeInput =
   | { kind: "brief"; text: string }
   | { kind: "file"; path: string }
@@ -21,6 +26,19 @@ export type NewInitiativeFlowResult =
   | { kind: "complete"; command: string; target: NewInitiativeTarget }
   | { kind: "cancelled" }
   | { kind: "failed"; reason: string };
+
+export async function submittedInitiativeBrief(
+  document: InitiativeBriefDocument,
+  selection: "Submit" | "Cancel" | undefined,
+  reportError: (message: string) => PromiseLike<unknown>,
+): Promise<string | undefined> {
+  if (selection !== "Submit") return undefined;
+  if (document.isClosed) {
+    await reportError("The initiative brief editor was closed before submission.");
+    return undefined;
+  }
+  return document.getText();
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

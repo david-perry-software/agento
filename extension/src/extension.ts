@@ -15,6 +15,7 @@ import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import {
   primaryInitiativeTarget,
   runNewInitiativeFlow,
+  submittedInitiativeBrief,
   type NewInitiativeFlowDependencies,
   type NewInitiativeFlowResult,
   type NewInitiativeInput,
@@ -382,7 +383,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         "Submit",
         "Cancel",
       );
-      return selection === "Submit" ? document.getText() : undefined;
+      return submittedInitiativeBrief(document, selection, (message) => vscode.window.showErrorMessage(message));
     },
     pickFile: async (primaryPath) => (await vscode.window.showOpenDialog({
       title: "Select Initiative Brief",

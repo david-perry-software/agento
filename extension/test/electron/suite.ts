@@ -9,7 +9,7 @@ import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
 import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
-import { runNewInitiativeFlow, type NewInitiativeTarget } from "../../src/newInitiativeFlow.js";
+import { runNewInitiativeFlow, submittedInitiativeBrief, type NewInitiativeTarget } from "../../src/newInitiativeFlow.js";
 import { runNewPlanFlow, type NewPlanTarget } from "../../src/newPlanFlow.js";
 import { createSessionDoctorError } from "../../src/sessionDoctorModel.js";
 import type { SessionDoctorElement } from "../../src/sessionDoctorProvider.js";
@@ -266,6 +266,38 @@ async function assertNewInitiativeCommand(
   assert.deepEqual(promptEvents, inputKind === "brief" ? ["quickPick", "editor"] : ["quickPick", `file:${fixture}`]);
 }
 
+async function assertClosedInitiativeBriefRejected(api: ExtensionApi): Promise<void> {
+  const errors: string[] = [];
+  let dispatchAttempts = 0;
+
+  api.setNewInitiativePrompts({
+    chooseInput: async () => "brief",
+    enterBrief: () => submittedInitiativeBrief(
+      {
+        isClosed: true,
+        getText: () => assert.fail("closed document content must not be read"),
+      },
+      "Submit",
+      async (message) => { errors.push(message); },
+    ),
+    pickFile: async () => undefined,
+  });
+  api.setNewInitiativeRunner(async () => {
+    dispatchAttempts += 1;
+    return { kind: "cancelled" };
+  });
+
+  try {
+    await vscode.commands.executeCommand("agento.newInitiative");
+  } finally {
+    api.setNewInitiativeRunner();
+    api.setNewInitiativePrompts();
+  }
+
+  assert.deepEqual(errors, ["The initiative brief editor was closed before submission."]);
+  assert.equal(dispatchAttempts, 0, "closed briefs reach neither Chat nor pending dispatch");
+}
+
 function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): DeliveryTreeElement[] {
   return api.deliveries.getChildren(group);
 }
@@ -510,6 +542,7 @@ export async function run(): Promise<void> {
   );
   await assertNewInitiativeCommand(api, fixture, "brief");
   await assertNewInitiativeCommand(api, fixture, "file");
+  await assertClosedInitiativeBriefRejected(api);
   assert.equal(readyMember.kind, "member");
   if (readyMember.kind !== "member") return;
   await assertNewPlanCommand(
