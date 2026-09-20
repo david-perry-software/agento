@@ -65,7 +65,7 @@ exact argument.
    header and push that second companion commit.
 
    Example idempotent cross-link:
-   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}$'\n\nCompanion PR: <companion PR URL>"; fi`
+   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`
 6. Report slug, branch, PR number (and the companion PR number in companion mode), and
    roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or

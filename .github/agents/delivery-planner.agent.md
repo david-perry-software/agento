@@ -171,7 +171,7 @@ mode. Never modify source code, configuration, or other directories.
       the companion repository from its `origin`; `artifacts.repo.name` is a directory
       basename, never a `--repo` value) with a body linking the code PR by URL; then
       update the product PR body via the REST PATCH endpoint in an idempotent check to
-      append the companion PR URL without re-adding it: `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}$'\n\nCompanion PR: <companion PR URL>"; fi`.
+      append the companion PR URL without re-adding it: `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`.
    4. Write `artifact-pr: "#<n>"` (the companion PR number) into the roadmap header
       next to `github-issue`, commit it in the companion half (`docs(<type>): record
       artifact PR for <slug>`), and push. `agento.mjs session --pr` now reports both

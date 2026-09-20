@@ -80,7 +80,7 @@ The argument takes three forms — detect which applies:
    in the roadmap header and push that second companion commit.
 
    Example idempotent cross-link:
-   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}$'\n\nCompanion PR: <companion PR URL>"; fi`
+   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`
 9. Report slug, branch, GitHub issue number, PR number (and the companion PR number in
    companion mode), and roadmap step count. Offer
    **Build in this worktree** to hand off directly to the Builder without closing,
