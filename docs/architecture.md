@@ -93,6 +93,31 @@ flowchart TD
   The extension can focus another window but cannot read or cancel that window's
   chat through the public VS Code API.
 
+## Extension acceptance boundary
+
+The extension acceptance suite generates fresh Git repositories for both supported
+artifact layouts on every run. The in-repo scenario writes delivery and initiative
+artifacts into the product fixture; the companion scenario creates and initializes a
+separate artifact repository and points the product configuration at it. CLI state,
+pull requests, lifecycle progress, warnings, doctor checks, worktree ownership, and
+companion synchronization are deterministic inputs. Each scenario and isolated
+profile is removed after its test, and the harness asserts cleanup.
+
+Electron acceptance activates the contributed extension and drives its registered
+commands. It inspects the Deliveries, Initiatives, and Session & Doctor providers and
+the status bar, then verifies exact canonical command text and CLI-selected targets
+at the dispatch boundary. It does not run an Agento agent or inspect Copilot Chat
+output; those are outside VS Code's public extension API.
+
+Packaging has a separate installed-artifact gate. `npm run package` validates the
+VSIX archive, and `npm run test:vsix` installs that VSIX into temporary user-data and
+extensions directories with the pinned VS Code test runtime. The smoke launches the
+installed extension against a generated Git fixture, verifies activation and the
+expected command/view contributions, and removes the isolated profile.
+
+User-facing installation and operation are documented in the
+[VS Code extension guide](extension.md).
+
 ## Where state lives
 
 The only durable progress record is the committed, pushed `roadmap.md` in the

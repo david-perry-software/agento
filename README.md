@@ -23,6 +23,7 @@ directories, an `## Agento` section in your `AGENTS.md`, and one shell script.
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
 - [Install the plugin](#install-the-plugin)
+- [Use the VS Code extension](docs/extension.md)
 - [Set up a project](#set-up-a-project)
 - [Choose a tier](#choose-a-tier)
 - [The full delivery flow](#the-full-delivery-flow)
@@ -118,6 +119,10 @@ copilot plugin install david-perry-software/agento
 ```
 
 Full details and the developer-mode caveat: [docs/install.md](docs/install.md).
+
+For the optional dashboard VSIX, including installation, view behavior, command
+routing, companion workspaces, and recovery, see the
+[VS Code extension guide](docs/extension.md).
 
 ## Set up a project
 
