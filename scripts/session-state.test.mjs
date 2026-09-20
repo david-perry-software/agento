@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList, resolveNextTarget } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -52,6 +52,22 @@ test("parseWorktreeList handles branch, detached, and trailing blank lines", () 
   ]);
   assert.deepEqual(parseWorktreeList(""), []);
   assert.deepEqual(parseWorktreeList(undefined), []);
+});
+
+test("sessionWorkspaceDocument returns product then companion folders and default auto-approve settings", () => {
+  const product = "/wt/plan-1";
+  const companion = "/docs-wt/plan-1";
+  const doc = sessionWorkspaceDocument({ product, companion });
+  assert.deepEqual(doc.folders, [{ path: product }, { path: companion }]);
+  assert.deepEqual(doc.settings, SESSION_WORKSPACE_SETTINGS);
+});
+
+test("sessionWorkspaceDocument can disable auto-approve settings", () => {
+  const product = "/wt/plan-2";
+  const companion = "/docs-wt/plan-2";
+  const doc = sessionWorkspaceDocument({ product, companion, autoApprove: false });
+  assert.deepEqual(doc.folders, [{ path: product }, { path: companion }]);
+  assert.deepEqual(doc.settings, {});
 });
 
 test("primary: cwd at or below the first worktree entry", () => {
