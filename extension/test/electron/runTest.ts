@@ -46,6 +46,7 @@ async function writeDeliveries(root: string): Promise<void> {
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "roadmap.md"), roadmap(fixture.slug, fixture.status, fixture.ticked, fixture.total));
   }
+  await mkdir(path.join(root, "features", "2026", "09", "x"), { recursive: true });
 }
 
 async function writeInitiative(root: string): Promise<void> {

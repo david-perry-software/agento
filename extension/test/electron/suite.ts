@@ -258,9 +258,8 @@ export async function run(): Promise<void> {
     () => vscode.workspace.fs.writeFile(roadmapUri, Buffer.from(roadmapContents.replace("- [ ] 1.2", "- [x] 1.2"))),
   );
 
-  const deliveryDir = path.join(fixture, "features", "2026", "09", "x");
+  const deliveryDir = path.join(expectedArtifactRoot, "features", "2026", "09", "x");
   const roadmapPath = path.join(deliveryDir, "roadmap.md");
-  await vscode.workspace.fs.createDirectory(vscode.Uri.file(deliveryDir));
   await waitForRoadmapRefresh(api, vscode.Uri.file(roadmapPath));
 
   api.deliveries.update({
