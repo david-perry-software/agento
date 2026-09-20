@@ -59,9 +59,13 @@ exact argument.
    companion mode follow the Planner's step 8 order: commit and push the artifacts in
    the companion half (`git -C <companion.path>`), publish the product branch with one
    empty Conventional Commit and open the draft code PR, open the **draft** companion
-   PR titled `docs(<type>): <slug>` whose body links the code PR, cross-link the code
-   PR body with `gh pr edit`, then record `artifact-pr: "#<n>"` in the roadmap header
-   and push that second companion commit.
+   PR titled `docs(<type>): <slug>` whose body links the code PR, append the companion
+   PR URL to the code PR body using the REST PATCH endpoint (idempotent: only append it
+   when the URL is already absent), then record `artifact-pr: "#<n>"` in the roadmap
+   header and push that second companion commit.
+
+   Example idempotent cross-link:
+   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}$'\n\nCompanion PR: <companion PR URL>"; fi`
 6. Report slug, branch, PR number (and the companion PR number in companion mode), and
    roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or

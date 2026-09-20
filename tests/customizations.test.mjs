@@ -302,6 +302,16 @@ test("every command and agent declares Needs: and Fallback: from the §10 vocabu
   }
 });
 
+test("prompts and agents never direct users to gh pr edit --body", () => {
+  const offenders = [];
+  for (const file of [...promptFiles, ...agentFiles]) {
+    const text = fs.readFileSync(file, "utf8");
+    const hit = text.match(/gh pr edit\b[^\n]*--body/);
+    if (hit) offenders.push(`${path.relative(repoRoot, file)}: ${hit[0]}`);
+  }
+  assert.deepEqual(offenders, [], `customization files still instructing gh pr edit --body:\n${offenders.join("\n")}`);
+});
+
 test("exactly the commands that need gh, code, or network run doctor --for themselves", () => {
   for (const file of promptFiles) {
     const name = path.basename(file, ".prompt.md");

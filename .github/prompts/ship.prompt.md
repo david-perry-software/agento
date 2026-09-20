@@ -154,7 +154,8 @@ Ownership does not apply when resuming only the post-ship epilogue.
      proceed (default is do not proceed), and on yes record them under
      `## Follow-ups (accepted at ship)` in roadmap.md during step 3. Never proceed on
      these without the user's answer. A missing `Fixes #<n>` on an issue PR is not a
-     question: fix it with `gh pr edit <n> --body` and note it in the report.
+     question: fix it through the REST PATCH endpoint in an idempotent check and note
+     it in the report, e.g. `current_body=$(gh pr view <n> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "Fixes #<n>"; then gh api repos/<owner>/<repo>/pulls/<n> -X PATCH -f body="${current_body}$'\n\nFixes #<n>"; fi`.
 3. **On confirmation (or a clean audit)** — writes go through `git -C <owner.path>`
    when an owner exists, else the primary checkout (*companion mode*: artifact
    writes go through `git -C <companion.path>` when an owner exists, else the
