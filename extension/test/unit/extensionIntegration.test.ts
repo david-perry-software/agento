@@ -62,7 +62,7 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /await consumePending\(\)/);
   assert.match(source, /new FilePendingDispatchStore/);
   assert.match(source, /slug: sessionDoctor\.current\.session\.deliverySlug/);
-  assert.match(source, /return \{ client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction \}/);
+  assert.match(source, /return \{ client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction, startNewPlan \}/);
   assert.match(source, /scheduler\.onDidRefresh/);
   assert.doesNotMatch(source, /setInterval\s*\(/);
   assert.doesNotMatch(source, /registerCommand\([^\n]*(repair|doctor)/i);

@@ -22,6 +22,28 @@ export interface CommandDispatcherDependencies {
   openTarget: (target: Extract<DispatchRoute, { kind: "open" }>["target"]) => Thenable<unknown>;
 }
 
+export async function dispatchCommandToTarget(
+  command: string,
+  target: Extract<DispatchRoute, { kind: "open" }>["target"],
+  reason: string,
+  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget">,
+  isCurrentTarget: boolean,
+): Promise<void> {
+  if (isCurrentTarget) {
+    await dependencies.executeCommand("workbench.action.chat.open", { query: command, mode: "agent" });
+    return;
+  }
+  await savePendingDispatch(dependencies.pendingStore, { target: target.path, command, createdAt: Date.now() });
+  try {
+    await dependencies.openTarget(target);
+  } catch (error) {
+    await dependencies.pendingStore.update(pendingDispatchKey(target.path), undefined);
+    throw error;
+  }
+  const selection = await dependencies.reportInfo(reason, "Focus target");
+  if (selection === "Focus target") await dependencies.openTarget(target);
+}
+
 export async function dispatchCommandAction(
   action: CommandAction,
   slug: string | undefined,
@@ -36,21 +58,7 @@ export async function dispatchCommandAction(
       return route;
     }
     if (route.kind === "open") {
-      await savePendingDispatch(dependencies.pendingStore, {
-        target: route.target.path,
-        command: route.command,
-        createdAt: Date.now(),
-      });
-      try {
-        await dependencies.openTarget(route.target);
-      } catch (error) {
-        await dependencies.pendingStore.update(pendingDispatchKey(route.target.path), undefined);
-        throw error;
-      }
-      const selection = await dependencies.reportInfo(route.reason, "Focus target");
-      if (selection === "Focus target") {
-        await dependencies.openTarget(route.target);
-      }
+      await dispatchCommandToTarget(route.command, route.target, route.reason, dependencies, false);
       return route;
     }
 

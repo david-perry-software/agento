@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
-import { consumePendingCommands, dispatchCommandAction, type CommandExecutor } from "./commandDispatcher.js";
+import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type CommandExecutor } from "./commandDispatcher.js";
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
@@ -12,6 +12,13 @@ import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
+import {
+  runNewPlanFlow,
+  type NewPlanFlowDependencies,
+  type NewPlanFlowOptions,
+  type NewPlanFlowResult,
+  type NewPlanRequest,
+} from "./newPlanFlow.js";
 import { RefreshScheduler } from "./refreshScheduler.js";
 import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
 import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
@@ -27,6 +34,11 @@ export interface ExtensionApi {
   statusBar: vscode.StatusBarItem;
   output: vscode.OutputChannel;
   dispatchAction: (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => Promise<unknown>;
+  startNewPlan: (
+    request: NewPlanRequest,
+    dependencies?: NewPlanFlowDependencies,
+    options?: NewPlanFlowOptions,
+  ) => Promise<NewPlanFlowResult>;
 }
 
 interface ConfigResult {
@@ -219,6 +231,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     },
     executeCommand,
   );
+  const currentTargetPaths = (): Set<string> => new Set([
+    vscode.workspace.workspaceFile?.fsPath,
+    ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
+  ].filter((target): target is string => Boolean(target)));
+  const productionNewPlanDependencies = (token: vscode.CancellationToken): NewPlanFlowDependencies => ({
+    readSession: async (cwd) => {
+      const root = cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      if (!root) throw new Error("No workspace folder is open.");
+      return (await client.run(["session"], root)).json;
+    },
+    submitCommand: (command, target) => dispatchCommandToTarget(
+      command,
+      target,
+      "Continue starting the planning session in the primary window.",
+      {
+        executeCommand: vscode.commands.executeCommand,
+        reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
+        pendingStore,
+        openTarget,
+      },
+      currentTargetPaths().has(target.path),
+    ),
+    pendingStore,
+    openTarget,
+    sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    now: Date.now,
+    isCancellationRequested: () => token.isCancellationRequested,
+    offerRecovery: async (message, actions) => vscode.window.showWarningMessage(message, ...actions),
+  });
+  const startNewPlan = async (
+    request: NewPlanRequest,
+    dependencies?: NewPlanFlowDependencies,
+    options: NewPlanFlowOptions = { pollIntervalMs: 1000, timeoutMs: 120000 },
+  ): Promise<NewPlanFlowResult> => {
+    if (dependencies) return runNewPlanFlow(request, dependencies, options);
+    return await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Starting Agento planning session", cancellable: true },
+      async (_progress, token) => {
+        const result = await runNewPlanFlow(request, productionNewPlanDependencies(token), options);
+        if (result.kind === "failed" || result.kind === "ambiguous") await vscode.window.showErrorMessage(result.reason);
+        return result;
+      },
+    );
+  };
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
     const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
@@ -285,7 +341,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   await rebuildWatchers();
   await consumePending();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction };
+  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction, startNewPlan };
 }
 
 export function deactivate(): void {}

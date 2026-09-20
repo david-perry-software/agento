@@ -175,37 +175,40 @@ export async function runNewPlanFlow(
     const primary = primaryTarget(before);
     const existingPaths = new Set(productWorktrees(before).map((worktree) => worktree.path));
     await dependencies.submitCommand("/agento start-session", primary);
-    const deadline = dependencies.now() + options.timeoutMs;
 
-    while (dependencies.now() < deadline) {
-      if (dependencies.isCancellationRequested()) {
-        return { kind: "cancelled", command: request.command, reason: "Waiting for the planning worktree was cancelled." };
-      }
-      const current = parseSession(await dependencies.readSession());
-      const candidates = newPlanningWorktrees(current, existingPaths);
-      if (candidates.length > 1) {
-        return {
-          kind: "ambiguous",
-          command: request.command,
-          reason: `Found ${candidates.length} new planning worktrees; no target was selected.`,
-        };
-      }
-      if (candidates.length === 1) {
+    while (true) {
+      const deadline = dependencies.now() + options.timeoutMs;
+      while (dependencies.now() < deadline) {
         if (dependencies.isCancellationRequested()) {
           return { kind: "cancelled", command: request.command, reason: "Waiting for the planning worktree was cancelled." };
         }
-        const candidate = candidates[0]!;
-        const targetSession = parseSession(await dependencies.readSession(candidate.path));
-        const target = targetFromSession(targetSession, candidate.path);
-        if (target) return handoff(request, target, dependencies);
+        const current = parseSession(await dependencies.readSession());
+        const candidates = newPlanningWorktrees(current, existingPaths);
+        if (candidates.length > 1) {
+          return {
+            kind: "ambiguous",
+            command: request.command,
+            reason: `Found ${candidates.length} new planning worktrees; no target was selected.`,
+          };
+        }
+        if (candidates.length === 1) {
+          if (dependencies.isCancellationRequested()) {
+            return { kind: "cancelled", command: request.command, reason: "Waiting for the planning worktree was cancelled." };
+          }
+          const candidate = candidates[0]!;
+          const targetSession = parseSession(await dependencies.readSession(candidate.path));
+          const target = targetFromSession(targetSession, candidate.path);
+          if (target) return handoff(request, target, dependencies);
+        }
+        await dependencies.sleep(options.pollIntervalMs);
       }
-      await dependencies.sleep(options.pollIntervalMs);
-    }
 
-    const reason = "Timed out waiting for a new planning worktree.";
-    const selection = await dependencies.offerRecovery(reason, ["Retry", "Focus target"]);
-    if (selection === "Focus target") await dependencies.openTarget(primary);
-    return { kind: "timeout", command: request.command, reason };
+      const reason = "Timed out waiting for a new planning worktree.";
+      const selection = await dependencies.offerRecovery(reason, ["Retry", "Focus target"]);
+      if (selection === "Retry") continue;
+      if (selection === "Focus target") await dependencies.openTarget(primary);
+      return { kind: "timeout", command: request.command, reason };
+    }
   } catch (error) {
     const reason = `Unable to start a new plan: ${error instanceof Error ? error.message : String(error)}`;
     return { kind: "failed", command: request.command, reason };
