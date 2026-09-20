@@ -5,7 +5,7 @@
     "initiatives": "initiatives",
     "repo": { "name": null, "dir": null }
   },
-  "worktrees": { "dir": null },
+  "worktrees": { "dir": null, "autoApprove": null },
   "branches": {
     "default": "main",
     "feature": "feature/",

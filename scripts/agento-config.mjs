@@ -7,7 +7,7 @@ export function defaultConfig(rootDir) {
   const repoName = path.basename(path.resolve(rootDir));
   return {
     artifacts: { features: "features", issues: "issues", initiatives: "initiatives", repo: { name: null, dir: null } },
-    worktrees: { dir: path.join("..", `${repoName}-worktrees`) },
+    worktrees: { dir: path.join("..", `${repoName}-worktrees`), autoApprove: true },
     branches: {
       default: "main",
       feature: "feature/",
