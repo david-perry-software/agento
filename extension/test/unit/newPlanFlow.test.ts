@@ -187,3 +187,27 @@ test("clears a failed handoff and lets recovery retry or focus the target", asyn
   assert.deepEqual(recoveryActions, [["Retry", "Focus target"]]);
   assert.equal(deps.pendingStore.values.size, 1);
 });
+
+test("focuses the target after a failed handoff when Focus target is selected", async () => {
+  let attempts = 0;
+  const deps = dependencies([
+    session([primary]),
+    session([primary, planned]),
+    session([primary, planned], { companion: null, workspace: null }),
+  ], {
+    openTarget: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("open failed");
+    },
+    offerRecovery: async () => "Focus target",
+  });
+
+  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Focus recovery"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
+
+  assert.equal(result.kind, "complete");
+  assert.equal(attempts, 2);
+  assert.equal(
+    (deps.pendingStore.values.get(pendingDispatchKey(planned.path)) as { command: string }).command,
+    "/agento new-feature Focus recovery",
+  );
+});
