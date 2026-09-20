@@ -6,6 +6,22 @@ export interface NewInitiativeRequest {
   command: string;
 }
 
+export type NewInitiativeInput =
+  | { kind: "brief"; text: string }
+  | { kind: "file"; path: string }
+  | undefined;
+
+export interface NewInitiativeFlowDependencies {
+  readSession: () => Promise<unknown>;
+  isRegularFile: (filePath: string) => Promise<boolean>;
+  dispatch: (command: string, target: NewInitiativeTarget) => Promise<void>;
+}
+
+export type NewInitiativeFlowResult =
+  | { kind: "complete"; command: string; target: NewInitiativeTarget }
+  | { kind: "cancelled" }
+  | { kind: "failed"; reason: string };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -36,4 +52,28 @@ export function repositoryRelativeBriefPath(primaryPath: string, selectedPath: s
     throw new Error("brief file must be inside the primary repository");
   }
   return relativePath.split(path.sep).join("/");
+}
+
+export async function runNewInitiativeFlow(
+  input: NewInitiativeInput,
+  dependencies: NewInitiativeFlowDependencies,
+): Promise<NewInitiativeFlowResult> {
+  if (input === undefined) return { kind: "cancelled" };
+
+  try {
+    const target = primaryInitiativeTarget(await dependencies.readSession());
+    let argument: string;
+    if (input.kind === "brief") {
+      argument = input.text;
+    } else {
+      if (!await dependencies.isRegularFile(input.path)) throw new Error("selected brief must be a regular file");
+      argument = repositoryRelativeBriefPath(target.path, input.path);
+    }
+    const request = createNewInitiativeRequest(argument);
+    if (!request) return { kind: "cancelled" };
+    await dependencies.dispatch(request.command, target);
+    return { kind: "complete", command: request.command, target };
+  } catch (error) {
+    return { kind: "failed", reason: error instanceof Error ? error.message : String(error) };
+  }
 }
