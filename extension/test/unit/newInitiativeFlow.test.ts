@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { dispatchCommandToTarget } from "../../src/commandDispatcher.js";
 import {
   createNewInitiativeRequest,
   primaryInitiativeTarget,
@@ -8,9 +9,23 @@ import {
   runNewInitiativeFlow,
   type NewInitiativeFlowDependencies,
 } from "../../src/newInitiativeFlow.js";
+import { pendingDispatchKey, type PendingDispatchStore } from "../../src/pendingDispatch.js";
 
 const primary = { path: "/repo", role: "primary", isManaged: false, dirPrefix: null, repo: "product" };
 const companion = { path: "/docs", role: "primary", isManaged: false, dirPrefix: null, repo: "companion" };
+
+class MemoryStore implements PendingDispatchStore {
+  readonly values = new Map<string, unknown>();
+
+  get<T>(key: string): T | undefined {
+    return this.values.get(key) as T | undefined;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    if (value === undefined) this.values.delete(key);
+    else this.values.set(key, value);
+  }
+}
 
 test("builds the canonical command while preserving multi-line brief text", () => {
   const brief = "First paragraph\n\n- Keep this indentation\n- And trailing space ";
@@ -97,5 +112,47 @@ test("reports session and dispatch failures without a partial success", async ()
   assert.deepEqual(await runNewInitiativeFlow({ kind: "brief", text: "Brief" }, failedDispatch), {
     kind: "failed",
     reason: "dispatch failed",
+  });
+});
+
+test("submits the exact initiative command when the primary target is current", async () => {
+  const calls: unknown[][] = [];
+  const store = new MemoryStore();
+  const deps = dependencies({
+    dispatch: (command, target) => dispatchCommandToTarget(command, target, "Continue in primary.", {
+      executeCommand: async (...args) => { calls.push(args); },
+      reportInfo: async () => undefined,
+      pendingStore: store,
+      openTarget: async () => undefined,
+    }, true),
+  });
+
+  const result = await runNewInitiativeFlow({ kind: "brief", text: "Primary brief" }, deps);
+
+  assert.equal(result.kind, "complete");
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento new-initiative Primary brief", mode: "agent" }]]);
+  assert.equal(store.values.size, 0);
+});
+
+test("persists the exact initiative command before opening a cross-window primary target", async () => {
+  const store = new MemoryStore();
+  const opened: unknown[] = [];
+  const deps = dependencies({
+    dispatch: (command, target) => dispatchCommandToTarget(command, target, "Continue in primary.", {
+      executeCommand: async () => undefined,
+      reportInfo: async () => undefined,
+      pendingStore: store,
+      openTarget: async (openedTarget) => { opened.push(openedTarget); },
+    }, false),
+  });
+
+  const result = await runNewInitiativeFlow({ kind: "file", path: "/repo/briefs/initiative.md" }, deps);
+
+  assert.equal(result.kind, "complete");
+  assert.deepEqual(opened, [{ kind: "folder", path: "/repo" }]);
+  assert.deepEqual(store.values.get(pendingDispatchKey("/repo")), {
+    target: "/repo",
+    command: "/agento new-initiative briefs/initiative.md",
+    createdAt: (store.values.get(pendingDispatchKey("/repo")) as { createdAt: number }).createdAt,
   });
 });
