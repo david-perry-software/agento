@@ -551,9 +551,15 @@ test("session from a companion half anchors on the product primary and matches t
 
   // companion / workspace describe the pair from either side.
   assert.deepEqual(fromProduct.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 0, behind: 0, registered: true });
-  assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false });
+  assert.deepEqual(fromProduct.workspace, { path: path.join(wt, "feature-widget.code-workspace"), exists: false, current: null });
   fs.writeFileSync(path.join(wt, "feature-widget.code-workspace"), JSON.stringify({ folders: [{ path: product }, { path: half }], settings: {} }));
-  assert.equal(run(half, "session").json.workspace.exists, true);
+  const stale = run(half, "session").json.workspace;
+  assert.equal(stale.exists, true);
+  assert.equal(stale.current, false);
+  run(repo, "workspace", "feature", "widget", "--write");
+  const refreshed = run(half, "session").json.workspace;
+  assert.equal(refreshed.exists, true);
+  assert.equal(refreshed.current, true);
 
   // worktrees[]: product entries first (primary at 0), companion entries appended with repo: companion.
   const list = fromProduct.worktrees;
@@ -1017,7 +1023,7 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   let owned = items.find((i) => i.slug === "widget");
   assert.deepEqual(owned.owner, { path: product, role: "build", dirPrefix: "feature", id: "widget" });
   assert.deepEqual(owned.companion, { path: half, branch: "feature/widget", detached: false, dirty: false, ahead: 1, behind: 0, registered: true });
-  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: false });
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: false, current: null });
   const unowned = items.find((i) => i.slug === "unowned");
   assert.equal(unowned.owner, null);
   assert.equal(unowned.companion, null);
@@ -1030,7 +1036,7 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   owned = items.find((i) => i.slug === "widget");
   assert.equal(owned.companion.dirty, true);
   assert.equal(owned.companion.ahead, 1);
-  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true });
+  assert.deepEqual(owned.workspace, { path: workspaceFile, exists: true, current: false });
 });
 
 test("status --pr looks up PRs for non-complete items only, warns per slug on failure, and never changes lifecycle", () => {

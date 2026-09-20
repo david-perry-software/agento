@@ -12,6 +12,7 @@
 //   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (--pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
+//   node scripts/agento.mjs workspace <feature|issue|plan|freehand> <slug|session-id> [--write]   (pair workspace file status; write the canonical document with --write)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
@@ -32,12 +33,12 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget } from "./session-state.mjs";
+import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 22);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 23);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -61,6 +62,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--root") options.root = argv[++i];
     else if (arg === "--pr") options.pr = true;
+    else if (arg === "--write") options.write = true;
     else if (arg === "--apply") options.apply = true;
     else if (arg === "--for") {
       options.for = argv[++i];
@@ -281,12 +283,63 @@ function describeCompanion(worktree, layout = checkoutLayout()) {
   return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, behind: Number.parseInt(behind, 10) || 0, registered: true };
 }
 
+function canonicalizeJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson(value[key])]));
+  }
+  return value;
+}
+
+function workspaceDocumentCurrent(file, expected) {
+  if (!fs.existsSync(file)) return false;
+  try {
+    const current = JSON.parse(fs.readFileSync(file, "utf8"));
+    return JSON.stringify(canonicalizeJson(current)) === JSON.stringify(canonicalizeJson(expected));
+  } catch {
+    return false;
+  }
+}
+
+function managedWorktreePath(worktrees, kind, id, worktreesBaseDir) {
+  const name = `${kind}-${id}`;
+  const direct = worktrees.find((w) => path.basename(w.path) === name && samePath(path.dirname(w.path), worktreesBaseDir));
+  if (direct) return direct.path;
+  const fallback = worktrees.find((w) => path.basename(w.path) === name);
+  return fallback?.path ?? path.join(worktreesBaseDir, name);
+}
+
+function resolveSessionPaths(kind, id) {
+  const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
+  const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
+  const branch = kind === "plan" ? null : `${prefixes[kind]}${id}`;
+  // Deliveries are branch-aware: an in-repo checkout whose delivery branch flips to
+  // a companion reports that companion's roots and pair (plan/freehand unchanged).
+  const branchLayout = artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
+  const layout = branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout();
+  const productWorktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+  const worktree = managedWorktreePath(productWorktrees, kind, id, worktreesDir);
+  const companion = layout.artifacts.external
+    ? {
+        worktreesDir: layout.companionWorktreesDir,
+        worktree: managedWorktreePath(layout.companionWorktrees, kind, id, layout.companionWorktreesDir),
+        branch,
+      }
+    : null;
+  const workspace = layout.artifacts.external ? path.join(path.dirname(worktree), `${kind}-${id}.code-workspace`) : null;
+  return { kind, id, branch, artifactRel, layout, worktree, companion, workspace };
+}
+
 // The multi-root workspace file a paired session opens (product side, next to the
 // product half); null for the primary, unmanaged cwds, and in-repo mode.
 function describeWorkspace(worktree, sessionWorktreesDir) {
   if (!artifacts.external || !worktree?.isManaged) return null;
   const file = path.join(sessionWorktreesDir, `${worktree.dirPrefix}-${worktree.id}.code-workspace`);
-  return { path: file, exists: fs.existsSync(file) };
+  const exists = fs.existsSync(file);
+  if (!exists) return { path: file, exists, current: null };
+  const companion = describeCompanion(worktree);
+  const expected = sessionWorkspaceDocument({ product: worktree.path, companion: companion.path, autoApprove: config.worktrees?.autoApprove !== false });
+  return { path: file, exists, current: workspaceDocumentCurrent(file, expected) };
 }
 
 // close-decision / ship-preflight: the companion half owned alongside the product
@@ -1142,27 +1195,61 @@ switch (command) {
     const id = rest[1];
     if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("paths kind must be feature, issue, plan, or freehand");
     requireSlug(id);
-    const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
-    const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
-    const branch = kind === "plan" ? null : `${prefixes[kind]}${id}`;
-    // Deliveries are branch-aware: an in-repo checkout whose delivery branch flips to
-    // a companion reports that companion's roots and pair (plan/freehand unchanged).
-    const branchLayout = artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
-    const layout = branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout();
+    const resolved = resolveSessionPaths(kind, id);
     emit({
       status: "ok",
       worktreesDir,
-      worktree: path.join(worktreesDir, `${kind}-${id}`),
-      branch,
-      artifactsRoot: layout.artifactsRoot,
-      artifactRoot: artifactRel === null ? null : path.join(layout.artifactsRoot, artifactRel),
-      layout: layout.layout,
+      worktree: resolved.worktree,
+      branch: resolved.branch,
+      artifactsRoot: resolved.layout.artifactsRoot,
+      artifactRoot: resolved.artifactRel === null ? null : path.join(resolved.layout.artifactsRoot, resolved.artifactRel),
+      layout: resolved.layout.layout,
       defaultBranch: config.branches.default,
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
       // Companion mode: the paired companion half (same <kind>-<id>, same branch) and the
       // two-folder workspace file the session opens; both null in the in-repo layout.
-      companion: layout.artifacts.external ? { worktreesDir: layout.companionWorktreesDir, worktree: path.join(layout.companionWorktreesDir, `${kind}-${id}`), branch } : null,
-      workspace: layout.artifacts.external ? path.join(worktreesDir, `${kind}-${id}.code-workspace`) : null,
+      companion: resolved.companion,
+      workspace: resolved.workspace,
+    });
+    break;
+  }
+
+  case "workspace": {
+    const kind = rest[0];
+    const id = rest[1];
+    if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("workspace kind must be feature, issue, plan, or freehand");
+    requireSlug(id);
+    const resolved = resolveSessionPaths(kind, id);
+    if (!resolved.layout.artifacts.external || !resolved.workspace || !resolved.companion) {
+      emit({ status: "not-applicable", message: "workspace is only available in companion mode (artifacts.repo set)", root, configSource: source });
+    }
+    const autoApprove = resolved.layout.config.worktrees?.autoApprove !== false;
+    const folders = [
+      { path: resolved.worktree, exists: fs.existsSync(resolved.worktree) },
+      { path: resolved.companion.worktree, exists: fs.existsSync(resolved.companion.worktree) },
+    ];
+    const document = sessionWorkspaceDocument({ product: resolved.worktree, companion: resolved.companion.worktree, autoApprove });
+    let exists = fs.existsSync(resolved.workspace);
+    let current = exists ? workspaceDocumentCurrent(resolved.workspace, document) : false;
+    let written = false;
+    if (options.write && !current) {
+      fs.mkdirSync(path.dirname(resolved.workspace), { recursive: true });
+      fs.writeFileSync(resolved.workspace, JSON.stringify(document, null, 2) + "\n");
+      exists = true;
+      current = true;
+      written = true;
+    }
+    emit({
+      status: "ok",
+      path: resolved.workspace,
+      exists,
+      current,
+      autoApprove,
+      folders,
+      settings: document.settings,
+      written,
+      root,
+      configSource: source,
     });
     break;
   }
