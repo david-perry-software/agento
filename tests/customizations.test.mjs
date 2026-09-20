@@ -238,6 +238,21 @@ test("build and review handoffs offer the /agento ap alternative", () => {
   );
 });
 
+test("start-session and start-freehand write the workspace file through agento.mjs workspace (#58 session-auto-approve)", () => {
+  const pairs = [
+    [rel(".github", "prompts", "start-session.prompt.md"), rel("commands", "start-session.md")],
+    [rel(".github", "prompts", "start-freehand.prompt.md"), rel("commands", "start-freehand.md")],
+  ];
+  for (const [prompt, mirror] of pairs) {
+    const promptBody = splitFrontmatter(prompt).body;
+    const mirrorBody = fs.readFileSync(mirror, "utf8");
+    assert.doesNotMatch(promptBody, /settings:\s*\{\}/, `${path.relative(repoRoot, prompt)} should not hand-write settings: {}`);
+    assert.match(promptBody, /agento\.mjs workspace/, `${path.relative(repoRoot, prompt)} should call agento.mjs workspace`);
+    assert.doesNotMatch(mirrorBody, /settings:\s*\{\}/, `${path.relative(repoRoot, mirror)} should not hand-write settings: {}`);
+    assert.match(mirrorBody, /agento\.mjs workspace/, `${path.relative(repoRoot, mirror)} should call agento.mjs workspace`);
+  }
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). `ship` stays here until
   // `ship-audit-first` removes its worktree precondition, then the list shrinks to three.
