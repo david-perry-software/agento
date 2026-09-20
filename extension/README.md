@@ -4,6 +4,10 @@ Agento is a VS Code dashboard and command launcher for the Agento delivery workf
 The Agento activity-bar container includes Deliveries, Initiatives, and Session &
 Doctor views, plus refresh, command dispatch, and output commands.
 
+For installation and day-to-day use, see the
+[VS Code extension guide](../docs/extension.md). This README focuses on extension
+behavior and development.
+
 ## Deliveries
 
 The Deliveries view reads `agento.mjs status --pr` and shows each non-empty lifecycle
@@ -78,7 +82,9 @@ dispatch by the extension.
 
 ## Development
 
-Run `npm ci`, `npm run build`, `npm run test:unit`, `npm run test:electron`, or
-`npm run package` from this directory. Packaging also validates the VSIX runtime
-contents and confirms that VSCE's `extension/LICENSE.txt` entry is byte-identical to
-the generated `extension/LICENSE` source.
+Run `npm ci`, `npm run build`, `npm run test:unit`, `npm run test:electron`,
+`npm run package`, or `npm run test:vsix` from this directory. Packaging validates
+the VSIX runtime contents and confirms that VSCE's `extension/LICENSE.txt` entry is
+byte-identical to the generated `extension/LICENSE` source. The VSIX smoke installs
+the package into an isolated profile, activates it against a generated fixture, and
+removes the profile afterward.
