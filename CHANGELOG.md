@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.0 (2026-09-20)
+
+- **Extension acceptance.** The release gate now exercises deterministic in-repo
+  and companion repositories through every contributed view, the status bar, and
+  registered command dispatch. Packaging also installs the VSIX into an isolated
+  profile, proves activation and command/view contributions, and removes all test
+  state. The new [extension guide](docs/extension.md) documents installation,
+  operation, companion workspaces, recovery, and public API limitations.
 - **Command dispatch.** Delivery context menus and the Session & Doctor view now
   present actions directly from the CLI's ordered `allowed[]` and `elsewhere[]`
   records. Current-window actions submit the exact canonical command to Copilot Chat

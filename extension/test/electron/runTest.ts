@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmod, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -173,6 +173,16 @@ async function createScenario(sourceFixture: string, name: Scenario["name"]): Pr
   return { name, workspace, cleanup, bin };
 }
 
+async function assertRemoved(directory: string): Promise<void> {
+  try {
+    await access(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error(`Temporary Electron scenario was not removed: ${directory}`);
+}
+
 async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(import.meta.dirname, "../../..");
   const extensionTestsPath = path.join(import.meta.dirname, "suite.js");
@@ -193,6 +203,7 @@ async function main(): Promise<void> {
       });
     } finally {
       await rm(scenario.cleanup, { recursive: true, force: true });
+      await assertRemoved(scenario.cleanup);
     }
   }
 }
