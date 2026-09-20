@@ -16,6 +16,13 @@ test("submits the exact selected command when the refreshed target is here", () 
     kind: "submit",
     command: "/agento build-feature widget",
   });
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento ap bug", window: "here", reason: "unattended" }, { currentWindow: "secondary", slug: "bug", next: next("here") }),
+    {
+      kind: "submit",
+      command: "/agento ap bug",
+    },
+  );
   assert.deepEqual(routeCommandAction({ command: "/agento delivery-status", window: "here", reason: null }, { currentWindow: "primary" }), {
     kind: "submit",
     command: "/agento delivery-status",
@@ -72,6 +79,14 @@ test("a stale cross-window action follows a refreshed here target with continue"
   assert.deepEqual(routeCommandAction(elsewhere, { currentWindow: "primary", slug: "widget", next: next("here") }), {
     kind: "submit",
     command: "/agento continue widget",
+  });
+});
+
+test("a stale cross-window /agento ap action follows a refreshed here target with /agento ap", () => {
+  const autopilotElsewhere: CommandAction = { command: "/agento ap widget", window: "secondary", reason: "run unattended" };
+  assert.deepEqual(routeCommandAction(autopilotElsewhere, { currentWindow: "primary", slug: "widget", next: next("here") }), {
+    kind: "submit",
+    command: "/agento ap widget",
   });
 });
 

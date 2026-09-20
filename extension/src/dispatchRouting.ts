@@ -29,6 +29,7 @@ export function routeCommandAction(
   options: { currentWindow: CurrentWindow; slug?: string; next?: unknown },
 ): DispatchRoute {
   const isShip = action.command.startsWith("/agento ship ");
+  const isAutopilot = action.command.startsWith("/agento ap ");
   if (!options.slug) {
     if (action.window !== "here") {
       return { kind: "reject", reason: action.reason ?? "A delivery slug is required for cross-window dispatch." };
@@ -52,6 +53,9 @@ export function routeCommandAction(
 
   const continueCommand = `/agento continue ${options.slug}`;
   if (next.window === "here") {
+    if (isAutopilot) {
+      return { kind: "submit", command: action.command };
+    }
     return { kind: "submit", command: action.window === "here" ? action.command : continueCommand };
   }
   if (!isRecord(next.target) || typeof next.target.path !== "string" || next.target.path.length === 0) {

@@ -2118,6 +2118,22 @@ test("next: review freshness decides between ship, re-review, and the fix handof
   assert.equal(run(local, "next").json.next.invocation, "/agento review-issue bug");
 });
 
+test("#60 autopilot-in-review-handoff: in-review transitions continue to reviewer while /agento ap stays available", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const build = path.join(wt, "issue-bug");
+  git(repo, "worktree", "add", "-q", "-b", "issue/bug", build);
+  writeRoadmap(build, "issues/2026/09/bug", "status: in-review\nbranch: issue/bug\nnext-step: review");
+  commitAt(build, "build: issue ready for review", T1);
+
+  const session = run(build, "session").json;
+  assert.ok(session.allowed.includes("/agento ap bug"), "in-review worktrees must keep /agento ap available for unattended re-send");
+
+  const next = run(build, "next").json;
+  assert.equal(next.lifecycle, "in-review");
+  assert.equal(next.next.invocation, "/agento review-issue bug");
+  assert.match(next.next.reason, /Reviewer runs in this window/);
+});
+
 test("next: complete with a managed owner resumes ship at teardown; without one there is nothing to continue", () => {
   const { repo, wt } = makeWorktreeRepo();
   const build = path.join(wt, "feature-widget");

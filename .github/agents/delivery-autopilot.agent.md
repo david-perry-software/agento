@@ -57,6 +57,8 @@ being run.
 2. Read roadmap.md. If `status: in-review`, skip straight to the review phase. If a
    review.md with `Verdict: request-changes` exists and is newer than the last roadmap
    update, start with the fix phase.
+  When status is `in-review`, invoke the 🔍 Agento Reviewer subagent directly;
+  do not stop to ask for a manual `/agento review-<type> <slug>` command.
 
 ## Loop
 
