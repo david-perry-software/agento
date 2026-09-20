@@ -13,6 +13,7 @@ import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs }
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import {
+  createNewPlanRequest,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
   type NewPlanFlowOptions,
@@ -275,6 +276,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       },
     );
   };
+  const newPlanCommand = vscode.commands.registerCommand("agento.newPlan", async () => {
+    const selection = await vscode.window.showQuickPick(
+      [
+        { label: "Feature", description: "Plan a new capability", planKind: "feature" as const },
+        { label: "Issue", description: "Plan a defect fix", planKind: "issue" as const },
+      ],
+      { title: "New Plan", placeHolder: "Choose the kind of work" },
+    );
+    if (!selection) return;
+    const description = await vscode.window.showInputBox({
+      title: `New ${selection.label}`,
+      prompt: "Describe the work in one line",
+      placeHolder: selection.planKind === "feature" ? "Add a guided planning flow" : "Fix planning window handoff",
+      validateInput: (value) => {
+        try {
+          createNewPlanRequest(selection.planKind, value);
+          return undefined;
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error);
+        }
+      },
+    });
+    if (description === undefined) return;
+    await startNewPlan(createNewPlanRequest(selection.planKind, description));
+  });
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
     const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
@@ -328,6 +354,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     showOutputCommand,
     openRoadmapCommand,
     openBreakdownCommand,
+    newPlanCommand,
     dispatchActionCommand,
     showActionsCommand,
     deliveriesView,

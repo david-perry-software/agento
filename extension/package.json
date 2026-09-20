@@ -66,8 +66,14 @@
         "command": "agento.openBreakdown",
         "title": "Open Breakdown",
         "category": "Agento"
-            },
-            {
+      },
+      {
+        "command": "agento.newPlan",
+        "title": "New Plan",
+        "category": "Agento",
+        "icon": "$(add)"
+      },
+      {
         "command": "agento.showActions",
         "title": "Show Actions",
         "category": "Agento",
@@ -92,9 +98,24 @@
           "group": "navigation"
         },
         {
-          "command": "agento.showActions",
+          "command": "agento.newPlan",
+          "when": "view == agento.deliveries",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agento.newPlan",
+          "when": "view == agento.initiatives",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agento.newPlan",
           "when": "view == agento.sessionDoctor",
           "group": "navigation@2"
+        },
+        {
+          "command": "agento.showActions",
+          "when": "view == agento.sessionDoctor",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
