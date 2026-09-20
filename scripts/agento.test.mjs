@@ -455,6 +455,44 @@ test("paths in companion mode adds the companion half and the workspace file; in
   assert.match(run(repo).json.usage.join("\n"), /companion half and \.code-workspace/);
 });
 
+test("workspace command writes the session pair's .code-workspace with the auto-approve settings block (#58 session-auto-approve)", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const planId = "20260916-1";
+  const product = path.join(wt, `plan-${planId}`);
+  const companion = path.join(docsWt, `plan-${planId}`);
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", companion, "origin/main");
+
+  const command = run(repo, "workspace", "plan", planId, "--write");
+  assert.equal(command.code, 0);
+  assert.equal(command.json.status, "ok");
+  assert.equal(command.json.path, path.join(wt, `plan-${planId}.code-workspace`));
+  assert.equal(command.json.written, true);
+
+  const writtenPath = command.json.path;
+  const before = fs.readFileSync(writtenPath, "utf8");
+  const doc = JSON.parse(before);
+  assert.deepEqual(doc.folders, [{ path: product }, { path: companion }]);
+  assert.deepEqual(doc.settings, command.json.settings);
+
+  const second = run(repo, "workspace", "plan", planId, "--write");
+  assert.equal(second.code, 0);
+  assert.equal(second.json.written, false);
+  assert.equal(fs.readFileSync(writtenPath, "utf8"), before);
+
+  fs.writeFileSync(path.join(repo, ".github", "agento.json"), JSON.stringify({ artifacts: { repo: { name: "project-docs" } }, worktrees: { dir: "../wt", autoApprove: false } }));
+  const disabled = run(repo, "workspace", "plan", planId, "--write");
+  assert.equal(disabled.code, 0);
+  assert.equal(disabled.json.status, "ok");
+  assert.deepEqual(disabled.json.settings, {});
+
+  const inRepo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
+  const none = run(inRepo, "workspace", "plan", planId, "--write");
+  assert.equal(none.code, 0);
+  assert.equal(none.json.status, "not-applicable");
+  assert.equal(fs.existsSync(path.join(path.dirname(inRepo), "wt", `plan-${planId}.code-workspace`)), false);
+});
+
 test("paths is branch-aware: from an in-repo primary a delivery branch that flips to the companion reports the pair; a plain branch stays in-repo", () => {
   const { repo, docs } = makeFlipRepo();
   const wt = path.join(path.dirname(repo), "wt");
