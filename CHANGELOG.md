@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Command dispatch.** Delivery context menus and the Session & Doctor view now
+  present actions directly from the CLI's ordered `allowed[]` and `elsewhere[]`
+  records. Current-window actions submit the exact canonical command to Copilot Chat
+  in agent mode; cross-window actions revalidate with `next`, persist a target-keyed
+  `/agento continue <slug>` for up to five minutes, and open or focus the CLI-selected
+  primary folder or companion workspace. Pending commands are deleted before
+  submission, and stale, malformed, mismatched, or failed handoffs are surfaced
+  without executing lifecycle work inside the extension.
 - **Initiatives tree.** The extension now renders CLI-derived initiative progress,
   Ready, In flight, Blocked, and Complete member groups, and per-initiative errors
   and anomalies without re-deriving dependency state. Initiative and member rows
