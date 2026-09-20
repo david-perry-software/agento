@@ -336,7 +336,7 @@ export async function run(): Promise<void> {
   if (api.sessionDoctor.current.kind !== "ready") return;
   const sessionAction = api.sessionDoctor.current.actions.find((action) => action.window === "here");
   assert.ok(sessionAction);
-  await api.dispatchAction(sessionAction, undefined, executeCommand);
+  await vscode.commands.executeCommand("agento.dispatchAction", sessionAction, undefined, executeCommand);
   assert.deepEqual(submitted.pop(), {
     command: "workbench.action.chat.open",
     options: { query: sessionAction.command, mode: "agent" },
@@ -356,7 +356,7 @@ export async function run(): Promise<void> {
   assert.ok(items[0]?.kind === "delivery");
   const deliveryAction = items[0].item.actions.find((action) => action.window === "here");
   assert.ok(deliveryAction);
-  await api.dispatchAction(deliveryAction, items[0].item.slug, executeCommand);
+  await vscode.commands.executeCommand("agento.dispatchAction", deliveryAction, items[0].item.slug, executeCommand);
   assert.deepEqual(submitted.pop(), {
     command: "workbench.action.chat.open",
     options: { query: deliveryAction.command, mode: "agent" },
