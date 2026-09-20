@@ -302,6 +302,33 @@ test("every command and agent declares Needs: and Fallback: from the §10 vocabu
   }
 });
 
+test("prompts and agents never direct users to gh pr edit --body", () => {
+  const offenders = [];
+  for (const file of [...promptFiles, ...agentFiles]) {
+    const text = fs.readFileSync(file, "utf8");
+    const hit = text.match(/gh pr edit\b[^\n]*--body/);
+    if (hit) offenders.push(`${path.relative(repoRoot, file)}: ${hit[0]}`);
+  }
+  assert.deepEqual(offenders, [], `customization files still instructing gh pr edit --body:\n${offenders.join("\n")}`);
+});
+
+test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-deprecation)", () => {
+  const examples = [];
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const match of text.matchAll(/gh api repos\/[^\n]+?\/pulls\/[^\n]+? -X PATCH -f body=([^;]+); fi/g)) {
+      examples.push({ label: path.relative(repoRoot, file), expression: match[1] });
+    }
+  }
+
+  assert.equal(examples.length, 9, "expected every PR-body REST PATCH example and command mirror");
+  for (const { label, expression } of examples) {
+    const rendered = execFileSync("bash", ["-c", `current_body='Existing body'; printf '%s' ${expression}`], { encoding: "utf8" });
+    assert.match(rendered, /^Existing body\n\n(?:Companion PR: |Product PR: |Fixes #)\S/, `${label}: body must contain a real blank line`);
+    assert.doesNotMatch(rendered, /\$'/, `${label}: body contains literal ANSI-C quote syntax`);
+  }
+});
+
 test("exactly the commands that need gh, code, or network run doctor --for themselves", () => {
   for (const file of promptFiles) {
     const name = path.basename(file, ".prompt.md");

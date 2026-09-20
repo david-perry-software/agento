@@ -75,8 +75,12 @@ The argument takes three forms — detect which applies:
    -C <companion.path>`), publish the product branch with one empty Conventional
    Commit and open the draft code PR (body starting with `Fixes #<n>`), open the
    **draft** companion PR titled `docs(<type>): <slug>` whose body links the code PR,
-   cross-link the code PR body with `gh pr edit`, then record `artifact-pr: "#<n>"`
+   append the companion PR URL to the code PR body via the REST PATCH endpoint in an
+   idempotent check (only when the URL is absent), then record `artifact-pr: "#<n>"`
    in the roadmap header and push that second companion commit.
+
+   Example idempotent cross-link:
+   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`
 9. Report slug, branch, GitHub issue number, PR number (and the companion PR number in
    companion mode), and roadmap step count. Offer
    **Build in this worktree** to hand off directly to the Builder without closing,

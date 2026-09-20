@@ -297,8 +297,9 @@ below is yours, so the delivery guard keeps governing them.
   first** (a product default branch that points at an empty companion default
   branch reads no history until the companion PR lands). Resume an existing open
   PR on `changes/agento-init` instead of creating a second one.
-- **M8 — Cross-link.** `gh pr edit <companion-pr> --body "<existing body> +
-  <product PR URL>"` inside the clone so each PR names the other.
+- **M8 — Cross-link.** Update the companion PR body with the REST PATCH endpoint in an
+  idempotent check so each PR names the other without re-appending the same URL:
+  `current_body=$(gh pr view <companion-pr> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<product PR URL>"; then gh api repos/<owner>/<name>/pulls/<companion-pr> -X PATCH -f body="${current_body}"$'\n\nProduct PR: <product PR URL>'; fi`
 - **M9 — Report.** Everything step 11 reports, plus: both PR URLs and the merge
   order (companion first, then product), the roots moved (`moved[]`), the record
   counts from `records`, whether the README note was added, and the reminder that
