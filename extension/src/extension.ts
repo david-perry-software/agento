@@ -5,6 +5,8 @@ import { CliClient } from "./cliClient.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
+import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
+import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import { RefreshScheduler } from "./refreshScheduler.js";
 import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
@@ -15,6 +17,7 @@ export interface ExtensionApi {
   client: CliClient;
   scheduler: RefreshScheduler;
   deliveries: DeliveryTreeProvider;
+  initiatives: InitiativeTreeProvider;
   sessionDoctor: SessionDoctorProvider;
   sessionDoctorView: vscode.TreeView<unknown>;
   statusBar: vscode.StatusBarItem;
@@ -35,6 +38,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   });
   const scheduler = new RefreshScheduler(configuration.get<number>("refreshDebounceMs", 3000));
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
+  const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
   const sessionDoctor = new SessionDoctorProvider();
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
@@ -43,6 +47,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.command = "agento.sessionDoctor.focus";
   statusBar.show();
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
+  const latestInitiativeRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
 
@@ -91,6 +96,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (!folder) {
       const message = "No workspace folder is open.";
       deliveries.update({ model: createDeliveryTreeError(message), roadmapRoot: context.extensionPath });
+      initiatives.update({ model: createInitiativeTreeError(message), artifactRoot: context.extensionPath });
       const model = createSessionDoctorError(message);
       sessionDoctor.update(model);
       statusBar.text = model.statusBarText;
@@ -141,12 +147,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         output.appendLine(String(error));
       },
     );
+    void latestInitiativeRefresh.run<InitiativeTreeSnapshot>(
+      async () => {
+        const listResult = await client.run(["initiative"], folder.uri.fsPath);
+        const details = await Promise.all(initiativeSlugs(listResult.json).map(async (slug) => {
+          try {
+            const detailResult = await client.run(["initiative", slug], folder.uri.fsPath);
+            return [slug, detailResult.json] as const;
+          } catch (error) {
+            return [slug, error instanceof Error ? error : new Error(String(error))] as const;
+          }
+        }));
+        return {
+          model: createInitiativeTreeModel(listResult.json, new Map(details)),
+          artifactRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
+        };
+      },
+      (snapshot) => {
+        initiatives.update(snapshot);
+        if (snapshot.model.kind === "error") {
+          output.appendLine(snapshot.model.message);
+        } else if (snapshot.model.kind === "ready") {
+          for (const item of snapshot.model.items) {
+            for (const diagnostic of item.diagnostics) {
+              output.appendLine(`initiative ${item.slug}: ${diagnostic.message}`);
+            }
+          }
+        }
+      },
+      (error) => {
+        initiatives.update({
+          model: createInitiativeTreeError(error),
+          artifactRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
+        });
+        output.appendLine(String(error));
+      },
+    );
   });
 
   const refreshCommand = vscode.commands.registerCommand("agento.refresh", () => scheduler.refreshNow("command"));
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
+  const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openBreakdown);
   const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
+  const initiativesView = vscode.window.createTreeView("agento.initiatives", { treeDataProvider: initiatives });
   const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
   let sessionDoctorWasVisible = false;
   const sessionDoctorVisibility = sessionDoctorView.onDidChangeVisibility(({ visible }) => {
@@ -162,13 +206,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     output,
     scheduler,
     deliveries,
+    initiatives,
     sessionDoctor,
     statusBar,
     refreshSubscription,
     refreshCommand,
     showOutputCommand,
     openRoadmapCommand,
+    openBreakdownCommand,
     deliveriesView,
+    initiativesView,
     sessionDoctorView,
     sessionDoctorVisibility,
     workspaceSubscription,
@@ -176,7 +223,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   );
   await rebuildWatchers();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, sessionDoctor, sessionDoctorView, statusBar, output };
+  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output };
 }
 
 export function deactivate(): void {}

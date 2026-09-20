@@ -54,3 +54,24 @@ test("older delivery refresh error cannot replace a newer model", async () => {
   assert.deepEqual(applied, ["newer"]);
   assert.deepEqual(errors, []);
 });
+
+test("initiative refresh generation is independent and rejects stale detail fan-out", async () => {
+  const deliveryRefresh = new LatestDeliveryRefresh();
+  const initiativeRefresh = new LatestDeliveryRefresh();
+  const older = deferred<string>();
+  const newer = deferred<string>();
+  const initiatives: string[] = [];
+  const deliveries: string[] = [];
+
+  const deliveryRun = deliveryRefresh.run(async () => "delivery", (value) => deliveries.push(value), () => undefined);
+  const olderRun = initiativeRefresh.run(() => older.promise, (value) => initiatives.push(value), () => undefined);
+  const newerRun = initiativeRefresh.run(() => newer.promise, (value) => initiatives.push(value), () => undefined);
+  newer.resolve("newer initiative");
+  assert.equal(await newerRun, true);
+  older.resolve("older initiative");
+  assert.equal(await olderRun, false);
+  assert.equal(await deliveryRun, true);
+
+  assert.deepEqual(initiatives, ["newer initiative"]);
+  assert.deepEqual(deliveries, ["delivery"]);
+});

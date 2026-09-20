@@ -17,6 +17,20 @@ The view refreshes after roadmap, review, and Git changes or when you run the Re
 command. Empty results and load failures appear directly in the tree; CLI warnings
 and errors are also written to the Agento output channel.
 
+## Initiatives
+
+The read-only Initiatives view loads `agento.mjs initiative` and each initiative's
+detail response. It shows initiative progress and groups members as Ready, In flight,
+Blocked, and Complete using the state and readiness reported by the CLI. Member
+descriptions and tooltips include state, wave, blockers, readiness, and whether the
+member is next. Selecting an initiative or member opens its `breakdown.md` beside the
+active editor, including when artifacts are stored in a companion repository.
+
+The shared roadmap and Git watchers refresh both views without polling. Initiative
+errors and merged-but-not-complete anomalies remain visible under the affected
+initiative without hiding healthy initiatives; empty results and list failures are
+shown explicitly in the tree and written to the Agento output channel.
+
 ## Session & Doctor
 
 The Session & Doctor view reads `agento.mjs session --pr`, `agento.mjs doctor`, and

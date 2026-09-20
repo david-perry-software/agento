@@ -37,6 +37,10 @@
           "name": "Deliveries"
         },
         {
+          "id": "agento.initiatives",
+          "name": "Initiatives"
+        },
+        {
           "id": "agento.sessionDoctor",
           "name": "Session & Doctor"
         }
@@ -57,6 +61,11 @@
         "command": "agento.openRoadmap",
         "title": "Open Roadmap",
         "category": "Agento"
+      },
+      {
+        "command": "agento.openBreakdown",
+        "title": "Open Breakdown",
+        "category": "Agento"
       }
     ],
     "menus": {
@@ -64,6 +73,11 @@
         {
           "command": "agento.refresh",
           "when": "view == agento.deliveries",
+          "group": "navigation"
+        },
+        {
+          "command": "agento.refresh",
+          "when": "view == agento.initiatives",
           "group": "navigation"
         },
         {

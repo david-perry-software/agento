@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Initiatives tree.** The extension now renders CLI-derived initiative progress,
+  Ready, In flight, Blocked, and Complete member groups, and per-initiative errors
+  and anomalies without re-deriving dependency state. Initiative and member rows
+  open the CLI-supplied breakdown beside the active editor in both in-repo and
+  companion layouts, and existing watcher events refresh the view without polling.
 - **Session & Doctor panel.** The extension now presents read-only `session --pr`,
   `doctor`, and `status --pr` output for the current window, including session,
   workspace, companion, warning, check detail, and fallback state. Visibility and
