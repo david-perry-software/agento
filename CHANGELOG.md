@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixed.** Managed companion-mode session windows now get their `.code-workspace`
+  file from `agento.mjs workspace <kind> <id> [--write]`, including the session
+  auto-approve settings block by default, a `session-workspace` `doctor` check, and
+  the `worktrees.autoApprove` config switch to keep VS Code's stock prompts when a
+  project wants them. The docs and init scaffold now describe the one-time
+  acceptance/trust flow for those workspace settings. (#58)
+
 ## 0.6.0 (2026-09-20)
 
 - **Extension acceptance.** The release gate now exercises deterministic in-repo

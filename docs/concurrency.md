@@ -19,8 +19,10 @@ Agento is built for several delivery sessions running side by side on one machin
   `../agento-docs-worktrees/feature-<slug>`); plan sessions hold both halves detached
   at their origin default, build and freehand sessions hold both on the same branch
   name. `/agento start-session` and `/agento start-freehand` create both halves and
-  write `<worktrees.dir>/<kind>-<id>.code-workspace` (two absolute `folders`), which
-  is the window they open and the one `/agento continue` reopens; `/agento
+  have `agento.mjs workspace <kind> <id> --write` author
+  `<worktrees.dir>/<kind>-<id>.code-workspace` (two absolute `folders` plus the
+  session settings block unless `worktrees.autoApprove` is `false`), which is the
+  window they open and the one `/agento continue` reopens; `/agento
   close-session` and `/agento ship`'s teardown remove the companion half, the product
   half, and the workspace file together, refusing while the companion half is dirty
   or unpushed (`companion-unpushed`). The one-builder-per-slug reservation covers

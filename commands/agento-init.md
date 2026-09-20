@@ -121,7 +121,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
        "initiatives": "initiatives",
        "repo": { "name": "<name>", "dir": null }
      },
-     "worktrees": { "dir": null },
+     "worktrees": { "dir": null, "autoApprove": null },
      "branches": {
        "default": "main",
        "feature": "feature/",
@@ -133,10 +133,13 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    }
    ```
 
-   `worktrees.dir: null` means "a sibling directory named `<repo-name>-worktrees/`".
-   `artifacts.repo.name` points every `agento.mjs` reader at the sibling companion
-   checkout `../<name>`; `dir: null` means exactly that sibling path. Only set the
-   keys you want to override; every key is optional.
+  `worktrees.dir: null` means "a sibling directory named `<repo-name>-worktrees/`".
+  `worktrees.autoApprove: null` keeps the default `true`, so managed session
+  `.code-workspace` files auto-approve terminal commands and file edits in that
+  window; set it to `false` to keep VS Code's stock prompts. `artifacts.repo.name`
+  points every `agento.mjs` reader at the sibling companion checkout `../<name>`;
+  `dir: null` means exactly that sibling path. Only set the keys you want to
+  override; every key is optional.
 
 7. **AGENTS.md.** Create or append to the target repository's `AGENTS.md` an
    `## Agento` section using the template below (`<agento-root>/templates/AGENTS-section.md`).

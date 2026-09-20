@@ -80,7 +80,11 @@ the paired half at `<artifacts.repo.dir>-worktrees/<kind>-<id>` — and `workspa
 the `<worktrees.dir>/<kind>-<id>.code-workspace` file the pair opens as; both `null`
 in the in-repo layout; for `feature`/`issue` kinds an in-repo checkout consults the
 delivery branch's own config the same way as `resolve`, so the pair is reported for
-a migrated branch too), `ports <slug>`,
+a migrated branch too), `workspace <kind> <id> [--write]` (companion mode only:
+report the canonical two-folder `.code-workspace` document, whether the on-disk file
+exists and is current, and with `--write` create or refresh it with the session
+settings block unless `worktrees.autoApprove` is `false`; in the in-repo layout it
+returns `status: "not-applicable"`), `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
@@ -102,8 +106,8 @@ ship` resumes from),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
-`doctor [--for <command>]` (seven environment checks — `node`, `git-remote`, `gh`,
-`code`, `python3`, `worktrees-dir`, `artifact-repo` — each `{ id, status, detail, fallback }` with
+`doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
+`code`, `python3`, `worktrees-dir`, `session-workspace`, `artifact-repo` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
 `<dir>-worktrees` directory exists but is not writable; `--for` runs only the checks
 the named command's `Needs:` line requires and echoes them as `for.needs`),

@@ -62,6 +62,13 @@ in your `AGENTS.md`, and `scripts/wait-for-checks.sh`, and commits those on a
 `changes/agento-init` branch. Add the companion folder to your VS Code workspace so
 its artifact-format instructions load.
 
+Managed sessions open as a two-folder `.code-workspace` pairing the product and
+companion halves. The first time VS Code sees that workspace settings block it may
+show **Enable terminal auto approve?**; choose **Enable** once for the machine.
+To avoid a trust prompt for every new session, trust the parent worktree directories
+(`../<repo>-worktrees` and `../<repo>-docs-worktrees`, or your configured
+alternatives) once instead of each child folder.
+
 A project that already keeps `features/`, `issues/`, or `initiatives/` inside its own
 repository runs `/agento agento-init --migrate` instead: one command imports the tree
 into the companion as a single commit and opens two PRs — merge the companion PR
