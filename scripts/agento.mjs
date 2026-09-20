@@ -1049,6 +1049,9 @@ switch (command) {
       item.owner = owner;
       item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
       item.companion = companionOfOwner(owner, layout);
+      const actions = deriveAllowed({ role: owner?.role ?? "primary", lifecycle, delivery: item, worktree: owner });
+      item.allowed = actions.allowed;
+      item.elsewhere = actions.elsewhere;
       item.pr = pr;
       item.companionPr = companionPr;
       warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));

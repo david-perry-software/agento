@@ -564,17 +564,16 @@ test("deriveAllowed: primary window rows", () => {
 
 test("deriveAllowed: build worktree rows send ship (then close) to the primary window", () => {
   const building = deriveAllowed({ role: "build", lifecycle: "building", delivery: widget, worktree: { id: "20260914" } });
-  assert.ok(building.allowed.includes("/agento build-feature widget"));
-  assert.ok(building.allowed.includes("/agento delivery-status"));
+  assert.deepEqual(building.allowed, ["/agento continue", "/agento build-feature widget", "/agento ap widget", "/agento delivery-status"]);
   assert.equal(building.elsewhere[0].command, "/agento ship widget");
   assert.equal(building.elsewhere[0].window, "primary");
   assert.match(building.elsewhere[0].reason, /tears/);
 
-  assert.ok(deriveAllowed({ role: "build", lifecycle: "planned", delivery: widget }).allowed.includes("/agento build-feature widget"));
-  assert.ok(deriveAllowed({ role: "build", lifecycle: "paused", delivery: bug }).allowed.includes("/agento build-issue bug"));
+  assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "planned", delivery: widget }).allowed.slice(1, 3), ["/agento build-feature widget", "/agento ap widget"]);
+  assert.deepEqual(deriveAllowed({ role: "build", lifecycle: "paused", delivery: bug }).allowed.slice(1, 3), ["/agento build-issue bug", "/agento ap bug"]);
 
   const review = deriveAllowed({ role: "build", lifecycle: "in-review", delivery: bug });
-  assert.ok(review.allowed.includes("/agento review-issue bug"));
+  assert.deepEqual(review.allowed.slice(1, 3), ["/agento review-issue bug", "/agento ap bug"]);
   assert.doesNotMatch(review.allowed.join(" "), /build-issue/);
 
   const approved = deriveAllowed({ role: "build", lifecycle: "approved", delivery: widget });
@@ -587,6 +586,9 @@ test("deriveAllowed: build worktree rows send ship (then close) to the primary w
   const planApproved = deriveAllowed({ role: "plan", lifecycle: "approved", delivery: widget });
   assert.equal(planApproved.elsewhere[0].command, "/agento ship widget");
   assert.match(planApproved.elsewhere[0].reason, /tears/);
+
+  const planBuilding = deriveAllowed({ role: "plan", lifecycle: "building", delivery: widget });
+  assert.deepEqual(planBuilding.allowed.slice(1, 3), ["/agento build-feature widget", "/agento ap widget"]);
 
   const none = deriveAllowed({ role: "build", lifecycle: "no-delivery", delivery: { type: "feature", slug: "fresh" } });
   assert.deepEqual(none.allowed, ["/agento continue", "/agento delivery-status"]);
