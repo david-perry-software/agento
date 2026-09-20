@@ -1216,14 +1216,14 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports seven ok checks with exit 0 when every capability is present", () => {
+test("doctor reports eight checks and includes session-workspace", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "artifact-repo"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1234,6 +1234,41 @@ test("doctor reports seven ok checks with exit 0 when every capability is presen
   assert.match(checks["git-remote"].detail, /main reachable/);
   assert.match(checks["worktrees-dir"].detail, /project-worktrees absent; .* writable, it will be created/);
   assert.equal(checks["artifact-repo"].detail, "in-repo layout (artifacts.repo unset)");
+  assert.equal(checks["session-workspace"].detail, "not a managed pair");
+});
+
+test("doctor session-workspace is ok for non-pairs, warn for stale/missing, and ok after workspace --write", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const { env } = restrictedPath(okStubs);
+
+  // Non-pair: primary checkout reports ok with a neutral detail.
+  const primaryCheck = byId(runWith({ cwd: repo, env }, "doctor").json)["session-workspace"];
+  assert.equal(primaryCheck.status, "ok");
+  assert.equal(primaryCheck.detail, "not a managed pair");
+
+  // Pair: build worktree with no workspace file warns.
+  const product = path.join(wt, "feature-widget");
+  const half = path.join(docsWt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  writeRoadmap(half, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+
+  const missing = byId(runWith({ cwd: product, env }, "doctor", "--for", "start-session").json)["session-workspace"];
+  assert.equal(missing.status, "warn");
+  assert.match(missing.detail, /feature-widget\.code-workspace lacks the session auto-approve settings$/);
+  assert.match(missing.fallback, /workspace feature widget --write, then Developer: Reload Window$/);
+
+  // Stale file still warns.
+  const workspacePath = path.join(wt, "feature-widget.code-workspace");
+  fs.writeFileSync(workspacePath, "{}\n");
+  const stale = byId(runWith({ cwd: product, env }, "doctor", "--for", "start-session").json)["session-workspace"];
+  assert.equal(stale.status, "warn");
+
+  // CLI-written canonical file is ok.
+  run(repo, "workspace", "feature", "widget", "--write");
+  const current = byId(runWith({ cwd: product, env }, "doctor", "--for", "start-session").json)["session-workspace"];
+  assert.equal(current.status, "ok");
+  assert.match(current.detail, /feature-widget\.code-workspace carries the session auto-approve settings$/);
 });
 
 test("doctor artifact-repo passes a valid companion, fails a missing or broken one naming /agento agento-init, and warns on stale in-repo roots", () => {
@@ -1301,7 +1336,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -1362,13 +1397,13 @@ test("doctor --for runs only the command's declared checks and reports its needs
   const local = runWith({ cwd: repo, env }, "doctor", "--for", "close-session");
   assert.equal(local.code, 0);
   assert.deepEqual(local.json.for, { command: "close-session", needs: ["terminal"] });
-  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "artifact-repo"]);
+  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
   assert.ok(!fs.existsSync(marker), "gh was invoked for a terminal-only command");
 
   const ship = runWith({ cwd: repo, env }, "doctor", "--for", "ship");
   assert.equal(ship.code, 0);
   assert.deepEqual(ship.json.for, { command: "ship", needs: ["terminal", "gh", "network"] });
-  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir", "artifact-repo"]);
+  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
   assert.match(fs.readFileSync(marker, "utf8"), /auth status/);
 
   const unknown = runWith({ cwd: repo, env }, "doctor", "--for", "nope");

@@ -613,6 +613,19 @@ const DOCTOR_CHECKS = {
       return { status: "fail", detail: `${dir} not writable (${existing} denies write)`, fallback: "create the directory with write permission or change worktrees.dir in .github/agento.json" };
     }
   },
+  "session-workspace"() {
+    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+    const { worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+    const workspace = describeWorkspace(worktree, sessionWorktreesDir);
+    if (!workspace) return { status: "ok", detail: "not a managed pair", fallback: null };
+    if (workspace.current) return { status: "ok", detail: `${workspace.path} carries the session auto-approve settings`, fallback: null };
+    return {
+      status: "warn",
+      detail: `${workspace.path} lacks the session auto-approve settings`,
+      fallback: `run node ${path.join(PLUGIN_ROOT, "scripts", "agento.mjs")} workspace ${worktree.dirPrefix} ${worktree.id} --write, then Developer: Reload Window`,
+    };
+  },
   "artifact-repo"() {
     if (!artifacts.external) return { status: "ok", detail: "in-repo layout (artifacts.repo unset)", fallback: null };
     const { name, dir } = artifacts;
@@ -672,7 +685,7 @@ const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
 // Capability vocabulary (delivery-policy §10) in canonical order, each mapped to the
 // doctor checks that prove it. Chat-tool capabilities have no CLI-side check.
 const CAPABILITY_CHECKS = {
-  terminal: ["node", "python3", "worktrees-dir", "artifact-repo"],
+  terminal: ["node", "python3", "worktrees-dir", "artifact-repo", "session-workspace"],
   "ask-questions": [],
   browser: [],
   gh: ["gh"],
