@@ -10,7 +10,7 @@ handoffs:
   - label: "Fix review findings"
     agent: "🔨 Agento Builder"
     prompt: "Address the request-changes findings in the review.md just written. Add each finding as a roadmap step, then execute them."
-    send: false
+    send: true
 ---
 
 Needs: terminal, browser, gh, network

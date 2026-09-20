@@ -10,7 +10,7 @@ handoffs:
   - label: "Review this work"
     agent: "🔍 Agento Reviewer"
     prompt: "Review the implementation just completed against its plan.md and audit its roadmap.md."
-    send: false
+    send: true
 ---
 
 Needs: terminal, browser, gh, network

@@ -82,6 +82,14 @@ test("a stale cross-window action follows a refreshed here target with continue"
   });
 });
 
+test("a stale cross-window /agento ap action follows a refreshed here target with /agento ap", () => {
+  const autopilotElsewhere: CommandAction = { command: "/agento ap widget", window: "secondary", reason: "run unattended" };
+  assert.deepEqual(routeCommandAction(autopilotElsewhere, { currentWindow: "primary", slug: "widget", next: next("here") }), {
+    kind: "submit",
+    command: "/agento ap widget",
+  });
+});
+
 test("rejects blocked, malformed, targetless, and non-primary ship routes", () => {
   const ship: CommandAction = { command: "/agento ship widget", window: "primary", reason: "ship there" };
   assert.deepEqual(routeCommandAction(ship, { currentWindow: "secondary", slug: "widget", next: next("secondary", { path: "/worktree" }) }), {
