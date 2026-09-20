@@ -112,6 +112,8 @@ function sessionResponse(role: string, warnings: string[] = []) {
     status: "ok",
     role,
     lifecycle: "building",
+    allowed: ["/agento delivery-status"],
+    elsewhere: [],
     worktree: { path: "/fixture/product", branch: "feature/session-doctor-panel", detached: false },
     workspace: { path: "/fixture/session.code-workspace", exists: true },
     companion: {
@@ -237,6 +239,8 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.showOutput"));
   assert.ok(commands.includes("agento.openRoadmap"));
   assert.ok(commands.includes("agento.openBreakdown"));
+  assert.ok(commands.includes("agento.showActions"));
+  assert.ok(commands.includes("agento.dispatchAction"));
   assert.ok(commands.includes("agento.sessionDoctor.focus"));
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -253,6 +257,20 @@ export async function run(): Promise<void> {
   await focusSessionDoctor(api);
   assert.equal(api.sessionDoctorView.visible, true);
 
+  const submitted: Array<{ command: string; options: unknown }> = [];
+  const executeCommand = async (command: string, options: unknown) => {
+    submitted.push({ command, options });
+  };
+  assert.equal(api.sessionDoctor.current.kind, "ready");
+  if (api.sessionDoctor.current.kind !== "ready") return;
+  const sessionAction = api.sessionDoctor.current.actions.find((action) => action.window === "here");
+  assert.ok(sessionAction);
+  await api.dispatchAction(sessionAction, undefined, executeCommand);
+  assert.deepEqual(submitted.pop(), {
+    command: "workbench.action.chat.open",
+    options: { query: sessionAction.command, mode: "agent" },
+  });
+
   const groups = api.deliveries.getChildren();
   assert.deepEqual(
     groups.map((group) => api.deliveries.getTreeItem(group).label),
@@ -264,6 +282,14 @@ export async function run(): Promise<void> {
     ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery"],
   );
   assert.equal(api.deliveries.getTreeItem(items[0]!).description, "feature | 1/3 | planned | PR #101 draft");
+  assert.ok(items[0]?.kind === "delivery");
+  const deliveryAction = items[0].item.actions.find((action) => action.window === "here");
+  assert.ok(deliveryAction);
+  await api.dispatchAction(deliveryAction, items[0].item.slug, executeCommand);
+  assert.deepEqual(submitted.pop(), {
+    command: "workbench.action.chat.open",
+    options: { query: deliveryAction.command, mode: "agent" },
+  });
   if (process.env.AGENTO_ELECTRON_SCENARIO === "companion") {
     assert.match(String(api.deliveries.getTreeItem(items[0]!).tooltip), /Companion PR: #202 OPEN draft CLEAN/);
   } else {

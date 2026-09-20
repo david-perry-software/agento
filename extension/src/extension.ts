@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
+import { dispatchCommandAction, type CommandExecutor } from "./commandDispatcher.js";
+import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
@@ -23,6 +25,7 @@ export interface ExtensionApi {
   sessionDoctorView: vscode.TreeView<unknown>;
   statusBar: vscode.StatusBarItem;
   output: vscode.OutputChannel;
+  dispatchAction: (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => Promise<unknown>;
 }
 
 interface ConfigResult {
@@ -190,6 +193,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
   const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openBreakdown);
+  const dispatchAction = (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => dispatchCommandAction(
+    action,
+    slug,
+    {
+      currentWindow: () => sessionDoctor.current.kind === "ready" && sessionDoctor.current.session.role === "primary" ? "primary" : "secondary",
+      loadNext: async (deliverySlug) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) throw new Error("No workspace folder is open.");
+        return (await client.run(["next", deliverySlug], folder.uri.fsPath)).json;
+      },
+      executeCommand: vscode.commands.executeCommand,
+      reportError: (message) => vscode.window.showErrorMessage(message),
+      output,
+    },
+    executeCommand,
+  );
+  const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
     const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready" ? { actions: sessionDoctor.current.actions } : null);
     if (!source || source.actions.length === 0) {
@@ -226,6 +246,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     showOutputCommand,
     openRoadmapCommand,
     openBreakdownCommand,
+    dispatchActionCommand,
     showActionsCommand,
     deliveriesView,
     initiativesView,
@@ -236,7 +257,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   );
   await rebuildWatchers();
   scheduler.refreshNow("activate");
-  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output };
+  return { client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction };
 }
 
 export function deactivate(): void {}

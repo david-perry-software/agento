@@ -57,7 +57,8 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /sessionDoctorView\.onDidChangeVisibility/);
   assert.match(source, /statusBar\.command = "agento\.sessionDoctor\.focus"/);
   assert.match(source, /registerCommand\("agento\.showActions"/);
-  assert.match(source, /return \{ client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output \}/);
+  assert.match(source, /registerCommand\("agento\.dispatchAction"/);
+  assert.match(source, /return \{ client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction \}/);
   assert.match(source, /scheduler\.onDidRefresh/);
   assert.doesNotMatch(source, /setInterval\s*\(/);
   assert.doesNotMatch(source, /registerCommand\([^\n]*(repair|doctor)/i);
