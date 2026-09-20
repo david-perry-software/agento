@@ -29,18 +29,92 @@ function initRepository(directory: string): void {
   execFileSync("git", ["init", "-b", "main"], { cwd: directory });
   execFileSync("git", ["add", "."], { cwd: directory });
   execFileSync("git", ["-c", "user.name=Agento Test", "-c", "user.email=agento@example.invalid", "commit", "-m", "fixture"], { cwd: directory });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: directory, encoding: "utf8" }).trim();
+  execFileSync("git", ["update-ref", "refs/remotes/origin/main", head], { cwd: directory });
+  execFileSync("git", ["update-ref", "refs/remotes/origin/feature/anomalous-delivery", head], { cwd: directory });
 }
 
 async function writeDeliveries(root: string): Promise<void> {
   const fixtures = [
     { slug: "planned-delivery", status: "planned", ticked: 1, total: 3 },
     { slug: "building-delivery", status: "in-progress", ticked: 2, total: 4 },
+    { slug: "anomalous-delivery", status: "in-review", ticked: 2, total: 2 },
+    { slug: "complete-delivery", status: "complete", ticked: 1, total: 1 },
   ];
   for (const fixture of fixtures) {
     const directory = path.join(root, "features", "2026", "09", fixture.slug);
     await mkdir(directory, { recursive: true });
     await writeFile(path.join(directory, "roadmap.md"), roadmap(fixture.slug, fixture.status, fixture.ticked, fixture.total));
   }
+  await mkdir(path.join(root, "features", "2026", "09", "x"), { recursive: true });
+}
+
+async function writeInitiative(root: string): Promise<void> {
+  const directory = path.join(root, "initiatives", "2026", "09", "agento-extension");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    path.join(directory, "breakdown.md"),
+    `\`\`\`yaml
+initiative: agento-extension
+created: 2026-09-01
+last-updated: 2026-09-19
+\`\`\`
+
+# Agento Extension
+
+## Goal
+
+Exercise the Initiatives tree.
+
+## Features
+
+### ready-delivery
+- Summary: Ready work
+- Requires: none
+- Recommended after: none
+- Wave: 1
+- Size: S
+
+### planned-delivery
+- Summary: Planned work
+- Requires: none
+- Recommended after: none
+- Wave: 1
+- Size: S
+
+### building-delivery
+- Summary: Active work
+- Requires: none
+- Recommended after: planned-delivery
+- Wave: 1
+- Size: S
+
+### anomalous-delivery
+- Summary: Merged active work
+- Requires: none
+- Recommended after: building-delivery
+- Wave: 1
+- Size: S
+
+### blocked-delivery
+- Summary: Blocked work
+- Requires: building-delivery
+- Recommended after: none
+- Wave: 2
+- Size: S
+
+### complete-delivery
+- Summary: Complete work
+- Requires: none
+- Recommended after: none
+- Wave: 1
+- Size: S
+
+## Recommended order
+
+Fixture order.
+`,
+  );
 }
 
 async function createGhStub(root: string): Promise<string> {
@@ -75,6 +149,7 @@ async function createScenario(sourceFixture: string, name: Scenario["name"]): Pr
     const artifacts = path.join(cleanup, "artifacts");
     await mkdir(artifacts, { recursive: true });
     await writeDeliveries(artifacts);
+    await writeInitiative(artifacts);
     await writeFile(
       path.join(workspace, ".github", "agento.json"),
       JSON.stringify({
@@ -92,6 +167,7 @@ async function createScenario(sourceFixture: string, name: Scenario["name"]): Pr
     initRepository(artifacts);
   } else {
     await writeDeliveries(workspace);
+    await writeInitiative(workspace);
   }
   initRepository(workspace);
   return { name, workspace, cleanup, bin };
