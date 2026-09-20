@@ -39,6 +39,10 @@
         {
           "id": "agento.initiatives",
           "name": "Initiatives"
+        },
+        {
+          "id": "agento.sessionDoctor",
+          "name": "Session & Doctor"
         }
       ]
     },
@@ -64,6 +68,25 @@
         "category": "Agento"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agento.refresh",
+          "when": "view == agento.deliveries",
+          "group": "navigation"
+        },
+        {
+          "command": "agento.refresh",
+          "when": "view == agento.initiatives",
+          "group": "navigation"
+        },
+        {
+          "command": "agento.refresh",
+          "when": "view == agento.sessionDoctor",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Agento",
       "properties": {

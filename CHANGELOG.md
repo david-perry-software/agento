@@ -7,6 +7,12 @@
   and anomalies without re-deriving dependency state. Initiative and member rows
   open the CLI-supplied breakdown beside the active editor in both in-repo and
   companion layouts, and existing watcher events refresh the view without polling.
+- **Session & Doctor panel.** The extension now presents read-only `session --pr`,
+  `doctor`, and `status --pr` output for the current window, including session,
+  workspace, companion, warning, check detail, and fallback state. Visibility and
+  manual refreshes update the panel without polling, failures remain inline with a
+  retry action, and the status bar summarizes the current role and active delivery
+  count while providing a shortcut back to the view.
 - **Deliveries tree.** The extension now renders the CLI's `status --pr` lifecycle
   groups as compact delivery rows with complete PR, ownership, workspace, companion,
   and initiative tooltips. Selecting a row opens its roadmap beside the active
