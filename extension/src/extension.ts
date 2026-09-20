@@ -7,6 +7,7 @@ import { consumePendingCommands, dispatchCommandAction, type CommandExecutor } f
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
+import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
@@ -44,6 +45,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
   const sessionDoctor = new SessionDoctorProvider();
+  const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
   statusBar.text = "Agento: unavailable";
@@ -212,7 +214,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       reportError: (message) => vscode.window.showErrorMessage(message),
       reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
       output,
-      pendingStore: context.globalState,
+      pendingStore,
       openTarget,
     },
     executeCommand,
@@ -244,7 +246,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       (target): target is string => Boolean(target),
     ),
     {
-      pendingStore: context.globalState,
+      pendingStore,
       executeCommand: vscode.commands.executeCommand,
       reportError: (message) => vscode.window.showErrorMessage(message),
       output,
