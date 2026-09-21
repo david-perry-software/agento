@@ -62,8 +62,8 @@ prompts you normally see once the session `.code-workspace` settings are current
 | `chmod` / `chown` / `touch` on a hook file | ask |
 | Editing a hook file with an edit tool | ask — per-change approval |
 | Committing on a `feature/`/`issue/` branch without `roadmap.md` among the files that commit would record (index, `-a` modifications, or explicit pathspecs) | ask — progress may be lost on resume |
-| Companion mode (`artifacts.repo` set): the same commit in the product checkout while the companion checkout has neither a staged `roadmap.md` nor a `roadmap.md` in its `HEAD` commit — the reason names the companion path and its current branch; the product commit's own files are never what decides | ask — progress may be lost on resume |
-| Companion mode: commit, push, or merge targeting the companion checkout (`git -C <companion> …`, `cd <companion> && …`) on the **product** config's default branch, or a push whose refspec targets it | deny — the product config governs the companion |
+| Companion mode (`artifacts.repo` set): the same commit in the product checkout while the companion checkout has neither a staged `roadmap.md` nor a `roadmap.md` in its `HEAD` commit — the reason names the companion path and its current branch; the product commit's own files are never what decides. From a managed product half `<kind>-<id>` the inspected checkout is the paired companion half `<companion>-worktrees/<kind>-<id>` when it exists | ask — progress may be lost on resume |
+| Companion mode: commit, push, or merge targeting the companion checkout or any worktree of it (`git -C <companion or half> …`, `cd <companion or half> && …`) on the **product** config's default branch, or a push whose refspec targets it | deny — the product config governs the companion |
 | `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only) | ask |
 | `git [-C <companion clone>] worktree remove <half>` while the pair's `<kind>-<id>.code-workspace` window is open — `code --status` shows `Window (… <kind>-<id> (Workspace) …)` (observed) or `Workspace (<kind>-<id>)`; both halves share the name, so either removal asks | ask |
 | Everything else | allow |
@@ -73,10 +73,12 @@ Branch names, the default branch, and artifact roots come from the target repo's
 --show-toplevel`) before reading it, so it behaves identically in primary and
 secondary worktrees. When that config sets `artifacts.repo`, the guard also resolves
 the companion checkout (from the hook `cwd`'s repository, against its primary
-checkout) and applies the product's `branches.*` to commands that target it — a
+checkout) and applies the product's `branches.*` to commands that target it or any
+worktree sharing its git common dir (the companion halves of managed sessions) — a
 companion carries no `agento.json` of its own. A commit run directly in the companion
 on a delivery branch keeps the ordinary roadmap rule (roadmap among the recorded
-files).
+files), so the Planner's chained `merge && add && commit && push` against its
+companion half is not mistaken for a product commit.
 
 ## Testing hook behavior
 

@@ -3,9 +3,10 @@
 # nudges roadmap updates, checks worktree occupants, and gates hook-file edits behind
 # approval. Branch names and artifact roots come from the target repo's
 # .github/agento.json. When that config sets `artifacts.repo`, the sibling companion
-# checkout is governed by the product config too (its default branch is protected the
-# same way) and the roadmap nudge on a product delivery-branch commit inspects the
-# companion's index and HEAD instead of the product commit.
+# checkout — and every worktree of it, i.e. the companion halves of managed sessions —
+# is governed by the product config too (its default branch is protected the same
+# way) and the roadmap nudge on a product delivery-branch commit inspects the paired
+# companion half's index and HEAD instead of the product commit.
 #
 # This is a slip guard for an LLM operator, not an enforcement boundary: it pattern
 # matches shell text and can be worked around. GitHub rulesets on the default branch
@@ -316,16 +317,29 @@ target_root = git("rev-parse", "--show-toplevel") or workdir
 config = load_config(target_root)
 
 # Companion mode: the repository the hook runs in (hook_cwd) is the product checkout;
-# when its config names a companion and the command targets that companion, the
-# product's branches.* govern it — a companion never carries its own agento.json.
+# when its config names a companion and the command targets that companion (the clone
+# or any of its worktrees), the product's branches.* govern it — a companion never
+# carries its own agento.json.
+def common_dir(directory):
+    out = run_git(directory, "rev-parse", "--git-common-dir")
+    return os.path.realpath(os.path.join(directory, out)) if out else ""
+
+
 product_root = run_git(hook_cwd, "rev-parse", "--show-toplevel") if isinstance(hook_cwd, str) and hook_cwd else ""
 companion_external, companion_path, target_is_companion = False, None, False
 if product_root:
-    companion_external, companion_path, _, _, _ = resolve_artifacts(product_root)
-    if companion_external and os.path.realpath(target_root) == os.path.realpath(companion_path):
-        target_is_companion = True
-        if os.path.realpath(product_root) != os.path.realpath(target_root):
-            config = load_config(product_root)
+    companion_external, companion_path, _, companion_worktrees_dir, _ = resolve_artifacts(product_root)
+    if companion_external:
+        same_clone = common_dir(target_root) and common_dir(target_root) == common_dir(companion_path)
+        if same_clone or os.path.realpath(target_root) == os.path.realpath(companion_path):
+            target_is_companion = True
+            if os.path.realpath(product_root) != os.path.realpath(target_root):
+                config = load_config(product_root)
+        # A managed product worktree pairs with `<companion>-worktrees/<same basename>`;
+        # the nudge on a product commit inspects that half when it exists.
+        paired = os.path.join(companion_worktrees_dir, os.path.basename(os.path.realpath(product_root)))
+        if re.match(r"^(plan|feature|issue|freehand)-", os.path.basename(paired)) and os.path.isdir(paired):
+            companion_path = paired
 
 default_branch = config["branches"]["default"] or "main"
 feature_prefix = config["branches"]["feature"] or "feature/"

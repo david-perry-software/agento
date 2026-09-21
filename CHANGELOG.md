@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fixed.** The delivery guard now recognises every worktree of the companion clone
+  (the companion halves of managed sessions) as the companion, so the Planner's
+  chained `git -C <companion half> merge && add && commit && push` no longer trips
+  the product-commit roadmap nudge and stalls unattended `/agento ap` runs; the
+  nudge on a product-half commit inspects the paired companion half rather than the
+  companion primary.
 - **Fixed.** Managed companion-mode session windows now get their `.code-workspace`
   file from `agento.mjs workspace <kind> <id> [--write]`, including the session
   auto-approve settings block by default, a `session-workspace` `doctor` check, and
