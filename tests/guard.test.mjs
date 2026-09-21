@@ -260,6 +260,60 @@ test("companion: a commit run in the companion on a delivery branch keeps today'
   assert.equal(decide(`git -C ${companion} commit -m x`, { cwd: product }).decision, "allow");
 });
 
+// A managed session pair: product half `<product>-worktrees/<kind>-<id>` and companion
+// half `<companion>-worktrees/<kind>-<id>`, both on the delivery branch.
+function makeSessionPair() {
+  const { product, companion } = makeGitRepo({ companion: true });
+  const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+  git(product, "add", "-A");
+  git(product, "commit", "-q", "-m", "companion config");
+  const base = path.dirname(product);
+  const productHalf = path.join(base, "project-worktrees", "plan-1");
+  const companionHalf = path.join(base, "project-docs-worktrees", "plan-1");
+  fs.mkdirSync(path.dirname(productHalf), { recursive: true });
+  fs.mkdirSync(path.dirname(companionHalf), { recursive: true });
+  git(product, "worktree", "add", "-q", "-b", "feature/widget", productHalf);
+  git(companion, "worktree", "add", "-q", "-b", "feature/widget", companionHalf);
+  return { product, companion, productHalf, companionHalf, git };
+}
+
+test("companion: a chained plan commit in the companion half is a companion commit, not a product one", () => {
+  const { companionHalf, productHalf } = makeSessionPair();
+  fs.mkdirSync(path.join(companionHalf, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(companionHalf, "features", "widget", "roadmap.md"), "status: planned\n");
+  fs.writeFileSync(path.join(companionHalf, "features", "widget", "plan.md"), "# plan\n");
+  const chain = [
+    `git -C ${companionHalf} merge origin/main`,
+    `git -C ${companionHalf} add features/widget`,
+    `git -C ${companionHalf} commit -m "docs(feature): plan widget"`,
+    `git -C ${companionHalf} push -u origin feature/widget`,
+  ].join(" && ");
+  assert.equal(decide(chain, { cwd: productHalf }).decision, "allow");
+  // The product config still governs the companion half.
+  assert.equal(decide(`git -C ${companionHalf} push origin main`, { cwd: productHalf }).decision, "deny");
+});
+
+test("companion: the nudge on a product-half commit inspects the paired companion half", () => {
+  const { companion, companionHalf, productHalf, git } = makeSessionPair();
+  fs.writeFileSync(path.join(productHalf, "code.js"), "export {};\n");
+  git(productHalf, "add", "code.js");
+
+  const nudged = decide("git commit -m 'feat: widget'", { cwd: productHalf });
+  assert.equal(nudged.decision, "ask");
+  assert.match(nudged.reason, /project-docs-worktrees\/plan-1 \(branch feature\/widget\)/);
+
+  // A roadmap staged in the companion primary does not count; the paired half does.
+  fs.mkdirSync(path.join(companion, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(companion, "add", "features/widget/roadmap.md");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: productHalf }).decision, "ask");
+
+  fs.mkdirSync(path.join(companionHalf, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(companionHalf, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  git(companionHalf, "add", "features/widget/roadmap.md");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: productHalf }).decision, "allow");
+});
+
 // A managed worktree whose branch commits the companion config while the primary
 // has none: the layout rule ("the checkout decides, the primary anchors") resolves
 // the companion beside the primary. `branches.default` differs between the halves'
