@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Fixed.** The companion-mode roadmap nudge on a product-half commit now accepts an
+  edited-but-uncommitted `roadmap.md` in the companion working tree (untracked or
+  unstaged, not only staged). The two-commit rule commits the product before the
+  companion tick is staged, so the Builder's ordinary step commit no longer asks
+  and stalls unattended `/agento ap` runs.
 - **Fixed.** The delivery guard now recognises every worktree of the companion clone
   (the companion halves of managed sessions) as the companion, so the Planner's
   chained `git -C <companion half> merge && add && commit && push` no longer trips

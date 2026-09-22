@@ -426,14 +426,17 @@ for segment in segments:
 
     if is_commit and (branch.startswith(feature_prefix) or branch.startswith(issue_prefix)):
         if companion_external and not target_is_companion:
-            # The roadmap can only live in the companion: allow when its index stages a
-            # roadmap.md or its HEAD commit touched one, else nudge naming the companion.
+            # The roadmap can only live in the companion. The two-commit rule commits the
+            # product first, so an edited-but-uncommitted roadmap.md in the companion's
+            # working tree (staged, unstaged, or untracked) counts, as does one in HEAD.
             recorded = (run_git(companion_path, "diff", "--cached", "--name-only") + "\n"
+                        + run_git(companion_path, "diff", "--name-only") + "\n"
+                        + run_git(companion_path, "ls-files", "--others", "--exclude-standard") + "\n"
                         + run_git(companion_path, "show", "--name-only", "--format=", "HEAD")).splitlines()
             if not any(f.endswith("roadmap.md") for f in recorded if f):
                 companion_branch = run_git(companion_path, "branch", "--show-current") or "detached"
                 decide("ask", f"Committing delivery work while the companion {companion_path} (branch {companion_branch}) "
-                       "has no staged or last-committed roadmap.md change; progress may be lost on resume. Proceed?")
+                       "has no pending or last-committed roadmap.md change; progress may be lost on resume. Proceed?")
         else:
             files = commit_files(segment)
             if files and not any(f.endswith("roadmap.md") for f in files):

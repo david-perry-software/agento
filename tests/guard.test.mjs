@@ -208,7 +208,7 @@ test("companion: denies a default-branch refspec push reached through cd", () =>
   assert.match(denied.reason, /trunk/);
 });
 
-test("companion: roadmap nudge on a product commit inspects the companion index and HEAD", () => {
+test("companion: roadmap nudge on a product commit inspects the companion working tree, index, and HEAD", () => {
   const { product, companion } = makeGitRepo({ companion: true });
   const git = (dir, ...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
   git(product, "switch", "-c", "feature/widget");
@@ -221,9 +221,13 @@ test("companion: roadmap nudge on a product commit inspects the companion index 
   assert.match(nudged.reason, /roadmap\.md/);
   assert.match(nudged.reason, /branch main/);
 
-  // Staged, uncommitted roadmap in the companion satisfies the nudge.
+  // An untracked roadmap in the companion working tree satisfies the nudge (the
+  // two-commit rule commits the product before the companion tick is staged) ...
   fs.mkdirSync(path.join(companion, "features", "widget"), { recursive: true });
   fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "allow");
+
+  // ... and so does a staged one.
   git(companion, "add", "features/widget/roadmap.md");
   assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "allow");
 
@@ -235,6 +239,12 @@ test("companion: roadmap nudge on a product commit inspects the companion index 
   fs.writeFileSync(path.join(companion, "notes.md"), "n\n");
   git(companion, "add", "notes.md");
   git(companion, "commit", "-q", "-m", "notes");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "ask");
+
+  // An unstaged edit to the tracked roadmap satisfies it again.
+  fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n- [x] 1.1\n");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "allow");
+  git(companion, "checkout", "--", "features/widget/roadmap.md");
   assert.equal(decide("git commit -m 'feat: widget'", { cwd: product }).decision, "ask");
 
   // A roadmap staged in the product tree is ignored: only the companion counts.
