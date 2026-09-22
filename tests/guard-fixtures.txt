@@ -47,6 +47,9 @@ deny  git push origin feature/x --force-if-includes
 deny  git -c push.default=current push -f
 deny  git commit --no-verify -m x
 deny  git commit -n -m x
+allow git commit -m x 2>&1
+allow git commit -m x 2>/dev/null
+allow git commit -m x > /dev/null 2>&1
 deny  git push --no-verify origin feature/x
 allow git push -n origin feature/x
 ask   git commit --amend --no-edit
