@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fixed.** The delivery guard's roadmap nudge no longer reads shell redirections
+  (`2>&1`, `2>/dev/null`, `> out`) on a `git commit` line as pathspecs, so a
+  roadmap-only commit such as `git add …/roadmap.md && git commit -m "…" 2>&1` is
+  allowed instead of asking and stalling unattended `/agento ap` runs.
 - **Fixed.** The Reviewer's auto-sent handoff now targets the Autopilot ("Continue
   unattended") instead of the Builder. In VS Code Autopilot mode the old Reviewer →
   Builder → Reviewer chain looped forever on an approve (`send: true` handoffs are

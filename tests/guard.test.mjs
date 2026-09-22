@@ -121,6 +121,27 @@ test("roadmap nudge sees -a commits and explicit pathspecs, not just the index",
   assert.equal(decide("git commit -m 'feat: x'", { cwd: repo }).decision, "allow");
 });
 
+test("roadmap nudge ignores shell redirections on a commit segment", () => {
+  const repo = makeGitRepo();
+  execFileSync("git", ["-C", repo, "switch", "-c", "feature/widget"]);
+  fs.mkdirSync(path.join(repo, "features", "widget"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "features", "widget", "roadmap.md"), "status: in-review\n");
+  execFileSync("git", ["-C", repo, "add", "features/widget/roadmap.md"]);
+  for (const command of [
+    'git add features/widget/roadmap.md && git commit -m "docs(feature): widget in-review" 2>&1',
+    "git commit -m 'docs: x' 2>/dev/null",
+    "git commit -m 'docs: x' >/tmp/agento-guard-out.txt",
+    "git commit -m 'docs: x' > /tmp/agento-guard-out.txt 2>&1",
+    "git commit -m 'docs: x' &>/dev/null",
+  ]) {
+    assert.equal(decide(command, { cwd: repo }).decision, "allow", command);
+  }
+  // A real pathspec after a redirection is still seen.
+  fs.writeFileSync(path.join(repo, "code.js"), "export {};\n");
+  assert.equal(decide("git commit -m 'feat: x' 2>/dev/null code.js", { cwd: repo }).decision, "ask");
+  assert.equal(decide("git commit -m 'feat: x' > /tmp/agento-guard-out.txt code.js", { cwd: repo }).decision, "ask");
+});
+
 test("tracks a plain switch/checkout to the default branch through a chain", () => {
   const repo = makeGitRepo();
   execFileSync("git", ["-C", repo, "switch", "-c", "feature/widget"]);

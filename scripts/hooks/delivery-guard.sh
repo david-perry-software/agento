@@ -346,6 +346,9 @@ feature_prefix = config["branches"]["feature"] or "feature/"
 issue_prefix = config["branches"]["issue"] or "issue/"
 DEFAULT = re.escape(default_branch)
 GIT = r"\bgit\b(?:\s+-[Cc]\s+\S+)*"
+# Shell redirections are never pathspecs: `2>&1`, `2>/dev/null`, `>out`, `> out`
+# (the segment splitter also leaves a bare `2>` behind from `2>&1`).
+REDIRECT = re.compile(r"^\d*(?:&>>?|>&|<&|>>?|<<?)(.*)$")
 
 def commit_files(segment):
     # Files a `git commit` segment would record: explicit pathspecs, else the index,
@@ -359,6 +362,10 @@ def commit_files(segment):
     for tok in after:
         if skip:
             skip = False
+            continue
+        redirect = REDIRECT.match(tok)
+        if redirect:
+            skip = redirect.group(1) == ""  # a bare operator's target is the next token
             continue
         if tok.startswith("--"):
             if tok in ("--message", "--file", "--author", "--date", "--fixup", "--squash",
