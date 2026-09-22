@@ -12,11 +12,12 @@ flowchart TD
     U -->|"/agento build-feature · /agento build-issue"| B[🔨 Agento Builder]
     B -->|"steps + ticks + commits + pushes"| B
     B -->|handoff| R[🔍 Agento Reviewer]
+    R -->|"handoff: Continue unattended"| AP
     R -->|review.md: approve| SHIP[/agento ship/]
-    R -->|request-changes| B
     U -->|"/agento ap"| AP[🤖 Agento Autopilot]
-    AP --> B
+    AP -->|"request-changes: fix loop"| B
     AP --> R
+    AP -->|"approve: stop, no handoffs"| SHIP
     SHIP -->|"reject: back to the open build window"| B
     SHIP -->|"merge PR, sync main, teardown, epilogue"| DONE([shipped])
     U -->|"/agento close-session (plan/freehand/abandon)"| CLOSE[remove worktree]

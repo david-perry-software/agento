@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fixed.** The Reviewer's auto-sent handoff now targets the Autopilot ("Continue
+  unattended") instead of the Builder. In VS Code Autopilot mode the old Reviewer →
+  Builder → Reviewer chain looped forever on an approve (`send: true` handoffs are
+  unconditional); the Autopilot declares no handoffs, reads the verdict, and either
+  drives the fix loop through subagents or stops. `tests/customizations.test.mjs`
+  now rejects any cycle among `send: true` handoffs.
 - **Fixed.** The companion-mode roadmap nudge on a product-half commit now accepts an
   edited-but-uncommitted `roadmap.md` in the companion working tree (untracked or
   unstaged, not only staged). The two-commit rule commits the product before the

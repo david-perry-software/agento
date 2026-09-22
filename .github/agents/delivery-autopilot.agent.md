@@ -50,6 +50,8 @@ being run.
 1. Resolve the slug with the Agento CLI — `node <agento-root>/scripts/agento.mjs
    resolve <type> <slug>` (or `find <slug>` for a bare slug); its path is in the
    session context line `Agento CLI:` — and stop on any `status` other than `ok`.
+   When the invocation names no slug (the Reviewer's "Continue unattended" handoff),
+   the slug is the session record's `delivery.slug`.
    `git fetch origin` and confirm from the session record that `worktree.branch` is
    the roadmap's `branch:`. If the record's `worktrees[]` shows another entry on the
    branch, stop and report the record's alternatives
@@ -59,6 +61,12 @@ being run.
    update, start with the fix phase.
   When status is `in-review`, invoke the 🔍 Agento Reviewer subagent directly;
   do not stop to ask for a manual `/agento review-<type> <slug>` command.
+  If the session record's `lifecycle` is `approved` and `reviewFresh` is not
+  `false`, the run is already done: report the approve summary and the §8 ship
+  handoff exactly as loop step 4 does and stop — invoke no subagent. If `status:
+  paused`, relay the roadmap's `next-step` and stop. You declare no `handoffs`, so
+  a chain that reaches you ends here; never re-invoke the Reviewer on a current
+  approve to "confirm" it.
 
 ## Loop
 

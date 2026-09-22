@@ -7,9 +7,9 @@ agents: ["Explore"]
 user-invocable: true
 disable-model-invocation: false
 handoffs:
-  - label: "Fix review findings"
-    agent: "🔨 Agento Builder"
-    prompt: "Address the request-changes findings in the review.md just written. Add each finding as a roadmap step, then execute them."
+  - label: "Continue unattended"
+    agent: "🤖 Agento Autopilot"
+    prompt: "Continue this delivery unattended from the review.md just written; the slug is the session record's delivery.slug. On a current Verdict: request-changes run your fix loop; on a current Verdict: approve report the ship handoff and stop without invoking any subagent."
     send: true
 ---
 
