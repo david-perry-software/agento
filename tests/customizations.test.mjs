@@ -117,6 +117,19 @@ test("every agent has a unique name, description, and tool list", () => {
   }
 });
 
+// VS Code Autopilot mode auto-selects `send: true` handoffs, so a cycle among them
+// (Reviewer → Builder → Reviewer on an approve) never terminates.
+test("auto-sent handoffs form no cycle", () => {
+  const byName = new Map([...agents.values()].map((a) => [a.name, a]));
+  const visit = (name, trail) => {
+    assert.ok(!trail.includes(name), `send: true handoff cycle: ${[...trail, name].join(" → ")}`);
+    for (const handoff of byName.get(name)?.handoffs ?? []) {
+      if (handoff.send === true) visit(handoff.agent, [...trail, name]);
+    }
+  };
+  for (const name of byName.keys()) visit(name, []);
+});
+
 test("every prompt dispatches to a real agent and has no name override", () => {
   assert.ok(promptFiles.length > 0);
   for (const file of promptFiles) {
