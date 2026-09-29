@@ -8,12 +8,12 @@ routes the CLI's recommended commands into Copilot Chat.
 ## Install
 
 Install the plugin first using one of the methods in the
-[installation guide](install.md). Then build or obtain `agento-dashboard-0.6.0.vsix`
+[installation guide](install.md). Then build or obtain `agento-dashboard-0.6.1.vsix`
 and install it from the Command Palette with **Extensions: Install from VSIX...**.
 From a terminal, the equivalent command is:
 
 ```bash
-code --install-extension agento-dashboard-0.6.0.vsix
+code --install-extension agento-dashboard-0.6.1.vsix
 ```
 
 Open an initialized Agento project. The activity bar contains an **Agento** view

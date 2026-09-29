@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.1 (2026-09-29)
+
+- **Fixed.** `agento.mjs` now flushes its JSON output synchronously before exiting.
+  Stdout to a pipe is asynchronous on POSIX, so `process.exit()` right after
+  `process.stdout.write` truncated any payload beyond the 64 KiB pipe buffer; the
+  dashboard extension, which reads the CLI over a pipe, showed "Agento CLI returned
+  invalid JSON" in the Deliveries and Session & Doctor views for repositories with
+  enough deliveries to push `status --pr` past that size. (#68)
 - **Fixed.** The delivery guard's roadmap nudge no longer reads shell redirections
   (`2>&1`, `2>/dev/null`, `> out`) on a `git commit` line as pathspecs, so a
   roadmap-only commit such as `git add …/roadmap.md && git commit -m "…" 2>&1` is
