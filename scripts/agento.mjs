@@ -43,7 +43,16 @@ function usage(message) {
 }
 
 function emit(result, code = 0) {
-  process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+  // Piped stdout is async on POSIX; process.exit() would truncate output beyond the 64 KB pipe buffer.
+  const buffer = Buffer.from(JSON.stringify(result, null, 2) + "\n");
+  let offset = 0;
+  while (offset < buffer.length) {
+    try {
+      offset += fs.writeSync(1, buffer, offset, buffer.length - offset);
+    } catch (error) {
+      if (error.code !== "EAGAIN") throw error;
+    }
+  }
   process.exit(code);
 }
 

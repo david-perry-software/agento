@@ -948,6 +948,17 @@ test("status lists roadmaps with progress, verdicts, and duplicate slugs", () =>
   assert.deepEqual(filtered.json.items.map((i) => i.type), ["issue"]);
 });
 
+test("emit flushes output larger than the pipe buffer before exiting", () => {
+  const repo = makeRepo();
+  for (let i = 0; i < 200; i += 1) {
+    writeRoadmap(repo, `features/2026/09/slug-${String(i).padStart(3, "0")}`, `status: complete\nbranch: feature/slug-${i}\nnext-step: ""`);
+  }
+  const result = spawnSync("node", [cli, "status"], { cwd: repo, encoding: "utf8", env: baseEnv, maxBuffer: 16 * 1024 * 1024 });
+  assert.equal(result.status, 0);
+  assert.ok(result.stdout.length > 65536, `expected output above 64 KiB, got ${result.stdout.length}`);
+  assert.equal(JSON.parse(result.stdout).items.length, 200);
+});
+
 test("status adds lifecycle, owner, workspace, companion, pr/companionPr per item and lifecycles/warnings on top; sort and resumable unchanged", () => {
   const { repo, wt } = makeWorktreeRepo();
   const build = path.join(wt, "feature-widget");
