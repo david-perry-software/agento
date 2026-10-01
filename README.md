@@ -240,9 +240,11 @@ together → merge `origin/main` if needed → push.
 
 - Reaching a `(manual)` step, it stops, gives you exact instructions, and waits for a
   confirming screenshot, which it saves under `evidence/` and links from the step.
-- Say "pause" at any point: it finishes or reverts the in-flight step, sets
-  `status: paused` with a precise `next-step`, and pushes. Resume later with the same
-  command from any machine.
+- Say "pause" at any point: it finishes or reverts the in-flight step, keeps
+  `status: in-progress` with a precise `next-step`, and pushes — a session break that
+  `/agento build-feature`, `/agento ap`, and `/agento continue` all resume from any
+  machine. `status: paused` is reserved for stops only you can clear: a `(manual)`
+  step or a blocker, named in `next-step`.
 - When everything is ticked it sets `status: in-review` and offers the review handoff.
 
 **Unattended alternative:**
@@ -447,7 +449,8 @@ An initiative holds no checkboxes: its progress (per-member state, blockers, wav
 the recommended `next`) is derived by `agento.mjs initiative <slug>` from the member
 roadmaps that carry `initiative: "<slug>"` in their header.
 
-Roadmap header statuses: `planned → in-progress → paused → in-review → complete`.
+Roadmap header statuses: `planned → in-progress → paused → in-review → complete`
+(`paused` only while the user is needed; a session break stays `in-progress`).
 Step syntax:
 
 ```markdown

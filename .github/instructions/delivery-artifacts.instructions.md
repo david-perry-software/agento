@@ -51,14 +51,18 @@ findings) and the overlap decision required by
 Starts with a fenced yaml block containing exactly these fields:
 
 ```yaml
-status: planned        # planned | in-progress | paused | in-review | complete
+status: planned        # planned | in-progress | paused (only while the user is needed) | in-review | complete
 branch: feature/<slug> # or issue/<slug> (with the configured branch prefixes)
 last-updated: YYYY-MM-DD
-next-step: "<free-text pointer to the next unchecked step, or ''"
+next-step: "<free-text pointer to the next unchecked step, or ''"  # when paused: "<N.M> (manual) …" or "<N.M> blocked: <reason>"
 github-issue: "#<number>"  # issues only; omit for features
 artifact-pr: "#<number>"   # companion mode only: the draft PR carrying this delivery's artifacts in the artifact repository; omit in the in-repo layout
 initiative: "<initiative-slug>"  # features that belong to an initiative only; omit otherwise
 ```
+
+`status: paused` is reserved for stops only the user can clear and its `next-step`
+markers are defined by [delivery-policy.instructions.md](delivery-policy.instructions.md)
+§3 (pause kinds); a session break keeps `status: in-progress`.
 
 The optional `initiative:` field names the breakdown the feature is a member of. The
 CLI treats a member roadmap without it, or with a different slug, as invalid delivery

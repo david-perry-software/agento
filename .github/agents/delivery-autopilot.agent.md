@@ -64,7 +64,10 @@ being run.
   If the session record's `lifecycle` is `approved` and `reviewFresh` is not
   `false`, the run is already done: report the approve summary and the §8 ship
   handoff exactly as loop step 4 does and stop — invoke no subagent. If `status:
-  paused`, relay the roadmap's `next-step` and stop. You declare no `handoffs`, so
+  paused` and `next-step` carries a `(manual)` or `blocked:` marker (policy §3 pause
+  kinds), relay the roadmap's `next-step` and stop; a `paused` roadmap with neither
+  marker is a legacy session break — treat it as `in-progress` and enter the loop,
+  the Builder's resume protocol sets the status right. You declare no `handoffs`, so
   a chain that reaches you ends here; never re-invoke the Reviewer on a current
   approve to "confirm" it.
 
@@ -76,15 +79,19 @@ Repeat until approve, human-needed, or cycle cap:
    then execute all remaining roadmap steps", and this ordering directive: "where
    dependencies permit, sequence `(manual)` steps as late as possible so automated work
    completes first; when you reach a step only the user can perform, follow your pause
-   protocol and report the exact instructions for the user".
+   protocol and report the exact instructions for the user; when you stop for session
+   length with nothing outstanding, take a session break (`status: in-progress`) so
+   this loop can resume you".
 2. **Read state.** Re-read roadmap.md from disk:
    - `status: in-review` → proceed to review.
-   - `status: paused` → a manual step or blocker needs the user. Stop the entire run
-     and relay the Builder's user instructions and resume point verbatim. Never skip
-     past a manual step to keep the loop going.
-   - `status: in-progress` (subagent returned without finishing) → re-invoke the
-     Builder once to resume; if it stalls again without ticking a new step, stop and
-     report the stall point.
+   - `status: paused` → the user is needed (a `(manual)` step or a `blocked:`
+     next-step, policy §3 pause kinds). Stop the entire run and relay the Builder's
+     user instructions and resume point verbatim. Never skip past a manual step to
+     keep the loop going.
+   - `status: in-progress` (the Builder took a session break or returned without
+     finishing) → re-invoke the Builder to resume, and keep re-invoking as long as
+     each run ticks at least one new step; a run that returns without ticking a new
+     step is a stall — stop and report the stall point.
 3. **Review.** Invoke 🔍 Agento Reviewer with the slug and "follow your full
    procedure and commit review.md with an explicit verdict".
 4. **Read verdict** from review.md:
@@ -100,7 +107,8 @@ Repeat until approve, human-needed, or cycle cap:
 ## Reporting
 
 After every phase, emit a one-line progress note: phase, round number (e.g. round 2/3),
-roadmap status, and verdict if any. On any stop — approve, manual pause, auth halt,
+roadmap status, and verdict if any; a Builder session break is a progress note, not a
+stop. On any stop — approve, manual pause, auth halt,
 stall, or cap — state precisely what the user must do next in the §9 result line's
 `next:` command, repeated as a block per policy §12 directly above it (the Builder's
 relayed resume command likewise — when it is `/agento build-<type> <slug>`, followed
