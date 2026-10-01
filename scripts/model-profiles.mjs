@@ -84,3 +84,62 @@ export function parseProfiles(text) {
 export function errorsFor(errors, name) {
   return errors.filter((e) => !e.startsWith("profiles.") || e.startsWith(`profiles.${name}.`) || e.startsWith(`profiles.${name}:`));
 }
+
+// Lines split on "\n" keep their "\r"; `end` is the index of the closing `---`.
+function frontmatter(text) {
+  const lines = text.split("\n");
+  if (lines[0].replace(/\r$/, "") !== "---") return null;
+  const end = lines.findIndex((line, i) => i > 0 && line.replace(/\r$/, "") === "---");
+  return end > 0 ? { lines, end } : null;
+}
+
+export function frontmatterField(text, key) {
+  const fm = frontmatter(text);
+  if (!fm) return null;
+  const line = fm.lines.slice(1, fm.end).find((l) => l.startsWith(`${key}:`));
+  if (line === undefined) return null;
+  const raw = line.slice(key.length + 1).replace(/\r$/, "").trim();
+  if (raw.startsWith('"')) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw.slice(1, -1);
+    }
+  }
+  if (raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1).replace(/''/g, "'");
+  return raw;
+}
+
+const BUILT_IN_AGENT = "agent";
+
+// agents: [{ file, name }] (`name:` of each agent file); prompts: [{ file, name, agent }]
+// with `name` the command name and `agent` its `agent:` value or null. Returns one
+// target per agent and prompt; value null means "no model: line".
+export function resolveTargets({ profile, agents, prompts }) {
+  const errors = [];
+  const fallback = profile.default ?? null;
+  const aliasOf = Object.fromEntries(Object.entries(AGENT_ALIASES).map(([alias, file]) => [file, alias]));
+  const byName = new Map();
+  const targets = [];
+  for (const agent of agents) {
+    const alias = aliasOf[path.basename(agent.file)];
+    const value = (alias && profile.agents?.[alias]) ?? fallback;
+    if (agent.name) byName.set(agent.name, value);
+    targets.push({ file: agent.file, value });
+  }
+  const promptEntries = profile.prompts ?? {};
+  const known = new Set(prompts.map((p) => p.name));
+  for (const key of Object.keys(promptEntries)) {
+    if (!known.has(key)) errors.push(`prompts.${key}: no prompt named ${JSON.stringify(key)} in .github/prompts`);
+  }
+  for (const prompt of prompts) {
+    const custom = prompt.agent && prompt.agent !== BUILT_IN_AGENT && byName.has(prompt.agent);
+    if (custom) {
+      if (Object.hasOwn(promptEntries, prompt.name)) errors.push(`prompts.${prompt.name}: runs on ${prompt.agent} and inherits its model; set the agent's model instead`);
+      targets.push({ file: prompt.file, value: byName.get(prompt.agent) });
+    } else {
+      targets.push({ file: prompt.file, value: promptEntries[prompt.name] ?? fallback });
+    }
+  }
+  return { targets, errors };
+}
