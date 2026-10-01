@@ -265,6 +265,7 @@ roadmap.
 | `/agento install-skills` | Already-installed skills are excluded from the batch. |
 | `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
 | `/agento delivery-status`, `/agento next-feature`, `/agento doctor` | Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks). |
+| `/agento models` | `apply` of the already-active profile and `clear` on an unpinned clone change nothing (`changed: []`); `init` with the file present reports `created: false`; `list` and `show` are reads. |
 | `/agento extend-copilot`, `/agento fix-copilot` | An existing capability with the same name is modified in place, never duplicated. |
 
 ## 10. Capability preflight

@@ -21,6 +21,7 @@
 | `/agento commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
 | `/agento delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
 | `/agento doctor [--for <command>]` | default | Environment readiness: Node, git remote, gh auth, code CLI, python3, worktrees dir — each with status and fallback; fixes nothing |
+| `/agento models [list \| show <name> \| apply <name> \| clear \| init]` | default | Pin agents and built-in-agent commands to models from a named profile in `~/.config/agento/model-profiles.json`; rewrites the plugin clone's `model:` lines under skip-worktree ([model-profiles.md](model-profiles.md)) |
 | `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
 | `/agento extend-copilot` · `/agento fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
 
@@ -107,10 +108,13 @@ ship` resumes from),
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
-`code`, `python3`, `worktrees-dir`, `session-workspace`, `artifact-repo` — each `{ id, status, detail, fallback }` with
+`code`, `python3`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
 `<dir>-worktrees` directory exists but is not writable; `--for` runs only the checks
-the named command's `Needs:` line requires and echoes them as `for.needs`),
+the named command's `Needs:` line requires and echoes them as `for.needs`;
+`model-profile` is informational, never part of a `--for` run: `ok` with no plugin
+clone at `--plugin-root`, nothing pinned, or a named profile applied, `warn` on an
+invalid profiles file or `custom` pins),
 `next [<slug>]` (the one legal delivery transition derived from the same record as
 `session` plus roadmap ownership, review freshness, and initiative readiness:
 `status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`
@@ -133,11 +137,20 @@ appends a `## Migrated history` note to the companion `README.md` once, and repo
 `records.identical` plus `records.diff[]`, `moved[]`, `configWritten`, and
 `readmeNoteAdded`; a re-run with the roots already gone is `mode:
 "nothing-to-migrate"`, exit 0; `/agento agento-init --migrate` drives it and
-handles the commits and PRs). Every call prints one JSON
+handles the commits and PRs),
+`models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]`
+(model profiles from `~/.config/agento/model-profiles.json` — `$XDG_CONFIG_HOME` and
+`AGENTO_CONFIG_HOME` move it — applied to the plugin clone at `--plugin-root`,
+default the clone the CLI runs from: every verb reports `profilesFile { path, exists }`,
+`pluginRoot`, `active` (`null`, a profile name, or `custom`), `skipWorktree`, `dirty`,
+and `hint`; `apply` and `clear` rewrite the agents, prompts, and `commands/` mirrors
+and report `changed[]`; `init` copies `templates/model-profiles.json` only when the
+file is absent). Every call prints one JSON
 document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`),
 3 = resolution failure
 (`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`,
-`next` `ambiguous | blocked | unsupported | missing`),
+`next` `ambiguous | blocked | unsupported | missing`, `models` `not-found | invalid |
+dirty | failed`),
 1 = usage error. Every window-sensitive command runs `session` first and compares
 `role` with its `Window check per §11: requires role …` line (policy §11); a mismatch
 is a `rejected` receipt listing the record's alternatives.
@@ -203,6 +216,7 @@ Every command has one spelling, `/agento <name> [args]`. The canonical names are
 - `/agento commit-current-changes`
 - `/agento delivery-status`
 - `/agento doctor`
+- `/agento models`
 - `/agento triage-followups`
 - `/agento extend-copilot`
 - `/agento fix-copilot`
