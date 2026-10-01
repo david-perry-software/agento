@@ -45,8 +45,11 @@ plugin clone, never the current checkout's delivery state).
 4. Exit 3 is a finding, not an error of this command: `not-found` (quote `known`),
    `invalid` (quote `errors`; the user fixes the profiles file), `dirty` (quote
    `message` and `dirty`; the user commits, stashes, or restores those files in the
-   plugin clone — never do it for them), `failed` (quote `message`; re-sending is
-   safe).
+   plugin clone — never do it for them), `worktree` (quote `message` and
+   `primaryCheckout`: the CLI ran from an Agento development worktree, whose files
+   must stay unpinned; the user re-sends `/agento models apply <name>` from the
+   primary window, whose CLI lives in the registered clone), `failed` (quote
+   `message`; re-sending is safe).
 
 The result line's `next:` is `/agento models apply <name>` after `init` or a fixable
 finding, `/agento doctor` after `apply` or `clear` (its `model-profile` check

@@ -101,10 +101,12 @@ applied, `warn` for an invalid profiles file or `custom` pins.
 
 Profiles apply to the registered plugin clone (`chat.pluginLocations`). A worktree
 window of the Agento repository loads its own workspace `.github/agents/` and
-`.github/prompts/`, which stay unpinned; `tests/customizations.test.mjs` fails if a
-`model:` line is ever committed. Clear the profile before editing an agent or prompt
-in the clone — skip-worktree hides your edits from `git status` — and apply it again
-afterwards.
+`.github/prompts/`, which stay unpinned: `apply` refuses a plugin root that is a
+linked worktree (`status: "worktree"`, exit 3, naming the clone as
+`primaryCheckout`), while `clear` still runs there to unpin it.
+`tests/customizations.test.mjs` fails if a `model:` line is ever committed. Clear the
+profile before editing an agent or prompt in the clone — skip-worktree hides your
+edits from `git status` — and apply it again afterwards.
 
 ## Limits
 
