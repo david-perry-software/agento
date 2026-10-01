@@ -10,6 +10,7 @@ const cliFiles = [
   "agento-config.mjs",
   "agento.mjs",
   "delivery-roadmap-resolver.mjs",
+  "model-profiles.mjs",
   "session-state.mjs",
 ];
 
