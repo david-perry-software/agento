@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, renderModel, resolveTargets, setModel } from "./model-profiles.mjs";
+import { AGENT_ALIASES, detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, renderModel, resolveTargets, setModel } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -172,4 +172,25 @@ test("renderModel serializes strings and lists as JSON-quoted YAML", () => {
   assert.equal(renderModel(null), null);
   assert.equal(renderModel("GPT-5 (copilot)"), 'model: "GPT-5 (copilot)"');
   assert.equal(renderModel(["a", "b"]), 'model: ["a", "b"]');
+});
+
+test("detectActive: null when unpinned, the matching profile, else custom", () => {
+  const targets = (planner, doctor) => [{ file: "a.agent.md", value: planner }, { file: "doctor.prompt.md", value: doctor }];
+  const profiles = [
+    { name: "mixed", targets: targets("Strong", "Cheap") },
+    { name: "solo", targets: targets("Strong", null) },
+  ];
+  assert.equal(detectActive({ profiles, current: { "a.agent.md": null, "doctor.prompt.md": null } }), null);
+  assert.equal(detectActive({ profiles, current: { "a.agent.md": 'model: "Strong"', "doctor.prompt.md": 'model: "Cheap"' } }), "mixed");
+  assert.equal(detectActive({ profiles, current: { "a.agent.md": 'model: "Strong"', "doctor.prompt.md": null } }), "solo");
+  assert.equal(detectActive({ profiles, current: { "a.agent.md": 'model: "Edited"', "doctor.prompt.md": 'model: "Cheap"' } }), "custom");
+  assert.equal(detectActive({ profiles: [], current: { "a.agent.md": 'model: "X"' } }), "custom");
+  assert.equal(detectActive({ profiles: [{ name: "arr", targets: [{ file: "a.agent.md", value: ["A", "B"] }] }], current: { "a.agent.md": 'model: ["A", "B"]' } }), "arr");
+});
+
+test("differsBeyondModel ignores only the model: line", () => {
+  assert.equal(differsBeyondModel(AGENT_DOC, setModel(AGENT_DOC, "M")), false);
+  assert.equal(differsBeyondModel(AGENT_DOC, AGENT_DOC), false);
+  assert.equal(differsBeyondModel(AGENT_DOC, setModel(AGENT_DOC, "M").replace("Body", "Edited")), true);
+  assert.equal(differsBeyondModel(AGENT_DOC, AGENT_DOC.replace(/\n/g, "\r\n")), true);
 });

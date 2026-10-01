@@ -199,3 +199,21 @@ export function setModel(text, value) {
   }
   return out.join("\n");
 }
+
+// profiles: [{ name, targets: [{ file, value }] }] (resolved, valid ones, in file
+// order); current: { [file]: readModel(text) }. null when nothing is pinned, the
+// first profile whose rendering matches every file, else "custom".
+export function detectActive({ profiles, current }) {
+  if (Object.values(current).every((line) => line === null)) return null;
+  const match = profiles.find(({ targets }) => targets.length > 0 && Object.keys(current).every((file) => {
+    const target = targets.find((t) => t.file === file);
+    return (target ? renderModel(target.value) : null) === current[file];
+  }));
+  return match ? match.name : "custom";
+}
+
+// True when a working file differs from its committed bytes beyond the model: line;
+// skip-worktree would hide such edits, so apply refuses them.
+export function differsBeyondModel(headText, workText) {
+  return setModel(headText, null) !== setModel(workText, null);
+}
