@@ -673,6 +673,24 @@ const DOCTOR_CHECKS = {
     }
     return { status: "ok", detail, fallback: null };
   },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  "model-profile"() {
+    const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
+    if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) return { status: "ok", detail: `no Agento plugin clone at ${pluginRoot}`, fallback: null };
+    const loaded = loadProfiles();
+    const cli = `agento.mjs models --plugin-root ${pluginRoot}`;
+    if (loaded.errors.length) {
+      return { status: "warn", detail: `${loaded.profilesFile.path} has ${loaded.errors.length} error(s), first: ${loaded.errors[0]}`, fallback: `fix the file (\`${cli}\` lists every error) or delete it; Agento runs fine without profiles` };
+    }
+    const { active } = modelsState(pluginRoot, loaded);
+    if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
+    if (active !== "custom") return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
+    return {
+      status: "warn",
+      detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied)`,
+      fallback: `re-pin with \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\` or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\`; before a git pull that touches pinned files: clear, then git pull, then apply`,
+    };
+  },
 };
 
 // A root still holds artifacts when any file other than the scaffold's .gitkeep is under it.
@@ -725,6 +743,7 @@ const COMMAND_NEEDS = {
   "finish-freehand": ["terminal", "gh", "network"],
   "fix-copilot": ["terminal"],
   "install-skills": ["terminal", "ask-questions", "network"],
+  models: ["terminal"],
   "new-feature": ["terminal", "ask-questions", "gh", "network"],
   "new-initiative": ["terminal", "ask-questions", "gh", "network"],
   "new-issue": ["terminal", "ask-questions", "gh", "network"],

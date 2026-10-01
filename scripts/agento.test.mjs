@@ -1229,14 +1229,14 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports eight checks and includes session-workspace", () => {
+test("doctor reports nine checks and includes session-workspace and model-profile", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1349,7 +1349,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -2683,4 +2683,40 @@ test("models apply reports resolution errors for prompts on custom agents", () =
   assert.equal(apply.json.status, "invalid");
   assert.ok(apply.json.errors.some((e) => /^profiles\.bad\.prompts\.build-feature: runs on 🔨 Agento Builder/.test(e)), JSON.stringify(apply.json.errors));
   assert.ok(apply.json.errors.some((e) => /^profiles\.bad\.prompts\.ghost: no prompt named/.test(e)));
+});
+
+test("doctor model-profile: ok without a clone, none, or a matching profile; warn on custom pins or an invalid file", () => {
+  const { plugin, home, env, models, writeProfiles } = modelsFixture();
+  const check = (root = plugin) => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", root).json)["model-profile"];
+
+  const bundle = check(path.dirname(plugin));
+  assert.equal(bundle.status, "ok");
+  assert.match(bundle.detail, /^no Agento plugin clone at /);
+
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}`, fallback: null });
+
+  writeProfiles({ mixed: { default: "Cheap", agents: { planner: "Strong" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  assert.equal(check().detail, `mixed applied to ${plugin}`);
+
+  const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap"', 'model: "Edited"'));
+  const custom = check();
+  assert.equal(custom.status, "warn");
+  assert.match(custom.detail, /match no profile/);
+  assert.match(custom.fallback, /models apply <name>.*models clear.*clear, then git pull, then apply/);
+
+  fs.writeFileSync(path.join(home, "model-profiles.json"), "{ nope");
+  const invalid = check();
+  assert.equal(invalid.status, "warn");
+  assert.match(invalid.detail, /1 error\(s\), first: invalid JSON/);
+});
+
+test("doctor --for models needs only the terminal checks", () => {
+  const repo = makeRepo();
+  const { env } = restrictedPath(okStubs);
+  const { code, json } = runWith({ cwd: repo, env }, "doctor", "--for", "models");
+  assert.equal(code, 0);
+  assert.deepEqual(json.for, { command: "models", needs: ["terminal"] });
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
 });
