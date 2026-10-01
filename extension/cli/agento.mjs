@@ -1161,6 +1161,16 @@ function modelsState(pluginRoot, loaded) {
   return { layout, current, resolved, active, isGit, tracked, skipWorktree, dirty };
 }
 
+// The main checkout when `pluginRoot` is a linked worktree (e.g. an Agento
+// development worktree), else null.
+function primaryCheckoutOf(pluginRoot) {
+  const [gitDir, commonDir] = git(pluginRoot, "rev-parse", "--git-dir", "--git-common-dir").split("\n");
+  if (!gitDir || !commonDir) return null;
+  const common = path.resolve(pluginRoot, commonDir);
+  if (path.resolve(pluginRoot, gitDir) === common) return null;
+  return path.basename(common) === ".git" ? path.dirname(common) : common;
+}
+
 function modelsReport(pluginRoot, loaded, state) {
   return {
     profilesFile: loaded.profilesFile,
@@ -1704,6 +1714,10 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const resolved = resolveProfile(loaded, name, state.layout);
       if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const primaryCheckout = state.isGit ? primaryCheckoutOf(pluginRoot) : null;
+      if (primaryCheckout) {
+        emit({ status: "worktree", verb, profile: name, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; skip-worktree would hide edits made here — apply to the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      }
       if (state.dirty.length) {
         emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: line; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
       }

@@ -2650,6 +2650,25 @@ test("models apply refuses targets edited beyond their model line", () => {
   assert.equal(git(plugin, "status", "--porcelain"), "M .github/agents/delivery-builder.agent.md");
 });
 
+test("models apply refuses a linked-worktree plugin root; clear still runs there", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap" } });
+  const linked = path.join(path.dirname(plugin), "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
+  const inLinked = (...args) => runWith({ cwd: linked, env }, "models", ...args, "--plugin-root", linked);
+  const refused = inLinked("apply", "mixed");
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "worktree");
+  assert.equal(refused.json.primaryCheckout, plugin);
+  assert.match(refused.json.message, new RegExp(`--plugin-root ${plugin}$`));
+  assert.equal(gitQuiet(linked, "diff", "--quiet"), 0);
+  assert.deepEqual(sBits(linked), []);
+  const clear = inLinked("clear");
+  assert.equal(clear.code, 0);
+  assert.deepEqual(clear.json.changed, []);
+  assert.equal(models("apply", "mixed").code, 0);
+});
+
 test("models apply on a non-git plugin root rewrites without flags", () => {
   const { plugin, models, writeProfiles } = modelsFixture({ gitInit: false });
   writeProfiles({ mixed: { default: "Cheap" } });
