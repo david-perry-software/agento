@@ -1,5 +1,5 @@
 ---
-description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, the lint baseline gate, shell hygiene, git rules, the cross-window handoff, execution receipts with per-command idempotency, capability preflight, the window check every command runs against the session record, and command presentation"
+description: "Delivery policy shared by the Planner, Builder, Reviewer, Autopilot, and the build/review/ship prompts: the agent/user work boundary, verification targets, evidence, manual and post-ship steps, pause kinds (paused vs. session break), the lint baseline gate, shell hygiene, git rules, the cross-window handoff, execution receipts with per-command idempotency, capability preflight, the window check every command runs against the session record, and command presentation"
 applyTo: "**"
 ---
 
@@ -77,6 +77,20 @@ reaches one — or discovers one mid-step, in which case it is first added as
 A ticked `(manual)` step without a linked evidence file is a falsely ticked box.
 Browser-driven checks the agent performs itself also land their screenshots under
 `evidence/` on the work branch.
+
+**Pause kinds.** `status: paused` means exactly one thing: only the user can advance
+the roadmap — a `(manual)` step has been reached, or a blocker only the user can
+clear (an auth failure, a missing prerequisite, a decision). Its `next-step` names
+the step and carries the reason as a marker: `"<N.M> (manual) <action>"` for a manual
+step, `"<N.M> blocked: <reason>"` for a blocker. Stopping for any other reason —
+session length, token budget, a clean phase boundary, the user saying "pause" with
+nothing outstanding — is a **session break**, not a pause: the in-flight step is
+finished or reverted, everything is committed and pushed, `status` stays
+`in-progress`, and `next-step` names the next unticked step. A session break needs
+nobody: `/agento build-<type> <slug>`, `/agento ap <slug>`, and `/agento continue`
+all resume it through the Builder's resume protocol, and the Autopilot never stops
+on one. A `paused` roadmap whose `next-step` carries neither marker predates this
+rule and is read as a session break.
 
 ## 4. Post-ship exception
 
@@ -213,9 +227,10 @@ derived from git + roadmap state (no journal) per the table at the end of this s
   satisfied.
 - `Result: failed — <retry-safe explanation>` — what was done, what was not, and that
   re-sending the same command resumes from git + roadmap state (or what must change
-  first). A pause (Builder pause protocol, manual step awaiting the user) is a
-  `completed` result whose state is `paused` and whose `next:` names the resume
-  command, not a failure.
+  first). A pause (manual step or blocker awaiting the user) is a `completed` result
+  whose state is `paused`, and a session break (§3 pause kinds) a `completed` result
+  whose state is `in-progress`; both name the resume command in `next:` and neither
+  is a failure.
 
 **Operation ID** — `<command>:<subject>:<short-sha>`:
 

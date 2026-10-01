@@ -107,14 +107,25 @@ For each unchecked step, in order:
 
 ## Pause protocol
 
-When asked to pause, or when blocked: finish or revert the in-flight step (never commit
-half-broken state), set `status: paused` with a precise `next-step` (including the
-blocker if any), commit, push (both halves in companion mode: the product half first,
-then the companion half carrying the roadmap — `agento.mjs session` must show
-`companion.dirty: false` and `companion.ahead: 0`), and report the exact resume point
-— a pause is a `completed` §9 result whose state is `paused` and whose `next:` names
-the resume command, emitted as a block per policy §12 directly above the result line,
-followed by `/agento ap <slug>` in its own block as the unattended alternative (§12).
+Two kinds of stop, per policy §3 "Pause kinds"; both begin by finishing or reverting
+the in-flight step (never commit half-broken state):
+
+- **Session break** — asked to pause, the session is long, a phase boundary is
+  reached, and nothing needs the user: leave `status: in-progress`, set `next-step`
+  to the next unticked step, commit, push, and report the resume point. Never set
+  `status: paused` for a stop nobody has to act on; that would make `/agento ap`
+  wait for the user instead of resuming you.
+- **Pause** — a `(manual)` step is reached or a blocker only the user can clear:
+  set `status: paused` with `next-step` `"<N.M> (manual) <action>"` or `"<N.M>
+  blocked: <reason>"`, commit, push, and report the exact user instructions and
+  resume point.
+
+Push both halves in companion mode: the product half first, then the companion half
+carrying the roadmap — `agento.mjs session` must show `companion.dirty: false` and
+`companion.ahead: 0`. Either stop is a `completed` §9 result (state `in-progress` or
+`paused`) whose `next:` names the resume command, emitted as a block per policy §12
+directly above the result line, followed by `/agento ap <slug>` in its own block as
+the unattended alternative (§12).
 
 ## Completion
 

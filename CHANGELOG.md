@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Fixed.** `status: paused` now means only one thing — the user is needed (a
+  `(manual)` step or a `blocked:` next-step) — and the Builder keeps
+  `status: in-progress` when it stops for session length at a clean boundary
+  (delivery-policy §3 "Pause kinds"). `/agento ap` previously treated every
+  `paused` roadmap as a manual stop and relayed the `next-step` instead of invoking
+  the Builder, so an unattended run could never resume a build the Builder had
+  paused only because its session grew long; the Autopilot now resumes session
+  breaks (including legacy `paused` roadmaps with neither marker) and keeps
+  re-invoking the Builder while each run ticks a new step.
+
 ## 0.6.1 (2026-09-29)
 
 - **Fixed.** `agento.mjs` now flushes its JSON output synchronously before exiting.

@@ -251,6 +251,26 @@ test("build and review handoffs offer the /agento ap alternative", () => {
   );
 });
 
+test("status: paused is reserved for the user; the Autopilot resumes session breaks", () => {
+  // Policy §3 "Pause kinds": a Builder stopping for session length keeps
+  // `in-progress`; `paused` carries a `(manual)` or `blocked:` marker in next-step,
+  // and the Autopilot only stops on that marker — never on a bare `paused`.
+  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  assert.match(policy, /\*\*Pause kinds\.\*\*/, "delivery-policy §3 must define the pause kinds");
+  assert.match(policy, /session break/, "delivery-policy §3 must name the session break");
+  const builder = splitFrontmatter(rel(".github", "agents", "delivery-builder.agent.md")).body;
+  assert.match(builder, /\*\*Session break\*\*[\s\S]*?`status: in-progress`/, "Builder pause protocol must keep in-progress on a session break");
+  assert.match(builder, /\*\*Pause\*\*[\s\S]*?`status: paused`[\s\S]*?\(manual\)[\s\S]*?blocked:/, "Builder pause protocol must mark paused next-steps");
+  const autopilot = splitFrontmatter(rel(".github", "agents", "delivery-autopilot.agent.md")).body;
+  assert.doesNotMatch(autopilot, /If `status:\s+paused`, relay/, "Autopilot preflight must not stop on every paused roadmap");
+  assert.match(autopilot, /`status:\s+paused` and `next-step` carries a `\(manual\)` or `blocked:` marker/, "Autopilot preflight must inspect the next-step marker");
+  assert.match(autopilot, /legacy session break/, "Autopilot must resume a legacy paused roadmap without a marker");
+  assert.match(autopilot, /`status: in-progress` \(the Builder took a session break/, "Autopilot loop must re-invoke the Builder after a session break");
+  for (const file of [rel(".github", "prompts", "ap.prompt.md"), rel("commands", "ap.md")]) {
+    assert.match(fs.readFileSync(file, "utf8"), /session break/, `${path.relative(repoRoot, file)} must describe session-break resumption`);
+  }
+});
+
 test("start-session and start-freehand write the workspace file through agento.mjs workspace (#58 session-auto-approve)", () => {
   const pairs = [
     [rel(".github", "prompts", "start-session.prompt.md"), rel("commands", "start-session.md")],
