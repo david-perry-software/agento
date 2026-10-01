@@ -18,6 +18,7 @@
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
+//   node scripts/agento.mjs models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
@@ -33,12 +34,13 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
+import { detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, resolveTargets } from "./model-profiles.mjs";
 import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 23);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 24);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -73,6 +75,10 @@ function parseArgs(argv) {
     else if (arg === "--pr") options.pr = true;
     else if (arg === "--write") options.write = true;
     else if (arg === "--apply") options.apply = true;
+    else if (arg === "--plugin-root") {
+      options.pluginRoot = argv[++i];
+      if (!options.pluginRoot) usage("--plugin-root takes a directory");
+    }
     else if (arg === "--for") {
       options.for = argv[++i];
       if (!options.for || !/^[a-z0-9-]+$/.test(options.for)) usage(`--for takes a command name matching [a-z0-9-]+, got ${JSON.stringify(options.for ?? "")}`);
@@ -1063,6 +1069,90 @@ function dispatchFor(command) {
   return { prompt, agent: agent ?? null };
 }
 
+// --- model profiles --------------------------------------------------------
+
+const MODELS_HINT =
+  "pinned files are marked skip-worktree; a git pull or merge that touches one stops with 'Your local changes … would be overwritten': run `models clear`, then `git pull`, then `models apply <name>` again";
+
+// The files a profile rewrites, relative to the plugin root: every agent, every
+// prompt, and each prompt's commands/<name>.md mirror (what plugin mode reads).
+function modelTargetFiles(pluginRoot) {
+  const list = (rel, suffix) => {
+    const dir = path.join(pluginRoot, rel);
+    return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).sort().map((f) => `${rel}/${f}`) : [];
+  };
+  const read = (file) => fs.readFileSync(path.join(pluginRoot, file), "utf8");
+  const agents = list(".github/agents", ".agent.md").map((file) => ({ file, name: frontmatterField(read(file), "name") }));
+  const prompts = list(".github/prompts", ".prompt.md").map((file) => ({ file, name: path.basename(file, ".prompt.md"), agent: frontmatterField(read(file), "agent") }));
+  const mirrors = {};
+  for (const prompt of prompts) {
+    const mirror = `commands/${prompt.name}.md`;
+    if (fs.existsSync(path.join(pluginRoot, mirror))) mirrors[prompt.file] = mirror;
+  }
+  const files = [...agents.map((a) => a.file), ...prompts.flatMap((p) => (mirrors[p.file] ? [p.file, mirrors[p.file]] : [p.file]))];
+  return { agents, prompts, mirrors, files };
+}
+
+function loadProfiles() {
+  const file = profilesFile();
+  const exists = fs.existsSync(file);
+  if (!exists) return { profilesFile: { path: file, exists }, profiles: {}, errors: [] };
+  const { profiles, errors } = parseProfiles(fs.readFileSync(file, "utf8"));
+  return { profilesFile: { path: file, exists }, profiles, errors };
+}
+
+// Resolved targets (mirrors included) plus every error that blocks applying `name`.
+function resolveProfile(loaded, name, layout) {
+  const parseErrors = errorsFor(loaded.errors, name);
+  if (parseErrors.length) return { targets: [], errors: parseErrors };
+  const { targets, errors } = resolveTargets({ profile: loaded.profiles[name], agents: layout.agents, prompts: layout.prompts });
+  const withMirrors = targets.flatMap((t) => (layout.mirrors[t.file] ? [t, { file: layout.mirrors[t.file], value: t.value }] : [t]));
+  return { targets: withMirrors, errors: errors.map((e) => `profiles.${name}.${e}`) };
+}
+
+function gitShowHead(pluginRoot, file) {
+  try {
+    return execFileSync("git", ["-C", pluginRoot, "show", `HEAD:./${file}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 });
+  } catch {
+    return null;
+  }
+}
+
+// The derived state every `models` verb reports: no journal, read from the files.
+function modelsState(pluginRoot, loaded) {
+  const layout = modelTargetFiles(pluginRoot);
+  const current = Object.fromEntries(layout.files.map((f) => [f, readModel(fs.readFileSync(path.join(pluginRoot, f), "utf8"))]));
+  const names = loaded.errors.some((e) => !e.startsWith("profiles.")) ? [] : Object.keys(loaded.profiles);
+  const resolved = names.map((name) => ({ name, ...resolveProfile(loaded, name, layout) }));
+  const active = detectActive({ profiles: resolved.filter((p) => !p.errors.length), current });
+  const isGit = git(pluginRoot, "rev-parse", "--show-toplevel") !== "";
+  let skipWorktree = null;
+  let tracked = new Set();
+  let dirty = [];
+  if (isGit) {
+    const entries = git(pluginRoot, "ls-files", "-v", "--", ...layout.files).split("\n").filter(Boolean);
+    tracked = new Set(entries.map((l) => l.slice(2)));
+    skipWorktree = entries.filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
+    dirty = layout.files.filter((f) => {
+      if (!tracked.has(f)) return false;
+      const head = gitShowHead(pluginRoot, f);
+      return head !== null && differsBeyondModel(head, fs.readFileSync(path.join(pluginRoot, f), "utf8"));
+    });
+  }
+  return { layout, current, resolved, active, isGit, tracked, skipWorktree, dirty };
+}
+
+function modelsReport(pluginRoot, loaded, state) {
+  return {
+    profilesFile: loaded.profilesFile,
+    pluginRoot,
+    active: state.active,
+    skipWorktree: state.skipWorktree,
+    dirty: state.dirty,
+    hint: MODELS_HINT,
+  };
+}
+
 switch (command) {
   case "config":
     emit({
@@ -1545,6 +1635,49 @@ switch (command) {
       root,
       configSource: source,
     });
+    break;
+  }
+
+  case "models": {
+    const [verb = "list", name, ...extra] = rest;
+    const verbs = { list: 0, show: 1, apply: 1, clear: 0, init: 0 };
+    if (!Object.hasOwn(verbs, verb)) usage(`models: unknown verb ${verb}; known: ${Object.keys(verbs).join(", ")}`);
+    if (extra.length || (verbs[verb] === 1 ? !name : name !== undefined)) usage(`models ${verb} takes ${verbs[verb] ? "exactly one profile name" : "no arguments"}`);
+    if (verbs[verb] && !/^[a-z0-9-]+$/.test(name)) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(name)}`);
+    const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
+    if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) usage(`--plugin-root ${pluginRoot} is not an Agento plugin clone (no .github/agents)`);
+    const loaded = loadProfiles();
+
+    if (verb === "init") {
+      let created = false;
+      if (!loaded.profilesFile.exists) {
+        const template = path.join(pluginRoot, "templates", "model-profiles.json");
+        if (!fs.existsSync(template)) emit({ status: "missing", verb, message: `${template} not found`, profilesFile: loaded.profilesFile, pluginRoot }, 3);
+        fs.mkdirSync(path.dirname(loaded.profilesFile.path), { recursive: true });
+        fs.copyFileSync(template, loaded.profilesFile.path, fs.constants.COPYFILE_EXCL);
+        created = true;
+      }
+      const reloaded = loadProfiles();
+      emit({ status: "ok", verb, created, ...modelsReport(pluginRoot, reloaded, modelsState(pluginRoot, reloaded)) });
+    }
+
+    const state = modelsState(pluginRoot, loaded);
+    if (verb === "list") {
+      const fileErrors = loaded.errors.filter((e) => !e.startsWith("profiles."));
+      const profiles = Object.keys(loaded.profiles).map((n) => ({
+        name: n,
+        description: typeof loaded.profiles[n]?.description === "string" ? loaded.profiles[n].description : null,
+        errors: state.resolved.find((p) => p.name === n)?.errors ?? errorsFor(loaded.errors, n),
+      }));
+      emit({ status: "ok", verb, profiles, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
+    }
+
+    if (verb === "show") {
+      if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const { targets, errors } = resolveProfile(loaded, name, state.layout);
+      const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
+      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+    }
     break;
   }
 

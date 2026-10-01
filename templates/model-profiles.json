@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "mixed": {
+      "description": "A strong model for planning, review, and initiatives; a cheaper one everywhere else",
+      "default": "<cheaper model name, as shown in the chat model picker>",
+      "agents": {
+        "planner": "<strong model name>",
+        "reviewer": "<strong model name>",
+        "architect": "<strong model name>"
+      }
+    }
+  }
+}

@@ -75,6 +75,8 @@ function run(cwd, ...args) {
 const baseEnv = { ...process.env };
 delete baseEnv.CODESPACES;
 delete baseEnv.GITHUB_ACTIONS;
+// Never read the real ~/.config/agento/model-profiles.json.
+baseEnv.AGENTO_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-config-home-"));
 
 function runWith({ cwd, env }, ...args) {
   const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
@@ -2474,4 +2476,110 @@ test("migrate rejects a non-sibling destination and a non-checkout, writing noth
 
   const usage = run(repo, "migrate");
   assert.ok(usage.json.usage.some((line) => line.includes("migrate <companion-checkout> [--apply]")), JSON.stringify(usage.json.usage));
+});
+
+// --- models ---------------------------------------------------------------
+
+// A git-tracked copy of this repository's agents, prompts, command mirrors, and
+// profile template, plus a private AGENTO_CONFIG_HOME.
+function modelsFixture({ gitInit = true } = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-models-"));
+  const plugin = path.join(base, "plugin");
+  for (const rel of [".github/agents", ".github/prompts", "commands"]) fs.cpSync(path.join(repoRoot, rel), path.join(plugin, rel), { recursive: true });
+  fs.mkdirSync(path.join(plugin, "templates"), { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, "templates", "model-profiles.json"), path.join(plugin, "templates", "model-profiles.json"));
+  if (gitInit) {
+    execFileSync("git", ["init", "-q", "-b", "main", plugin]);
+    git(plugin, "config", "user.email", "test@example.com");
+    git(plugin, "config", "user.name", "Test");
+    git(plugin, "add", "-A");
+    git(plugin, "commit", "-q", "-m", "init");
+  }
+  const home = path.join(base, "config");
+  const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
+  const models = (...args) => runWith({ cwd: plugin, env }, "models", ...args, "--plugin-root", plugin);
+  const writeProfiles = (profiles) => {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ profiles }));
+  };
+  return { plugin, home, env, models, writeProfiles };
+}
+
+test("models list without a profiles file reports nothing applied", () => {
+  const { plugin, home, models } = modelsFixture();
+  const { code, json } = models();
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.equal(json.verb, "list");
+  assert.deepEqual(json.profiles, []);
+  assert.deepEqual(json.profilesFile, { path: path.join(home, "model-profiles.json"), exists: false });
+  assert.equal(json.pluginRoot, plugin);
+  assert.equal(json.active, null);
+  assert.deepEqual(json.skipWorktree, []);
+  assert.deepEqual(json.dirty, []);
+  assert.match(json.hint, /models clear.*git pull.*models apply/);
+});
+
+test("models init copies the template once; show reports placeholders and unknown profiles", () => {
+  const { home, models } = modelsFixture();
+  const first = models("init");
+  assert.equal(first.code, 0);
+  assert.equal(first.json.created, true);
+  assert.equal(first.json.profilesFile.exists, true);
+  const file = path.join(home, "model-profiles.json");
+  assert.equal(fs.readFileSync(file, "utf8"), fs.readFileSync(path.join(repoRoot, "templates", "model-profiles.json"), "utf8"));
+  fs.appendFileSync(file, " ");
+  const second = models("init");
+  assert.equal(second.code, 0);
+  assert.equal(second.json.created, false);
+  assert.match(fs.readFileSync(file, "utf8"), / $/);
+
+  const list = models("list");
+  assert.deepEqual(list.json.profiles.map((p) => p.name), ["mixed"]);
+  assert.ok(list.json.profiles[0].errors.length > 0);
+
+  const show = models("show", "mixed");
+  assert.equal(show.code, 3);
+  assert.equal(show.json.status, "invalid");
+  assert.ok(show.json.errors.every((e) => /placeholder/.test(e)), JSON.stringify(show.json.errors));
+
+  const unknown = models("show", "nope");
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.json.status, "not-found");
+  assert.deepEqual(unknown.json.known, ["mixed"]);
+});
+
+test("models show resolves agents, inherited prompts, and mirrors", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap", agents: { planner: "Strong" }, prompts: { doctor: "Tiny" } } });
+  const { code, json } = models("show", "mixed");
+  assert.equal(code, 0, JSON.stringify(json));
+  const value = (file) => json.targets.find((t) => t.file === file)?.value;
+  assert.equal(value(".github/agents/delivery-planner.agent.md"), "Strong");
+  assert.equal(value(".github/agents/delivery-builder.agent.md"), "Cheap");
+  assert.equal(value(".github/prompts/new-feature.prompt.md"), "Strong");
+  assert.equal(value("commands/new-feature.md"), "Strong");
+  assert.equal(value(".github/prompts/doctor.prompt.md"), "Tiny");
+  assert.equal(value("commands/doctor.md"), "Tiny");
+  assert.equal(value(".github/prompts/start-session.prompt.md"), "Cheap");
+});
+
+test("models usage errors: bad verb, arguments, profile name, and plugin root", () => {
+  const { models, env, plugin } = modelsFixture();
+  assert.equal(models("bogus").code, 1);
+  assert.equal(models("show").code, 1);
+  assert.equal(models("list", "extra").code, 1);
+  assert.equal(models("apply", "Bad_Name").code, 1);
+  const notPlugin = runWith({ cwd: plugin, env }, "models", "--plugin-root", path.dirname(plugin));
+  assert.equal(notPlugin.code, 1);
+  assert.match(notPlugin.json.message, /not an Agento plugin clone/);
+  assert.equal(runWith({ cwd: plugin, env }, "models", "--plugin-root").code, 1);
+});
+
+test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
+  const repo = makeRepo();
+  const usage = run(repo, "bogus").json.usage;
+  assert.ok(usage.some((line) => line.includes("models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
+  assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });
