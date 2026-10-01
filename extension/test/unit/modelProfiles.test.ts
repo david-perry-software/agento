@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { expandHome, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems, type PluginRootSources } from "../../src/modelProfiles.js";
+import { expandHome, missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems, type PluginRootSources } from "../../src/modelProfiles.js";
 
 const home = "/home/u";
 
@@ -45,6 +45,16 @@ test("resolvePluginRoot falls back to the first enabled chat.pluginLocations ent
   assert.equal(resolvePluginRoot(sources({ configured: "", pluginLocations }, manifests)), path.join(home, "DP/agento"));
   assert.equal(resolvePluginRoot(sources({ pluginLocations: { "/other": true } }, manifests)), null);
   assert.equal(resolvePluginRoot(sources({}, manifests)), null);
+});
+
+test("missingPluginRootMessage names a set but invalid agento.pluginRoot", () => {
+  assert.equal(
+    missingPluginRootMessage(" ~/wrong/agento ", home),
+    `agento.pluginRoot is set to ${path.join(home, "wrong/agento")}, which is not an Agento plugin clone (no .claude-plugin/plugin.json named "agento"): fix or clear the setting.`,
+  );
+  for (const unset of [undefined, "", "  "]) {
+    assert.equal(missingPluginRootMessage(unset, home), "No Agento plugin clone found: set agento.pluginRoot or register the clone in chat.pluginLocations.");
+  }
 });
 
 test("toQuickPickItems lists profiles, marks the applied one, and ends with Clear", () => {

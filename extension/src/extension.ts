@@ -14,7 +14,7 @@ import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
-import { resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
+import { missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
 import {
   primaryInitiativeTarget,
   runNewInitiativeFlow,
@@ -447,7 +447,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     };
     const root = pluginRoot();
     if (!root) {
-      await reportError("No Agento plugin clone found: set agento.pluginRoot or register the clone in chat.pluginLocations.");
+      await reportError(missingPluginRootMessage(vscode.workspace.getConfiguration("agento").get<string>("pluginRoot", ""), os.homedir()));
       return;
     }
     try {

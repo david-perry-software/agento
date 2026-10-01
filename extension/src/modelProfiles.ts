@@ -55,6 +55,15 @@ export function resolvePluginRoot(sources: PluginRootSources): string | null {
   return null;
 }
 
+export function missingPluginRootMessage(configured: string | undefined, homedir: string): string {
+  const value = configured?.trim();
+  if (value) {
+    const root = path.resolve(expandHome(value, homedir));
+    return `agento.pluginRoot is set to ${root}, which is not an Agento plugin clone (no .claude-plugin/plugin.json named "agento"): fix or clear the setting.`;
+  }
+  return "No Agento plugin clone found: set agento.pluginRoot or register the clone in chat.pluginLocations.";
+}
+
 interface ListedProfile {
   name?: unknown;
   description?: unknown;
