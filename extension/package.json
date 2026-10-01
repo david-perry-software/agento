@@ -90,6 +90,11 @@
         "title": "Show Actions",
         "category": "Agento",
         "icon": "$(play)"
+      },
+      {
+        "command": "agento.selectModelProfile",
+        "title": "Select Model Profile",
+        "category": "Agento"
       }
     ],
     "menus": {
@@ -156,6 +161,11 @@
           "default": 3000,
           "minimum": 3000,
           "description": "Delay in milliseconds before file changes refresh Agento state."
+        },
+        "agento.pluginRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Agento plugin clone that model profiles are applied to and the doctor's model-profile check reads. Empty: the first enabled chat.pluginLocations entry whose .claude-plugin/plugin.json is named agento."
         }
       }
     }
