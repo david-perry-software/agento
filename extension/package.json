@@ -2,7 +2,7 @@
   "name": "agento-dashboard",
   "displayName": "Agento",
   "description": "Dashboard and command launcher for Agento delivery workflows.",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "publisher": "david-perry-software",
   "license": "MIT",

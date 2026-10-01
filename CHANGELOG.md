@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (unreleased)
 
+- **Added.** Model profiles: named sets of `model:` pins for the Agento agents and
+  the commands that run on the built-in agent, defined once in
+  `~/.config/agento/model-profiles.json` and applied to the plugin clone by
+  `agento.mjs models [list | show <name> | apply <name> | clear | init]`,
+  `/agento models`, or the extension's *Agento: Select Model Profile* command
+  (setting `agento.pluginRoot`). Pinned files are marked skip-worktree so the clone
+  stays clean; `models clear` restores them, and updating is clear → `git pull` →
+  apply. `agento.mjs doctor` gains an informational `model-profile` check. See
+  [docs/model-profiles.md](docs/model-profiles.md).
 - **Fixed.** `status: paused` now means only one thing — the user is needed (a
   `(manual)` step or a `blocked:` next-step) — and the Builder keeps
   `status: in-progress` when it stops for session length at a clean boundary
