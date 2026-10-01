@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, errorsFor, frontmatterField, parseProfiles, profilesFile, resolveTargets } from "./model-profiles.mjs";
+import { AGENT_ALIASES, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, renderModel, resolveTargets, setModel } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -131,4 +131,45 @@ test("resolveTargets: prompts.<name> on a custom-agent prompt and unknown prompt
     'prompts.nope: no prompt named "nope" in .github/prompts',
     "prompts.build-feature: runs on Agento builder and inherits its model; set the agent's model instead",
   ]);
+});
+
+const AGENT_DOC = '---\nname: "X"\ndescription: "d"\nargument-hint: "h"\ntools: [read]\n---\n\nBody model: no\n';
+
+test("setModel inserts after argument-hint, replaces in place, and removes byte-exactly", () => {
+  const pinned = setModel(AGENT_DOC, "Strong");
+  assert.equal(pinned, '---\nname: "X"\ndescription: "d"\nargument-hint: "h"\nmodel: "Strong"\ntools: [read]\n---\n\nBody model: no\n');
+  assert.equal(readModel(pinned), 'model: "Strong"');
+  const replaced = setModel(pinned, ["A (copilot)", 'B "q"']);
+  assert.equal(replaced, '---\nname: "X"\ndescription: "d"\nargument-hint: "h"\nmodel: ["A (copilot)", "B \\"q\\""]\ntools: [read]\n---\n\nBody model: no\n');
+  assert.equal(setModel(replaced, null), AGENT_DOC);
+  assert.equal(setModel(AGENT_DOC, null), AGENT_DOC);
+  assert.equal(setModel(pinned, "Strong"), pinned);
+  assert.equal(readModel(AGENT_DOC), null);
+});
+
+test("setModel falls back to description:, then the closing ---", () => {
+  const noHint = '---\ndescription: "a\n  b"\nagent: "agent"\n---\nbody\n';
+  assert.equal(setModel(noHint, "M"), '---\ndescription: "a\n  b"\nmodel: "M"\nagent: "agent"\n---\nbody\n');
+  const bare = "---\nagent: x\n---\n";
+  assert.equal(setModel(bare, "M"), '---\nagent: x\nmodel: "M"\n---\n');
+  assert.equal(setModel("plain\n", null), "plain\n");
+  assert.throws(() => setModel("plain\n", "M"), /frontmatter/);
+});
+
+test("setModel preserves CRLF and collapses block-list or duplicate model keys to one line", () => {
+  const crlf = AGENT_DOC.replace(/\n/g, "\r\n");
+  const pinned = setModel(crlf, "M");
+  assert.equal(pinned, '---\r\nname: "X"\r\ndescription: "d"\r\nargument-hint: "h"\r\nmodel: "M"\r\ntools: [read]\r\n---\r\n\r\nBody model: no\r\n');
+  assert.equal(readModel(pinned), 'model: "M"');
+  assert.equal(setModel(pinned, null), crlf);
+  const block = '---\ndescription: d\nmodel:\n  - A\n  - B\ntools: [x]\nmodel: "C"\n---\n';
+  assert.equal(readModel(block), "model:\n  - A\n  - B");
+  assert.equal(setModel(block, "M"), '---\ndescription: d\nmodel: "M"\ntools: [x]\n---\n');
+  assert.equal(setModel(block, null), "---\ndescription: d\ntools: [x]\n---\n");
+});
+
+test("renderModel serializes strings and lists as JSON-quoted YAML", () => {
+  assert.equal(renderModel(null), null);
+  assert.equal(renderModel("GPT-5 (copilot)"), 'model: "GPT-5 (copilot)"');
+  assert.equal(renderModel(["a", "b"]), 'model: ["a", "b"]');
 });

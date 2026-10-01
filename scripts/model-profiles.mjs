@@ -143,3 +143,59 @@ export function resolveTargets({ profile, agents, prompts }) {
   }
   return { targets, errors };
 }
+
+export function renderModel(value) {
+  if (value === null || value === undefined) return null;
+  return Array.isArray(value) ? `model: [${value.map((v) => JSON.stringify(v)).join(", ")}]` : `model: ${JSON.stringify(value)}`;
+}
+
+// A top-level key's block: its line plus following indented or `- ` continuation lines.
+function blockEnd(lines, start, end) {
+  let i = start + 1;
+  while (i < end && /^([ \t]|-( |\r?$))/.test(lines[i])) i += 1;
+  return i;
+}
+
+function keyBlocks(lines, end, key) {
+  const blocks = [];
+  for (let i = 1; i < end; i += 1) {
+    if (lines[i].startsWith(`${key}:`)) blocks.push([i, blockEnd(lines, i, end)]);
+  }
+  return blocks;
+}
+
+// The current `model:` block (continuation lines joined by "\n", "\r" stripped), or null.
+export function readModel(text) {
+  const fm = frontmatter(text);
+  if (!fm) return null;
+  const [block] = keyBlocks(fm.lines, fm.end, "model");
+  return block ? fm.lines.slice(block[0], block[1]).map((l) => l.replace(/\r$/, "")).join("\n") : null;
+}
+
+// Leaves exactly one `model:` line (none for null): replaced in place, else inserted
+// after `argument-hint:`, else after `description:`, else before the closing `---`.
+// Every other byte is unchanged; the inserted line copies the first line's ending.
+export function setModel(text, value) {
+  const fm = frontmatter(text);
+  const line = renderModel(value);
+  if (!fm) {
+    if (line === null) return text;
+    throw new Error("no leading --- frontmatter block to carry a model: line");
+  }
+  const { lines } = fm;
+  const cr = lines[0].endsWith("\r") ? "\r" : "";
+  const blocks = keyBlocks(lines, fm.end, "model");
+  let at;
+  if (blocks.length) at = blocks[0][0];
+  else {
+    const anchor = keyBlocks(lines, fm.end, "argument-hint")[0] ?? keyBlocks(lines, fm.end, "description")[0];
+    at = anchor ? anchor[1] : fm.end;
+  }
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (i === at && line !== null) out.push(line + cr);
+    if (blocks.some(([s, e]) => i >= s && i < e)) continue;
+    out.push(lines[i]);
+  }
+  return out.join("\n");
+}
