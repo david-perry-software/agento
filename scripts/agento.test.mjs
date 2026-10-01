@@ -2583,3 +2583,104 @@ test("models: the usage header lists the subcommand and keeps the full Options p
   const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
   assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });
+
+const sBits = (plugin) => git(plugin, "ls-files", "-v").split("\n").filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
+const gitQuiet = (plugin, ...args) => spawnSync("git", ["-C", plugin, ...args]).status;
+
+test("models apply pins agents, prompts, and mirrors under skip-worktree; clear restores HEAD", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({
+    mixed: { default: "Cheap", agents: { planner: "Strong", reviewer: ["A (copilot)", "B"] }, prompts: { doctor: "Tiny" } },
+    partial: { agents: { planner: "Strong" } },
+  });
+  const agents = fs.readdirSync(path.join(plugin, ".github", "agents"));
+  const prompts = fs.readdirSync(path.join(plugin, ".github", "prompts"));
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.profile, "mixed");
+  assert.equal(apply.json.active, "mixed");
+  assert.equal(apply.json.changed.length, agents.length + 2 * prompts.length);
+  const read = (rel) => fs.readFileSync(path.join(plugin, rel), "utf8");
+  assert.match(read(".github/agents/delivery-planner.agent.md"), /^argument-hint: .*\nmodel: "Strong"\n/m);
+  assert.match(read(".github/agents/delivery-reviewer.agent.md"), /^model: \["A \(copilot\)", "B"\]$/m);
+  assert.match(read(".github/agents/delivery-builder.agent.md"), /^model: "Cheap"$/m);
+  assert.match(read(".github/prompts/doctor.prompt.md"), /^model: "Tiny"$/m);
+  assert.match(read(".github/prompts/new-feature.prompt.md"), /^model: "Strong"$/m);
+  for (const p of prompts) assert.equal(read(`commands/${p.replace(".prompt.md", ".md")}`), read(`.github/prompts/${p}`), p);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+  assert.equal(sBits(plugin).length, apply.json.changed.length);
+  assert.deepEqual(apply.json.skipWorktree.sort(), sBits(plugin).sort());
+
+  const again = models("apply", "mixed");
+  assert.equal(again.code, 0);
+  assert.deepEqual(again.json.changed, []);
+  assert.equal(models("list").json.active, "mixed");
+
+  // Switching to a profile without a default unpins (and unflags) everything else.
+  const partial = models("apply", "partial");
+  assert.equal(partial.code, 0, JSON.stringify(partial.json));
+  assert.equal(partial.json.active, "partial");
+  assert.deepEqual(sBits(plugin).sort(), [".github/agents/delivery-planner.agent.md", ".github/prompts/new-feature.prompt.md", ".github/prompts/new-issue.prompt.md", "commands/new-feature.md", "commands/new-issue.md"]);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+
+  const clear = models("clear");
+  assert.equal(clear.code, 0);
+  assert.equal(clear.json.profile, null);
+  assert.equal(clear.json.changed.length, 5);
+  assert.equal(clear.json.active, null);
+  assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
+  assert.deepEqual(sBits(plugin), []);
+  assert.deepEqual(models("clear").json.changed, []);
+});
+
+test("models apply refuses targets edited beyond their model line", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap" } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
+  fs.appendFileSync(file, "\nlocal edit\n");
+  const refused = models("apply", "mixed");
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "dirty");
+  assert.deepEqual(refused.json.dirty, [".github/agents/delivery-builder.agent.md"]);
+  // clear still works and exposes the edit instead of hiding it.
+  const clear = models("clear");
+  assert.equal(clear.code, 0);
+  assert.deepEqual(sBits(plugin), []);
+  assert.equal(git(plugin, "status", "--porcelain"), "M .github/agents/delivery-builder.agent.md");
+});
+
+test("models apply on a non-git plugin root rewrites without flags", () => {
+  const { plugin, models, writeProfiles } = modelsFixture({ gitInit: false });
+  writeProfiles({ mixed: { default: "Cheap" } });
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.skipWorktree, null);
+  assert.deepEqual(apply.json.dirty, []);
+  assert.ok(apply.json.changed.length > 0);
+  assert.match(fs.readFileSync(path.join(plugin, ".github", "agents", "delivery-builder.agent.md"), "utf8"), /^model: "Cheap"$/m);
+  assert.equal(models("clear").json.active, null);
+});
+
+test("models apply rejects the shipped template's placeholders and unknown profiles", () => {
+  const { plugin, models } = modelsFixture();
+  assert.equal(models("init").json.created, true);
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 3);
+  assert.equal(apply.json.status, "invalid");
+  assert.ok(apply.json.errors.length >= 1 && apply.json.errors.every((e) => /placeholder/.test(e)), JSON.stringify(apply.json.errors));
+  assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
+  const unknown = models("apply", "nope");
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.json.status, "not-found");
+});
+
+test("models apply reports resolution errors for prompts on custom agents", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ bad: { prompts: { "build-feature": "X", ghost: "Y" } } });
+  const apply = models("apply", "bad");
+  assert.equal(apply.code, 3);
+  assert.equal(apply.json.status, "invalid");
+  assert.ok(apply.json.errors.some((e) => /^profiles\.bad\.prompts\.build-feature: runs on 🔨 Agento Builder/.test(e)), JSON.stringify(apply.json.errors));
+  assert.ok(apply.json.errors.some((e) => /^profiles\.bad\.prompts\.ghost: no prompt named/.test(e)));
+});

@@ -34,7 +34,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, resolveTargets } from "./model-profiles.mjs";
+import { detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, resolveTargets, setModel } from "./model-profiles.mjs";
 import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1678,6 +1678,46 @@ switch (command) {
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
       emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
     }
+
+    // apply | clear
+    let targets = state.layout.files.map((file) => ({ file, value: null }));
+    if (verb === "apply") {
+      if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const resolved = resolveProfile(loaded, name, state.layout);
+      if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      if (state.dirty.length) {
+        emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: line; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
+      }
+      targets = resolved.targets;
+    }
+    const writes = [];
+    for (const { file, value } of targets) {
+      const abs = path.join(pluginRoot, file);
+      const before = fs.readFileSync(abs, "utf8");
+      let after;
+      try {
+        after = setModel(before, value);
+      } catch (error) {
+        emit({ status: "invalid", verb, profile: name ?? null, errors: [`${file}: ${error.message}`], ...modelsReport(pluginRoot, loaded, state) }, 3);
+      }
+      if (after !== before) writes.push({ file, abs, after });
+    }
+    for (const w of writes) fs.writeFileSync(w.abs, w.after);
+    if (state.isGit) {
+      const flagged = new Set(state.skipWorktree);
+      const tracked = targets.filter((t) => state.tracked.has(t.file));
+      const pin = tracked.filter((t) => t.value !== null && !flagged.has(t.file)).map((t) => t.file);
+      const unpin = tracked.filter((t) => t.value === null && flagged.has(t.file)).map((t) => t.file);
+      for (const [flag, files] of [["--skip-worktree", pin], ["--no-skip-worktree", unpin]]) {
+        if (!files.length) continue;
+        try {
+          execFileSync("git", ["-C", pluginRoot, "update-index", flag, "--", ...files], { stdio: ["ignore", "ignore", "pipe"] });
+        } catch (error) {
+          emit({ status: "failed", verb, profile: name ?? null, changed: writes.map((w) => w.file), message: `git update-index ${flag} failed: ${(error?.stderr ?? "").toString().trim() || error.message}; re-run the same command` }, 3);
+        }
+      }
+    }
+    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
     break;
   }
 
