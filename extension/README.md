@@ -68,9 +68,19 @@ runs. VS Code provides no API for reading or cancelling chat in another window, 
 Agento does neither. Expired, malformed, mismatched, rejected, or failed handoffs are
 discarded without submission and reported in the UI and Agento output channel.
 
+**Agento: Select Model Profile** lists the profiles in
+`~/.config/agento/model-profiles.json`, marks the applied one, and applies the chosen
+profile — or *Clear* — to the Agento plugin clone through the bundled CLI
+(`agento.mjs models apply|clear --plugin-root <clone>`). The clone is the
+`agento.pluginRoot` setting, else the first enabled `chat.pluginLocations` entry whose
+`.claude-plugin/plugin.json` is named `agento`. Run *Developer: Reload Window* if the
+model picker does not update; failures go to the Agento output channel.
+
 ## Settings
 
 - `agento.nodePath` selects the Node.js executable used for the bundled CLI.
+- `agento.pluginRoot` names the Agento plugin clone for model profiles and the
+  Session & Doctor `model-profile` check; empty uses `chat.pluginLocations`.
 - `agento.refreshDebounceMs` controls the watcher debounce and cannot be less than
 	3000 milliseconds.
 
