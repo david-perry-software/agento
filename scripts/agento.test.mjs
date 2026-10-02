@@ -2633,6 +2633,34 @@ test("models apply pins agents, prompts, and mirrors under skip-worktree; clear 
   assert.deepEqual(models("clear").json.changed, []);
 });
 
+test("issue #79 autopilot-subagent-model-pins: models apply pins handoffs[].model to the target agent's model; clear removes it", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({
+    mixed: {
+      agents: {
+        planner: "Planner Model (copilot)",
+        builder: "Builder Model (copilot)",
+        reviewer: ["Reviewer Model (copilot)", "Reviewer Fallback (copilot)"],
+        autopilot: "Autopilot Model (copilot)",
+      },
+    },
+  });
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.active, "mixed");
+  const read = (rel) => fs.readFileSync(path.join(plugin, rel), "utf8");
+  // Each handoff item gains a nested model: line carrying the target agent's pin:
+  // planner → builder, builder → reviewer (first entry of its list), reviewer → autopilot.
+  assert.match(read(".github/agents/delivery-planner.agent.md"), /^    model: "Builder Model \(copilot\)"$/m);
+  assert.match(read(".github/agents/delivery-builder.agent.md"), /^    model: "Reviewer Model \(copilot\)"$/m);
+  assert.match(read(".github/agents/delivery-reviewer.agent.md"), /^    model: "Autopilot Model \(copilot\)"$/m);
+  assert.equal(models("list").json.active, "mixed");
+  const clear = models("clear");
+  assert.equal(clear.code, 0);
+  assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
+  assert.deepEqual(sBits(plugin), []);
+});
+
 test("models apply refuses targets edited beyond their model line", () => {
   const { plugin, models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { default: "Cheap" } });
