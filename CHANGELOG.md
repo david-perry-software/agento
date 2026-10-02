@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed.** The extension's Session & Doctor view rendered `Invalid Session &
+  Doctor response: branch must be a non-empty string` in companion-mode planning
+  windows whose companion half was detached, and now shows the companion `Branch`
+  row as `detached` like the session worktree row (`#75`).
+
 ## 0.7.0 (2026-10-02)
 
 - **Added.** Model profiles: named sets of `model:` pins for the Agento agents and

@@ -67,6 +67,28 @@ test("session doctor model preserves complete CLI state and derives status text"
   assert.equal(model.statusBarText, "Agento: build · 2 active");
 });
 
+test('session doctor model renders a detached companion as "detached" (#75 session-doctor-detached-companion)', () => {
+  const model = createSessionDoctorModel(
+    { ...session, companion: { ...session.companion, branch: null, detached: true, ahead: 0, behind: 0 } },
+    doctor,
+    status,
+  );
+
+  assert.equal(model.kind, "ready", model.kind === "error" ? model.message : undefined);
+  if (model.kind !== "ready") {
+    return;
+  }
+  assert.deepEqual(model.companion, {
+    path: "/repo/docs-worktree",
+    branch: "detached",
+    state: "registered, detached, clean",
+    sync: "ahead 0, behind 0",
+  });
+  assert.equal(model.session.branch, "feature/session-doctor-panel");
+  assert.equal(model.checks.length, 3);
+  assert.equal(model.actions.length, 4);
+});
+
 test("session doctor model represents absent optional state explicitly", () => {
   const model = createSessionDoctorModel(
     { ...session, delivery: null, worktree: { ...session.worktree, branch: null, detached: true }, workspace: null, companion: null, warnings: [] },
