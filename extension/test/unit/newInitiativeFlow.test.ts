@@ -146,7 +146,7 @@ test("submits the exact initiative command when the primary target is current", 
   const result = await runNewInitiativeFlow({ kind: "brief", text: "Primary brief" }, deps);
 
   assert.equal(result.kind, "complete");
-  assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento new-initiative Primary brief", mode: "agent" }]]);
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento new-initiative Primary brief" }]]);
   assert.equal(store.values.size, 0);
 });
 

@@ -264,7 +264,7 @@ async function assertNewInitiativeCommand(
   }
 
   assert.deepEqual(targets, [{ kind: "folder", path: fixture }]);
-  assert.deepEqual(chatCalls, [["workbench.action.chat.open", { query: expectedCommand, mode: "agent" }]]);
+  assert.deepEqual(chatCalls, [["workbench.action.chat.open", { query: expectedCommand }]]);
   assert.deepEqual(promptEvents, inputKind === "brief" ? ["quickPick", "editor"] : ["quickPick", `file:${fixture}`]);
 }
 
@@ -433,7 +433,7 @@ export async function run(): Promise<void> {
   await vscode.commands.executeCommand("agento.dispatchAction", sessionAction, undefined, executeCommand);
   assert.deepEqual(submitted.pop(), {
     command: "workbench.action.chat.open",
-    options: { query: sessionAction.command, mode: "agent" },
+    options: { query: sessionAction.command },
   });
 
   const groups = api.deliveries.getChildren();
@@ -453,7 +453,7 @@ export async function run(): Promise<void> {
   await vscode.commands.executeCommand("agento.dispatchAction", deliveryAction, items[0].item.slug, executeCommand);
   assert.deepEqual(submitted.pop(), {
     command: "workbench.action.chat.open",
-    options: { query: deliveryAction.command, mode: "agent" },
+    options: { query: deliveryAction.command },
   });
 
   const routedTargets: string[] = [];
