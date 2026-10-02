@@ -2,11 +2,11 @@
   "profiles": {
     "mixed": {
       "description": "A strong model for planning, review, and initiatives; a cheaper one everywhere else",
-      "default": "<cheaper model name, as shown in the chat model picker>",
+      "default": "<cheaper model: picker name (vendor), e.g. GPT-5 mini (copilot)>",
       "agents": {
-        "planner": "<strong model name>",
-        "reviewer": "<strong model name>",
-        "architect": "<strong model name>"
+        "planner": "<strong model: picker name (vendor)>",
+        "reviewer": "<strong model: picker name (vendor)>",
+        "architect": "<strong model: picker name (vendor)>"
       }
     }
   }

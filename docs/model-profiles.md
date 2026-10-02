@@ -36,9 +36,15 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
 
 - Profile names match `[a-z0-9-]+`. Each profile may carry `description`, `default`,
   `agents`, and `prompts`; any other key is an error.
-- A value is a model name or a non-empty list of model names, written exactly as the
-  chat model picker shows them. Names are passed through verbatim; a name containing
-  `<` or `>` (an unfilled template placeholder) or a control character is rejected.
+- A value is a model name or a non-empty list of model names in the qualified form
+  `<picker name> (<vendor>)`, for example `Claude Opus 4.5 (copilot)` or
+  `DeepSeek V4 Pro (deepseek)`. VS Code resolves a bare picker name only for some
+  Copilot models; a model from another provider (a language-model extension) is
+  silently ignored unless qualified, and VS Code logs
+  `models "<name>" not found. Use format "<name> (<vendor>)"`. The vendor is the
+  part before `/` in the model id (`deepseek/deepseek-v4-pro` → `deepseek`). Names
+  are otherwise passed through verbatim; a name containing `<` or `>` (an unfilled
+  template placeholder) or a control character is rejected.
 - `agents` keys are aliases: `planner`, `builder`, `reviewer`, `autopilot`,
   `mechanic`, `architect`.
 - `prompts` keys are command names (`doctor`, `ship`, …) of commands that run on the

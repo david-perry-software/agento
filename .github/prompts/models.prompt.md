@@ -37,8 +37,9 @@ plugin clone, never the current checkout's delivery state).
    - `show` — the resolved `targets` (agents first, then prompts; `commands/` mirrors
      carry the same value as their prompt) and any `errors`.
    - `init` — `created` and `profilesFile.path`; tell the user to replace every
-     `<…>` placeholder with model names exactly as the chat model picker shows them,
-     then run `/agento models apply <name>`.
+     `<…>` placeholder with a qualified model name, `<picker name> (<vendor>)`
+     (for example `Claude Opus 4.5 (copilot)`; a non-Copilot model is ignored by
+     VS Code without its vendor), then run `/agento models apply <name>`.
    - `apply`, `clear` — the number and list of `changed` files, `active`, and the
      `skipWorktree` count; quote `hint` verbatim. Tell the user to run
      *Developer: Reload Window* if the model picker does not reflect the change.
