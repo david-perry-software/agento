@@ -57,3 +57,24 @@ export function resolveChatMode(command: string, sources: ChatModeSources): Chat
   if (agent === null || agent === "agent") return { mode: "agent" };
   return { mode: agent };
 }
+
+export interface CommandFileSources {
+  pluginRoot: string | null;
+  exists: (filePath: string) => boolean;
+}
+
+export type CommandFileResolution =
+  | { path: string }
+  | { path: null; reason: string };
+
+// The `commands/<name>.md` file a dispatch should attach to the chat request, or
+// a null-path reason when the command is not canonical, the plugin root is
+// unresolved, or the command file does not exist.
+export function resolveCommandFile(command: string, sources: CommandFileSources): CommandFileResolution {
+  const name = commandName(command);
+  if (name === null) return { path: null, reason: "not a canonical /agento command" };
+  if (sources.pluginRoot === null) return { path: null, reason: "no plugin root" };
+  const filePath = path.join(sources.pluginRoot, "commands", `${name}.md`);
+  if (!sources.exists(filePath)) return { path: null, reason: `missing command file ${filePath}` };
+  return { path: filePath };
+}

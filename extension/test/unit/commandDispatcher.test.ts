@@ -34,6 +34,7 @@ function dependencies(overrides: Partial<CommandDispatcherDependencies> = {}): C
     pendingStore: new MemoryStore(),
     openTarget: async () => undefined,
     chatMode: () => ({ mode: null, reason: "unused" }),
+    commandFile: () => ({ file: null, reason: "unused" }),
     ...overrides,
   };
 }
@@ -49,7 +50,10 @@ test("submits in-window commands without a mode when none resolves, logging the 
   }));
   assert.deepEqual(route, { kind: "submit", command: action.command });
   assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command }]]);
-  assert.deepEqual(logs, ["dispatch: no mode for /agento delivery-status: no plugin root"]);
+  assert.deepEqual(logs, [
+    "dispatch: no mode for /agento delivery-status: no plugin root",
+    "dispatch: no command file for delivery-status: unused",
+  ]);
 });
 
 test("dashboard dispatch submits the command's agent as chat.open mode (issue #73 / dashboard-dispatch-agent-mode)", async () => {
@@ -69,6 +73,7 @@ test("dashboard dispatch submits the command's agent as chat.open mode (issue #7
     pendingStore: new MemoryStore(),
     openTarget: async () => undefined,
     chatMode,
+    commandFile: () => ({ file: null, reason: "unused" }),
     output: { appendLine() {} },
   }, true);
 
@@ -80,6 +85,7 @@ test("dashboard dispatch submits the command's agent as chat.open mode (issue #7
     reportError: async () => undefined,
     output: { appendLine() {} },
     chatMode,
+    commandFile: () => ({ file: null, reason: "unused" }),
   });
 
   assert.deepEqual(calls, [
@@ -120,6 +126,7 @@ test("completes cross-window dispatch while the focus notification remains pendi
     pendingStore: store,
     openTarget: async () => undefined,
     chatMode: () => ({ mode: null, reason: "unused" }),
+    commandFile: () => ({ file: null, reason: "unused" }),
     output: { appendLine() {} },
   }, false);
   const resolvedBeforeNotification = await Promise.race([
@@ -146,12 +153,14 @@ test("consumes one pending command before submission and surfaces discarded reco
     reportError: async (message) => { errors.push(message); },
     output: { appendLine: (line) => { logs.push(line); } },
     chatMode: () => ({ mode: null, reason: "no plugin root" }),
+    commandFile: () => ({ file: null, reason: "no plugin root" }),
   });
   assert.equal(store.values.size, 0);
   assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento continue widget" }]]);
   assert.deepEqual(logs, [
     "Discarded pending Agento command for /repo/stale: expired.",
     "dispatch: no mode for /agento continue widget: no plugin root",
+    "dispatch: no command file for continue: no plugin root",
   ]);
   assert.match(errors[0]!, /expired/);
 });
@@ -194,6 +203,7 @@ test("deletes pending state before surfacing a Chat submission failure", async (
     reportError: async (message) => { messages.push(message); },
     output: { appendLine() {} },
     chatMode: () => ({ mode: null, reason: "unused" }),
+    commandFile: () => ({ file: null, reason: "unused" }),
   });
   assert.equal(store.values.size, 0);
   assert.match(messages[0]!, /chat failed/);
