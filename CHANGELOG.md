@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed.** Dashboard dispatch now opens Copilot Chat in the command's agent:
+  the Deliveries, Session & Doctor, and New Plan paths pass the command's
+  `agent:` frontmatter (from `commands/<name>.md`) as the `mode` on
+  `workbench.action.chat.open`, so `/agento new-feature` lands in the Planner
+  and the agent's `model:` pin applies. Built-in-agent commands pass `"agent"`;
+  when no plugin clone resolves, dispatch keeps the current agent and logs a
+  `dispatch: no mode` line. (#73)
+
 ## 0.7.0 (2026-10-02)
 
 - **Added.** Model profiles: named sets of `model:` pins for the Agento agents and

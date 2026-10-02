@@ -62,6 +62,13 @@ A `prompts` key with no matching `.github/prompts/<name>.prompt.md` is an error.
 Each prompt's plugin-mode mirror `commands/<name>.md` receives the same bytes as the
 prompt.
 
+A `model:` line in a `commands/<name>.md` mirror is a no-op for plugin commands:
+the dashboard dispatches a command by switching chat to the command's `agent:`
+and the agent's own `model:` then applies. A `prompts.<name>` pin takes effect
+only where `.github/prompts/<name>.prompt.md` is loaded (workspace mode). The
+mirrors keep receiving the same bytes so `models apply` and the byte-equality test
+are unchanged.
+
 ## Applying and clearing
 
 ```text
