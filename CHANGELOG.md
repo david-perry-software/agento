@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.7.0 (2026-10-02)
 
 - **Added.** Model profiles: named sets of `model:` pins for the Agento agents and
   the commands that run on the built-in agent, defined once in
