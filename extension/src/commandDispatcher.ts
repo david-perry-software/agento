@@ -11,6 +11,10 @@ import {
 
 export type CommandExecutor = (command: string, ...args: unknown[]) => Thenable<unknown>;
 
+export type ChatModeResolution = { mode: string } | { mode: null; reason: string };
+
+export type ChatModeResolver = (command: string) => ChatModeResolution;
+
 export interface CommandDispatcherDependencies {
   currentWindow: () => CurrentWindow;
   loadNext: (slug: string) => Promise<unknown>;
@@ -20,13 +24,14 @@ export interface CommandDispatcherDependencies {
   output: Pick<vscode.OutputChannel, "appendLine">;
   pendingStore: PendingDispatchStore;
   openTarget: (target: Extract<DispatchRoute, { kind: "open" }>["target"]) => Thenable<unknown>;
+  chatMode: ChatModeResolver;
 }
 
 export async function dispatchCommandToTarget(
   command: string,
   target: Extract<DispatchRoute, { kind: "open" }>["target"],
   reason: string,
-  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget">,
+  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget" | "chatMode">,
   isCurrentTarget: boolean,
 ): Promise<void> {
   if (isCurrentTarget) {
@@ -75,7 +80,7 @@ export async function dispatchCommandAction(
 
 export async function consumePendingCommands(
   targets: string[],
-  dependencies: Pick<CommandDispatcherDependencies, "pendingStore" | "executeCommand" | "reportError" | "output">,
+  dependencies: Pick<CommandDispatcherDependencies, "pendingStore" | "executeCommand" | "reportError" | "output" | "chatMode">,
 ): Promise<void> {
   const results = await Promise.all([...new Set(targets)].map(async (target) => ({
     target,

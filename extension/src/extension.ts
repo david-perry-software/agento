@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
-import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type CommandExecutor } from "./commandDispatcher.js";
+import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor } from "./commandDispatcher.js";
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
@@ -104,6 +104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     exists: (filePath) => fs.existsSync(filePath),
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
   });
+  const chatMode: ChatModeResolver = () => ({ mode: null, reason: "not wired" });
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {
@@ -265,6 +266,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       output,
       pendingStore,
       openTarget,
+      chatMode,
     },
     executeCommand,
   );
@@ -287,6 +289,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
         pendingStore,
         openTarget,
+        chatMode,
       },
       currentTargetPaths().has(target.path),
     ),
@@ -366,6 +369,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         reportInfo: (message, actionLabel) => vscode.window.showInformationMessage(message, actionLabel),
         pendingStore,
         openTarget,
+        chatMode,
       },
       currentTargetPaths().has(target.path),
     ),
@@ -507,6 +511,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       executeCommand: vscode.commands.executeCommand,
       reportError: (message) => vscode.window.showErrorMessage(message),
       output,
+      chatMode,
     },
   );
   const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {

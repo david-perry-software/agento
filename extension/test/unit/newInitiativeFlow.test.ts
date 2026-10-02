@@ -140,6 +140,7 @@ test("submits the exact initiative command when the primary target is current", 
       reportInfo: async () => undefined,
       pendingStore: store,
       openTarget: async () => undefined,
+      chatMode: () => ({ mode: null, reason: "unused" }),
     }, true),
   });
 
@@ -159,6 +160,7 @@ test("persists the exact initiative command before opening a cross-window primar
       reportInfo: async () => undefined,
       pendingStore: store,
       openTarget: async (openedTarget) => { opened.push(openedTarget); },
+      chatMode: () => ({ mode: null, reason: "unused" }),
     }, false),
   });
 

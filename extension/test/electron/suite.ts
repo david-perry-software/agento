@@ -252,6 +252,7 @@ async function assertNewInitiativeCommand(
         reportInfo: async () => undefined,
         pendingStore: { get: () => undefined, update: async () => undefined },
         openTarget: async () => undefined,
+        chatMode: () => ({ mode: null, reason: "unused" }),
       }, true);
     },
   }));
@@ -485,6 +486,7 @@ export async function run(): Promise<void> {
         update: async () => undefined,
       },
       openTarget: async (opened) => { routedTargets.push(`${opened.kind}:${opened.path}`); },
+      chatMode: () => ({ mode: null, reason: "unused" }),
     },
   );
   assert.equal(crossWindowRoute.kind, "open");
@@ -744,6 +746,7 @@ export async function run(): Promise<void> {
         output: api.output,
         pendingStore: { get: () => undefined, update: async () => undefined },
         openTarget: async (target) => { openedTargets.push(target.path); },
+        chatMode: () => ({ mode: null, reason: "unused" }),
       },
     );
     assert.equal(route.kind, "open");
