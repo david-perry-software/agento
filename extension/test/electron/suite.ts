@@ -253,6 +253,7 @@ async function assertNewInitiativeCommand(
         pendingStore: { get: () => undefined, update: async () => undefined },
         openTarget: async () => undefined,
         chatMode: () => ({ mode: null, reason: "unused" }),
+        output: { appendLine() {} },
       }, true);
     },
   }));

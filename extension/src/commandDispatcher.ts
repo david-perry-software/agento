@@ -27,15 +27,29 @@ export interface CommandDispatcherDependencies {
   chatMode: ChatModeResolver;
 }
 
+function chatOpenOptions(
+  command: string,
+  dependencies: { executeCommand: CommandExecutor; chatMode: ChatModeResolver; output: Pick<vscode.OutputChannel, "appendLine"> },
+): Thenable<unknown> {
+  const resolution = dependencies.chatMode(command);
+  const options: { query: string; mode?: string } = { query: command };
+  if (resolution.mode === null) {
+    dependencies.output.appendLine(`dispatch: no mode for ${command}: ${resolution.reason}`);
+  } else {
+    options.mode = resolution.mode;
+  }
+  return dependencies.executeCommand("workbench.action.chat.open", options);
+}
+
 export async function dispatchCommandToTarget(
   command: string,
   target: Extract<DispatchRoute, { kind: "open" }>["target"],
   reason: string,
-  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget" | "chatMode">,
+  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget" | "chatMode" | "output">,
   isCurrentTarget: boolean,
 ): Promise<void> {
   if (isCurrentTarget) {
-    await dependencies.executeCommand("workbench.action.chat.open", { query: command });
+    await chatOpenOptions(command, dependencies);
     return;
   }
   await savePendingDispatch(dependencies.pendingStore, { target: target.path, command, createdAt: Date.now() });
@@ -68,7 +82,7 @@ export async function dispatchCommandAction(
       return route;
     }
 
-    await executeCommand("workbench.action.chat.open", { query: route.command });
+    await chatOpenOptions(route.command, { executeCommand, chatMode: dependencies.chatMode, output: dependencies.output });
     return route;
   } catch (error) {
     const message = `Unable to dispatch Agento command: ${error instanceof Error ? error.message : String(error)}`;
@@ -103,7 +117,7 @@ export async function consumePendingCommands(
   const result = ready[0]!.result;
   if (result.kind === "ready") {
     try {
-      await dependencies.executeCommand("workbench.action.chat.open", { query: result.command });
+      await chatOpenOptions(result.command, dependencies);
     } catch (error) {
       const message = `Unable to submit pending Agento command: ${error instanceof Error ? error.message : String(error)}`;
       dependencies.output.appendLine(message);
