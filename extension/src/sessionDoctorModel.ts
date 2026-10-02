@@ -116,7 +116,7 @@ function parseCompanion(session: UnknownRecord): CompanionSummary | null {
   }
   return {
     path: requiredString(companion, "path"),
-    branch: requiredString(companion, "branch"),
+    branch: nullableString(companion, "branch") ?? "detached",
     state: [
       requiredBoolean(companion, "registered") ? "registered" : "unregistered",
       requiredBoolean(companion, "detached") ? "detached" : "attached",

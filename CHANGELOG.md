@@ -9,6 +9,10 @@
   and the agent's `model:` pin applies. Built-in-agent commands pass `"agent"`;
   when no plugin clone resolves, dispatch keeps the current agent and logs a
   `dispatch: no mode` line. (#73)
+- **Fixed.** The extension's Session & Doctor view rendered `Invalid Session &
+  Doctor response: branch must be a non-empty string` in companion-mode planning
+  windows whose companion half was detached, and now shows the companion `Branch`
+  row as `detached` like the session worktree row (`#75`).
 
 ## 0.7.0 (2026-10-02)
 
