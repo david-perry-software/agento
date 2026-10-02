@@ -73,12 +73,19 @@ The extension does not maintain a parallel workflow state machine. Delivery and
 session actions come from the CLI's `allowed[]` and `elsewhere[]` records, and a
 delivery selection is revalidated with `agento.mjs next <slug>` before dispatch.
 
-Current-window actions open Copilot Chat in agent mode with the exact canonical
-`/agento <name> [args]` query. Cross-window actions save `/agento continue <slug>`
-for the CLI-selected folder or `.code-workspace`, then open or focus that target.
-The New Plan action (`agento.newPlan`) collects a feature or issue description and
-starts a planning session; `agento.planInitiativeMember` uses the selected ready
-initiative member.
+Current-window actions open Copilot Chat **in the command's agent** with the exact
+canonical `/agento <name> [args]` query: the `mode` passed to
+`workbench.action.chat.open` is the `agent:` frontmatter of the plugin command
+file `commands/<name>.md` (`"agent"` for built-in-agent commands), so the agent's
+`model:` pin applies. When no plugin clone can be resolved — set
+`agento.pluginRoot`, or register the clone in `chat.pluginLocations` — the
+dispatch keeps the currently selected agent and writes one
+`dispatch: no mode for <command>: <reason>` line to the Agento output channel.
+Cross-window actions save `/agento continue <slug>` for the CLI-selected folder
+or `.code-workspace`, then open or focus that target; the pending command is
+consumed with the same agent-mode dispatch. The New Plan action
+(`agento.newPlan`) collects a feature or issue description and starts a planning
+session; `agento.planInitiativeMember` uses the selected ready initiative member.
 
 ## Companion workspaces
 

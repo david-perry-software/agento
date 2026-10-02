@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixed.** Dashboard dispatch now opens Copilot Chat in the command's agent:
+  the Deliveries, Session & Doctor, and New Plan paths pass the command's
+  `agent:` frontmatter (from `commands/<name>.md`) as the `mode` on
+  `workbench.action.chat.open`, so `/agento new-feature` lands in the Planner
+  and the agent's `model:` pin applies. Built-in-agent commands pass `"agent"`;
+  when no plugin clone resolves, dispatch keeps the current agent and logs a
+  `dispatch: no mode` line. (#73)
 - **Fixed.** The extension's Session & Doctor view rendered `Invalid Session &
   Doctor response: branch must be a non-empty string` in companion-mode planning
   windows whose companion half was detached, and now shows the companion `Branch`

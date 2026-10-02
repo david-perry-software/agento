@@ -33,18 +33,60 @@ function dependencies(overrides: Partial<CommandDispatcherDependencies> = {}): C
     output: { appendLine() {} },
     pendingStore: new MemoryStore(),
     openTarget: async () => undefined,
+    chatMode: () => ({ mode: null, reason: "unused" }),
     ...overrides,
   };
 }
 
-test("submits in-window commands to Chat without forcing a mode", async () => {
+test("submits in-window commands without a mode when none resolves, logging the reason", async () => {
   const calls: unknown[][] = [];
+  const logs: string[] = [];
   const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
   const route = await dispatchCommandAction(action, undefined, dependencies({
     executeCommand: async (...args) => { calls.push(args); },
+    chatMode: () => ({ mode: null, reason: "no plugin root" }),
+    output: { appendLine: (line) => { logs.push(line); } },
   }));
   assert.deepEqual(route, { kind: "submit", command: action.command });
   assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command }]]);
+  assert.deepEqual(logs, ["dispatch: no mode for /agento delivery-status: no plugin root"]);
+});
+
+test("dashboard dispatch submits the command's agent as chat.open mode (issue #73 / dashboard-dispatch-agent-mode)", async () => {
+  const calls: unknown[][] = [];
+  const executeCommand = async (...args: unknown[]) => { calls.push(args); };
+  const chatMode = (command: string) => command === "/agento delivery-status"
+    ? { mode: "agent" }
+    : { mode: "📋 Agento Planner" };
+
+  const action: CommandAction = { command: "/agento new-feature widget", window: "here", reason: null };
+  await dispatchCommandAction(action, undefined, dependencies({ executeCommand, chatMode }));
+
+  const target = { kind: "folder" as const, path: "/repo" };
+  await dispatchCommandToTarget("/agento delivery-status", target, "review there", {
+    executeCommand,
+    reportInfo: async () => undefined,
+    pendingStore: new MemoryStore(),
+    openTarget: async () => undefined,
+    chatMode,
+    output: { appendLine() {} },
+  }, true);
+
+  const store = new MemoryStore();
+  store.values.set(pendingDispatchKey("/repo"), { target: "/repo", command: "/agento new-feature widget", createdAt: Date.now() });
+  await consumePendingCommands(["/repo"], {
+    pendingStore: store,
+    executeCommand,
+    reportError: async () => undefined,
+    output: { appendLine() {} },
+    chatMode,
+  });
+
+  assert.deepEqual(calls, [
+    ["workbench.action.chat.open", { query: "/agento new-feature widget", mode: "📋 Agento Planner" }],
+    ["workbench.action.chat.open", { query: "/agento delivery-status", mode: "agent" }],
+    ["workbench.action.chat.open", { query: "/agento new-feature widget", mode: "📋 Agento Planner" }],
+  ]);
 });
 
 test("persists cross-window commands before opening and offers to refocus the CLI target", async () => {
@@ -77,6 +119,8 @@ test("completes cross-window dispatch while the focus notification remains pendi
     },
     pendingStore: store,
     openTarget: async () => undefined,
+    chatMode: () => ({ mode: null, reason: "unused" }),
+    output: { appendLine() {} },
   }, false);
   const resolvedBeforeNotification = await Promise.race([
     completed.then(() => true),
@@ -95,14 +139,20 @@ test("consumes one pending command before submission and surfaces discarded reco
   store.values.set(pendingDispatchKey("/repo/stale"), { target: "/repo/stale", command: "/agento continue old", createdAt: 0 });
   const calls: unknown[][] = [];
   const errors: string[] = [];
+  const logs: string[] = [];
   await consumePendingCommands([target, "/repo/stale"], {
     pendingStore: store,
     executeCommand: async (...args) => { calls.push(args); },
     reportError: async (message) => { errors.push(message); },
-    output: { appendLine() {} },
+    output: { appendLine: (line) => { logs.push(line); } },
+    chatMode: () => ({ mode: null, reason: "no plugin root" }),
   });
   assert.equal(store.values.size, 0);
   assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento continue widget" }]]);
+  assert.deepEqual(logs, [
+    "Discarded pending Agento command for /repo/stale: expired.",
+    "dispatch: no mode for /agento continue widget: no plugin root",
+  ]);
   assert.match(errors[0]!, /expired/);
 });
 
@@ -143,6 +193,7 @@ test("deletes pending state before surfacing a Chat submission failure", async (
     executeCommand: async () => { throw new Error("chat failed"); },
     reportError: async (message) => { messages.push(message); },
     output: { appendLine() {} },
+    chatMode: () => ({ mode: null, reason: "unused" }),
   });
   assert.equal(store.values.size, 0);
   assert.match(messages[0]!, /chat failed/);
