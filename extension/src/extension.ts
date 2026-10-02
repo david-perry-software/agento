@@ -5,8 +5,8 @@ import * as vscode from "vscode";
 
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
-import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor } from "./commandDispatcher.js";
-import { resolveChatMode } from "./commandAgent.js";
+import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor, type CommandFileResolver } from "./commandDispatcher.js";
+import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
@@ -27,6 +27,7 @@ import {
 import {
   createInitiativePlanRequest,
   createNewPlanRequest,
+  NEW_PLAN_FLOW_DEFAULTS,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
   type NewPlanFlowOptions,
@@ -109,6 +110,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     pluginRoot: pluginRoot(),
     readFile: (filePath) => fs.readFileSync(filePath, "utf8"),
   });
+  const commandFile: CommandFileResolver = (command) => {
+    const resolution = resolveCommandFile(command, {
+      pluginRoot: pluginRoot(),
+      exists: (filePath) => fs.existsSync(filePath),
+    });
+    if (resolution.path === null) return { file: null, reason: resolution.reason };
+    return { file: vscode.Uri.file(resolution.path) };
+  };
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {
@@ -271,6 +280,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       pendingStore,
       openTarget,
       chatMode,
+      commandFile,
     },
     executeCommand,
   );
@@ -294,6 +304,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         pendingStore,
         openTarget,
         chatMode,
+        commandFile,
         output,
       },
       currentTargetPaths().has(target.path),
@@ -308,7 +319,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const startNewPlan = async (
     request: NewPlanRequest,
     dependencies?: NewPlanFlowDependencies,
-    options: NewPlanFlowOptions = { pollIntervalMs: 1000, timeoutMs: 120000 },
+    options: NewPlanFlowOptions = NEW_PLAN_FLOW_DEFAULTS,
   ): Promise<NewPlanFlowResult> => {
     if (dependencies) return runNewPlanFlow(request, dependencies, options);
     return await vscode.window.withProgress(
@@ -375,6 +386,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         pendingStore,
         openTarget,
         chatMode,
+        commandFile,
         output,
       },
       currentTargetPaths().has(target.path),
@@ -518,6 +530,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       reportError: (message) => vscode.window.showErrorMessage(message),
       output,
       chatMode,
+      commandFile,
     },
   );
   const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {

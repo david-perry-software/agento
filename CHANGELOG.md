@@ -13,6 +13,12 @@
   Doctor response: branch must be a non-empty string` in companion-mode planning
   windows whose companion half was detached, and now shows the companion `Branch`
   row as `detached` like the session worktree row (`#75`).
+- **Fixed.** The New Plan play button in an unpromoted planning window now submits
+  the `/agento new-feature …` / `/agento new-issue …` command in the current window
+  instead of starting a new session, every dispatched `/agento` command attaches
+  its `commands/<name>.md` file (logging a `dispatch: no command file` line when
+  it cannot), and the New Plan handoff waits up to 300 s instead of timing out
+  about 2 s before a normal ~2 min start-session finishes. (#77)
 
 ## 0.7.0 (2026-10-02)
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { commandName, readCommandAgent, resolveChatMode } from "../../src/commandAgent.js";
+import { commandName, readCommandAgent, resolveChatMode, resolveCommandFile } from "../../src/commandAgent.js";
 
 test("commandName extracts the canonical command name", () => {
   assert.equal(commandName("/agento new-feature widget"), "new-feature");
@@ -72,4 +72,35 @@ test("resolveChatMode reports a non-canonical command", () => {
     pluginRoot: "/plugin",
     readFile: () => { throw new Error("unused"); },
   }), { mode: null, reason: "not a canonical /agento command" });
+});
+
+test("resolveCommandFile resolves the command file path", () => {
+  assert.deepEqual(resolveCommandFile("/agento new-feature widget", {
+    pluginRoot: "/plugin",
+    exists: (filePath) => {
+      assert.equal(filePath, path.join("/plugin", "commands", "new-feature.md"));
+      return true;
+    },
+  }), { path: path.join("/plugin", "commands", "new-feature.md") });
+});
+
+test("resolveCommandFile reports a non-canonical command", () => {
+  assert.deepEqual(resolveCommandFile("not a command", {
+    pluginRoot: "/plugin",
+    exists: () => { throw new Error("unused"); },
+  }), { path: null, reason: "not a canonical /agento command" });
+});
+
+test("resolveCommandFile reports a missing plugin root", () => {
+  assert.deepEqual(resolveCommandFile("/agento new-feature widget", {
+    pluginRoot: null,
+    exists: () => { throw new Error("unused"); },
+  }), { path: null, reason: "no plugin root" });
+});
+
+test("resolveCommandFile reports a missing command file", () => {
+  assert.deepEqual(resolveCommandFile("/agento new-feature widget", {
+    pluginRoot: "/plugin",
+    exists: () => false,
+  }), { path: null, reason: "missing command file /plugin/commands/new-feature.md" });
 });

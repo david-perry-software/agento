@@ -77,15 +77,24 @@ Current-window actions open Copilot Chat **in the command's agent** with the exa
 canonical `/agento <name> [args]` query: the `mode` passed to
 `workbench.action.chat.open` is the `agent:` frontmatter of the plugin command
 file `commands/<name>.md` (`"agent"` for built-in-agent commands), so the agent's
-`model:` pin applies. When no plugin clone can be resolved — set
+`model:` pin applies. Every dispatch also attaches that command file so the agent
+can read it directly. When no plugin clone can be resolved — set
 `agento.pluginRoot`, or register the clone in `chat.pluginLocations` — the
 dispatch keeps the currently selected agent and writes one
-`dispatch: no mode for <command>: <reason>` line to the Agento output channel.
+`dispatch: no mode for <command>: <reason>` line to the Agento output channel; a
+missing or unreadable command file likewise omits the attachment and writes
+`dispatch: no command file for <name>: <reason>`.
 Cross-window actions save `/agento continue <slug>` for the CLI-selected folder
 or `.code-workspace`, then open or focus that target; the pending command is
 consumed with the same agent-mode dispatch. The New Plan action
-(`agento.newPlan`) collects a feature or issue description and starts a planning
-session; `agento.planInitiativeMember` uses the selected ready initiative member.
+(`agento.newPlan`) collects a feature or issue description. From an unpromoted
+planning window (Session & Doctor reports `role: plan` with a detached worktree)
+it submits `/agento new-feature …` or `/agento new-issue …` in that same window —
+no new session is started. Otherwise it starts a planning session in the primary
+checkout and waits up to 300 s (polling every second) for the new planning
+worktree, with the Retry / Focus target recovery prompt if it times out.
+`agento.planInitiativeMember` uses the selected ready initiative member and takes
+the same in-window path from an unpromoted planning window.
 
 ## Companion workspaces
 

@@ -22,6 +22,14 @@ export interface NewPlanFlowOptions {
   timeoutMs: number;
 }
 
+// Production defaults for the New Plan handoff poll. Hoisted out of `startNewPlan`
+// (extension.ts) so the value is unit-testable. A normal start-session takes about
+// 2 minutes, so the poll window must comfortably exceed that (issue #77).
+export const NEW_PLAN_FLOW_DEFAULTS: NewPlanFlowOptions = {
+  pollIntervalMs: 1000,
+  timeoutMs: 300000,
+};
+
 export type NewPlanFlowResult =
   | { kind: "complete"; command: string; target: NewPlanTarget }
   | { kind: "timeout" | "cancelled" | "ambiguous" | "failed"; command: string; reason: string };
@@ -38,6 +46,8 @@ interface Session {
   worktrees: Worktree[];
   companion: Record<string, unknown> | null;
   workspace: Record<string, unknown> | null;
+  role: string | null;
+  worktree: { path: string; detached: boolean } | null;
 }
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
@@ -72,6 +82,21 @@ function nullableRecord(record: Record<string, unknown>, key: string): Record<st
   return value;
 }
 
+function nullableString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") throw new Error(`session ${key} is invalid`);
+  return value;
+}
+
+function nullableSessionWorktree(value: unknown): { path: string; detached: boolean } | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || typeof value.path !== "string" || typeof value.detached !== "boolean") {
+    throw new Error("session worktree is invalid");
+  }
+  return { path: value.path, detached: value.detached };
+}
+
 function parseSession(value: unknown): Session {
   if (!isRecord(value) || value.status !== "ok" || !Array.isArray(value.worktrees)) {
     throw new Error("session response is invalid");
@@ -80,6 +105,8 @@ function parseSession(value: unknown): Session {
     worktrees: value.worktrees.map(parseWorktree),
     companion: nullableRecord(value, "companion"),
     workspace: nullableRecord(value, "workspace"),
+    role: nullableString(value, "role"),
+    worktree: nullableSessionWorktree(value.worktree),
   };
 }
 
@@ -172,6 +199,11 @@ export async function runNewPlanFlow(
 ): Promise<NewPlanFlowResult> {
   try {
     const before = parseSession(await dependencies.readSession());
+    if (before.role === "plan" && before.worktree?.detached === true) {
+      const target: NewPlanTarget = { kind: "folder", path: before.worktree.path };
+      await dependencies.submitCommand(request.command, target);
+      return { kind: "complete", command: request.command, target };
+    }
     const primary = primaryTarget(before);
     const existingPaths = new Set(productWorktrees(before).map((worktree) => worktree.path));
     await dependencies.submitCommand("/agento start-session", primary);
