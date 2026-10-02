@@ -19,6 +19,7 @@ values are the basenames of `.github/prompts/*.prompt.md`:
 - `/agento finish-freehand`
 - `/agento fix-copilot`
 - `/agento install-skills`
+- `/agento models`
 - `/agento new-feature`
 - `/agento new-initiative`
 - `/agento new-issue`

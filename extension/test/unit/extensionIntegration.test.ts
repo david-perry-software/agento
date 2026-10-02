@@ -25,6 +25,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.newInitiative"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.planInitiativeMember"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.showActions"));
+  assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.selectModelProfile"));
   assert.ok(!manifest.contributes.commands.some((command) => /\.(?:build|review|ship|ap)$/.test(command.command)));
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.refresh"),
@@ -62,7 +63,9 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /createTreeView\("agento\.initiatives", \{ treeDataProvider: initiatives \}\)/);
   assert.match(source, /createTreeView\("agento\.sessionDoctor", \{ treeDataProvider: sessionDoctor \}\)/);
   assert.match(source, /client\.run\(\["session", "--pr"\]/);
-  assert.match(source, /client\.run\(\["doctor"\]/);
+  assert.match(source, /client\.run\(root \? \["doctor", "--plugin-root", root\] : \["doctor"\]/);
+  assert.match(source, /registerCommand\("agento\.selectModelProfile"/);
+  assert.match(source, /getConfiguration\("chat"\)\.get<Record<string, unknown>>\("pluginLocations"\)/);
   assert.match(source, /client\.run\(\["status", "--pr"\]/);
   assert.match(source, /client\.run\(\["initiative"\]/);
   assert.match(source, /client\.run\(\["initiative", slug\]/);

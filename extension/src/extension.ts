@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 
@@ -12,6 +14,7 @@ import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
+import { missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
 import {
   primaryInitiativeTarget,
   runNewInitiativeFlow,
@@ -94,6 +97,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const latestInitiativeRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
+  const pluginRoot = (): string | null => resolvePluginRoot({
+    configured: vscode.workspace.getConfiguration("agento").get<string>("pluginRoot", ""),
+    pluginLocations: vscode.workspace.getConfiguration("chat").get<Record<string, unknown>>("pluginLocations"),
+    homedir: os.homedir(),
+    exists: (filePath) => fs.existsSync(filePath),
+    readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
+  });
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {
@@ -149,9 +159,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     }
     void latestDeliveryRefresh.run<{ deliveries: DeliveryTreeSnapshot; sessionDoctor: ReturnType<typeof createSessionDoctorModel> }>(
       async () => {
+        const root = pluginRoot();
         const [sessionResult, doctorResult, statusResult] = await Promise.all([
           client.run(["session", "--pr"], folder.uri.fsPath),
-          client.run(["doctor"], folder.uri.fsPath),
+          client.run(root ? ["doctor", "--plugin-root", root] : ["doctor"], folder.uri.fsPath),
           client.run(["status", "--pr"], folder.uri.fsPath),
         ]);
         return {
@@ -429,6 +440,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     },
   );
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
+  const selectModelProfileCommand = vscode.commands.registerCommand("agento.selectModelProfile", async () => {
+    const reportError = async (message: string) => {
+      output.appendLine(`models: ${message}`);
+      await vscode.window.showErrorMessage(message);
+    };
+    const root = pluginRoot();
+    if (!root) {
+      await reportError(missingPluginRootMessage(vscode.workspace.getConfiguration("agento").get<string>("pluginRoot", ""), os.homedir()));
+      return;
+    }
+    try {
+      const list = await client.run(["models", "list", "--plugin-root", root], root);
+      if (list.code !== 0) {
+        await reportError(summarizeModelsResult(list.json).message);
+        return;
+      }
+      const profilesFile = (list.json as { profilesFile?: { path?: unknown } }).profilesFile?.path;
+      const picked = await vscode.window.showQuickPick(toQuickPickItems(list.json), {
+        title: "Agento: Select Model Profile",
+        placeHolder: `Profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}, applied to ${root}`,
+      });
+      if (!picked) return;
+      const result = await client.run(selectionToArgs(picked.selection, root), root);
+      const summary = summarizeModelsResult(result.json);
+      if (summary.ok) {
+        void vscode.window.showInformationMessage(summary.message);
+        scheduler.refreshNow("model profile");
+      } else {
+        await reportError(summary.message);
+      }
+      return result.json;
+    } catch (error) {
+      await reportError(`Unable to select a model profile: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
     const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
       ? { slug: sessionDoctor.current.session.deliverySlug ?? undefined, actions: sessionDoctor.current.actions }
@@ -485,6 +531,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     newInitiativeCommand,
     planInitiativeMemberCommand,
     dispatchActionCommand,
+    selectModelProfileCommand,
     showActionsCommand,
     deliveriesView,
     initiativesView,

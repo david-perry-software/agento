@@ -597,3 +597,15 @@ test("plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#
     assert.ok(fs.statSync(script).isFile() && fs.statSync(script).mode & 0o111, `${script} is not an executable file`);
   }
 });
+
+test("committed agents, prompts, and command mirrors carry no model: line", () => {
+  const gitOut = (...args) => execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  const files = gitOut("ls-tree", "-r", "--name-only", "HEAD", "--", ".github/agents", ".github/prompts", "commands")
+    .split("\n")
+    .filter((f) => /\.(agent|prompt)\.md$/.test(f) || /^commands\/[^/]+\.md$/.test(f));
+  assert.ok(files.length > 0, "no agents, prompts, or command mirrors at HEAD");
+  for (const file of files) {
+    const frontmatter = gitOut("show", `HEAD:${file}`).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)?.[1] ?? "";
+    assert.doesNotMatch(frontmatter, /^model:/m, `${file} is committed with a model: line; model profiles are applied locally — run \`agento.mjs models clear\`, then commit`);
+  }
+});

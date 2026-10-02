@@ -92,10 +92,24 @@ Keep both repositories available at the configured sibling paths. Session & Doct
 reports detached, dirty, ahead, behind, or unregistered companion state directly
 from the CLI.
 
+## Model profiles
+
+**Agento: Select Model Profile** (Command Palette) shows a quick pick of the profiles
+in `~/.config/agento/model-profiles.json` — the applied one marked, each with its
+description and first error — plus *Clear*. The choice runs `agento.mjs models apply
+<name>` or `models clear` with `--plugin-root` set to the plugin clone: the
+`agento.pluginRoot` setting, else the first enabled `chat.pluginLocations` entry whose
+`.claude-plugin/plugin.json` is named `agento`. The bundled CLI's own plugin root is
+`extension/`, so the extension always passes `--plugin-root`; the Session & Doctor
+`doctor` call passes it too, so its `model-profile` check reports the clone. See
+[model-profiles.md](model-profiles.md).
+
 ## Settings
 
 - `agento.nodePath`: Node.js executable used to run the bundled CLI. The default is
   `node`.
+- `agento.pluginRoot`: the Agento plugin clone model profiles are applied to. Empty
+  (the default) uses `chat.pluginLocations`.
 - `agento.refreshDebounceMs`: delay for watcher-driven refreshes, with a minimum of
   3000 milliseconds.
 

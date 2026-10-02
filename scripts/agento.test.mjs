@@ -75,6 +75,8 @@ function run(cwd, ...args) {
 const baseEnv = { ...process.env };
 delete baseEnv.CODESPACES;
 delete baseEnv.GITHUB_ACTIONS;
+// Never read the real ~/.config/agento/model-profiles.json.
+baseEnv.AGENTO_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-config-home-"));
 
 function runWith({ cwd, env }, ...args) {
   const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
@@ -1227,14 +1229,14 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports eight checks and includes session-workspace", () => {
+test("doctor reports nine checks and includes session-workspace and model-profile", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1347,7 +1349,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -2474,4 +2476,266 @@ test("migrate rejects a non-sibling destination and a non-checkout, writing noth
 
   const usage = run(repo, "migrate");
   assert.ok(usage.json.usage.some((line) => line.includes("migrate <companion-checkout> [--apply]")), JSON.stringify(usage.json.usage));
+});
+
+// --- models ---------------------------------------------------------------
+
+// A git-tracked copy of this repository's agents, prompts, command mirrors, and
+// profile template, plus a private AGENTO_CONFIG_HOME.
+function modelsFixture({ gitInit = true } = {}) {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-models-"));
+  const plugin = path.join(base, "plugin");
+  for (const rel of [".github/agents", ".github/prompts", "commands"]) fs.cpSync(path.join(repoRoot, rel), path.join(plugin, rel), { recursive: true });
+  fs.mkdirSync(path.join(plugin, "templates"), { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, "templates", "model-profiles.json"), path.join(plugin, "templates", "model-profiles.json"));
+  if (gitInit) {
+    execFileSync("git", ["init", "-q", "-b", "main", plugin]);
+    git(plugin, "config", "user.email", "test@example.com");
+    git(plugin, "config", "user.name", "Test");
+    git(plugin, "add", "-A");
+    git(plugin, "commit", "-q", "-m", "init");
+  }
+  const home = path.join(base, "config");
+  const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
+  const models = (...args) => runWith({ cwd: plugin, env }, "models", ...args, "--plugin-root", plugin);
+  const writeProfiles = (profiles) => {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ profiles }));
+  };
+  return { plugin, home, env, models, writeProfiles };
+}
+
+test("models list without a profiles file reports nothing applied", () => {
+  const { plugin, home, models } = modelsFixture();
+  const { code, json } = models();
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.equal(json.verb, "list");
+  assert.deepEqual(json.profiles, []);
+  assert.deepEqual(json.profilesFile, { path: path.join(home, "model-profiles.json"), exists: false });
+  assert.equal(json.pluginRoot, plugin);
+  assert.equal(json.active, null);
+  assert.deepEqual(json.skipWorktree, []);
+  assert.deepEqual(json.dirty, []);
+  assert.match(json.hint, /models clear.*git pull.*models apply/);
+});
+
+test("models init copies the template once; show reports placeholders and unknown profiles", () => {
+  const { home, models } = modelsFixture();
+  const first = models("init");
+  assert.equal(first.code, 0);
+  assert.equal(first.json.created, true);
+  assert.equal(first.json.profilesFile.exists, true);
+  const file = path.join(home, "model-profiles.json");
+  assert.equal(fs.readFileSync(file, "utf8"), fs.readFileSync(path.join(repoRoot, "templates", "model-profiles.json"), "utf8"));
+  fs.appendFileSync(file, " ");
+  const second = models("init");
+  assert.equal(second.code, 0);
+  assert.equal(second.json.created, false);
+  assert.match(fs.readFileSync(file, "utf8"), / $/);
+
+  const list = models("list");
+  assert.deepEqual(list.json.profiles.map((p) => p.name), ["mixed"]);
+  assert.ok(list.json.profiles[0].errors.length > 0);
+
+  const show = models("show", "mixed");
+  assert.equal(show.code, 3);
+  assert.equal(show.json.status, "invalid");
+  assert.ok(show.json.errors.every((e) => /placeholder/.test(e)), JSON.stringify(show.json.errors));
+
+  const unknown = models("show", "nope");
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.json.status, "not-found");
+  assert.deepEqual(unknown.json.known, ["mixed"]);
+});
+
+test("models show resolves agents, inherited prompts, and mirrors", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap", agents: { planner: "Strong" }, prompts: { doctor: "Tiny" } } });
+  const { code, json } = models("show", "mixed");
+  assert.equal(code, 0, JSON.stringify(json));
+  const value = (file) => json.targets.find((t) => t.file === file)?.value;
+  assert.equal(value(".github/agents/delivery-planner.agent.md"), "Strong");
+  assert.equal(value(".github/agents/delivery-builder.agent.md"), "Cheap");
+  assert.equal(value(".github/prompts/new-feature.prompt.md"), "Strong");
+  assert.equal(value("commands/new-feature.md"), "Strong");
+  assert.equal(value(".github/prompts/doctor.prompt.md"), "Tiny");
+  assert.equal(value("commands/doctor.md"), "Tiny");
+  assert.equal(value(".github/prompts/start-session.prompt.md"), "Cheap");
+});
+
+test("models usage errors: bad verb, arguments, profile name, and plugin root", () => {
+  const { models, env, plugin } = modelsFixture();
+  assert.equal(models("bogus").code, 1);
+  assert.equal(models("show").code, 1);
+  assert.equal(models("list", "extra").code, 1);
+  assert.equal(models("apply", "Bad_Name").code, 1);
+  const notPlugin = runWith({ cwd: plugin, env }, "models", "--plugin-root", path.dirname(plugin));
+  assert.equal(notPlugin.code, 1);
+  assert.match(notPlugin.json.message, /not an Agento plugin clone/);
+  assert.equal(runWith({ cwd: plugin, env }, "models", "--plugin-root").code, 1);
+});
+
+test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
+  const repo = makeRepo();
+  const usage = run(repo, "bogus").json.usage;
+  assert.ok(usage.some((line) => line.includes("models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
+  assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
+});
+
+const sBits = (plugin) => git(plugin, "ls-files", "-v").split("\n").filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
+const gitQuiet = (plugin, ...args) => spawnSync("git", ["-C", plugin, ...args]).status;
+
+test("models apply pins agents, prompts, and mirrors under skip-worktree; clear restores HEAD", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({
+    mixed: { default: "Cheap", agents: { planner: "Strong", reviewer: ["A (copilot)", "B"] }, prompts: { doctor: "Tiny" } },
+    partial: { agents: { planner: "Strong" } },
+  });
+  const agents = fs.readdirSync(path.join(plugin, ".github", "agents"));
+  const prompts = fs.readdirSync(path.join(plugin, ".github", "prompts"));
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.profile, "mixed");
+  assert.equal(apply.json.active, "mixed");
+  assert.equal(apply.json.changed.length, agents.length + 2 * prompts.length);
+  const read = (rel) => fs.readFileSync(path.join(plugin, rel), "utf8");
+  assert.match(read(".github/agents/delivery-planner.agent.md"), /^argument-hint: .*\nmodel: "Strong"\n/m);
+  assert.match(read(".github/agents/delivery-reviewer.agent.md"), /^model: \["A \(copilot\)", "B"\]$/m);
+  assert.match(read(".github/agents/delivery-builder.agent.md"), /^model: "Cheap"$/m);
+  assert.match(read(".github/prompts/doctor.prompt.md"), /^model: "Tiny"$/m);
+  assert.match(read(".github/prompts/new-feature.prompt.md"), /^model: "Strong"$/m);
+  for (const p of prompts) assert.equal(read(`commands/${p.replace(".prompt.md", ".md")}`), read(`.github/prompts/${p}`), p);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+  assert.equal(sBits(plugin).length, apply.json.changed.length);
+  assert.deepEqual(apply.json.skipWorktree.sort(), sBits(plugin).sort());
+
+  const again = models("apply", "mixed");
+  assert.equal(again.code, 0);
+  assert.deepEqual(again.json.changed, []);
+  assert.equal(models("list").json.active, "mixed");
+
+  // Switching to a profile without a default unpins (and unflags) everything else.
+  const partial = models("apply", "partial");
+  assert.equal(partial.code, 0, JSON.stringify(partial.json));
+  assert.equal(partial.json.active, "partial");
+  assert.deepEqual(sBits(plugin).sort(), [".github/agents/delivery-planner.agent.md", ".github/prompts/new-feature.prompt.md", ".github/prompts/new-issue.prompt.md", "commands/new-feature.md", "commands/new-issue.md"]);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+
+  const clear = models("clear");
+  assert.equal(clear.code, 0);
+  assert.equal(clear.json.profile, null);
+  assert.equal(clear.json.changed.length, 5);
+  assert.equal(clear.json.active, null);
+  assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
+  assert.deepEqual(sBits(plugin), []);
+  assert.deepEqual(models("clear").json.changed, []);
+});
+
+test("models apply refuses targets edited beyond their model line", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap" } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
+  fs.appendFileSync(file, "\nlocal edit\n");
+  const refused = models("apply", "mixed");
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "dirty");
+  assert.deepEqual(refused.json.dirty, [".github/agents/delivery-builder.agent.md"]);
+  // clear still works and exposes the edit instead of hiding it.
+  const clear = models("clear");
+  assert.equal(clear.code, 0);
+  assert.deepEqual(sBits(plugin), []);
+  assert.equal(git(plugin, "status", "--porcelain"), "M .github/agents/delivery-builder.agent.md");
+});
+
+test("models apply refuses a linked-worktree plugin root; clear still runs there", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap" } });
+  const linked = path.join(path.dirname(plugin), "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
+  const inLinked = (...args) => runWith({ cwd: linked, env }, "models", ...args, "--plugin-root", linked);
+  const refused = inLinked("apply", "mixed");
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "worktree");
+  assert.equal(refused.json.primaryCheckout, plugin);
+  assert.match(refused.json.message, new RegExp(`--plugin-root ${plugin}$`));
+  assert.equal(gitQuiet(linked, "diff", "--quiet"), 0);
+  assert.deepEqual(sBits(linked), []);
+  const clear = inLinked("clear");
+  assert.equal(clear.code, 0);
+  assert.deepEqual(clear.json.changed, []);
+  assert.equal(models("apply", "mixed").code, 0);
+});
+
+test("models apply on a non-git plugin root rewrites without flags", () => {
+  const { plugin, models, writeProfiles } = modelsFixture({ gitInit: false });
+  writeProfiles({ mixed: { default: "Cheap" } });
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.skipWorktree, null);
+  assert.deepEqual(apply.json.dirty, []);
+  assert.ok(apply.json.changed.length > 0);
+  assert.match(fs.readFileSync(path.join(plugin, ".github", "agents", "delivery-builder.agent.md"), "utf8"), /^model: "Cheap"$/m);
+  assert.equal(models("clear").json.active, null);
+});
+
+test("models apply rejects the shipped template's placeholders and unknown profiles", () => {
+  const { plugin, models } = modelsFixture();
+  assert.equal(models("init").json.created, true);
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 3);
+  assert.equal(apply.json.status, "invalid");
+  assert.ok(apply.json.errors.length >= 1 && apply.json.errors.every((e) => /placeholder/.test(e)), JSON.stringify(apply.json.errors));
+  assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
+  const unknown = models("apply", "nope");
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.json.status, "not-found");
+});
+
+test("models apply reports resolution errors for prompts on custom agents", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ bad: { prompts: { "build-feature": "X", ghost: "Y" } } });
+  const apply = models("apply", "bad");
+  assert.equal(apply.code, 3);
+  assert.equal(apply.json.status, "invalid");
+  assert.ok(apply.json.errors.some((e) => /^profiles\.bad\.prompts\.build-feature: runs on 🔨 Agento Builder/.test(e)), JSON.stringify(apply.json.errors));
+  assert.ok(apply.json.errors.some((e) => /^profiles\.bad\.prompts\.ghost: no prompt named/.test(e)));
+});
+
+test("doctor model-profile: ok without a clone, none, or a matching profile; warn on custom pins or an invalid file", () => {
+  const { plugin, home, env, models, writeProfiles } = modelsFixture();
+  const check = (root = plugin) => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", root).json)["model-profile"];
+
+  const bundle = check(path.dirname(plugin));
+  assert.equal(bundle.status, "ok");
+  assert.match(bundle.detail, /^no Agento plugin clone at /);
+
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}`, fallback: null });
+
+  writeProfiles({ mixed: { default: "Cheap", agents: { planner: "Strong" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  assert.equal(check().detail, `mixed applied to ${plugin}`);
+
+  const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap"', 'model: "Edited"'));
+  const custom = check();
+  assert.equal(custom.status, "warn");
+  assert.match(custom.detail, /match no profile/);
+  assert.match(custom.fallback, /models apply <name>.*models clear.*clear, then git pull, then apply/);
+
+  fs.writeFileSync(path.join(home, "model-profiles.json"), "{ nope");
+  const invalid = check();
+  assert.equal(invalid.status, "warn");
+  assert.match(invalid.detail, /1 error\(s\), first: invalid JSON/);
+});
+
+test("doctor --for models needs only the terminal checks", () => {
+  const repo = makeRepo();
+  const { env } = restrictedPath(okStubs);
+  const { code, json } = runWith({ cwd: repo, env }, "doctor", "--for", "models");
+  assert.equal(code, 0);
+  assert.deepEqual(json.for, { command: "models", needs: ["terminal"] });
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
 });

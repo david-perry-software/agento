@@ -10,6 +10,7 @@ const cliFiles = [
   "agento-config.mjs",
   "session-state.mjs",
   "delivery-roadmap-resolver.mjs",
+  "model-profiles.mjs",
 ];
 
 await mkdir(cliDirectory, { recursive: true });
