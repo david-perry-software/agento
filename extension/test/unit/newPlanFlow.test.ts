@@ -211,3 +211,35 @@ test("focuses the target after a failed handoff when Focus target is selected", 
     "/agento new-feature Focus recovery",
   );
 });
+
+test("keeps the start-session path for non-plan roles and attached plan windows", async () => {
+  const buildSession = session([primary, existing], {
+    role: "build",
+    worktree: { path: existing.path, detached: false },
+  });
+  const buildDeps = dependencies([buildSession]);
+  const buildResult = await runNewPlanFlow(createNewPlanRequest("feature", "From build"), buildDeps, { pollIntervalMs: 10, timeoutMs: 100 });
+  assert.equal(buildResult.kind, "timeout");
+  assert.deepEqual(buildDeps.submitted, [{ command: "/agento start-session", target: { kind: "folder", path: "/repo" } }]);
+
+  const attachedPlanSession = session([primary], {
+    role: "plan",
+    worktree: { path: "/repo/worktrees/plan-current", detached: false },
+  });
+  const planDeps = dependencies([attachedPlanSession]);
+  const planResult = await runNewPlanFlow(createNewPlanRequest("issue", "From attached plan"), planDeps, { pollIntervalMs: 10, timeoutMs: 100 });
+  assert.equal(planResult.kind, "timeout");
+  assert.deepEqual(planDeps.submitted, [{ command: "/agento start-session", target: { kind: "folder", path: "/repo" } }]);
+});
+
+test("rejects a malformed session role or worktree field", async () => {
+  const badRole = session([primary], { role: 42 });
+  const badRoleResult = await runNewPlanFlow(createNewPlanRequest("feature", "Bad role"), dependencies([badRole]), { pollIntervalMs: 10, timeoutMs: 100 });
+  assert.equal(badRoleResult.kind, "failed");
+  assert.match((badRoleResult as { reason: string }).reason, /session role is invalid/);
+
+  const badWorktree = session([primary], { worktree: { path: "/repo", detached: "yes" } });
+  const badWorktreeResult = await runNewPlanFlow(createNewPlanRequest("feature", "Bad worktree"), dependencies([badWorktree]), { pollIntervalMs: 10, timeoutMs: 100 });
+  assert.equal(badWorktreeResult.kind, "failed");
+  assert.match((badWorktreeResult as { reason: string }).reason, /session worktree is invalid/);
+});
