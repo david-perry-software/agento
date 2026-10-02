@@ -2678,6 +2678,24 @@ test("models apply refuses targets edited beyond their model line", () => {
   assert.equal(git(plugin, "status", "--porcelain"), "M .github/agents/delivery-builder.agent.md");
 });
 
+test("models apply ignores handoff model: lines in dirty detection and still refuses other edits", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { agents: { planner: "P (copilot)", builder: "B (copilot)", reviewer: "R (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  assert.deepEqual(models("list").json.dirty, []);
+  const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
+  assert.match(fs.readFileSync(file, "utf8"), /^    model: "R \(copilot\)"$/m);
+  // A real edit beyond both the top-level and handoff model: lines refuses apply.
+  fs.appendFileSync(file, "\nlocal edit\n");
+  const refused = models("apply", "mixed");
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "dirty");
+  assert.deepEqual(refused.json.dirty, [".github/agents/delivery-builder.agent.md"]);
+  // Dropping the local edit leaves only the applied pins, so it is clean again.
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("\nlocal edit\n", ""));
+  assert.deepEqual(models("list").json.dirty, []);
+});
+
 test("models apply refuses a linked-worktree plugin root; clear still runs there", () => {
   const { plugin, env, models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { default: "Cheap" } });

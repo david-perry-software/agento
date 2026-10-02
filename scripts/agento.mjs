@@ -34,7 +34,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, resolveTargets, setModel } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
 import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1101,7 +1101,7 @@ function modelTargetFiles(pluginRoot) {
     return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).sort().map((f) => `${rel}/${f}`) : [];
   };
   const read = (file) => fs.readFileSync(path.join(pluginRoot, file), "utf8");
-  const agents = list(".github/agents", ".agent.md").map((file) => ({ file, name: frontmatterField(read(file), "name") }));
+  const agents = list(".github/agents", ".agent.md").map((file) => ({ file, name: frontmatterField(read(file), "name"), handoffs: handoffTargets(read(file)) }));
   const prompts = list(".github/prompts", ".prompt.md").map((file) => ({ file, name: path.basename(file, ".prompt.md"), agent: frontmatterField(read(file), "agent") }));
   const mirrors = {};
   for (const prompt of prompts) {
@@ -1123,10 +1123,10 @@ function loadProfiles() {
 // Resolved targets (mirrors included) plus every error that blocks applying `name`.
 function resolveProfile(loaded, name, layout) {
   const parseErrors = errorsFor(loaded.errors, name);
-  if (parseErrors.length) return { targets: [], errors: parseErrors };
-  const { targets, errors } = resolveTargets({ profile: loaded.profiles[name], agents: layout.agents, prompts: layout.prompts });
+  if (parseErrors.length) return { targets: [], handoffs: {}, errors: parseErrors };
+  const { targets, handoffs, errors } = resolveTargets({ profile: loaded.profiles[name], agents: layout.agents, prompts: layout.prompts });
   const withMirrors = targets.flatMap((t) => (layout.mirrors[t.file] ? [t, { file: layout.mirrors[t.file], value: t.value }] : [t]));
-  return { targets: withMirrors, errors: errors.map((e) => `profiles.${name}.${e}`) };
+  return { targets: withMirrors, handoffs, errors: errors.map((e) => `profiles.${name}.${e}`) };
 }
 
 function gitShowHead(pluginRoot, file) {
@@ -1710,6 +1710,7 @@ switch (command) {
 
     // apply | clear
     let targets = state.layout.files.map((file) => ({ file, value: null }));
+    let handoffs = null;
     if (verb === "apply") {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const resolved = resolveProfile(loaded, name, state.layout);
@@ -1719,9 +1720,10 @@ switch (command) {
         emit({ status: "worktree", verb, profile: name, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; skip-worktree would hide edits made here — apply to the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
       if (state.dirty.length) {
-        emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: line; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
+        emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: lines; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
       targets = resolved.targets;
+      handoffs = resolved.handoffs;
     }
     const writes = [];
     for (const { file, value } of targets) {
@@ -1730,6 +1732,7 @@ switch (command) {
       let after;
       try {
         after = setModel(before, value);
+        after = setHandoffModels(after, handoffs === null ? null : handoffs[file]);
       } catch (error) {
         emit({ status: "invalid", verb, profile: name ?? null, errors: [`${file}: ${error.message}`], ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
@@ -1739,8 +1742,9 @@ switch (command) {
     if (state.isGit) {
       const flagged = new Set(state.skipWorktree);
       const tracked = targets.filter((t) => state.tracked.has(t.file));
-      const pin = tracked.filter((t) => t.value !== null && !flagged.has(t.file)).map((t) => t.file);
-      const unpin = tracked.filter((t) => t.value === null && flagged.has(t.file)).map((t) => t.file);
+      const hasHandoffPin = (file) => (handoffs?.[file] ?? []).some((h) => h.value !== null);
+      const pin = tracked.filter((t) => (t.value !== null || hasHandoffPin(t.file)) && !flagged.has(t.file)).map((t) => t.file);
+      const unpin = tracked.filter((t) => t.value === null && !hasHandoffPin(t.file) && flagged.has(t.file)).map((t) => t.file);
       for (const [flag, files] of [["--skip-worktree", pin], ["--no-skip-worktree", unpin]]) {
         if (!files.length) continue;
         try {
