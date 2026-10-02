@@ -23,11 +23,11 @@ export interface NewPlanFlowOptions {
 }
 
 // Production defaults for the New Plan handoff poll. Hoisted out of `startNewPlan`
-// (extension.ts) so the value is unit-testable; the timeout defect is fixed in step
-// 2.3 by changing this value.
+// (extension.ts) so the value is unit-testable. A normal start-session takes about
+// 2 minutes, so the poll window must comfortably exceed that (issue #77).
 export const NEW_PLAN_FLOW_DEFAULTS: NewPlanFlowOptions = {
   pollIntervalMs: 1000,
-  timeoutMs: 120000,
+  timeoutMs: 300000,
 };
 
 export type NewPlanFlowResult =
