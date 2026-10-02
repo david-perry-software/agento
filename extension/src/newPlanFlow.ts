@@ -22,6 +22,14 @@ export interface NewPlanFlowOptions {
   timeoutMs: number;
 }
 
+// Production defaults for the New Plan handoff poll. Hoisted out of `startNewPlan`
+// (extension.ts) so the value is unit-testable; the timeout defect is fixed in step
+// 2.3 by changing this value.
+export const NEW_PLAN_FLOW_DEFAULTS: NewPlanFlowOptions = {
+  pollIntervalMs: 1000,
+  timeoutMs: 120000,
+};
+
 export type NewPlanFlowResult =
   | { kind: "complete"; command: string; target: NewPlanTarget }
   | { kind: "timeout" | "cancelled" | "ambiguous" | "failed"; command: string; reason: string };

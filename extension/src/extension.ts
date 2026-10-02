@@ -27,6 +27,7 @@ import {
 import {
   createInitiativePlanRequest,
   createNewPlanRequest,
+  NEW_PLAN_FLOW_DEFAULTS,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
   type NewPlanFlowOptions,
@@ -308,7 +309,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const startNewPlan = async (
     request: NewPlanRequest,
     dependencies?: NewPlanFlowDependencies,
-    options: NewPlanFlowOptions = { pollIntervalMs: 1000, timeoutMs: 120000 },
+    options: NewPlanFlowOptions = NEW_PLAN_FLOW_DEFAULTS,
   ): Promise<NewPlanFlowResult> => {
     if (dependencies) return runNewPlanFlow(request, dependencies, options);
     return await vscode.window.withProgress(
