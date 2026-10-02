@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
 import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor } from "./commandDispatcher.js";
+import { resolveChatMode } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
@@ -104,7 +105,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     exists: (filePath) => fs.existsSync(filePath),
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
   });
-  const chatMode: ChatModeResolver = () => ({ mode: null, reason: "not wired" });
+  const chatMode: ChatModeResolver = (command) => resolveChatMode(command, {
+    pluginRoot: pluginRoot(),
+    readFile: (filePath) => fs.readFileSync(filePath, "utf8"),
+  });
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {

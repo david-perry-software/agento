@@ -266,6 +266,7 @@ async function assertNewInitiativeCommand(
   }
 
   assert.deepEqual(targets, [{ kind: "folder", path: fixture }]);
+  // The fixture resolves no plugin root, so the injected chatMode reports no mode and chatOpenOptions stays at { query }.
   assert.deepEqual(chatCalls, [["workbench.action.chat.open", { query: expectedCommand }]]);
   assert.deepEqual(promptEvents, inputKind === "brief" ? ["quickPick", "editor"] : ["quickPick", `file:${fixture}`]);
 }
@@ -433,6 +434,7 @@ export async function run(): Promise<void> {
   const sessionAction = api.sessionDoctor.current.actions.find((action) => action.window === "here");
   assert.ok(sessionAction);
   await vscode.commands.executeCommand("agento.dispatchAction", sessionAction, undefined, executeCommand);
+  // The fixture has no plugin root, so resolveChatMode reports no mode and the submission stays { query }.
   assert.deepEqual(submitted.pop(), {
     command: "workbench.action.chat.open",
     options: { query: sessionAction.command },
@@ -453,6 +455,7 @@ export async function run(): Promise<void> {
   const deliveryAction = items[0].item.actions.find((action) => action.window === "here");
   assert.ok(deliveryAction);
   await vscode.commands.executeCommand("agento.dispatchAction", deliveryAction, items[0].item.slug, executeCommand);
+  // Same fallback: no plugin root in the fixture, so { query } is the expected options shape.
   assert.deepEqual(submitted.pop(), {
     command: "workbench.action.chat.open",
     options: { query: deliveryAction.command },
