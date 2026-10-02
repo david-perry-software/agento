@@ -30,7 +30,7 @@ export async function dispatchCommandToTarget(
   isCurrentTarget: boolean,
 ): Promise<void> {
   if (isCurrentTarget) {
-    await dependencies.executeCommand("workbench.action.chat.open", { query: command, mode: "agent" });
+    await dependencies.executeCommand("workbench.action.chat.open", { query: command });
     return;
   }
   await savePendingDispatch(dependencies.pendingStore, { target: target.path, command, createdAt: Date.now() });
@@ -63,7 +63,7 @@ export async function dispatchCommandAction(
       return route;
     }
 
-    await executeCommand("workbench.action.chat.open", { query: route.command, mode: "agent" });
+    await executeCommand("workbench.action.chat.open", { query: route.command });
     return route;
   } catch (error) {
     const message = `Unable to dispatch Agento command: ${error instanceof Error ? error.message : String(error)}`;
@@ -98,7 +98,7 @@ export async function consumePendingCommands(
   const result = ready[0]!.result;
   if (result.kind === "ready") {
     try {
-      await dependencies.executeCommand("workbench.action.chat.open", { query: result.command, mode: "agent" });
+      await dependencies.executeCommand("workbench.action.chat.open", { query: result.command });
     } catch (error) {
       const message = `Unable to submit pending Agento command: ${error instanceof Error ? error.message : String(error)}`;
       dependencies.output.appendLine(message);

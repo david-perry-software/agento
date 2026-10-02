@@ -37,14 +37,14 @@ function dependencies(overrides: Partial<CommandDispatcherDependencies> = {}): C
   };
 }
 
-test("submits in-window commands to Chat in agent mode", async () => {
+test("submits in-window commands to Chat without forcing a mode", async () => {
   const calls: unknown[][] = [];
   const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
   const route = await dispatchCommandAction(action, undefined, dependencies({
     executeCommand: async (...args) => { calls.push(args); },
   }));
   assert.deepEqual(route, { kind: "submit", command: action.command });
-  assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command, mode: "agent" }]]);
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command }]]);
 });
 
 test("persists cross-window commands before opening and offers to refocus the CLI target", async () => {
@@ -102,7 +102,7 @@ test("consumes one pending command before submission and surfaces discarded reco
     output: { appendLine() {} },
   });
   assert.equal(store.values.size, 0);
-  assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento continue widget", mode: "agent" }]]);
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento continue widget" }]]);
   assert.match(errors[0]!, /expired/);
 });
 
