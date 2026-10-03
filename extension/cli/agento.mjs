@@ -1431,8 +1431,12 @@ switch (command) {
   case "initiative": {
     const slug = rest[0] ? requireSlug(rest[0]) : null;
     const breakdowns = allBreakdowns();
+    // Same bases as `status`: a member planned on an unmerged delivery branch lives
+    // only in its managed half and must not stay "unplanned"/ready here (the
+    // Initiatives view would otherwise keep its plan play button, which starts a
+    // second session instead of offering build/ap).
+    const roadmaps = allRoadmaps("feature", managedHalves(parseWorktreeList(git(root, "worktree", "list", "--porcelain"))));
     if (!slug) {
-      const roadmaps = allRoadmaps("feature");
       const items = breakdowns.map((b) => {
         const d = deriveInitiative(b, roadmaps);
         return {
@@ -1452,7 +1456,7 @@ switch (command) {
     }
     const breakdown = breakdowns.find((b) => b.slug === slug);
     if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
-    const derived = deriveInitiative(breakdown, allRoadmaps("feature"));
+    const derived = deriveInitiative(breakdown, roadmaps);
     withExit({
       ...derived,
       initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
