@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Fixed.** A model profile's agent `model:` pin no longer fails to apply when
+  one Agento agent hands work to another: `models apply` now also writes the
+  target agent's pin (first entry of a list) into every `handoffs: []` item, a
+  new `models pins` verb reports each agent's current pin for the Autopilot, and
+  the Autopilot passes the Builder's and Reviewer's pins as the `runSubagent`
+  `model`. An `autopilot` pinned to a bring-your-own-key model while it delegates
+  to a Copilot model surfaces a tier warning in `models show`/`apply`/`pins` and
+  in `doctor`'s `model-profile` check. (#79)
 - **Fixed.** Dashboard dispatch now opens Copilot Chat in the command's agent:
   the Deliveries, Session & Doctor, and New Plan paths pass the command's
   `agent:` frontmatter (from `commands/<name>.md`) as the `mode` on
