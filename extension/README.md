@@ -54,10 +54,10 @@ from `status --pr`; selecting it focuses the Session & Doctor view.
 ## Commands
 
 The play action in a delivery row, an in-flight initiative member, or the Session &
-Doctor title opens a picker in
-the exact order returned by the CLI's `allowed[]` and `elsewhere[]` fields. The
-extension does not maintain its own lifecycle command list. Delivery selections are
-revalidated with `agento.mjs next <slug>` immediately before dispatch.
+Doctor title opens a picker in the exact order returned by the CLI's `allowed[]` and
+`elsewhere[]` fields. The extension does not maintain its own lifecycle command list.
+Delivery selections are revalidated with `agento.mjs next <slug>` immediately before
+dispatch.
 
 Actions for the current window open Copilot Chat with the exact canonical command
 as the query and agent mode selected. Cross-window actions store `/agento continue
