@@ -12,6 +12,7 @@ import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTree
 import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
+import { initiativeMemberActionSource } from "./initiativeMemberActions.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
@@ -497,12 +498,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       await reportError(`Unable to select a model profile: ${error instanceof Error ? error.message : String(error)}`);
     }
   });
-  const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement) => {
-    const source = deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
-      ? { slug: sessionDoctor.current.session.deliverySlug ?? undefined, actions: sessionDoctor.current.actions }
-      : null);
+  const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement | InitiativeTreeElement) => {
+    const source = element?.kind === "member"
+      ? initiativeMemberActionSource(element, deliveries.current.model) ?? { slug: element.item.slug, actions: [] }
+      : deliveryActionSource(element) ?? (sessionDoctor.current.kind === "ready"
+        ? { slug: sessionDoctor.current.session.deliverySlug ?? undefined, actions: sessionDoctor.current.actions }
+        : null);
     if (!source || source.actions.length === 0) {
-      await vscode.window.showInformationMessage("No Agento actions are available in this window.");
+      await vscode.window.showInformationMessage(
+        source?.slug ? `No Agento actions are available for ${source.slug} in this window.` : "No Agento actions are available in this window.",
+      );
       return;
     }
     const action = await pickCommandAction(source);
