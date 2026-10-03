@@ -772,6 +772,50 @@ test("status walks registered companion halves and managed build worktrees; the 
   assert.deepEqual(run(build, "status", "feature", "widget").json.items.map((i) => i.status), ["in-progress"]);
 });
 
+test("initiative walks the same managed halves as status: a member planned only on its unmerged branch is in flight, not ready", () => {
+  // Companion mode: the breakdown is on the companion's main; the member's roadmap
+  // exists only in the promoted plan pair's companion half.
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  writeBreakdown(docs, "initiatives/2026/10/mod", null, [{ slug: "kernel" }, { slug: "routes", requires: ["kernel"] }, { slug: "folders", requires: ["routes"] }]);
+  writeRoadmap(docs, "features/2026/10/kernel", 'status: complete\nbranch: feature/kernel\ninitiative: "mod"\nnext-step: ""');
+  git(docs, "add", "-A");
+  git(docs, "commit", "-q", "-m", "docs: breakdown");
+  const before = run(repo, "initiative", "mod").json;
+  assert.deepEqual(before.features.map((f) => [f.slug, f.state, f.ready]), [["kernel", "complete", false], ["routes", "unplanned", true], ["folders", "unplanned", false]]);
+  assert.equal(before.next, "routes");
+
+  const product = path.join(wt, "plan-20261003-144724");
+  const half = path.join(docsWt, "plan-20261003-144724");
+  git(repo, "worktree", "add", "-q", "-b", "feature/routes", product);
+  git(docs, "worktree", "add", "-q", "--no-track", "-b", "feature/routes", half, "origin/main");
+  writeRoadmap(half, "features/2026/10/routes", 'status: in-progress\nbranch: feature/routes\ninitiative: "mod"\nnext-step: "1.2 todo"');
+  git(half, "add", "-A");
+  git(half, "commit", "-q", "-m", "docs(feature): routes plan");
+  assert.ok(!fs.existsSync(path.join(docs, "features/2026/10/routes")));
+
+  for (const cwd of [repo, product]) {
+    const detail = run(cwd, "initiative", "mod").json;
+    assert.equal(detail.status, "ok");
+    assert.deepEqual(detail.features.map((f) => [f.slug, f.state, f.ready, f.roadmap]), [
+      ["kernel", "complete", false, "features/2026/10/kernel/roadmap.md"],
+      ["routes", "in-progress", false, "features/2026/10/routes/roadmap.md"],
+      ["folders", "unplanned", false, null],
+    ]);
+    assert.equal(detail.next, null);
+    assert.deepEqual(run(cwd, "initiative").json.items.map((i) => [i.slug, i.inFlight, i.ready]), [["mod", 1, 0]]);
+  }
+
+  // In-repo layout: a roadmap only in a managed build worktree counts the same way.
+  const inRepo = makeWorktreeRepo();
+  writeBreakdown(inRepo.repo, "initiatives/2026/10/solo", null, [{ slug: "widget" }]);
+  assert.deepEqual(run(inRepo.repo, "initiative", "solo").json.features.map((f) => [f.slug, f.state, f.ready]), [["widget", "unplanned", true]]);
+  const buildWt = path.join(inRepo.wt, "feature-widget");
+  git(inRepo.repo, "worktree", "add", "-q", "-b", "feature/widget", buildWt);
+  writeRoadmap(buildWt, "features/2026/10/widget", 'status: planned\nbranch: feature/widget\ninitiative: "solo"\nnext-step: "1.1"');
+  assert.deepEqual(run(inRepo.repo, "initiative", "solo").json.features.map((f) => [f.slug, f.state, f.ready]), [["widget", "planned", false]]);
+  assert.deepEqual(run(inRepo.repo, "initiative").json.items.map((i) => [i.slug, i.inFlight, i.ready]), [["solo", 1, 0]]);
+});
+
 test("session: an unrelated repo and an ambiguous companion stay put; a half nobody names is that repo's own managed worktree", () => {
   const { repo, docs } = makePairRepo();
   const base = path.dirname(repo);
