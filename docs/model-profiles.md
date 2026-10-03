@@ -141,11 +141,27 @@ linked worktree (`status: "worktree"`, exit 3, naming the clone as
 profile before editing an agent or prompt in the clone — skip-worktree hides your
 edits from `git status` — and apply it again afterwards.
 
+## Subagents and handoffs
+
+An agent's `model:` pin applies on direct selection, and was observed to apply to
+Local subagents regardless of the caller's model in the tested runs. Observed on
+VS Code 1.136 with the Local harness: the 🔍 Agento Reviewer subagent ran on its
+own pin, `Claude Fable 5.1`, for every caller — the Autopilot on a
+bring-your-own-key `DeepSeek V4 Pro (deepseek)` model, a built-in Agent on
+`Claude Opus 5.5 (copilot)`, and a built-in Agent on the same bring-your-own-key
+`DeepSeek V4 Pro (deepseek)` model. No fallback to the caller's model and no tier
+refusal were reproduced.
+
+Copilot-harness (Agent Host) behavior is unverified.
+
+As hardening, Agento now passes explicit `runSubagent`/handoff models: `models
+apply` writes a nested `model:` line into every `handoffs:` item (the target's
+resolved pin, first entry of a list), and the Autopilot passes the target's pin
+as the `runSubagent` `model` when it invokes the Builder or Reviewer.
+
 ## Limits
 
 - One profile is active per clone (machine-wide, last apply wins); there are no
   per-project profiles.
-- `handoffs[].model` is not written; a handoff relies on the target agent's own
-  `model:` line.
 - From-source and Copilot CLI installs (install options B and C) are replaced on
   update; apply the profile again afterwards.
