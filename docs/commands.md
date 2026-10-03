@@ -138,13 +138,14 @@ appends a `## Migrated history` note to the companion `README.md` once, and repo
 `readmeNoteAdded`; a re-run with the roots already gone is `mode:
 "nothing-to-migrate"`, exit 0; `/agento agento-init --migrate` drives it and
 handles the commits and PRs),
-`models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]`
+`models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]`
 (model profiles from `~/.config/agento/model-profiles.json` — `$XDG_CONFIG_HOME` and
 `AGENTO_CONFIG_HOME` move it — applied to the plugin clone at `--plugin-root`,
 default the clone the CLI runs from: every verb reports `profilesFile { path, exists }`,
 `pluginRoot`, `active` (`null`, a profile name, or `custom`), `skipWorktree`, `dirty`,
-and `hint`; `apply` and `clear` rewrite the agents, prompts, and `commands/` mirrors
-and report `changed[]`; `init` copies `templates/model-profiles.json` only when the
+and `hint`; `apply` and `clear` rewrite the agents, prompts, handoff pins, and
+`commands/` mirrors and report `changed[]`; `models pins` reports each agent's current pin
+and any BYOK tier warning; `init` copies `templates/model-profiles.json` only when the
 file is absent). Every call prints one JSON
 document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`),
 3 = resolution failure

@@ -55,6 +55,7 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
 | File | Model |
 |---|---|
 | Agent | `agents.<alias>`, else `default`, else no `model:` line |
+| Handoff item (`handoffs:` entry) | The target agent's pin, first entry of a list, else no `model:` line |
 | Prompt on a custom agent (`/agento build-feature`, `/agento new-feature`, `/agento ap`, …) | The agent's model; a `prompts.<name>` entry for it is an error |
 | Prompt on the built-in agent (`agent: "agent"` or no `agent:`) | `prompts.<name>`, else `default`, else no `model:` line |
 
@@ -72,7 +73,7 @@ are unchanged.
 ## Applying and clearing
 
 ```text
-node <agento-root>/scripts/agento.mjs models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]
+node <agento-root>/scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]
 ```
 
 `/agento models …` runs the same verbs from chat, and the extension's
@@ -80,17 +81,35 @@ node <agento-root>/scripts/agento.mjs models [list | show <name> | apply <name> 
 defaults to the clone the CLI runs from; pass `--plugin-root` for another one.
 
 - `apply <name>` writes one `model:` line into every agent, prompt, and mirror (after
-  `argument-hint:`, else after `description:`), removes it where the profile resolves
-  to nothing, and marks each pinned file `git update-index --skip-worktree` so the
-  clone still looks clean to `/agento start-session` and `/agento quick-fix`. It
-  refuses (`status: "dirty"`, exit 3) while any of those files differs from `HEAD`
-  beyond its `model:` line — skip-worktree would hide such edits.
+  `argument-hint:`, else after `description:`), and a nested `model:` line into every
+  `handoffs:` item of the planner, builder, and reviewer — the handoff target's pin,
+  first entry when it is a list — after the item's last key. It removes the line
+  where the profile resolves to nothing, and marks each pinned file
+  `git update-index --skip-worktree` so the clone still looks clean to
+  `/agento start-session` and `/agento quick-fix`. It refuses (`status: "dirty"`,
+  exit 3) while any of those files differs from `HEAD` beyond its `model:` lines —
+  skip-worktree would hide such edits.
 - `clear` removes every `model:` line and every skip-worktree bit it set.
 - Both report `changed[]` and are idempotent: a repeat reports `changed: []`.
 - Every verb reports `active` — `null` (nothing pinned), the name of the profile the
   files match, or `custom` (pins that match no profile: hand-edited, or the profile
   changed after it was applied). There is no journal; the state is read from the
   files.
+
+`models pins` (CLI-only, for the Autopilot) reports each agent's current pin read
+from the plugin root's files: `pins: { planner, builder, reviewer, autopilot,
+mechanic, architect }`, each `{ name, file, model, subagentModel }` where `model` is
+the parsed pin (a name, a list, or `null`) and `subagentModel` the name or its first
+entry. The Autopilot passes the Builder's and Reviewer's `subagentModel` as the
+`runSubagent` `model` when it invokes them.
+
+The BYOK tier warning: when `autopilot` is pinned to a non-`copilot` (bring-your-own
+key) model while `builder` or `reviewer` pins a `copilot` model, `models
+show`/`apply`/`pins` report a `warnings[]` entry naming the pins and the fix — pin
+`autopilot` at least as high as the highest-tier model it delegates to. `apply` still
+succeeds. `agento.mjs doctor`'s `model-profile` check returns `warn` with the same
+detail when the applied pins trigger it. Unqualified names give no warning because
+the vendor is unknown.
 
 Run *Developer: Reload Window* if the model picker does not reflect a change.
 
@@ -108,7 +127,8 @@ node scripts/agento.mjs models apply <name>
 
 Every `models` output repeats this as `hint`, and `agento.mjs doctor` reports the
 state as its `model-profile` check: `ok` with nothing pinned or a named profile
-applied, `warn` for an invalid profiles file or `custom` pins.
+applied, `warn` for an invalid profiles file, `custom` pins, or the BYOK tier
+conflict described above.
 
 ## Developing Agento
 
