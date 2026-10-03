@@ -2569,6 +2569,7 @@ test("models usage errors: bad verb, arguments, profile name, and plugin root", 
   assert.equal(models("bogus").code, 1);
   assert.equal(models("show").code, 1);
   assert.equal(models("list", "extra").code, 1);
+  assert.equal(models("pins", "extra").code, 1);
   assert.equal(models("apply", "Bad_Name").code, 1);
   const notPlugin = runWith({ cwd: plugin, env }, "models", "--plugin-root", path.dirname(plugin));
   assert.equal(notPlugin.code, 1);
@@ -2576,10 +2577,37 @@ test("models usage errors: bad verb, arguments, profile name, and plugin root", 
   assert.equal(runWith({ cwd: plugin, env }, "models", "--plugin-root").code, 1);
 });
 
+test("models pins reads each agent's current pin and rejects an argument", () => {
+  const { models, writeProfiles } = modelsFixture();
+  assert.equal(models("pins", "extra").code, 1);
+
+  // Unpinned: every model/subagentModel is null.
+  const bare = models("pins");
+  assert.equal(bare.code, 0, JSON.stringify(bare.json));
+  assert.deepEqual(Object.keys(bare.json.pins).sort(), ["architect", "autopilot", "builder", "mechanic", "planner", "reviewer"]);
+  for (const alias of Object.keys(bare.json.pins)) {
+    assert.equal(bare.json.pins[alias].model, null, alias);
+    assert.equal(bare.json.pins[alias].subagentModel, null, alias);
+  }
+
+  writeProfiles({ mixed: { agents: { planner: "Planner Model (copilot)", builder: "Builder Model (copilot)", reviewer: ["Reviewer Model (copilot)", "Reviewer Fallback (copilot)"], autopilot: "Autopilot Model (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const pinned = models("pins");
+  assert.equal(pinned.code, 0, JSON.stringify(pinned.json));
+  assert.equal(pinned.json.pins.builder.model, "Builder Model (copilot)");
+  assert.equal(pinned.json.pins.builder.subagentModel, "Builder Model (copilot)");
+  assert.deepEqual(pinned.json.pins.reviewer.model, ["Reviewer Model (copilot)", "Reviewer Fallback (copilot)"]);
+  assert.equal(pinned.json.pins.reviewer.subagentModel, "Reviewer Model (copilot)");
+  assert.equal(pinned.json.pins.autopilot.model, "Autopilot Model (copilot)");
+  assert.equal(pinned.json.pins.planner.name, "📋 Agento Planner");
+  assert.equal(pinned.json.pins.builder.file, ".github/agents/delivery-builder.agent.md");
+  assert.deepEqual(pinned.json.warnings, []);
+});
+
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
   const repo = makeRepo();
   const usage = run(repo, "bogus").json.usage;
-  assert.ok(usage.some((line) => line.includes("models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  assert.ok(usage.some((line) => line.includes("models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
   const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
   assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });

@@ -18,7 +18,7 @@
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
-//   node scripts/agento.mjs models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
+//   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
@@ -1182,6 +1182,23 @@ function modelsReport(pluginRoot, loaded, state) {
   };
 }
 
+// The pin each agent file currently carries, read from the plugin root's files:
+// { alias: { name, file, model, subagentModel } }. `model` is the parsed top-level
+// pin (a string, a list, or null); `subagentModel` is the string or the first entry
+// of a list; both are null when the agent is unpinned.
+function modelsPins(pluginRoot) {
+  const pins = {};
+  for (const [alias, file] of Object.entries(AGENT_ALIASES)) {
+    const rel = `.github/agents/${file}`;
+    const abs = path.join(pluginRoot, rel);
+    if (!fs.existsSync(abs)) continue;
+    const text = fs.readFileSync(abs, "utf8");
+    const model = parseModelValue(text);
+    pins[alias] = { name: frontmatterField(text, "name"), file: rel, model, subagentModel: Array.isArray(model) ? model[0] : model };
+  }
+  return pins;
+}
+
 switch (command) {
   case "config":
     emit({
@@ -1669,7 +1686,7 @@ switch (command) {
 
   case "models": {
     const [verb = "list", name, ...extra] = rest;
-    const verbs = { list: 0, show: 1, apply: 1, clear: 0, init: 0 };
+    const verbs = { list: 0, pins: 0, show: 1, apply: 1, clear: 0, init: 0 };
     if (!Object.hasOwn(verbs, verb)) usage(`models: unknown verb ${verb}; known: ${Object.keys(verbs).join(", ")}`);
     if (extra.length || (verbs[verb] === 1 ? !name : name !== undefined)) usage(`models ${verb} takes ${verbs[verb] ? "exactly one profile name" : "no arguments"}`);
     if (verbs[verb] && !/^[a-z0-9-]+$/.test(name)) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(name)}`);
@@ -1706,6 +1723,14 @@ switch (command) {
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
       emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+    }
+
+    if (verb === "pins") {
+      const pins = modelsPins(pluginRoot);
+      const warnings = [];
+      const warn = byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model });
+      if (warn) warnings.push(warn);
+      emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     // apply | clear
