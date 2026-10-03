@@ -9,6 +9,7 @@ import { SESSION_WORKSPACE_SETTINGS } from "../../../cli/session-state.mjs";
 import { dispatchCommandAction, dispatchCommandToTarget } from "../../src/commandDispatcher.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
+import { initiativeMemberActionSource } from "../../src/initiativeMemberActions.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
 import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
 import { runNewInitiativeFlow, submittedInitiativeBrief, type NewInitiativeTarget } from "../../src/newInitiativeFlow.js";
@@ -547,6 +548,16 @@ export async function run(): Promise<void> {
   const readyMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "ready-delivery");
   assert.ok(readyMember);
   assert.match(String(api.initiatives.getTreeItem(readyMember).tooltip), /Ready: yes\nNext: yes/);
+  const buildingMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "building-delivery");
+  assert.ok(buildingMember);
+  assert.equal(api.initiatives.getTreeItem(buildingMember).contextValue, "agento.initiativeMember.in-flight");
+  const buildingDelivery = items.find((item) => item.kind === "delivery" && item.item.slug === "building-delivery");
+  assert.ok(buildingDelivery?.kind === "delivery");
+  assert.ok(buildingDelivery.item.actions.length > 0);
+  assert.deepEqual(
+    initiativeMemberActionSource(buildingMember, api.deliveries.current.model)?.actions,
+    buildingDelivery.item.actions,
+  );
 
   const promptEvents: string[] = [];
   api.setNewPlanPrompts({
