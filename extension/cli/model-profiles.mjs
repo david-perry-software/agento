@@ -93,21 +93,25 @@ function frontmatter(text) {
   return end > 0 ? { lines, end } : null;
 }
 
+function parseScalar(raw) {
+  const value = raw.replace(/\r$/, "").trim();
+  if (value.startsWith('"')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+  if (value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1).replace(/''/g, "'");
+  return value;
+}
+
 export function frontmatterField(text, key) {
   const fm = frontmatter(text);
   if (!fm) return null;
   const line = fm.lines.slice(1, fm.end).find((l) => l.startsWith(`${key}:`));
   if (line === undefined) return null;
-  const raw = line.slice(key.length + 1).replace(/\r$/, "").trim();
-  if (raw.startsWith('"')) {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return raw.slice(1, -1);
-    }
-  }
-  if (raw.startsWith("'") && raw.endsWith("'")) return raw.slice(1, -1).replace(/''/g, "'");
-  return raw;
+  return parseScalar(line.slice(key.length + 1));
 }
 
 const BUILT_IN_AGENT = "agent";
@@ -127,6 +131,15 @@ export function resolveTargets({ profile, agents, prompts }) {
     if (agent.name) byName.set(agent.name, value);
     targets.push({ file: agent.file, value });
   }
+  const handoffValue = (name) => {
+    const value = byName.get(name) ?? null;
+    return Array.isArray(value) ? value[0] : value;
+  };
+  const handoffs = {};
+  for (const agent of agents) {
+    if (!agent.handoffs?.length) continue;
+    handoffs[agent.file] = agent.handoffs.map((name) => ({ target: name, value: handoffValue(name) }));
+  }
   const promptEntries = profile.prompts ?? {};
   const known = new Set(prompts.map((p) => p.name));
   for (const key of Object.keys(promptEntries)) {
@@ -141,12 +154,24 @@ export function resolveTargets({ profile, agents, prompts }) {
       targets.push({ file: prompt.file, value: promptEntries[prompt.name] ?? fallback });
     }
   }
-  return { targets, errors };
+  return { targets, handoffs, errors };
 }
 
 export function renderModel(value) {
   if (value === null || value === undefined) return null;
   return Array.isArray(value) ? `model: [${value.map((v) => JSON.stringify(v)).join(", ")}]` : `model: ${JSON.stringify(value)}`;
+}
+
+// The full expected per-file state `readModel` returns: the top-level model line
+// plus one line per handoff pin, in handoff order.
+export function renderFileModel(value, handoffs) {
+  const parts = [];
+  const top = renderModel(value);
+  if (top !== null) parts.push(top);
+  for (const { value: handoff } of handoffs ?? []) {
+    if (handoff !== null) parts.push(renderModel(handoff));
+  }
+  return parts.length ? parts.join("\n") : null;
 }
 
 // A top-level key's block: its line plus following indented or `- ` continuation lines.
@@ -164,12 +189,61 @@ function keyBlocks(lines, end, key) {
   return blocks;
 }
 
-// The current `model:` block (continuation lines joined by "\n", "\r" stripped), or null.
+// Each `handoffs:` list item: `- label:` then indented `agent:`, `prompt:`,
+// `send:` keys. Returns [{ target, indent, modelLine, lastKey }] in file order;
+// `modelLine` is the item's nested `model:` line index (-1 when absent) and
+// `lastKey` the item's last key line (the insertion point for a new pin).
+function handoffItems(lines, end) {
+  const [block] = keyBlocks(lines, end, "handoffs");
+  if (!block) return [];
+  const spans = [];
+  let start = -1;
+  for (let i = block[0] + 1; i < block[1]; i += 1) {
+    if (/^\s*-( |\r?$)/.test(lines[i])) {
+      if (start !== -1) spans.push([start, i]);
+      start = i;
+    }
+  }
+  if (start !== -1) spans.push([start, block[1]]);
+  return spans.map(([from, to]) => {
+    let indent = null;
+    let target = null;
+    let modelLine = -1;
+    let lastKey = from;
+    for (let i = from + 1; i < to; i += 1) {
+      const m = lines[i].match(/^(\s*)([A-Za-z][\w-]*):(.*\r?)$/);
+      if (!m) continue;
+      if (indent === null) indent = m[1];
+      if (m[2] === "agent") target = parseScalar(m[3]);
+      else if (m[2] === "model") modelLine = i;
+      lastKey = i;
+    }
+    return { target, indent: indent ?? "    ", modelLine, lastKey };
+  });
+}
+
+// The agent names a file's `handoffs:` items target, in file order.
+export function handoffTargets(text) {
+  const fm = frontmatter(text);
+  if (!fm) return [];
+  return handoffItems(fm.lines, fm.end).map((item) => item.target);
+}
+
+// The current per-file state: the top-level `model:` block (continuation lines
+// joined by "\n", "\r" stripped) plus each handoff item's nested `model:` line,
+// normalized to `model: <value>`; null when nothing is pinned.
 export function readModel(text) {
   const fm = frontmatter(text);
   if (!fm) return null;
+  const parts = [];
   const [block] = keyBlocks(fm.lines, fm.end, "model");
-  return block ? fm.lines.slice(block[0], block[1]).map((l) => l.replace(/\r$/, "")).join("\n") : null;
+  if (block) parts.push(fm.lines.slice(block[0], block[1]).map((l) => l.replace(/\r$/, "")).join("\n"));
+  for (const item of handoffItems(fm.lines, fm.end)) {
+    if (item.modelLine === -1) continue;
+    const raw = fm.lines[item.modelLine].slice(item.indent.length + "model:".length).replace(/\r$/, "");
+    parts.push(`model: ${raw.trim()}`);
+  }
+  return parts.length ? parts.join("\n") : null;
 }
 
 // Leaves exactly one `model:` line (none for null): replaced in place, else inserted
@@ -200,20 +274,106 @@ export function setModel(text, value) {
   return out.join("\n");
 }
 
+// Sets the nested `model:` line of each `handoffs:` list item. `values` is either
+// null (remove every handoff pin) or an array of `{ target, value }` — the value
+// for the item whose `agent:` is `target`, null to remove it; unknown targets are
+// left untouched. A line is replaced in place, else inserted after the item's last
+// key at the item's key indentation; CRLF and every other byte are preserved.
+export function setHandoffModels(text, values) {
+  const fm = frontmatter(text);
+  if (!fm) return text;
+  const { lines } = fm;
+  const items = handoffItems(lines, fm.end);
+  if (!items.length) return text;
+  const cr = lines[0].endsWith("\r") ? "\r" : "";
+  const insertions = new Map();
+  const deletions = new Set();
+  for (const item of items) {
+    const entry = values === null ? { value: null } : values?.find((e) => e.target === item.target);
+    if (entry === undefined) continue;
+    const line = renderModel(entry.value);
+    if (line === null) {
+      if (item.modelLine !== -1) deletions.add(item.modelLine);
+    } else if (item.modelLine !== -1) {
+      deletions.add(item.modelLine);
+      insertions.set(item.modelLine, [item.indent + line + cr]);
+    } else {
+      const at = item.lastKey + 1;
+      if (!insertions.has(at)) insertions.set(at, []);
+      insertions.get(at).push(item.indent + line + cr);
+    }
+  }
+  if (!insertions.size && !deletions.size) return text;
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const inserts = insertions.get(i);
+    if (inserts) out.push(...inserts);
+    if (deletions.has(i)) continue;
+    out.push(lines[i]);
+  }
+  return out.join("\n");
+}
+
 // profiles: [{ name, targets: [{ file, value }] }] (resolved, valid ones, in file
 // order); current: { [file]: readModel(text) }. null when nothing is pinned, the
 // first profile whose rendering matches every file, else "custom".
 export function detectActive({ profiles, current }) {
   if (Object.values(current).every((line) => line === null)) return null;
-  const match = profiles.find(({ targets }) => targets.length > 0 && Object.keys(current).every((file) => {
+  const match = profiles.find(({ targets, handoffs }) => targets.length > 0 && Object.keys(current).every((file) => {
     const target = targets.find((t) => t.file === file);
-    return (target ? renderModel(target.value) : null) === current[file];
+    const expected = target ? renderFileModel(target.value, handoffs?.[file]) : null;
+    return expected === current[file];
   }));
   return match ? match.name : "custom";
 }
 
-// True when a working file differs from its committed bytes beyond the model: line;
-// skip-worktree would hide such edits, so apply refuses them.
+// True when a working file differs from its committed bytes beyond its model: lines
+// (the top-level pin and every handoff pin); skip-worktree would hide such edits,
+// so apply refuses them.
 export function differsBeyondModel(headText, workText) {
-  return setModel(headText, null) !== setModel(workText, null);
+  return stripModels(headText) !== stripModels(workText);
+}
+
+function stripModels(text) {
+  return setHandoffModels(setModel(text, null), null);
+}
+
+// The parsed top-level `model:` value: a string, a list, or null when unpinned.
+export function parseModelValue(text) {
+  const fm = frontmatter(text);
+  if (!fm) return null;
+  const [block] = keyBlocks(fm.lines, fm.end, "model");
+  if (!block) return null;
+  const raw = fm.lines.slice(block[0], block[1]).map((l) => l.replace(/\r$/, "")).join("\n").slice("model:".length).trim();
+  if (raw === "") return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw.replace(/^["']|["']$/g, "");
+  }
+}
+
+// The vendor part of a qualified `<name> (<vendor>)` model name, else null.
+export function vendorOf(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\(([^()]+)\)\s*$/);
+  return match ? match[1] : null;
+}
+
+// Decision 2 tier warning: when autopilot is pinned to a non-copilot (bring-your-
+// own-key) vendor while builder or reviewer pins a copilot model, VS Code may
+// refuse the higher-tier Copilot model. Returns the warning string, or null.
+export function byokTierWarning({ autopilot, builder, reviewer }) {
+  const first = (value) => (Array.isArray(value) ? value[0] : value);
+  const autopilotPin = first(autopilot ?? null);
+  const autopilotVendor = autopilotPin ? vendorOf(autopilotPin) : null;
+  if (!autopilotVendor || autopilotVendor === "copilot") return null;
+  const delegates = [];
+  for (const [alias, value] of [["builder", builder], ["reviewer", reviewer]]) {
+    const pin = first(value ?? null);
+    if (pin && vendorOf(pin) === "copilot") delegates.push({ alias, pin });
+  }
+  if (!delegates.length) return null;
+  const named = delegates.map((d) => `${d.alias} ${JSON.stringify(d.pin)}`).join(" and ");
+  return `autopilot is pinned to ${JSON.stringify(autopilotPin)} (a bring-your-own-key model) but delegates to ${named} on a Copilot model; VS Code may refuse the higher-tier Copilot model — pin autopilot at least as high as the highest-tier model it delegates to, then re-apply`;
 }
