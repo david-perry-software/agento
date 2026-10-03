@@ -2604,6 +2604,27 @@ test("models pins reads each agent's current pin and rejects an argument", () =>
   assert.deepEqual(pinned.json.warnings, []);
 });
 
+test("models show, apply, and pins warn when autopilot is BYOK and delegates to a Copilot model", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { agents: { autopilot: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } });
+  const show = models("show", "mixed");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  assert.equal(show.json.warnings.length, 1);
+  assert.match(show.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)".*reviewer "Claude Fable 5.1 \(copilot\)"/);
+  assert.match(show.json.warnings[0], /pin autopilot at least as high as the highest-tier model it delegates to/);
+
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.active, "mixed");
+  assert.equal(apply.json.warnings.length, 1);
+  assert.match(apply.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)"/);
+
+  const pins = models("pins");
+  assert.equal(pins.code, 0);
+  assert.equal(pins.json.warnings.length, 1);
+  assert.match(pins.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)"/);
+});
+
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
   const repo = makeRepo();
   const usage = run(repo, "bogus").json.usage;
@@ -2803,6 +2824,17 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
   const invalid = check();
   assert.equal(invalid.status, "warn");
   assert.match(invalid.detail, /1 error\(s\), first: invalid JSON/);
+});
+
+test("doctor model-profile warns when autopilot is BYOK and delegates to a Copilot model", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  const check = (root = plugin) => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", root).json)["model-profile"];
+  writeProfiles({ mixed: { agents: { autopilot: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const tier = check();
+  assert.equal(tier.status, "warn");
+  assert.match(tier.detail, /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)".*reviewer "Claude Fable 5.1 \(copilot\)"/);
+  assert.match(tier.fallback, /pin autopilot at least as high as the highest-tier model it delegates to/);
 });
 
 test("doctor --for models needs only the terminal checks", () => {

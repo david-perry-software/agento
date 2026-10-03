@@ -684,7 +684,12 @@ const DOCTOR_CHECKS = {
     }
     const { active } = modelsState(pluginRoot, loaded);
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
-    if (active !== "custom") return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
+    if (active !== "custom") {
+      const pins = modelsPins(pluginRoot);
+      const warn = byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model });
+      if (warn) return { status: "warn", detail: warn, fallback: `pin autopilot at least as high as the highest-tier model it delegates to, then \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\`` };
+      return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
+    }
     return {
       status: "warn",
       detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied)`,
@@ -1197,6 +1202,17 @@ function modelsPins(pluginRoot) {
     pins[alias] = { name: frontmatterField(text, "name"), file: rel, model, subagentModel: Array.isArray(model) ? model[0] : model };
   }
   return pins;
+}
+
+// The pin a profile resolves for one agent alias, or null.
+function agentTargetValue(targets, alias) {
+  return targets.find((t) => t.file === `.github/agents/${AGENT_ALIASES[alias]}`)?.value ?? null;
+}
+
+// Decision 2 tier warnings for a resolved target set: [warning] or [].
+function tierWarnings(targets) {
+  const warn = byokTierWarning({ autopilot: agentTargetValue(targets, "autopilot"), builder: agentTargetValue(targets, "builder"), reviewer: agentTargetValue(targets, "reviewer") });
+  return warn ? [warn] : [];
 }
 
 switch (command) {
@@ -1722,7 +1738,8 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
-      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+      const warnings = tierWarnings(targets);
+      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
     }
 
     if (verb === "pins") {
@@ -1779,7 +1796,7 @@ switch (command) {
         }
       }
     }
-    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
     break;
   }
 
