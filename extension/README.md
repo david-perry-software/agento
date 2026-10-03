@@ -29,6 +29,8 @@ Blocked, and Complete using the state and readiness reported by the CLI. Member
 descriptions and tooltips include state, wave, blockers, readiness, and whether the
 member is next. Selecting an initiative or member opens its `breakdown.md` beside the
 active editor, including when artifacts are stored in a companion repository.
+The play action on an in-flight member opens the actions picker of the Deliveries
+row with the same slug, or an informational message when no delivery matches.
 
 The shared roadmap and Git watchers refresh both views without polling. Initiative
 errors and merged-but-not-complete anomalies remain visible under the affected
@@ -51,7 +53,8 @@ from `status --pr`; selecting it focuses the Session & Doctor view.
 
 ## Commands
 
-The play action in a delivery row or the Session & Doctor title opens a picker in
+The play action in a delivery row, an in-flight initiative member, or the Session &
+Doctor title opens a picker in
 the exact order returned by the CLI's `allowed[]` and `elsewhere[]` fields. The
 extension does not maintain its own lifecycle command list. Delivery selections are
 revalidated with `agento.mjs next <slug>` immediately before dispatch.
