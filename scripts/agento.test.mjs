@@ -2569,6 +2569,7 @@ test("models usage errors: bad verb, arguments, profile name, and plugin root", 
   assert.equal(models("bogus").code, 1);
   assert.equal(models("show").code, 1);
   assert.equal(models("list", "extra").code, 1);
+  assert.equal(models("pins", "extra").code, 1);
   assert.equal(models("apply", "Bad_Name").code, 1);
   const notPlugin = runWith({ cwd: plugin, env }, "models", "--plugin-root", path.dirname(plugin));
   assert.equal(notPlugin.code, 1);
@@ -2576,10 +2577,58 @@ test("models usage errors: bad verb, arguments, profile name, and plugin root", 
   assert.equal(runWith({ cwd: plugin, env }, "models", "--plugin-root").code, 1);
 });
 
+test("models pins reads each agent's current pin and rejects an argument", () => {
+  const { models, writeProfiles } = modelsFixture();
+  assert.equal(models("pins", "extra").code, 1);
+
+  // Unpinned: every model/subagentModel is null.
+  const bare = models("pins");
+  assert.equal(bare.code, 0, JSON.stringify(bare.json));
+  assert.deepEqual(Object.keys(bare.json.pins).sort(), ["architect", "autopilot", "builder", "mechanic", "planner", "reviewer"]);
+  for (const alias of Object.keys(bare.json.pins)) {
+    assert.equal(bare.json.pins[alias].model, null, alias);
+    assert.equal(bare.json.pins[alias].subagentModel, null, alias);
+  }
+
+  writeProfiles({ mixed: { agents: { planner: "Planner Model (copilot)", builder: "Builder Model (copilot)", reviewer: ["Reviewer Model (copilot)", "Reviewer Fallback (copilot)"], autopilot: "Autopilot Model (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const pinned = models("pins");
+  assert.equal(pinned.code, 0, JSON.stringify(pinned.json));
+  assert.equal(pinned.json.pins.builder.model, "Builder Model (copilot)");
+  assert.equal(pinned.json.pins.builder.subagentModel, "Builder Model (copilot)");
+  assert.deepEqual(pinned.json.pins.reviewer.model, ["Reviewer Model (copilot)", "Reviewer Fallback (copilot)"]);
+  assert.equal(pinned.json.pins.reviewer.subagentModel, "Reviewer Model (copilot)");
+  assert.equal(pinned.json.pins.autopilot.model, "Autopilot Model (copilot)");
+  assert.equal(pinned.json.pins.planner.name, "📋 Agento Planner");
+  assert.equal(pinned.json.pins.builder.file, ".github/agents/delivery-builder.agent.md");
+  assert.deepEqual(pinned.json.warnings, []);
+});
+
+test("models show, apply, and pins warn when autopilot is BYOK and delegates to a Copilot model", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { agents: { autopilot: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } });
+  const show = models("show", "mixed");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  assert.equal(show.json.warnings.length, 1);
+  assert.match(show.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)".*reviewer "Claude Fable 5.1 \(copilot\)"/);
+  assert.match(show.json.warnings[0], /pin autopilot at least as high as the highest-tier model it delegates to/);
+
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.active, "mixed");
+  assert.equal(apply.json.warnings.length, 1);
+  assert.match(apply.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)"/);
+
+  const pins = models("pins");
+  assert.equal(pins.code, 0);
+  assert.equal(pins.json.warnings.length, 1);
+  assert.match(pins.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)"/);
+});
+
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
   const repo = makeRepo();
   const usage = run(repo, "bogus").json.usage;
-  assert.ok(usage.some((line) => line.includes("models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  assert.ok(usage.some((line) => line.includes("models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
   const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
   assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });
@@ -2633,6 +2682,34 @@ test("models apply pins agents, prompts, and mirrors under skip-worktree; clear 
   assert.deepEqual(models("clear").json.changed, []);
 });
 
+test("issue #79 autopilot-subagent-model-pins: models apply pins handoffs[].model to the target agent's model; clear removes it", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({
+    mixed: {
+      agents: {
+        planner: "Planner Model (copilot)",
+        builder: "Builder Model (copilot)",
+        reviewer: ["Reviewer Model (copilot)", "Reviewer Fallback (copilot)"],
+        autopilot: "Autopilot Model (copilot)",
+      },
+    },
+  });
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.active, "mixed");
+  const read = (rel) => fs.readFileSync(path.join(plugin, rel), "utf8");
+  // Each handoff item gains a nested model: line carrying the target agent's pin:
+  // planner → builder, builder → reviewer (first entry of its list), reviewer → autopilot.
+  assert.match(read(".github/agents/delivery-planner.agent.md"), /^    model: "Builder Model \(copilot\)"$/m);
+  assert.match(read(".github/agents/delivery-builder.agent.md"), /^    model: "Reviewer Model \(copilot\)"$/m);
+  assert.match(read(".github/agents/delivery-reviewer.agent.md"), /^    model: "Autopilot Model \(copilot\)"$/m);
+  assert.equal(models("list").json.active, "mixed");
+  const clear = models("clear");
+  assert.equal(clear.code, 0);
+  assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
+  assert.deepEqual(sBits(plugin), []);
+});
+
 test("models apply refuses targets edited beyond their model line", () => {
   const { plugin, models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { default: "Cheap" } });
@@ -2648,6 +2725,24 @@ test("models apply refuses targets edited beyond their model line", () => {
   assert.equal(clear.code, 0);
   assert.deepEqual(sBits(plugin), []);
   assert.equal(git(plugin, "status", "--porcelain"), "M .github/agents/delivery-builder.agent.md");
+});
+
+test("models apply ignores handoff model: lines in dirty detection and still refuses other edits", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { agents: { planner: "P (copilot)", builder: "B (copilot)", reviewer: "R (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  assert.deepEqual(models("list").json.dirty, []);
+  const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
+  assert.match(fs.readFileSync(file, "utf8"), /^    model: "R \(copilot\)"$/m);
+  // A real edit beyond both the top-level and handoff model: lines refuses apply.
+  fs.appendFileSync(file, "\nlocal edit\n");
+  const refused = models("apply", "mixed");
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "dirty");
+  assert.deepEqual(refused.json.dirty, [".github/agents/delivery-builder.agent.md"]);
+  // Dropping the local edit leaves only the applied pins, so it is clean again.
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("\nlocal edit\n", ""));
+  assert.deepEqual(models("list").json.dirty, []);
 });
 
 test("models apply refuses a linked-worktree plugin root; clear still runs there", () => {
@@ -2729,6 +2824,17 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
   const invalid = check();
   assert.equal(invalid.status, "warn");
   assert.match(invalid.detail, /1 error\(s\), first: invalid JSON/);
+});
+
+test("doctor model-profile warns when autopilot is BYOK and delegates to a Copilot model", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  const check = (root = plugin) => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", root).json)["model-profile"];
+  writeProfiles({ mixed: { agents: { autopilot: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const tier = check();
+  assert.equal(tier.status, "warn");
+  assert.match(tier.detail, /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)".*reviewer "Claude Fable 5.1 \(copilot\)"/);
+  assert.match(tier.fallback, /pin autopilot at least as high as the highest-tier model it delegates to/);
 });
 
 test("doctor --for models needs only the terminal checks", () => {

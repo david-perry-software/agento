@@ -18,7 +18,7 @@
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
-//   node scripts/agento.mjs models [list | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
+//   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
@@ -34,7 +34,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, resolveTargets, setModel } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
 import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -684,7 +684,12 @@ const DOCTOR_CHECKS = {
     }
     const { active } = modelsState(pluginRoot, loaded);
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
-    if (active !== "custom") return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
+    if (active !== "custom") {
+      const pins = modelsPins(pluginRoot);
+      const warn = byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model });
+      if (warn) return { status: "warn", detail: warn, fallback: `pin autopilot at least as high as the highest-tier model it delegates to, then \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\`` };
+      return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
+    }
     return {
       status: "warn",
       detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied)`,
@@ -1101,7 +1106,7 @@ function modelTargetFiles(pluginRoot) {
     return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(suffix)).sort().map((f) => `${rel}/${f}`) : [];
   };
   const read = (file) => fs.readFileSync(path.join(pluginRoot, file), "utf8");
-  const agents = list(".github/agents", ".agent.md").map((file) => ({ file, name: frontmatterField(read(file), "name") }));
+  const agents = list(".github/agents", ".agent.md").map((file) => ({ file, name: frontmatterField(read(file), "name"), handoffs: handoffTargets(read(file)) }));
   const prompts = list(".github/prompts", ".prompt.md").map((file) => ({ file, name: path.basename(file, ".prompt.md"), agent: frontmatterField(read(file), "agent") }));
   const mirrors = {};
   for (const prompt of prompts) {
@@ -1123,10 +1128,10 @@ function loadProfiles() {
 // Resolved targets (mirrors included) plus every error that blocks applying `name`.
 function resolveProfile(loaded, name, layout) {
   const parseErrors = errorsFor(loaded.errors, name);
-  if (parseErrors.length) return { targets: [], errors: parseErrors };
-  const { targets, errors } = resolveTargets({ profile: loaded.profiles[name], agents: layout.agents, prompts: layout.prompts });
+  if (parseErrors.length) return { targets: [], handoffs: {}, errors: parseErrors };
+  const { targets, handoffs, errors } = resolveTargets({ profile: loaded.profiles[name], agents: layout.agents, prompts: layout.prompts });
   const withMirrors = targets.flatMap((t) => (layout.mirrors[t.file] ? [t, { file: layout.mirrors[t.file], value: t.value }] : [t]));
-  return { targets: withMirrors, errors: errors.map((e) => `profiles.${name}.${e}`) };
+  return { targets: withMirrors, handoffs, errors: errors.map((e) => `profiles.${name}.${e}`) };
 }
 
 function gitShowHead(pluginRoot, file) {
@@ -1180,6 +1185,34 @@ function modelsReport(pluginRoot, loaded, state) {
     dirty: state.dirty,
     hint: MODELS_HINT,
   };
+}
+
+// The pin each agent file currently carries, read from the plugin root's files:
+// { alias: { name, file, model, subagentModel } }. `model` is the parsed top-level
+// pin (a string, a list, or null); `subagentModel` is the string or the first entry
+// of a list; both are null when the agent is unpinned.
+function modelsPins(pluginRoot) {
+  const pins = {};
+  for (const [alias, file] of Object.entries(AGENT_ALIASES)) {
+    const rel = `.github/agents/${file}`;
+    const abs = path.join(pluginRoot, rel);
+    if (!fs.existsSync(abs)) continue;
+    const text = fs.readFileSync(abs, "utf8");
+    const model = parseModelValue(text);
+    pins[alias] = { name: frontmatterField(text, "name"), file: rel, model, subagentModel: Array.isArray(model) ? model[0] : model };
+  }
+  return pins;
+}
+
+// The pin a profile resolves for one agent alias, or null.
+function agentTargetValue(targets, alias) {
+  return targets.find((t) => t.file === `.github/agents/${AGENT_ALIASES[alias]}`)?.value ?? null;
+}
+
+// Decision 2 tier warnings for a resolved target set: [warning] or [].
+function tierWarnings(targets) {
+  const warn = byokTierWarning({ autopilot: agentTargetValue(targets, "autopilot"), builder: agentTargetValue(targets, "builder"), reviewer: agentTargetValue(targets, "reviewer") });
+  return warn ? [warn] : [];
 }
 
 switch (command) {
@@ -1669,7 +1702,7 @@ switch (command) {
 
   case "models": {
     const [verb = "list", name, ...extra] = rest;
-    const verbs = { list: 0, show: 1, apply: 1, clear: 0, init: 0 };
+    const verbs = { list: 0, pins: 0, show: 1, apply: 1, clear: 0, init: 0 };
     if (!Object.hasOwn(verbs, verb)) usage(`models: unknown verb ${verb}; known: ${Object.keys(verbs).join(", ")}`);
     if (extra.length || (verbs[verb] === 1 ? !name : name !== undefined)) usage(`models ${verb} takes ${verbs[verb] ? "exactly one profile name" : "no arguments"}`);
     if (verbs[verb] && !/^[a-z0-9-]+$/.test(name)) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(name)}`);
@@ -1705,11 +1738,21 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
-      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+      const warnings = tierWarnings(targets);
+      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+    }
+
+    if (verb === "pins") {
+      const pins = modelsPins(pluginRoot);
+      const warnings = [];
+      const warn = byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model });
+      if (warn) warnings.push(warn);
+      emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     // apply | clear
     let targets = state.layout.files.map((file) => ({ file, value: null }));
+    let handoffs = null;
     if (verb === "apply") {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const resolved = resolveProfile(loaded, name, state.layout);
@@ -1719,9 +1762,10 @@ switch (command) {
         emit({ status: "worktree", verb, profile: name, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; skip-worktree would hide edits made here — apply to the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
       if (state.dirty.length) {
-        emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: line; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
+        emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: lines; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
       targets = resolved.targets;
+      handoffs = resolved.handoffs;
     }
     const writes = [];
     for (const { file, value } of targets) {
@@ -1730,6 +1774,7 @@ switch (command) {
       let after;
       try {
         after = setModel(before, value);
+        after = setHandoffModels(after, handoffs === null ? null : handoffs[file]);
       } catch (error) {
         emit({ status: "invalid", verb, profile: name ?? null, errors: [`${file}: ${error.message}`], ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
@@ -1739,8 +1784,9 @@ switch (command) {
     if (state.isGit) {
       const flagged = new Set(state.skipWorktree);
       const tracked = targets.filter((t) => state.tracked.has(t.file));
-      const pin = tracked.filter((t) => t.value !== null && !flagged.has(t.file)).map((t) => t.file);
-      const unpin = tracked.filter((t) => t.value === null && flagged.has(t.file)).map((t) => t.file);
+      const hasHandoffPin = (file) => (handoffs?.[file] ?? []).some((h) => h.value !== null);
+      const pin = tracked.filter((t) => (t.value !== null || hasHandoffPin(t.file)) && !flagged.has(t.file)).map((t) => t.file);
+      const unpin = tracked.filter((t) => t.value === null && !hasHandoffPin(t.file) && flagged.has(t.file)).map((t) => t.file);
       for (const [flag, files] of [["--skip-worktree", pin], ["--no-skip-worktree", unpin]]) {
         if (!files.length) continue;
         try {
@@ -1750,7 +1796,7 @@ switch (command) {
         }
       }
     }
-    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
     break;
   }
 

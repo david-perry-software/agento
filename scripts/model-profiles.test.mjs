@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, detectActive, differsBeyondModel, errorsFor, frontmatterField, parseProfiles, profilesFile, readModel, renderModel, resolveTargets, setModel } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, renderFileModel, renderModel, resolveTargets, setHandoffModels, setModel, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -193,4 +193,99 @@ test("differsBeyondModel ignores only the model: line", () => {
   assert.equal(differsBeyondModel(AGENT_DOC, AGENT_DOC), false);
   assert.equal(differsBeyondModel(AGENT_DOC, setModel(AGENT_DOC, "M").replace("Body", "Edited")), true);
   assert.equal(differsBeyondModel(AGENT_DOC, AGENT_DOC.replace(/\n/g, "\r\n")), true);
+});
+
+const HANDOFF_DOC = '---\nname: "X"\ndescription: "d"\nhandoffs:\n  - label: "Review this work"\n    agent: "🔍 Agento Reviewer"\n    prompt: "Review"\n    send: true\n---\n\nBody\n';
+
+test("setHandoffModels inserts a nested model: line after each item's last key", () => {
+  const pinned = setHandoffModels(HANDOFF_DOC, [{ target: "🔍 Agento Reviewer", value: "Reviewer Model (copilot)" }]);
+  assert.equal(pinned, '---\nname: "X"\ndescription: "d"\nhandoffs:\n  - label: "Review this work"\n    agent: "🔍 Agento Reviewer"\n    prompt: "Review"\n    send: true\n    model: "Reviewer Model (copilot)"\n---\n\nBody\n');
+  assert.deepEqual(handoffTargets(pinned), ["🔍 Agento Reviewer"]);
+  assert.deepEqual(handoffTargets(HANDOFF_DOC), ["🔍 Agento Reviewer"]);
+  assert.equal(readModel(pinned), 'model: "Reviewer Model (copilot)"');
+  assert.equal(readModel(HANDOFF_DOC), null);
+});
+
+test("setHandoffModels replaces in place, leaves unknown targets untouched, and removes byte-exactly", () => {
+  const pinned = setHandoffModels(HANDOFF_DOC, [{ target: "🔍 Agento Reviewer", value: "Old (copilot)" }]);
+  const replaced = setHandoffModels(pinned, [{ target: "🔍 Agento Reviewer", value: "New (copilot)" }]);
+  assert.equal(replaced, pinned.replace('"Old (copilot)"', '"New (copilot)"'));
+  assert.equal(readModel(replaced), 'model: "New (copilot)"');
+  assert.equal(setHandoffModels(pinned, [{ target: "Nobody", value: "X" }]), pinned);
+  assert.equal(setHandoffModels(pinned, null), HANDOFF_DOC);
+  assert.equal(setHandoffModels(pinned, [{ target: "🔍 Agento Reviewer", value: null }]), HANDOFF_DOC);
+});
+
+test("setHandoffModels preserves CRLF and every other byte", () => {
+  const crlf = HANDOFF_DOC.replace(/\n/g, "\r\n");
+  const pinned = setHandoffModels(crlf, [{ target: "🔍 Agento Reviewer", value: "Reviewer Model (copilot)" }]);
+  assert.equal(pinned, '---\r\nname: "X"\r\ndescription: "d"\r\nhandoffs:\r\n  - label: "Review this work"\r\n    agent: "🔍 Agento Reviewer"\r\n    prompt: "Review"\r\n    send: true\r\n    model: "Reviewer Model (copilot)"\r\n---\r\n\r\nBody\r\n');
+  assert.equal(setHandoffModels(pinned, null), crlf);
+});
+
+test("resolveTargets handoffs: first entry of a list, null when unpinned or unknown", () => {
+  const agents = [
+    { file: ".github/agents/delivery-planner.agent.md", name: "📋 Agento Planner", handoffs: ["🔨 Agento Builder"] },
+    { file: ".github/agents/delivery-builder.agent.md", name: "🔨 Agento Builder", handoffs: ["🔍 Agento Reviewer"] },
+    { file: ".github/agents/delivery-reviewer.agent.md", name: "🔍 Agento Reviewer", handoffs: ["🤖 Agento Autopilot"] },
+    { file: ".github/agents/delivery-autopilot.agent.md", name: "🤖 Agento Autopilot", handoffs: [] },
+  ];
+  const { handoffs } = resolveTargets({
+    profile: { default: "Cheap", agents: { builder: ["A (copilot)", "B"], reviewer: "Strong" } },
+    agents,
+    prompts: [],
+  });
+  assert.deepEqual(handoffs, {
+    ".github/agents/delivery-planner.agent.md": [{ target: "🔨 Agento Builder", value: "A (copilot)" }],
+    ".github/agents/delivery-builder.agent.md": [{ target: "🔍 Agento Reviewer", value: "Strong" }],
+    ".github/agents/delivery-reviewer.agent.md": [{ target: "🤖 Agento Autopilot", value: "Cheap" }],
+  });
+  const bare = resolveTargets({ profile: { agents: { builder: "X" } }, agents, prompts: [] }).handoffs;
+  assert.deepEqual(bare, {
+    ".github/agents/delivery-planner.agent.md": [{ target: "🔨 Agento Builder", value: "X" }],
+    ".github/agents/delivery-builder.agent.md": [{ target: "🔍 Agento Reviewer", value: null }],
+    ".github/agents/delivery-reviewer.agent.md": [{ target: "🤖 Agento Autopilot", value: null }],
+  });
+});
+
+test("detectActive counts handoff pins and renderFileModel matches readModel", () => {
+  const file = "a.agent.md";
+  const profiles = [
+    { name: "mixed", targets: [{ file, value: "Strong" }], handoffs: { [file]: [{ target: "X", value: "H (copilot)" }] } },
+    { name: "solo", targets: [{ file, value: "Strong" }], handoffs: {} },
+  ];
+  assert.equal(detectActive({ profiles, current: { [file]: 'model: "Strong"\nmodel: "H (copilot)"' } }), "mixed");
+  assert.equal(detectActive({ profiles, current: { [file]: 'model: "Strong"' } }), "solo");
+  assert.equal(detectActive({ profiles, current: { [file]: 'model: "Strong"\nmodel: "Edited"' } }), "custom");
+  assert.equal(renderFileModel("Strong", [{ target: "X", value: "H (copilot)" }]), 'model: "Strong"\nmodel: "H (copilot)"');
+  assert.equal(renderFileModel(null, [{ target: "X", value: "H (copilot)" }]), 'model: "H (copilot)"');
+  assert.equal(renderFileModel(null, null), null);
+});
+
+test("differsBeyondModel ignores both the top-level and handoff model: lines", () => {
+  const withHandoff = setHandoffModels(HANDOFF_DOC, [{ target: "🔍 Agento Reviewer", value: "M (copilot)" }]);
+  const both = setHandoffModels(setModel(HANDOFF_DOC, "Top (copilot)"), [{ target: "🔍 Agento Reviewer", value: "M (copilot)" }]);
+  assert.equal(differsBeyondModel(HANDOFF_DOC, withHandoff), false);
+  assert.equal(differsBeyondModel(HANDOFF_DOC, both), false);
+  assert.equal(differsBeyondModel(HANDOFF_DOC, HANDOFF_DOC.replace("Review", "Edited")), true);
+  assert.equal(differsBeyondModel(HANDOFF_DOC, withHandoff.replace("Body", "Edited")), true);
+});
+
+test("parseModelValue reads string, list, and null top-level pins", () => {
+  assert.equal(parseModelValue(setModel(AGENT_DOC, "Strong (copilot)")), "Strong (copilot)");
+  assert.deepEqual(parseModelValue(setModel(AGENT_DOC, ["A (copilot)", "B (copilot)"])), ["A (copilot)", "B (copilot)"]);
+  assert.equal(parseModelValue(AGENT_DOC), null);
+});
+
+test("vendorOf and byokTierWarning classify the BYOK tier conflict", () => {
+  assert.equal(vendorOf("DeepSeek V4 Pro (deepseek)"), "deepseek");
+  assert.equal(vendorOf("Claude Fable 5.1 (copilot)"), "copilot");
+  assert.equal(vendorOf("Unqualified"), null);
+  assert.equal(vendorOf(["list"]), null);
+  const conflict = byokTierWarning({ autopilot: "DeepSeek V4 Pro (deepseek)", builder: "B (copilot)", reviewer: ["R (copilot)", "R2 (copilot)"] });
+  assert.equal(conflict, 'autopilot is pinned to "DeepSeek V4 Pro (deepseek)" (a bring-your-own-key model) but delegates to builder "B (copilot)" and reviewer "R (copilot)" on a Copilot model; VS Code may refuse the higher-tier Copilot model — pin autopilot at least as high as the highest-tier model it delegates to, then re-apply');
+  assert.equal(byokTierWarning({ autopilot: "DeepSeek V4 Pro (deepseek)", builder: "B (deepseek)", reviewer: "R (deepseek)" }), null);
+  assert.equal(byokTierWarning({ autopilot: "A (copilot)", builder: "B (copilot)", reviewer: "R (copilot)" }), null);
+  assert.equal(byokTierWarning({ autopilot: "DeepSeek (deepseek)", builder: null, reviewer: null }), null);
+  assert.equal(byokTierWarning({ autopilot: "Unqualified", builder: "B (copilot)", reviewer: null }), null);
 });

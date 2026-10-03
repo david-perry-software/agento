@@ -606,6 +606,16 @@ test("committed agents, prompts, and command mirrors carry no model: line", () =
   assert.ok(files.length > 0, "no agents, prompts, or command mirrors at HEAD");
   for (const file of files) {
     const frontmatter = gitOut("show", `HEAD:${file}`).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)?.[1] ?? "";
-    assert.doesNotMatch(frontmatter, /^model:/m, `${file} is committed with a model: line; model profiles are applied locally — run \`agento.mjs models clear\`, then commit`);
+    assert.doesNotMatch(frontmatter, /^[ \t]*model:/m, `${file} is committed with a model: line (top-level or inside a handoffs: item); model profiles are applied locally — run \`agento.mjs models clear\`, then commit`);
   }
+});
+
+test("the Autopilot pins subagent models via models pins and stops on a tier refusal (#79)", () => {
+  const autopilot = splitFrontmatter(rel(".github", "agents", "delivery-autopilot.agent.md")).body;
+  assert.match(autopilot, /models pins/, "Autopilot must read pins via `agento.mjs models pins`");
+  assert.match(autopilot, /`runSubagent` `model`/, "Autopilot must pass the runSubagent model");
+  assert.match(autopilot, /`pins\.builder\.subagentModel`/, "Autopilot must pass the Builder's pin");
+  assert.match(autopilot, /`pins\.reviewer\.subagentModel`/, "Autopilot must pass the Reviewer's pin");
+  assert.match(autopilot, /Tier refusal halts the run/, "Autopilot must stop on a tier refusal");
+  assert.match(autopilot, /pin `autopilot` at least as high as the\s+highest-tier model/, "Autopilot must name the tier-refusal fix");
 });
