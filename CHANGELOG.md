@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fixed.** In-flight members in the dashboard's Initiatives view (planned,
+  in progress, or in review) now show a play button that opens the same actions
+  picker the Deliveries view offers for that slug; when no delivery matches, an
+  informational message names the slug and nothing is dispatched. (#82)
 - **Fixed.** A model profile's agent `model:` pin no longer fails to apply when
   one Agento agent hands work to another: `models apply` now also writes the
   target agent's pin (first entry of a list) into every `handoffs: []` item, a

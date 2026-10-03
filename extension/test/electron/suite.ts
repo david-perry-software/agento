@@ -9,6 +9,7 @@ import { SESSION_WORKSPACE_SETTINGS } from "../../../cli/session-state.mjs";
 import { dispatchCommandAction, dispatchCommandToTarget } from "../../src/commandDispatcher.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
+import { initiativeMemberActionSource } from "../../src/initiativeMemberActions.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "../../src/initiativeTreeModel.js";
 import type { InitiativeTreeElement } from "../../src/initiativeTreeProvider.js";
 import { runNewInitiativeFlow, submittedInitiativeBrief, type NewInitiativeTarget } from "../../src/newInitiativeFlow.js";
@@ -304,6 +305,28 @@ async function assertClosedInitiativeBriefRejected(api: ExtensionApi): Promise<v
   assert.equal(dispatchAttempts, 0, "closed briefs reach neither Chat nor pending dispatch");
 }
 
+async function assertOrphanMemberShowsMessage(api: ExtensionApi, inFlightMember: InitiativeTreeElement): Promise<void> {
+  assert.ok(inFlightMember.kind === "member");
+  const slug = "orphan-delivery";
+  const orphan: InitiativeTreeElement = { ...inFlightMember, item: { ...inFlightMember.item, slug } };
+  assert.deepEqual(initiativeMemberActionSource(orphan, api.deliveries.current.model), { slug, actions: [] });
+  const window = vscode.window as { -readonly [K in keyof typeof vscode.window]: (typeof vscode.window)[K] };
+  const originalInfo = window.showInformationMessage;
+  const originalQuickPick = window.showQuickPick;
+  const messages: string[] = [];
+  let pickerShown = false;
+  window.showInformationMessage = (async (message: string) => { messages.push(message); return undefined; }) as typeof window.showInformationMessage;
+  window.showQuickPick = (async () => { pickerShown = true; return undefined; }) as typeof window.showQuickPick;
+  try {
+    await vscode.commands.executeCommand("agento.showActions", orphan);
+  } finally {
+    window.showInformationMessage = originalInfo;
+    window.showQuickPick = originalQuickPick;
+  }
+  assert.deepEqual(messages, [`No Agento actions are available for ${slug} in this window.`]);
+  assert.equal(pickerShown, false, "no actions picker for a member without a Deliveries row");
+}
+
 function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): DeliveryTreeElement[] {
   return api.deliveries.getChildren(group);
 }
@@ -547,6 +570,17 @@ export async function run(): Promise<void> {
   const readyMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "ready-delivery");
   assert.ok(readyMember);
   assert.match(String(api.initiatives.getTreeItem(readyMember).tooltip), /Ready: yes\nNext: yes/);
+  const buildingMember = initiativeMembers.find((member) => api.initiatives.getTreeItem(member).label === "building-delivery");
+  assert.ok(buildingMember);
+  assert.equal(api.initiatives.getTreeItem(buildingMember).contextValue, "agento.initiativeMember.in-flight");
+  const buildingDelivery = items.find((item) => item.kind === "delivery" && item.item.slug === "building-delivery");
+  assert.ok(buildingDelivery?.kind === "delivery");
+  assert.ok(buildingDelivery.item.actions.length > 0);
+  assert.deepEqual(
+    initiativeMemberActionSource(buildingMember, api.deliveries.current.model)?.actions,
+    buildingDelivery.item.actions,
+  );
+  await assertOrphanMemberShowsMessage(api, buildingMember);
 
   const promptEvents: string[] = [];
   api.setNewPlanPrompts({

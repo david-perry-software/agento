@@ -39,7 +39,9 @@ The Initiatives view groups members as Ready, In flight, Blocked, and Complete.
 Member details include wave, blockers, readiness, and whether the member is the
 recommended next feature. Select an initiative or member to open its
 `breakdown.md`. The play action on a ready member starts the guided planning flow
-for that exact initiative member.
+for that exact initiative member. The play action on an in-flight member opens the
+same actions picker the Deliveries view offers for that slug; when no delivery
+matches, it shows an informational message naming the slug and dispatches nothing.
 
 ## Session & Doctor
 

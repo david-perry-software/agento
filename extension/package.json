@@ -145,6 +145,11 @@
           "command": "agento.planInitiativeMember",
           "when": "view == agento.initiatives && viewItem == agento.initiativeMember.ready",
           "group": "inline"
+        },
+        {
+          "command": "agento.showActions",
+          "when": "view == agento.initiatives && viewItem == agento.initiativeMember.in-flight",
+          "group": "inline"
         }
       ]
     },

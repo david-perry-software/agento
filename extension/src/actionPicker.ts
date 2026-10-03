@@ -2,13 +2,14 @@ import * as vscode from "vscode";
 
 import type { CommandAction } from "./commandActions.js";
 import type { DeliveryTreeElement } from "./deliveryTreeProvider.js";
+import type { InitiativeTreeElement } from "./initiativeTreePresentation.js";
 
 interface ActionSource {
   slug?: string;
   actions: CommandAction[];
 }
 
-export function deliveryActionSource(element: DeliveryTreeElement | undefined): ActionSource | null {
+export function deliveryActionSource(element: DeliveryTreeElement | InitiativeTreeElement | undefined): ActionSource | null {
   return element?.kind === "delivery" ? { slug: element.item.slug, actions: element.item.actions } : null;
 }
 

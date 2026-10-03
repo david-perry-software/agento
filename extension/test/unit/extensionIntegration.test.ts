@@ -53,6 +53,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   assert.deepEqual(manifest.contributes.menus["view/item/context"], [
     { command: "agento.showActions", when: "view == agento.deliveries && viewItem == agento.delivery", group: "inline" },
     { command: "agento.planInitiativeMember", when: "view == agento.initiatives && viewItem == agento.initiativeMember.ready", group: "inline" },
+    { command: "agento.showActions", when: "view == agento.initiatives && viewItem == agento.initiativeMember.in-flight", group: "inline" },
   ]);
 });
 
