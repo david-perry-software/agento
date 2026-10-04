@@ -39,6 +39,7 @@ import { RefreshScheduler } from "./refreshScheduler.js";
 import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
 import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { createWatchers } from "./watchers.js";
+import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
 export interface ExtensionApi {
   client: CliClient;
@@ -60,6 +61,7 @@ export interface ExtensionApi {
   startNewInitiative: (input: NewInitiativeInput, dependencies?: NewInitiativeFlowDependencies) => Promise<NewInitiativeFlowResult>;
   setNewInitiativeRunner: (runner?: (input: NewInitiativeInput) => Promise<NewInitiativeFlowResult>) => void;
   setNewInitiativePrompts: (prompts?: NewInitiativePrompts) => void;
+  windowGate: () => WindowGate;
 }
 
 interface NewPlanPrompts {
@@ -100,6 +102,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const latestInitiativeRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
+  let gate = CLOSED_GATE;
+  const applyGate = (next: WindowGate): void => {
+    gate = next;
+    void vscode.commands.executeCommand("setContext", "agento.primary", next.primary);
+    void vscode.commands.executeCommand("setContext", "agento.canPlan", next.canPlan);
+  };
+  applyGate(CLOSED_GATE);
   const pluginRoot = (): string | null => resolvePluginRoot({
     configured: vscode.workspace.getConfiguration("agento").get<string>("pluginRoot", ""),
     pluginLocations: vscode.workspace.getConfiguration("chat").get<Record<string, unknown>>("pluginLocations"),
@@ -164,6 +173,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     output.appendLine(`refresh: ${reasons.join(", ")}`);
     if (!folder) {
       const message = "No workspace folder is open.";
+      applyGate(CLOSED_GATE);
       deliveries.update({ model: createDeliveryTreeError(message), roadmapRoot: context.extensionPath });
       initiatives.update({ model: createInitiativeTreeError(message), artifactRoot: context.extensionPath });
       const model = createSessionDoctorError(message);
@@ -172,7 +182,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       output.appendLine(message);
       return;
     }
-    void latestDeliveryRefresh.run<{ deliveries: DeliveryTreeSnapshot; sessionDoctor: ReturnType<typeof createSessionDoctorModel> }>(
+    void latestDeliveryRefresh.run<{
+      deliveries: DeliveryTreeSnapshot;
+      sessionDoctor: ReturnType<typeof createSessionDoctorModel>;
+      gate: WindowGate;
+    }>(
       async () => {
         const root = pluginRoot();
         const [sessionResult, doctorResult, statusResult] = await Promise.all([
@@ -186,9 +200,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
             roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
           },
           sessionDoctor: createSessionDoctorModel(sessionResult.json, doctorResult.json, statusResult.json),
+          gate: windowGate(sessionResult.json),
         };
       },
       (snapshot) => {
+        applyGate(snapshot.gate);
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
         statusBar.text = snapshot.sessionDoctor.statusBarText;
@@ -207,6 +223,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         }
       },
       (error) => {
+        applyGate(CLOSED_GATE);
         deliveries.update({
           model: createDeliveryTreeError(error),
           roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
@@ -363,6 +380,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     newPlanPrompts = prompts ?? defaultNewPlanPrompts;
   };
   const newPlanCommand = vscode.commands.registerCommand("agento.newPlan", async () => {
+    const rejection = gateRejection("agento.newPlan", gate);
+    if (rejection) {
+      output.appendLine(`new plan: ${rejection}`);
+      await vscode.window.showErrorMessage(rejection);
+      return;
+    }
     const kind = await newPlanPrompts.chooseKind();
     if (!kind) return;
     const description = await newPlanPrompts.describe(kind);
@@ -432,6 +455,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     newInitiativePrompts = prompts ?? defaultNewInitiativePrompts;
   };
   const newInitiativeCommand = vscode.commands.registerCommand("agento.newInitiative", async () => {
+    const rejection = gateRejection("agento.newInitiative", gate);
+    if (rejection) {
+      output.appendLine(`new initiative: ${rejection}`);
+      await vscode.window.showErrorMessage(rejection);
+      return;
+    }
     try {
       const inputKind = await newInitiativePrompts.chooseInput();
       if (!inputKind) return;
@@ -455,6 +484,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const planInitiativeMemberCommand = vscode.commands.registerCommand(
     "agento.planInitiativeMember",
     async (element?: InitiativeTreeElement) => {
+      const rejection = gateRejection("agento.planInitiativeMember", gate);
+      if (rejection) {
+        output.appendLine(`plan initiative member: ${rejection}`);
+        await vscode.window.showErrorMessage(rejection);
+        return;
+      }
       if (!element || element.kind !== "member" || element.groupKind !== "ready") {
         await vscode.window.showErrorMessage("Only ready initiative members can be planned.");
         return;
@@ -577,6 +612,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction,
     startNewPlan, setNewPlanRunner, setNewPlanPrompts,
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
+    windowGate: () => gate,
   };
 }
 
