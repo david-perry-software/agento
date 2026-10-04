@@ -457,6 +457,33 @@ test("paths in companion mode adds the companion half and the workspace file; in
   assert.match(run(repo).json.usage.join("\n"), /companion half and \.code-workspace/);
 });
 
+test("session warns and paths reports ok: false when the companion half is registered in the product clone (#86 companion-half-registration)", () => {
+  const { repo, wt, docsWt } = makePairRepo();
+  const base = path.dirname(repo);
+  const product = path.join(wt, "plan-20261004-1");
+  const stray = path.join(docsWt, "plan-20261004-1");
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  // The dropped-`cd` failure: the companion half is added from the product clone.
+  git(repo, "worktree", "add", "-q", "--detach", stray, "origin/main");
+
+  const session = run(product, "session").json;
+  const unregistered = session.warnings.filter((w) => w.startsWith("companion-unregistered:"));
+  assert.equal(unregistered.length, 1);
+  assert.match(unregistered[0], /^companion-unregistered: .*plan-20261004-1 exists but is not a registered worktree of .*project-docs/);
+  assert.ok(unregistered[0].includes(repo), unregistered[0]);
+  assert.ok(unregistered[0].includes(`git -C ${repo} worktree remove`), unregistered[0]);
+
+  const paths = run(repo, "paths", "plan", "20261004-1").json;
+  assert.deepEqual(paths.companion.state, {
+    onDisk: true,
+    registeredIn: "product",
+    origin: path.join(base, "project.git"),
+    expectedOrigin: path.join(base, "project-docs.git"),
+    ok: false,
+  });
+  assert.equal(paths.worktreeState.ok, true);
+});
+
 test("workspace command writes the session pair's .code-workspace with the auto-approve settings block (#58 session-auto-approve)", () => {
   const { repo, docs, wt, docsWt } = makePairRepo();
   const planId = "20260916-1";
