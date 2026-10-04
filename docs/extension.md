@@ -31,7 +31,9 @@ companion pull requests, worktree ownership, workspace, companion checkout, and
 initiative data when the CLI supplies them.
 
 Select a delivery to open its `roadmap.md` beside the active editor. Use the play
-action to choose from commands the CLI currently allows for that delivery.
+action to choose from commands the CLI currently allows for that delivery. The
+New Plan title action appears only in the primary window or an unpromoted plan
+window (see [Command routing](#command-routing)).
 
 ## Initiatives
 
@@ -39,7 +41,9 @@ The Initiatives view groups members as Ready, In flight, Blocked, and Complete.
 Member details include wave, blockers, readiness, and whether the member is the
 recommended next feature. Select an initiative or member to open its
 `breakdown.md`. The play action on a ready member starts the guided planning flow
-for that exact initiative member. The play action on an in-flight member opens the
+for that exact initiative member; it appears only in the primary window or an
+unpromoted plan window. The New Initiative title action appears only in the
+primary window. The play action on an in-flight member opens the
 same actions picker the Deliveries view offers for that slug; when no delivery
 matches, it shows an informational message naming the slug and dispatches nothing.
 
@@ -52,7 +56,9 @@ read-only; use the displayed fallback to repair the environment.
 
 The status bar summarizes the same snapshot as `Agento: <role> · <N> active`.
 Select it to focus Session & Doctor. The view's play action offers the commands
-available in the current window and the commands assigned to another window.
+available in the current window and the commands assigned to another window. Its
+New Plan title action appears only in the primary window or an unpromoted plan
+window.
 
 ## Refresh and recovery
 
@@ -92,11 +98,31 @@ consumed with the same agent-mode dispatch. The New Plan action
 (`agento.newPlan`) collects a feature or issue description. From an unpromoted
 planning window (Session & Doctor reports `role: plan` with a detached worktree)
 it submits `/agento new-feature …` or `/agento new-issue …` in that same window —
-no new session is started. Otherwise it starts a planning session in the primary
-checkout and waits up to 300 s (polling every second) for the new planning
-worktree, with the Retry / Focus target recovery prompt if it times out.
+no new session is started. From the primary window it starts a planning session in
+the primary checkout and waits up to 300 s (polling every second) for the new
+planning worktree, with the Retry / Focus target recovery prompt if it times out.
 `agento.planInitiativeMember` uses the selected ready initiative member and takes
 the same in-window path from an unpromoted planning window.
+
+The planning entry points are gated on the window role from the latest applied
+`agento.mjs session` refresh, through two context keys:
+
+| Context key | True when | Gates |
+| --- | --- | --- |
+| `agento.primary` | `role: primary` | New Initiative (`agento.newInitiative`) |
+| `agento.canPlan` | `role: primary`, or `role: plan` with a detached worktree (an unpromoted plan window) | New Plan (`agento.newPlan`) and the ready-member Plan action (`agento.planInitiativeMember`) |
+
+Both keys are false at activation, after a failed session read, and in every
+other window — `build` (including a promoted plan worktree), `freehand`,
+`unmanaged`, and hosted secondary windows — so the actions are hidden from the
+view title bars, member rows, and the Command Palette (Plan never appears in the
+Palette because it needs a selected member). Invoked anyway (a keybinding or
+`executeCommand`), the command shows an error naming the primary window — for
+example `New Initiative runs only in the primary window: switch to the primary
+window and run it there.` — and returns before any prompt, editor, or dispatch.
+A promoted plan worktree (`role: build`) therefore no longer shows New Plan; resume
+that delivery's planning through its actions or the `/agento new-feature` /
+`/agento new-issue` resume instead.
 
 ## Companion workspaces
 
