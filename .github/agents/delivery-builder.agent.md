@@ -122,11 +122,11 @@ the in-flight step (never commit half-broken state):
 
 Push both halves in companion mode: the product half first, then the companion half
 carrying the roadmap — `agento.mjs session` must show `companion.dirty: false` and
-`companion.ahead: 0`. Either stop leaves both trees clean per policy §7 clean
-handoff. Either stop is a `completed` §9 result (state `in-progress` or
-`paused`) whose `next:` names the resume command, emitted as a block per policy §12
-directly above the result line, followed by `/agento ap <slug>` in its own block as
-the unattended alternative (§12).
+`companion.ahead: 0`. Either stop leaves this worktree — and, in companion mode,
+the companion half — clean per policy §7 clean handoff, and is a `completed` §9
+result (state `in-progress` or `paused`) whose `next:` names the resume command,
+emitted as a block per policy §12 directly above the result line, followed by
+`/agento ap <slug>` in its own block as the unattended alternative (§12).
 
 ## Completion
 
