@@ -986,6 +986,57 @@ test("close-decision and ship-preflight report the companion half and refuse a d
   assert.equal(remoteOnly.json.companion, undefined);
 });
 
+test("ship-preflight reports the owner tree split into tracked and untracked files (#88 ship-untracked-byproducts)", () => {
+  // In-repo: a pushed owner worktree whose only dirt is untracked byproducts.
+  const { repo, wt } = makeWorktreeRepo();
+  const owner = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", owner);
+  writeRoadmap(owner, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  fs.writeFileSync(path.join(owner, "app.js"), "v1\n");
+  git(owner, "add", "-A");
+  git(owner, "commit", "-q", "-m", "plan");
+  git(owner, "push", "-q", "-u", "origin", "feature/widget");
+  fs.mkdirSync(path.join(owner, "features/2026/09/other/evidence"), { recursive: true });
+  fs.writeFileSync(path.join(owner, "features/2026/09/other/evidence/x.png"), "png");
+  fs.writeFileSync(path.join(owner, "evidence"), "stray");
+
+  const ship = run(repo, "ship-preflight", "feature", "widget");
+  assert.equal(ship.code, 0);
+  assert.equal(ship.json.status, "ok");
+  assert.deepEqual(ship.json.ownerTree, { tracked: [], untracked: ["evidence", "features/2026/09/other/evidence/x.png"], ahead: 0 });
+  assert.deepEqual(Object.keys(ship.json.owner), ["path", "role", "dirPrefix", "id"]);
+  assert.equal(ship.json.companionTree, null);
+  assert.deepEqual(ship.json.companionGaps, []);
+
+  // A tracked change is listed apart from the byproducts; a local commit counts as ahead.
+  fs.writeFileSync(path.join(owner, "app.js"), "v2\n");
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.ownerTree.tracked, ["app.js"]);
+  git(owner, "commit", "-q", "-am", "v2");
+  assert.deepEqual(run(repo, "ship-preflight", "feature", "widget").json.ownerTree, { tracked: [], untracked: ["evidence", "features/2026/09/other/evidence/x.png"], ahead: 1 });
+
+  // No owner worktree: ownerTree is null.
+  git(repo, "worktree", "remove", "--force", owner);
+  const ownerless = run(repo, "ship-preflight", "feature", "widget").json;
+  assert.equal(ownerless.status, "ok");
+  assert.equal(ownerless.owner, null);
+  assert.equal(ownerless.ownerTree, null);
+
+  // Companion mode: the half's untracked file is listed; the gap stays dirty.
+  const pair = makePairRepo();
+  writeRoadmap(pair.docs, "features/2026/09/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  const product = path.join(pair.wt, "feature-widget");
+  const half = path.join(pair.docsWt, "feature-widget");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/widget", product);
+  git(pair.docs, "worktree", "add", "-q", "-b", "feature/widget", half);
+  fs.writeFileSync(path.join(half, "notes.md"), "wip\n");
+  const paired = run(pair.repo, "ship-preflight", "feature", "widget").json;
+  assert.equal(paired.status, "ok");
+  assert.deepEqual(paired.ownerTree, { tracked: [], untracked: [], ahead: 0 });
+  assert.deepEqual(paired.companionTree, { tracked: [], untracked: ["notes.md"] });
+  assert.deepEqual(paired.companionGaps, ["dirty"]);
+  assert.equal(paired.companion.dirty, true);
+});
+
 test("doctor artifact-repo warns when the companion worktrees dir exists but is not writable", () => {
   const { repo, docsWt } = makePairRepo();
   const { env } = restrictedPath(okStubs);
