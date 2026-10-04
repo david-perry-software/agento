@@ -27,6 +27,8 @@ Agento is built for several delivery sessions running side by side on one machin
   half, and the workspace file together, refusing while the companion half is dirty
   or unpushed (`companion-unpushed`). The one-builder-per-slug reservation covers
   both halves: `agento.mjs session` from either half describes the same session.
+  After each `git worktree add`, both commands check `agento.mjs paths` and stop
+  unless each half is registered in its own clone with that clone's `origin`.
 - `/agento start-session` refuses to touch a path that exists but is not the expected
   registered worktree; `/agento close-session` removes worktrees and prunes merged
   branches. The delivery guard asks before removing a worktree that still has

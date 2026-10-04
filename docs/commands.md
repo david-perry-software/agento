@@ -76,7 +76,14 @@ companion mode the same branch name in the companion clone as `companionPr`
 `missing-pr` (no companion PR), `pr-not-open` (`CLOSED`), `conflicting-pr`
 (`mergeStateStatus: CONFLICTING`); a `MERGED` companion PR is not a gap), `paths <kind> <id>`
 (worktree and branch names plus `artifactsRoot` and the absolute `artifactRoot`
-under it; in companion mode also `companion: { worktreesDir, worktree, branch }` —
+under it; `worktreeState` for the product half and, in companion mode,
+`companion.state` for the companion half, each `{ onDisk, registeredIn, origin,
+expectedOrigin, ok }` — `registeredIn` is the clone whose worktree list holds the
+path (`product`, `companion`, or `null`), `origin` its `remote get-url origin`, and
+`ok` true only when the half is on disk, registered in its own clone, and carries
+that clone's origin, which `/agento start-session` and `/agento start-freehand`
+require after every `git worktree add`; in companion mode also `companion: {
+worktreesDir, worktree, branch, state }` —
 the paired half at `<artifacts.repo.dir>-worktrees/<kind>-<id>` — and `workspace`,
 the `<worktrees.dir>/<kind>-<id>.code-workspace` file the pair opens as; both `null`
 in the in-repo layout; for `feature`/`issue` kinds an in-repo checkout consults the
@@ -95,7 +102,10 @@ product entry, so `worktrees[0]` is always the product primary), the active deli
 and its `lifecycle`, and the `allowed` and `elsewhere` commands; in companion mode
 also `companion` — the current session's half `{ path, branch, detached, dirty,
 ahead, behind, registered }` — and `workspace: { path, exists }`, both `null` from the
-primary or in the in-repo layout; a cwd inside a companion half or the companion
+primary or in the in-repo layout; a companion half that exists on disk but is not a
+registered worktree of the companion clone adds a `companion-unregistered` entry to
+`warnings[]`, naming the product clone and the `git -C <product> worktree remove
+<path>` fix when the product clone registers it instead; a cwd inside a companion half or the companion
 clone is anchored on its product checkout and yields the same record, with an
 `anchored-from-companion` entry in `warnings[]`; `--pr` adds the branch's PR via `gh`,
 degrading to `pr: null` plus a warning when `gh` is absent, and in companion mode also

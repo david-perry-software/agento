@@ -11,7 +11,7 @@
 //   node scripts/agento.mjs close-decision <feature|issue> <slug>
 //   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (--pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
 //   node scripts/agento.mjs ports <slug>
-//   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ companion half and .code-workspace in companion mode)
+//   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ worktreeState { onDisk, registeredIn, origin, expectedOrigin, ok }; + companion half and .code-workspace in companion mode, with companion.state likewise)
 //   node scripts/agento.mjs workspace <feature|issue|plan|freehand> <slug|session-id> [--write]   (pair workspace file status; write the canonical document with --write)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
@@ -35,7 +35,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
-import { classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
+import { classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -342,8 +342,10 @@ function resolveSessionPaths(kind, id) {
       }
     : null;
   const workspace = layout.artifacts.external ? path.join(path.dirname(worktree), `${kind}-${id}.code-workspace`) : null;
-  return { kind, id, branch, artifactRel, layout, worktree, companion, workspace };
+  return { kind, id, branch, artifactRel, layout, worktree, companion, workspace, productWorktrees };
 }
+
+const originOf = (dir) => git(dir, "remote", "get-url", "origin") || null;
 
 // The multi-root workspace file a paired session opens (product side, next to the
 // product half); null for the primary, unmanaged cwds, and in-repo mode.
@@ -1370,10 +1372,17 @@ switch (command) {
     if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("paths kind must be feature, issue, plan, or freehand");
     requireSlug(id);
     const resolved = resolveSessionPaths(kind, id);
+    const companionList = resolved.companion ? resolved.layout.companionWorktrees : [];
+    const stateOf = (halfPath, own, expectedOrigin) => {
+      const onDisk = fs.existsSync(halfPath);
+      return halfState({ path: halfPath, own, worktrees: resolved.productWorktrees, companionWorktrees: companionList, origin: onDisk ? originOf(halfPath) : null, expectedOrigin, onDisk });
+    };
     emit({
       status: "ok",
       worktreesDir,
       worktree: resolved.worktree,
+      // Post-`git worktree add` check: on disk, registered in the right clone, right origin.
+      worktreeState: stateOf(resolved.worktree, "product", originOf(root)),
       branch: resolved.branch,
       artifactsRoot: resolved.layout.artifactsRoot,
       artifactRoot: resolved.artifactRel === null ? null : path.join(resolved.layout.artifactsRoot, resolved.artifactRel),
@@ -1382,7 +1391,7 @@ switch (command) {
       postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
       // Companion mode: the paired companion half (same <kind>-<id>, same branch) and the
       // two-folder workspace file the session opens; both null in the in-repo layout.
-      companion: resolved.companion,
+      companion: resolved.companion && { ...resolved.companion, state: stateOf(resolved.companion.worktree, "companion", originOf(resolved.layout.artifactsRoot)) },
       workspace: resolved.workspace,
     });
     break;
@@ -1479,6 +1488,7 @@ switch (command) {
     const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
     const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
     const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
+    const unregistered = companionWarning({ pair: companion, onDisk: Boolean(companion) && fs.existsSync(companion.path), productWorktrees: worktrees, companionClone: artifacts.dir, productRoot: worktrees[0]?.path ?? root });
     emit({
       status: "ok",
       role,
@@ -1493,7 +1503,7 @@ switch (command) {
       lifecycle,
       allowed,
       elsewhere,
-      warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...companionPrWarnings, ...warnings],
+      warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...companionPrWarnings, ...warnings, ...(unregistered ? [unregistered] : [])],
       root,
       configSource: source,
     });

@@ -47,7 +47,9 @@ Window check per §11: requires role `primary` on the default branch, clean.
    product-only and nothing else below changes. When `companion` is set,
    `artifactsRoot` is the companion clone and `companion.worktree` this session's
    companion half. Refuse to touch a path (either half) that exists but is not the
-   registered worktree expected here.
+   registered worktree expected here. The same result carries `worktreeState` and,
+   with a pair, `companion.state`, each `{ onDisk, registeredIn, origin,
+   expectedOrigin, ok }` — the post-add check of session step 3.
 
 **Session:**
 
@@ -65,7 +67,8 @@ Window check per §11: requires role `primary` on the default branch, clean.
      `git worktree list --porcelain` — permitted here because this command creates
      worktrees), stop; one session per branch.
 3. For a new session, run
-   `git worktree add --no-track -b changes/<slug> <path> origin/main`. `origin/main`
+   `git -C <primary> worktree add --no-track -b changes/<slug> <path> origin/main`
+   (`<primary>` is the record's `worktrees[0].path`). `origin/main`
    is only the starting point, so `--no-track` is required to keep the branch from
    adopting the wrong upstream. If `changes/<slug>` already exists locally or on
    origin without a registered worktree, reuse that exact branch instead of creating
@@ -74,7 +77,16 @@ Window check per §11: requires role `primary` on the default branch, clean.
    <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> worktree add --no-track
    -b changes/<slug> <companion.worktree> origin/<default>` (reusing an existing
    `changes/<slug>` there under the same rule; a companion half already registered at
-   that path is reused untouched). Then run
+   that path is reused untouched). **Post-add check:** for a new or resumed session,
+   rerun `node <agento-root>/scripts/agento.mjs paths freehand <slug>` and require
+   `worktreeState.ok` and, with a pair, `companion.state.ok`. A half with `ok: false`
+   is a hard stop before the workspace file is written or a window opened: end with
+   the §9 failed result naming the half, its `registeredIn`, its `origin` against
+   `expectedOrigin`, and the exact fix `git -C <clone> worktree remove <path>`, where
+   `<clone>` is `<primary>` when `registeredIn` is `product` and `artifactsRoot` when
+   it is `companion` (`registeredIn: null` means the add never landed: report its
+   error instead). Never remove or repair the half yourself; re-sending the command
+   after the fix resumes. Then run
    `node <agento-root>/scripts/agento.mjs workspace freehand <slug> --write` to
    write the workspace file at the `workspace` path; on resume, run the same
    command again to refresh a stale file. The CLI-written file keeps product-first

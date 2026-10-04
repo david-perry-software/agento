@@ -170,6 +170,36 @@ export function pairFor({ worktree, companionWorktreesDir, companionWorktrees })
   };
 }
 
+const listsPath = (list, real) => (list ?? []).some((w) => realpath(w.path) === real);
+
+// Post-`git worktree add` facts for one half of a session (`own`: "product" or
+// "companion"): which clone registers the path (its own clone checked first), and
+// whether its origin is the one that clone should give it. The caller supplies
+// `onDisk` and `origin` (null when not on disk).
+export function halfState({ path: halfPath, own, worktrees, companionWorktrees, origin, expectedOrigin, onDisk }) {
+  const real = realpath(halfPath);
+  const lists = own === "companion" ? [["companion", companionWorktrees], ["product", worktrees]] : [["product", worktrees], ["companion", companionWorktrees]];
+  const registeredIn = lists.find(([, list]) => listsPath(list, real))?.[0] ?? null;
+  const resolvedOrigin = onDisk ? origin ?? null : null;
+  return {
+    onDisk: Boolean(onDisk),
+    registeredIn,
+    origin: resolvedOrigin,
+    expectedOrigin: expectedOrigin ?? null,
+    ok: Boolean(onDisk) && registeredIn === own && resolvedOrigin !== null && resolvedOrigin === expectedOrigin,
+  };
+}
+
+// The session warning for a companion half that exists on disk but is not a
+// registered worktree of the companion clone; names the product clone and the fix
+// when that is where it landed (the dropped-`cd` case). Null otherwise.
+export function companionWarning({ pair, onDisk, productWorktrees, companionClone, productRoot }) {
+  if (!pair || pair.registered || !onDisk) return null;
+  const base = `companion-unregistered: ${pair.path} exists but is not a registered worktree of ${companionClone}`;
+  if (!listsPath(productWorktrees, realpath(pair.path))) return base;
+  return `${base}; it is registered in ${productRoot} instead — git -C ${productRoot} worktree remove ${pair.path}`;
+}
+
 // One classified record per registered worktree entry; the list describes on-disk
 // checkouts, so the hosted flag never applies here. Product entries come first
 // (`repo: "product"`, the primary at index 0); in companion mode the companion

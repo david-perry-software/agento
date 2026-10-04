@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Fixed.** A companion half created in the wrong clone — a companion
+  `git worktree add` that ran in the product clone after a dropped `cd` — is now
+  caught: `agento.mjs paths` reports `worktreeState` and `companion.state`
+  (`{ onDisk, registeredIn, origin, expectedOrigin, ok }`), `/agento start-session`
+  and `/agento start-freehand` add the product half with `git -C <primary>` and
+  stop after the add when either half is not `ok`, naming the clone it landed in
+  and the `git -C <clone> worktree remove <path>` fix, and `agento.mjs session`
+  adds a `companion-unregistered` warning, shown in the Session & Doctor view,
+  for a companion half on disk that the companion clone does not register. (#86)
 - **Fixed.** The dashboard's New Plan, New Initiative, and ready-member Plan
   actions are now gated on the window role: New Initiative appears only in the
   primary window, and New Plan and Plan only in the primary window or an
