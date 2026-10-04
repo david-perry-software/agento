@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Fixed.** `/agento ship` no longer sends an approved delivery back to the
+  Builder when the owner worktree is dirty only with untracked byproducts such as
+  stray screenshots or test output. `agento.mjs ship-preflight` now reports
+  `ownerTree` (`{ tracked, untracked, ahead }`) and `companionTree`
+  (`{ tracked, untracked }`). Ship lists the untracked paths on its confirmation
+  path and, on an explicit yes, deletes exactly those paths with
+  `git --literal-pathspecs clean -f -- <paths>` (so glob characters in a name never
+  match unlisted files) before re-checking. A dirty companion half stays a hard
+  reject, but the gap now lists its files and names the commit-or-discard choice.
+  Delivery policy §7 adds a clean-handoff rule: the Builder and Reviewer leave
+  `git status --porcelain --untracked-files=all` empty in both halves at every
+  handoff. (#88)
+
 - **Fixed.** A companion half created in the wrong clone — a companion
   `git worktree add` that ran in the product clone after a dropped `cd` — is now
   caught: `agento.mjs paths` reports `worktreeState` and `companion.state`

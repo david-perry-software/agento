@@ -9,7 +9,7 @@
 //   node scripts/agento.mjs find <slug>                 (type-agnostic)
 //   node scripts/agento.mjs status [feature|issue] [slug] [--pr]   (--pr adds pr + companionPr per non-complete item)
 //   node scripts/agento.mjs close-decision <feature|issue> <slug>
-//   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (--pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
+//   node scripts/agento.mjs ship-preflight <feature|issue> <slug> [--pr]   (+ ownerTree { tracked, untracked, ahead } and companionTree { tracked, untracked }, null when absent; --pr adds pr + companionPr + warnings; companion PR gaps join companionGaps)
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ worktreeState { onDisk, registeredIn, origin, expectedOrigin, ok }; + companion half and .code-workspace in companion mode, with companion.state likewise)
 //   node scripts/agento.mjs workspace <feature|issue|plan|freehand> <slug|session-id> [--write]   (pair workspace file status; write the canonical document with --write)
@@ -35,7 +35,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
-import { classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
+import { classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -369,6 +369,33 @@ function companionOfOwner(owner, layout) {
 function companionGaps(companion) {
   if (!companion?.registered) return [];
   return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : []), ...(companion.behind > 0 ? ["behind"] : [])];
+}
+
+// ship-preflight: a checkout's dirt split into tracked and untracked (non-ignored)
+// files, plus `ahead` counted like describeCompanion; null when the directory is missing.
+function treeState(dir) {
+  if (!dir || !fs.existsSync(dir)) return null;
+  let porcelain = "";
+  try {
+    // Not git(): its trim() would eat the leading space of a ` M` status.
+    porcelain = execFileSync("git", ["-C", dir, "status", "--porcelain=v1", "-z", "--untracked-files=all"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return null;
+  }
+  const upstream = git(dir, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+  const count = upstream ? git(dir, "rev-list", "--count", "@{upstream}..HEAD") : git(dir, "rev-list", "--count", "HEAD", "--not", "--remotes");
+  return { ...splitPorcelain(porcelain), ahead: Number.parseInt(count, 10) || 0 };
+}
+
+function ownerTreeOf(owner) {
+  if (!owner || owner.role === "primary") return null;
+  return treeState(owner.path);
+}
+
+function companionTreeOf(companion) {
+  if (!companion?.registered) return null;
+  const tree = treeState(companion.path);
+  return tree && { tracked: tree.tracked, untracked: tree.untracked };
 }
 
 function requireType(type) {
@@ -1342,7 +1369,9 @@ switch (command) {
     if (preflight.status !== "ok") withExit(withLayout(preflight, layout));
     const companion = companionOfOwner(preflight.owner, layout);
     const gaps = companionGaps(companion);
-    if (!options.pr) withExit(withLayout({ ...preflight, companion, companionGaps: gaps }, layout));
+    const ownerTree = ownerTreeOf(preflight.owner);
+    const companionTree = companionTreeOf(companion);
+    if (!options.pr) withExit(withLayout({ ...preflight, companion, companionGaps: gaps, ownerTree, companionTree }, layout));
     const { pr, warnings: prWarnings } = lookupPullRequest(preflight.branch);
     const { pr: companionPr, warnings: companionPrWarnings } = lookupCompanionPullRequest(preflight.branch, layout);
     // A MERGED companion PR is the resume-at-teardown case, not a gap.
@@ -1351,7 +1380,7 @@ switch (command) {
       else if (companionPr.state === "CLOSED") gaps.push("pr-not-open");
       else if (companionPr.mergeStateStatus === "CONFLICTING") gaps.push("conflicting-pr");
     }
-    withExit(withLayout({ ...preflight, companion, companionGaps: gaps, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] }, layout));
+    withExit(withLayout({ ...preflight, companion, companionGaps: gaps, ownerTree, companionTree, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] }, layout));
     break;
   }
 

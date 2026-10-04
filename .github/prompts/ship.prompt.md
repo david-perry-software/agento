@@ -65,7 +65,12 @@ read from the companion clone's own `git worktree list --porcelain`; `null` in t
 in-repo layout), `companionGaps[]` (`dirty`, `unpushed`, `behind` for the half;
 `missing-pr`, `pr-not-open`, `conflicting-pr` for the companion PR), `pr`, and
 `companionPr` (each `{ number, state, isDraft, mergeStateStatus, url } | null`,
-with lookup failures in `warnings[]`). `owner` selects one of two paths for every
+with lookup failures in `warnings[]`), `ownerTree` (`{ tracked, untracked, ahead }
+| null` — the owner worktree's `status --porcelain --untracked-files=all` split
+into tracked changes and untracked, non-ignored files, plus its commits not on the
+upstream; `null` when `owner` is `null` or the primary), and `companionTree`
+(`{ tracked, untracked } | null` — the same split for the companion half; `null`
+in the in-repo layout). `owner` selects one of two paths for every
 git operation below; `role: "primary"` means the primary worktree itself sits on
 the branch — stop and return it to `main` first.
 
@@ -75,10 +80,11 @@ the branch — stop and return it to `main` first.
   and plan.md with `git show origin/<branch>:<path>` (*companion mode*: `git -C
   <artifactsRoot> fetch origin` and `git -C <artifactsRoot> show
   origin/<branch>:<path>` instead — the product branch has no artifacts); diff with
-  `git diff origin/main...origin/<branch>` on the product. Require `git -C <owner.path>
-  status --porcelain` to print nothing and `git -C <owner.path> rev-list --count
-  @{upstream}..HEAD` to print `0`; either failing is a hard-reject gap (step 2), as
-  is any entry in `companionGaps[]`. Every write happens in the owner worktree:
+  `git diff origin/main...origin/<branch>` on the product. The owner's clean and
+  zero-ahead checks read `ownerTree`: `ownerTree.tracked` non-empty or
+  `ownerTree.ahead > 0` is a hard-reject gap (step 2), as is any entry in
+  `companionGaps[]`; `ownerTree.untracked` alone (tracked empty, ahead 0) is the
+  untracked-byproducts confirmation item (step 2). Every write happens in the owner worktree:
   `git -C <owner.path> merge origin/main` when the PR is `BEHIND`, the changelog
   stamp, and `git -C <owner.path> push`; *companion mode*: the roadmap's `status:
   complete` commit happens in the companion half instead, `git -C <companion.path>
@@ -101,7 +107,8 @@ Ownership does not apply when resuming only the post-ship epilogue.
 1. **Audit** (read-only):
    - Fetch; on the `owner === null` path check out the work branch and integrate
      `origin/<branch>` if ahead; on the `owner !== null` path read everything from
-     `origin/<branch>` as described above and run the clean and zero-ahead checks.
+     `origin/<branch>` as described above and read the clean and zero-ahead checks
+     from `ownerTree`.
    - `gh pr view <n> --json mergeStateStatus,mergeable`: `BEHIND` means `origin/main`
      must be merged into the branch (never rebase) before the PR can be marked ready
      — in the owner worktree via `git -C <owner.path>` when one exists; list the
@@ -133,10 +140,17 @@ Ownership does not apply when resuming only the post-ship epilogue.
 2. **Sort the gaps** into the two pinned lists; nothing else counts as a gap.
    - **Hard-reject** — any of: unticked steps that are not `(manual, post-ship)`;
      falsely ticked steps; review.md missing, stale, or `request-changes`; an issue's
-     regression test failing; the owner worktree dirty or unpushed; a non-empty
-     `companionGaps[]` — `dirty`, `unpushed`, or `behind` name `companion.path` (the
-     fix for `behind` is `git -C <companion.path> merge origin/<branch>`, a
-     fast-forward), `missing-pr`, `pr-not-open`, or `conflicting-pr` name the
+     regression test failing; `ownerTree.tracked` non-empty or `ownerTree.ahead > 0`
+     (uncommitted tracked changes or unpushed commits in the owner worktree);
+     `ownerTree === null` while `owner !== null` and `owner.role` is not `primary`
+     (the owner's tree could not be read, so it cannot be shown clean); a
+     non-empty `companionGaps[]` — `dirty`, `unpushed`, or `behind` name
+     `companion.path` (the fix for `behind` is `git -C <companion.path> merge
+     origin/<branch>`, a fast-forward; for `dirty`, quote `companionTree.tracked`
+     and `companionTree.untracked` verbatim and name the choice: commit them in the
+     companion half, since they may be evidence, or discard them — ship itself
+     never deletes or restores anything in the companion), `missing-pr`,
+     `pr-not-open`, or `conflicting-pr` name the
      companion PR (`companionPr.url` when known, else the companion repository and
      `<branch>`); PR `CONFLICTING`. Write nothing (the only permitted cleanup is the
      `merge --abort` above) and end with the §9 failed result line carrying `<gaps>;
@@ -150,16 +164,30 @@ Ownership does not apply when resuming only the post-ship epilogue.
      follow it with `/agento ap <slug>` in its own block as the unattended
      alternative.
    - **Confirmation path** — unstamped changelog, PR body/title nits, undocumented
-     unrelated drift. Present them in one summary, ask the user explicitly whether to
-     proceed (default is do not proceed), and on yes record them under
+     unrelated drift, and untracked byproducts in the owner worktree
+     (`ownerTree.untracked` non-empty while `ownerTree.tracked` is empty and
+     `ownerTree.ahead` is 0; list every path verbatim and say they will be deleted).
+     Present them in one summary, ask the user explicitly whether to proceed
+     (default is do not proceed), and on yes record them under
      `## Follow-ups (accepted at ship)` in roadmap.md during step 3. Never proceed on
-     these without the user's answer. A missing `Fixes #<n>` on an issue PR is not a
+     these without the user's answer; on no, write nothing. A missing `Fixes #<n>`
+     on an issue PR is not a
      question: fix it through the REST PATCH endpoint in an idempotent check and note
     it in the report, e.g. `current_body=$(gh pr view <n> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "Fixes #<n>"; then gh api repos/<owner>/<repo>/pulls/<n> -X PATCH -f body="${current_body}"$'\n\nFixes #<n>'; fi`.
 3. **On confirmation (or a clean audit)** — writes go through `git -C <owner.path>`
    when an owner exists, else the primary checkout (*companion mode*: artifact
    writes go through `git -C <companion.path>` when an owner exists, else the
    companion clone `artifactsRoot` on the mirrored branch):
+   - **Untracked byproducts first** (only when the user said yes to that item): the
+     first write is `git -C <owner.path> --literal-pathspecs clean -f -- <each listed path, single-quoted>`
+     — exactly the `ownerTree.untracked` paths shown in the summary, never `-d`,
+     `-x`, or a directory. `--literal-pathspecs` is mandatory: without it git reads
+     each path as a pathspec, so `*`, `?`, `[…]`, or a `:(magic)` prefix in a name
+     also deletes unlisted files (`shot[1].png` matches `shot1.png`). Quote each
+     path in single quotes, writing an embedded `'` as `'\''`. Then re-run
+     `agento.mjs ship-preflight <type> <slug> --pr` and
+     require `ownerTree` to be `{ tracked: [], untracked: [], ahead: 0 }` before
+     any other write; anything new is a hard reject (step 2).
    - Set roadmap `status: complete`; record any user-accepted gaps under the
      `## Follow-ups (accepted at ship)` section in roadmap.md. **Changelog date
      stamp:** when the branch changes the plugin version (audit above) and

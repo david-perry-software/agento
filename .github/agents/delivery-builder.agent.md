@@ -122,10 +122,11 @@ the in-flight step (never commit half-broken state):
 
 Push both halves in companion mode: the product half first, then the companion half
 carrying the roadmap — `agento.mjs session` must show `companion.dirty: false` and
-`companion.ahead: 0`. Either stop is a `completed` §9 result (state `in-progress` or
-`paused`) whose `next:` names the resume command, emitted as a block per policy §12
-directly above the result line, followed by `/agento ap <slug>` in its own block as
-the unattended alternative (§12).
+`companion.ahead: 0`. Either stop leaves this worktree — and, in companion mode,
+the companion half — clean per policy §7 clean handoff, and is a `completed` §9
+result (state `in-progress` or `paused`) whose `next:` names the resume command,
+emitted as a block per policy §12 directly above the result line, followed by
+`/agento ap <slug>` in its own block as the unattended alternative (§12).
 
 ## Completion
 
@@ -134,6 +135,7 @@ exempt and stay unticked until /agento ship — fetch and confirm `origin/main` 
 of `HEAD` (merge it and re-verify if not; in companion mode also that the companion's
 `origin/<default>` is an ancestor of the half's HEAD), then set `status: in-review`,
 commit, push (the companion half in companion mode, leaving `companion.ahead: 0`),
+confirm both trees are clean per policy §7 clean handoff,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the

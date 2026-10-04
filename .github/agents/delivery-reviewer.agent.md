@@ -102,7 +102,8 @@ review, fixes belong to the Builder.
    the companion branch (`<companion repo URL>/blob/<branch>/<path to review.md>`);
    on a re-review update that same comment with `gh pr comment <code PR> --edit-last
    --body …` — never a second thread. In the in-repo layout the review is committed
-   and pushed on the work branch and the PR comment is optional.
+   and pushed on the work branch and the PR comment is optional. Either way, leave
+   the trees clean per policy §7 clean handoff.
    End with the cross-window sequence from policy §8,
    its first command being the `next:` of the §9 result line, each command in its
    own block per policy §12:

@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -52,6 +52,37 @@ test("parseWorktreeList handles branch, detached, and trailing blank lines", () 
   ]);
   assert.deepEqual(parseWorktreeList(""), []);
   assert.deepEqual(parseWorktreeList(undefined), []);
+});
+
+test("splitPorcelain: empty input yields empty lists", () => {
+  assert.deepEqual(splitPorcelain(""), { tracked: [], untracked: [] });
+  assert.deepEqual(splitPorcelain(undefined), { tracked: [], untracked: [] });
+});
+
+test("splitPorcelain: untracked-only lists every file, including inside untracked directories", () => {
+  assert.deepEqual(splitPorcelain("?? features/2026/09/other/evidence/x.png\0?? evidence\0"), { tracked: [], untracked: ["evidence", "features/2026/09/other/evidence/x.png"] });
+});
+
+test("splitPorcelain: tracked-only covers modified, added, and deleted entries", () => {
+  assert.deepEqual(splitPorcelain(" M src/a.js\0A  src/b.js\0D  old.txt\0"), { tracked: ["old.txt", "src/a.js", "src/b.js"], untracked: [] });
+});
+
+test("splitPorcelain: mixed entries are split and each list sorted", () => {
+  assert.deepEqual(splitPorcelain("?? z.png\0MM b.js\0?? a.png\0 M a.js\0"), { tracked: ["a.js", "b.js"], untracked: ["a.png", "z.png"] });
+});
+
+test("splitPorcelain: a rename contributes its new path only and the next entry still parses", () => {
+  assert.deepEqual(splitPorcelain("R  new.js\0old.js\0?? after.png\0C  copy.js\0src.js\0 M tail.js\0"), { tracked: ["copy.js", "new.js", "tail.js"], untracked: ["after.png"] });
+});
+
+test("splitPorcelain: a worktree-side rename (` R`) skips its origin token", () => {
+  assert.deepEqual(splitPorcelain(" R new.js\0old.js\0?? x.png\0"), { tracked: ["new.js"], untracked: ["x.png"] });
+  assert.deepEqual(splitPorcelain(" C copy.js\0src.js\0?? y.png\0"), { tracked: ["copy.js"], untracked: ["y.png"] });
+});
+
+test("splitPorcelain: an origin path starting with R or C never swallows the next entry", () => {
+  assert.deepEqual(splitPorcelain(" R docs/new.md\0README.md\0?? stray.png\0"), { tracked: ["docs/new.md"], untracked: ["stray.png"] });
+  assert.deepEqual(splitPorcelain("R  docs/guide.md\0CONTRIBUTING.md\0?? shot.png\0"), { tracked: ["docs/guide.md"], untracked: ["shot.png"] });
 });
 
 test("sessionWorkspaceDocument returns product then companion folders and default auto-approve settings", () => {
