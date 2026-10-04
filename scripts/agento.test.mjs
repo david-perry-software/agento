@@ -435,16 +435,26 @@ const strip = (record) => {
 };
 
 test("paths in companion mode adds the companion half and the workspace file; in-repo mode reports null", () => {
-  const { repo, docsWt, wt } = makePairRepo();
+  const { repo, docs, docsWt, wt } = makePairRepo();
+  const base = path.dirname(repo);
   for (const [kind, id, branch] of [["plan", "20260916-1", null], ["feature", "widget", "feature/widget"], ["issue", "bug", "issue/bug"], ["freehand", "tidy", "changes/tidy"]]) {
     const { code, json } = run(repo, "paths", kind, id);
     assert.equal(code, 0);
     assert.equal(json.worktree, path.join(wt, `${kind}-${id}`));
     assert.equal(json.branch, branch);
-    assert.deepEqual(json.companion, { worktreesDir: docsWt, worktree: path.join(docsWt, `${kind}-${id}`), branch });
+    const { state, ...companion } = json.companion;
+    assert.deepEqual(companion, { worktreesDir: docsWt, worktree: path.join(docsWt, `${kind}-${id}`), branch });
+    assert.deepEqual(state, { onDisk: false, registeredIn: null, origin: null, expectedOrigin: path.join(base, "project-docs.git"), ok: false });
+    assert.deepEqual(json.worktreeState, { onDisk: false, registeredIn: null, origin: null, expectedOrigin: path.join(base, "project.git"), ok: false });
     assert.equal(json.workspace, path.join(wt, `${kind}-${id}.code-workspace`));
     assert.equal(json.layout, "checkout");
   }
+  // A correctly created pair: each half registered in its own clone with its own origin.
+  git(repo, "worktree", "add", "-q", "--detach", path.join(wt, "plan-20260916-1"), "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", path.join(docsWt, "plan-20260916-1"), "origin/main");
+  const pair = run(repo, "paths", "plan", "20260916-1").json;
+  assert.deepEqual(pair.worktreeState, { onDisk: true, registeredIn: "product", origin: path.join(base, "project.git"), expectedOrigin: path.join(base, "project.git"), ok: true });
+  assert.deepEqual(pair.companion.state, { onDisk: true, registeredIn: "companion", origin: path.join(base, "project-docs.git"), expectedOrigin: path.join(base, "project-docs.git"), ok: true });
   const inRepo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
   for (const [kind, id] of [["plan", "20260916-1"], ["feature", "widget"], ["freehand", "tidy"]]) {
     const json = run(inRepo, "paths", kind, id).json;
@@ -453,6 +463,7 @@ test("paths in companion mode adds the companion half and the workspace file; in
     assert.equal(json.workspace, null);
     assert.equal(json.layout, "checkout");
     assert.equal(json.artifactsRoot, inRepo);
+    assert.equal(json.worktreeState.ok, false);
   }
   assert.match(run(repo).json.usage.join("\n"), /companion half and \.code-workspace/);
 });
@@ -532,7 +543,9 @@ test("paths is branch-aware: from an in-repo primary a delivery branch that flip
   assert.equal(flip.artifactsRoot, docs);
   assert.equal(flip.artifactRoot, path.join(docs, "features"));
   assert.equal(flip.worktree, path.join(wt, "feature-flip"));
-  assert.deepEqual(flip.companion, { worktreesDir: docsWt, worktree: path.join(docsWt, "feature-flip"), branch: "feature/flip" });
+  const { state: flipState, ...flipCompanion } = flip.companion;
+  assert.deepEqual(flipCompanion, { worktreesDir: docsWt, worktree: path.join(docsWt, "feature-flip"), branch: "feature/flip" });
+  assert.equal(flipState.onDisk, false);
   assert.equal(flip.workspace, path.join(wt, "feature-flip.code-workspace"));
   // In-repo control: no config on the branch → today's output.
   git(repo, "switch", "-q", "-c", "feature/plain");
