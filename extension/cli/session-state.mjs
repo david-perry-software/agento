@@ -51,7 +51,7 @@ export function parseWorktreeList(porcelain) {
 }
 
 // `git status --porcelain=v1 -z --untracked-files=all`: `XY <path>\0` entries, with
-// rename/copy (`R`/`C`) entries followed by one extra `<origin>\0` token. `??` is
+// rename/copy entries (`R`/`C` in either column) followed by one extra `<origin>\0` token. `??` is
 // untracked; everything else is tracked under its current path. Ignored files never appear.
 export function splitPorcelain(zOutput) {
   const tracked = [];
@@ -64,7 +64,7 @@ export function splitPorcelain(zOutput) {
     const file = entry.slice(3);
     if (xy === "??") untracked.push(file);
     else tracked.push(file);
-    if (xy[0] === "R" || xy[0] === "C") i += 1;
+    if (/[RC]/.test(xy)) i += 1;
   }
   return { tracked: tracked.sort(), untracked: untracked.sort() };
 }

@@ -75,6 +75,16 @@ test("splitPorcelain: a rename contributes its new path only and the next entry 
   assert.deepEqual(splitPorcelain("R  new.js\0old.js\0?? after.png\0C  copy.js\0src.js\0 M tail.js\0"), { tracked: ["copy.js", "new.js", "tail.js"], untracked: ["after.png"] });
 });
 
+test("splitPorcelain: a worktree-side rename (` R`) skips its origin token", () => {
+  assert.deepEqual(splitPorcelain(" R new.js\0old.js\0?? x.png\0"), { tracked: ["new.js"], untracked: ["x.png"] });
+  assert.deepEqual(splitPorcelain(" C copy.js\0src.js\0?? y.png\0"), { tracked: ["copy.js"], untracked: ["y.png"] });
+});
+
+test("splitPorcelain: an origin path starting with R or C never swallows the next entry", () => {
+  assert.deepEqual(splitPorcelain(" R docs/new.md\0README.md\0?? stray.png\0"), { tracked: ["docs/new.md"], untracked: ["stray.png"] });
+  assert.deepEqual(splitPorcelain("R  docs/guide.md\0CONTRIBUTING.md\0?? shot.png\0"), { tracked: ["docs/guide.md"], untracked: ["shot.png"] });
+});
+
 test("sessionWorkspaceDocument returns product then companion folders and default auto-approve settings", () => {
   const product = "/wt/plan-1";
   const companion = "/docs-wt/plan-1";
