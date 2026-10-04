@@ -69,6 +69,13 @@ branch, detached, dirty, ahead, behind, registered }` for the owner's companion 
 `null` — and `close-decision` stops with `status: "error", reason: "companion-unpushed"`
 while that half is dirty, ahead of, or behind its upstream, where `ship-preflight`
 lists the same conditions as `companionGaps[]` (`dirty`, `unpushed`, `behind`);
+`ship-preflight` also reports `ownerTree` — `{ tracked, untracked, ahead }` for the
+owner worktree (`git status --porcelain --untracked-files=all` split into tracked
+changes and untracked, non-ignored files, plus commits not on its upstream), or
+`null` without an owner or for the primary — and `companionTree` — `{ tracked,
+untracked }` for the companion half, or `null` in the in-repo layout — so
+`/agento ship` can offer untracked-only owner dirt as a confirmed cleanup and list
+the files behind a companion `dirty` gap;
 `ship-preflight --pr` additionally looks up the branch's PR via `gh` as `pr`, in
 companion mode the same branch name in the companion clone as `companionPr`
 (`null` with no extra `gh` call in the in-repo layout), reports lookup failures in
