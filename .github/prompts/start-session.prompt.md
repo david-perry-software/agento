@@ -53,7 +53,21 @@ Window check per §11: requires role `primary` on the default branch, clean.
    `companion.worktree` is this session's **companion half**, created in the
    companion clone with `git -C <artifactsRoot> worktree add …` as each mode says.
    A companion path that exists but is not that clone's registered worktree is
-   refused exactly like a product path.
+   refused exactly like a product path. Every `git worktree add` names its clone with
+   `git -C`: the product half `git -C <primary> worktree add …` (`<primary>` is the
+   record's `worktrees[0].path`), the companion half `git -C <artifactsRoot> …`.
+   **Post-add check:** the same `paths` result carries `worktreeState` and, with a
+   pair, `companion.state`, each `{ onDisk, registeredIn, origin, expectedOrigin,
+   ok }`. After each mode's worktree step — a reused, already registered half
+   included — rerun `paths` and require `worktreeState.ok` and, with a pair,
+   `companion.state.ok`. A half with `ok: false` is a hard stop before the workspace
+   file is written or a window opened: end with the §9 failed result naming the
+   half, its `registeredIn`, its `origin` against `expectedOrigin`, and the exact fix
+   `git -C <clone> worktree remove <path>`, where `<clone>` is `<primary>` when
+   `registeredIn` is `product` and `artifactsRoot` when it is `companion`
+   (`registeredIn: null` means the add never landed: report its error instead).
+   Never remove or repair the half yourself; re-sending the command after the fix
+   resumes.
 4. When the pair exists and both halves are present, run
    `node <agento-root>/scripts/agento.mjs workspace <kind> <id> --write` to write
    the workspace file at the `workspace` path (`workspace plan <session-id>` in
@@ -82,15 +96,18 @@ Session IDs identify worktrees only and never determine the eventual delivery sl
      without changing its HEAD, branch, or files, and say the session already exists
      and was resumed. This supports both an untouched detached session and one whose
      planner already created its final delivery branch.
-3. For a new session, run `git worktree add --detach <path> origin/main` and verify it
-   is clean, detached, and exactly at `origin/main`. Never create a temporary branch.
+3. For a new session, run `git -C <primary> worktree add --detach <path> origin/main`
+   and verify it is clean, detached, and exactly at `origin/main`. Never create a
+   temporary branch.
    With a pair, create the companion half the same way in the companion clone:
    `git -C <artifactsRoot> fetch origin`, then `git -C <artifactsRoot> worktree add
    --detach <companion.worktree> origin/<default>` (the companion's default branch;
    detached, mirroring the product half — the Planner promotes both halves onto the
    delivery branch when it reserves the slug). A companion half that is already
    registered — for example on a resume whose product half was promoted — is reused
-   untouched. Then write the workspace file per shared precondition 4.
+   untouched. Run the post-add check (shared precondition 3) for a new or resumed
+   session: `worktreeState.ok` and, with a pair, `companion.state.ok`. Then write the
+   workspace file per shared precondition 4.
 4. Report the path (and companion half and workspace file when they exist), created
    or resumed, its branch or detached state, and the exact next command for the new
    window: `/agento new-feature <description>` or `/agento new-issue <description>`.
@@ -116,7 +133,8 @@ window or infer the delivery slug from the session ID.
      or files (promoted `plan-*` worktrees included); one builder per slug, so note
      that building continues in that existing window and do not open a second one.
 3. Otherwise create the worktree at the `worktree` path from `agento.mjs paths <type>
-   <slug>` on the exact roadmap branch. If the branch exists only as `origin/<branch>`,
+   <slug>` on the exact roadmap branch with `git -C <primary> worktree add …`. If the
+   branch exists only as `origin/<branch>`,
    create the local tracking branch as part of `git worktree add`. If it exists
    nowhere, stop and report that the delivery planner must publish it. Never use a
    detached HEAD or a differently named branch. With a pair, also create the
@@ -130,7 +148,9 @@ window or infer the delivery slug from the session ID.
    commits count as unpushed until `git -C <companion.worktree> push -u origin
    <branch>` publishes the mirrored branch. A companion half already
    registered at that path (whatever its branch) is reused untouched — never switch
-   it. Then write the workspace file per shared precondition 4.
+   it. Run the post-add check (shared precondition 3) on the created or reused
+   halves: `worktreeState.ok` and, with a pair, `companion.state.ok`. Then write the
+   workspace file per shared precondition 4.
 4. Report the worktree path, branch, created or resumed (plus the companion half, its
    branch, and the workspace file when they exist), and the exact next command for
    the new window: `/agento build-feature <slug>` or `/agento build-issue <slug>`.
