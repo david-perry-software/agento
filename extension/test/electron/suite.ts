@@ -17,6 +17,7 @@ import { runNewPlanFlow, type NewPlanTarget } from "../../src/newPlanFlow.js";
 import { createSessionDoctorError } from "../../src/sessionDoctorModel.js";
 import type { SessionDoctorElement } from "../../src/sessionDoctorProvider.js";
 import type { CliResult } from "../../src/cliClient.js";
+import { CLOSED_GATE, gateRejection, windowGate, type GatedCommand } from "../../src/windowGate.js";
 
 async function waitForReadyTree(api: ExtensionApi): Promise<void> {
   if (api.deliveries.current.model.kind === "ready") {
@@ -331,6 +332,37 @@ function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): Delive
   return api.deliveries.getChildren(group);
 }
 
+async function assertGatedCommandsRejected(api: ExtensionApi, commands: Array<[GatedCommand, unknown?]>): Promise<void> {
+  const window = vscode.window as { -readonly [K in keyof typeof vscode.window]: (typeof vscode.window)[K] };
+  const originalError = window.showErrorMessage;
+  const errors: string[] = [];
+  window.showErrorMessage = (async (message: string) => { errors.push(message); return undefined; }) as typeof window.showErrorMessage;
+  api.setNewPlanPrompts({
+    chooseKind: async () => assert.fail("gated New Plan must not prompt for a kind"),
+    describe: async () => assert.fail("gated New Plan must not prompt for a description"),
+  });
+  api.setNewPlanRunner(async () => assert.fail("gated New Plan / Plan must not run the plan flow"));
+  api.setNewInitiativePrompts({
+    chooseInput: async () => assert.fail("gated New Initiative must not prompt for input"),
+    enterBrief: async () => assert.fail("gated New Initiative must not open a brief editor"),
+    pickFile: async () => assert.fail("gated New Initiative must not pick a file"),
+  });
+  api.setNewInitiativeRunner(async () => assert.fail("gated New Initiative must not dispatch"));
+  try {
+    for (const [command, argument] of commands) {
+      await vscode.commands.executeCommand(command, argument);
+    }
+  } finally {
+    window.showErrorMessage = originalError;
+    api.setNewPlanPrompts();
+    api.setNewPlanRunner();
+    api.setNewInitiativePrompts();
+    api.setNewInitiativeRunner();
+  }
+  assert.deepEqual(errors, commands.map(([command]) => gateRejection(command, api.windowGate())));
+  for (const message of errors) assert.match(message, /primary window/);
+}
+
 async function waitForTree(
   api: ExtensionApi,
   predicate: () => boolean,
@@ -433,7 +465,15 @@ export async function run(): Promise<void> {
     for (const [key, value] of Object.entries(SESSION_WORKSPACE_SETTINGS)) {
       assert.deepEqual(vscode.workspace.getConfiguration().inspect(key)?.workspaceValue, value);
     }
-    console.log("Electron workspace scenario passed: workspace file and scoped settings");
+    await waitForSessionDoctor(
+      api,
+      () => !(api.sessionDoctor.current.kind === "error" && api.sessionDoctor.current.message === "Session & Doctor has not loaded."),
+      "to apply a session refresh",
+    );
+    const liveSession = await api.client.run(["session"], fixture);
+    assert.deepEqual(api.windowGate(), windowGate(liveSession.json));
+    assert.deepEqual(api.windowGate(), { primary: false, canPlan: true }, "a detached plan window keeps New Plan but not New Initiative");
+    console.log("Electron workspace scenario passed: workspace file, scoped settings, window gate");
     return;
   }
 
@@ -444,6 +484,7 @@ export async function run(): Promise<void> {
   await waitForReadyTree(api);
   await waitForReadyInitiatives(api);
   await waitForSessionDoctor(api, () => api.sessionDoctor.current.kind === "ready", "to load");
+  assert.deepEqual(api.windowGate(), { primary: true, canPlan: true });
   assert.equal(api.statusBar.text, "Agento: primary · 2 active");
   assert.equal(api.statusBar.command, "agento.sessionDoctor.focus");
   await focusSessionDoctor(api);
@@ -582,6 +623,7 @@ export async function run(): Promise<void> {
   );
   await assertOrphanMemberShowsMessage(api, buildingMember);
 
+  await waitForSessionDoctor(api, () => api.windowGate().primary && api.windowGate().canPlan, "to open the window gate");
   const promptEvents: string[] = [];
   api.setNewPlanPrompts({
     chooseKind: async () => { promptEvents.push("quickPick"); return "feature"; },
@@ -761,6 +803,12 @@ export async function run(): Promise<void> {
     resolveBatch(1, "build", 1, ["fixture CLI warning"]);
     await newerApplied;
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
+    assert.deepEqual(api.windowGate(), CLOSED_GATE, "a build window closes the gate");
+    await assertGatedCommandsRejected(api, [
+      ["agento.newPlan"],
+      ["agento.newInitiative"],
+      ["agento.planInitiativeMember", readyMember],
+    ]);
 
     assert.equal(api.sessionDoctor.current.kind, "ready");
     if (api.sessionDoctor.current.kind !== "ready") return;
@@ -823,6 +871,40 @@ export async function run(): Promise<void> {
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(api.sessionDoctor.current.kind === "ready" && api.sessionDoctor.current.session.role, "build");
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
+    assert.deepEqual(api.windowGate(), CLOSED_GATE, "a stale primary refresh does not reopen the gate");
+
+    const refreshWithSession = async (sessionJson: unknown, predicate: () => boolean, description: string) => {
+      const start = pending.length;
+      await vscode.commands.executeCommand("agento.refresh");
+      assert.equal(pending.length, start + 4);
+      const applied = waitForSessionDoctor(api, predicate, description);
+      for (const request of pending.slice(start)) {
+        const command = request.args[0];
+        const json = command === "session"
+          ? sessionJson
+          : command === "doctor"
+            ? doctorResponse
+            : command === "initiative"
+              ? { status: "ok", items: [] }
+              : statusResponse(0);
+        request.resolve({ code: 0, json, stderr: "" });
+      }
+      await applied;
+    };
+    const detachedPlan = sessionResponse("plan");
+    await refreshWithSession(
+      { ...detachedPlan, worktree: { ...detachedPlan.worktree, detached: true } },
+      () => api.sessionDoctor.current.kind === "ready" && api.sessionDoctor.current.session.role === "plan",
+      "detached plan refresh",
+    );
+    assert.deepEqual(api.windowGate(), { primary: false, canPlan: true }, "a detached plan window opens canPlan only");
+    await assertGatedCommandsRejected(api, [["agento.newInitiative"]]);
+    await refreshWithSession(
+      { status: "failed", role: "primary" },
+      () => api.sessionDoctor.current.kind === "error",
+      "invalid session refresh",
+    );
+    assert.deepEqual(api.windowGate(), CLOSED_GATE, "an invalid session record closes the gate");
   } finally {
     api.client.run = originalRun;
   }
@@ -838,6 +920,7 @@ export async function run(): Promise<void> {
     "inline retry",
     () => vscode.commands.executeCommand(retryItem.command!.command),
   );
+  assert.deepEqual(api.windowGate(), { primary: true, canPlan: true }, "the live primary session reopens the gate");
 
   console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, roadmap refresh, diagnostics, stale/error handling`);
 }
