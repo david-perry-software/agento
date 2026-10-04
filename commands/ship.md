@@ -141,7 +141,9 @@ Ownership does not apply when resuming only the post-ship epilogue.
    - **Hard-reject** — any of: unticked steps that are not `(manual, post-ship)`;
      falsely ticked steps; review.md missing, stale, or `request-changes`; an issue's
      regression test failing; `ownerTree.tracked` non-empty or `ownerTree.ahead > 0`
-     (uncommitted tracked changes or unpushed commits in the owner worktree); a
+     (uncommitted tracked changes or unpushed commits in the owner worktree);
+     `ownerTree === null` while `owner !== null` and `owner.role` is not `primary`
+     (the owner's tree could not be read, so it cannot be shown clean); a
      non-empty `companionGaps[]` — `dirty`, `unpushed`, or `behind` name
      `companion.path` (the fix for `behind` is `git -C <companion.path> merge
      origin/<branch>`, a fast-forward; for `dirty`, quote `companionTree.tracked`
@@ -177,9 +179,13 @@ Ownership does not apply when resuming only the post-ship epilogue.
    writes go through `git -C <companion.path>` when an owner exists, else the
    companion clone `artifactsRoot` on the mirrored branch):
    - **Untracked byproducts first** (only when the user said yes to that item): the
-     first write is `git -C <owner.path> clean -f -- <each listed path>` — exactly
-     the `ownerTree.untracked` paths shown in the summary, never `-d`, `-x`, or a
-     directory. Then re-run `agento.mjs ship-preflight <type> <slug> --pr` and
+     first write is `git -C <owner.path> --literal-pathspecs clean -f -- <each listed path, single-quoted>`
+     — exactly the `ownerTree.untracked` paths shown in the summary, never `-d`,
+     `-x`, or a directory. `--literal-pathspecs` is mandatory: without it git reads
+     each path as a pathspec, so `*`, `?`, `[…]`, or a `:(magic)` prefix in a name
+     also deletes unlisted files (`shot[1].png` matches `shot1.png`). Quote each
+     path in single quotes, writing an embedded `'` as `'\''`. Then re-run
+     `agento.mjs ship-preflight <type> <slug> --pr` and
      require `ownerTree` to be `{ tracked: [], untracked: [], ahead: 0 }` before
      any other write; anything new is a hard reject (step 2).
    - Set roadmap `status: complete`; record any user-accepted gaps under the

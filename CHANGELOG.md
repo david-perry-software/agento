@@ -8,7 +8,8 @@
   `ownerTree` (`{ tracked, untracked, ahead }`) and `companionTree`
   (`{ tracked, untracked }`). Ship lists the untracked paths on its confirmation
   path and, on an explicit yes, deletes exactly those paths with
-  `git clean -f -- <paths>` before re-checking. A dirty companion half stays a hard
+  `git --literal-pathspecs clean -f -- <paths>` (so glob characters in a name never
+  match unlisted files) before re-checking. A dirty companion half stays a hard
   reject, but the gap now lists its files and names the commit-or-discard choice.
   Delivery policy §7 adds a clean-handoff rule: the Builder and Reviewer leave
   `git status --porcelain --untracked-files=all` empty in both halves at every

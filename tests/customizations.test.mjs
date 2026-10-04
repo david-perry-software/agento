@@ -345,6 +345,20 @@ test("prompts and agents never direct users to gh pr edit --body", () => {
   assert.deepEqual(offenders, [], `customization files still instructing gh pr edit --body:\n${offenders.join("\n")}`);
 });
 
+test("every git clean in prompts, agents, and command mirrors uses --literal-pathspecs (#88 ship-untracked-byproducts)", () => {
+  const offenders = [];
+  let cleans = 0;
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+    for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+      if (!/\bclean -f\b/.test(line)) continue;
+      cleans += 1;
+      if (!/--literal-pathspecs clean -f -- /.test(line)) offenders.push(`${path.relative(repoRoot, file)}: ${line.trim()}`);
+    }
+  }
+  assert.ok(cleans >= 2, "expected the ship prompt's byproduct cleanup and its command mirror");
+  assert.deepEqual(offenders, [], `git clean without --literal-pathspecs deletes unlisted glob matches:\n${offenders.join("\n")}`);
+});
+
 test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-deprecation)", () => {
   const examples = [];
   for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
