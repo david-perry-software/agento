@@ -167,6 +167,14 @@ historical artifacts solely to adopt it.
   never do.
 - Keep unrelated changes out; record unrelated problems as Follow-ups in roadmap.md
   instead of fixing them.
+- **Clean handoff.** At every handoff — Builder completion, Builder pause or session
+  break, Reviewer verdict — `git status --porcelain --untracked-files=all` prints
+  nothing in the product worktree and, in companion mode, in the companion half.
+  Byproducts written outside their sink (test output, stray screenshots): delete
+  them, never commit them. Evidence is committed under the slug's `evidence/`. A
+  byproduct that keeps coming back means fixing its producer (route the output to
+  its sink) and recording a Follow-up; `.gitignore` is reserved for genuinely
+  generated artifacts.
 
 ## 8. Cross-window handoff
 

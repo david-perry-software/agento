@@ -414,6 +414,7 @@ test("the policy file is the only place the shared rules are spelled out", () =>
     /; fallback: </,
     /switch to Agent mode/,
     /copyable command block/,
+    /delete\s+them, never commit them/,
   ];
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     if (file.endsWith("delivery-policy.instructions.md")) continue;
@@ -422,6 +423,7 @@ test("the policy file is the only place the shared rules are spelled out", () =>
       assert.doesNotMatch(text, canary, `${path.relative(repoRoot, file)} restates a policy rule (${canary}); link delivery-policy.instructions.md instead`);
     }
   }
+  assert.match(fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8"), /delete\s+them, never commit them/, "policy §7 lost its clean-handoff rule");
   // The ship prompt owns its teardown pause wording (ship-audit-first); nothing else
   // in the customization set restates it.
   const teardownPause = /paused at teardown/;
