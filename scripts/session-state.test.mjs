@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -351,6 +351,34 @@ test("pairFor: the companion half of a managed product worktree, registered or n
   assert.equal(pair(l.primary), null);
   assert.equal(pair(path.join(l.base, "sibling")), null);
   assert.equal(pairFor({ worktree: pairRole(l, path.join(l.worktreesDir, "feature-widget")).worktree, companionWorktreesDir: null, companionWorktrees: [] }), null);
+});
+
+test("halfState: registration clone and origin of a freshly added half (#86 companion-half-registration)", () => {
+  const product = [{ path: "/p" }, { path: "/wt/plan-1" }];
+  const companion = [{ path: "/d" }, { path: "/d-wt/plan-1" }];
+  const stray = [{ path: "/p" }, { path: "/wt/plan-1" }, { path: "/d-wt/plan-1" }];
+  // Correct pair.
+  assert.deepEqual(halfState({ path: "/wt/plan-1", own: "product", worktrees: product, companionWorktrees: companion, origin: "o/p.git", expectedOrigin: "o/p.git", onDisk: true }), { onDisk: true, registeredIn: "product", origin: "o/p.git", expectedOrigin: "o/p.git", ok: true });
+  assert.deepEqual(halfState({ path: "/d-wt/plan-1", own: "companion", worktrees: product, companionWorktrees: companion, origin: "o/d.git", expectedOrigin: "o/d.git", onDisk: true }), { onDisk: true, registeredIn: "companion", origin: "o/d.git", expectedOrigin: "o/d.git", ok: true });
+  // Wrong clone: the companion half landed in the product clone.
+  assert.deepEqual(halfState({ path: "/d-wt/plan-1", own: "companion", worktrees: stray, companionWorktrees: [{ path: "/d" }], origin: "o/p.git", expectedOrigin: "o/d.git", onDisk: true }), { onDisk: true, registeredIn: "product", origin: "o/p.git", expectedOrigin: "o/d.git", ok: false });
+  // Right clone, wrong origin.
+  assert.equal(halfState({ path: "/d-wt/plan-1", own: "companion", worktrees: product, companionWorktrees: companion, origin: "o/other.git", expectedOrigin: "o/d.git", onDisk: true }).ok, false);
+  // Not on disk: no registration, no origin.
+  assert.deepEqual(halfState({ path: "/d-wt/plan-2", own: "companion", worktrees: product, companionWorktrees: companion, origin: "ignored", expectedOrigin: "o/d.git", onDisk: false }), { onDisk: false, registeredIn: null, origin: null, expectedOrigin: "o/d.git", ok: false });
+});
+
+test("companionWarning: only an on-disk half the companion clone does not register warns, naming the product clone when it lists it (#86 companion-half-registration)", () => {
+  const product = [{ path: "/p" }, { path: "/wt/plan-1" }];
+  const args = { productWorktrees: product, companionClone: "/d", productRoot: "/p" };
+  assert.equal(companionWarning({ ...args, pair: null, onDisk: true }), null);
+  assert.equal(companionWarning({ ...args, pair: { path: "/d-wt/plan-1", registered: false }, onDisk: false }), null);
+  assert.equal(companionWarning({ ...args, pair: { path: "/d-wt/plan-1", registered: true }, onDisk: true }), null);
+  assert.equal(companionWarning({ ...args, pair: { path: "/d-wt/plan-1", registered: false }, onDisk: true }), "companion-unregistered: /d-wt/plan-1 exists but is not a registered worktree of /d");
+  assert.equal(
+    companionWarning({ ...args, productWorktrees: [...product, { path: "/d-wt/plan-1" }], pair: { path: "/d-wt/plan-1", registered: false }, onDisk: true }),
+    "companion-unregistered: /d-wt/plan-1 exists but is not a registered worktree of /d; it is registered in /p instead — git -C /p worktree remove /d-wt/plan-1",
+  );
 });
 
 test("classifyWorktrees: companion entries follow the product entries with repo: companion and the product half's role", () => {
