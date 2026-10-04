@@ -38,13 +38,13 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.newPlan"),
     [
-      { command: "agento.newPlan", when: "view == agento.deliveries", group: "navigation@2" },
-      { command: "agento.newPlan", when: "view == agento.sessionDoctor", group: "navigation@2" },
+      { command: "agento.newPlan", when: "view == agento.deliveries && agento.canPlan", group: "navigation@2" },
+      { command: "agento.newPlan", when: "view == agento.sessionDoctor && agento.canPlan", group: "navigation@2" },
     ],
   );
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.newInitiative"),
-    [{ command: "agento.newInitiative", when: "view == agento.initiatives", group: "navigation@2" }],
+    [{ command: "agento.newInitiative", when: "view == agento.initiatives && agento.primary", group: "navigation@2" }],
   );
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.showActions"),
@@ -52,7 +52,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   );
   assert.deepEqual(manifest.contributes.menus["view/item/context"], [
     { command: "agento.showActions", when: "view == agento.deliveries && viewItem == agento.delivery", group: "inline" },
-    { command: "agento.planInitiativeMember", when: "view == agento.initiatives && viewItem == agento.initiativeMember.ready", group: "inline" },
+    { command: "agento.planInitiativeMember", when: "view == agento.initiatives && viewItem == agento.initiativeMember.ready && agento.canPlan", group: "inline" },
     { command: "agento.showActions", when: "view == agento.initiatives && viewItem == agento.initiativeMember.in-flight", group: "inline" },
   ]);
 });

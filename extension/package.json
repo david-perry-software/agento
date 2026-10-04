@@ -116,17 +116,17 @@
         },
         {
           "command": "agento.newPlan",
-          "when": "view == agento.deliveries",
+          "when": "view == agento.deliveries && agento.canPlan",
           "group": "navigation@2"
         },
         {
           "command": "agento.newInitiative",
-          "when": "view == agento.initiatives",
+          "when": "view == agento.initiatives && agento.primary",
           "group": "navigation@2"
         },
         {
           "command": "agento.newPlan",
-          "when": "view == agento.sessionDoctor",
+          "when": "view == agento.sessionDoctor && agento.canPlan",
           "group": "navigation@2"
         },
         {
@@ -143,13 +143,27 @@
         },
         {
           "command": "agento.planInitiativeMember",
-          "when": "view == agento.initiatives && viewItem == agento.initiativeMember.ready",
+          "when": "view == agento.initiatives && viewItem == agento.initiativeMember.ready && agento.canPlan",
           "group": "inline"
         },
         {
           "command": "agento.showActions",
           "when": "view == agento.initiatives && viewItem == agento.initiativeMember.in-flight",
           "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "agento.newPlan",
+          "when": "agento.canPlan"
+        },
+        {
+          "command": "agento.newInitiative",
+          "when": "agento.primary"
+        },
+        {
+          "command": "agento.planInitiativeMember",
+          "when": "false"
         }
       ]
     },

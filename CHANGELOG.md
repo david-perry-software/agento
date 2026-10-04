@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Fixed.** The dashboard's New Plan, New Initiative, and ready-member Plan
+  actions are now gated on the window role: New Initiative appears only in the
+  primary window, and New Plan and Plan only in the primary window or an
+  unpromoted plan window, through the `agento.primary` and `agento.canPlan`
+  context keys (false until the first session read and after a failed one). They
+  are hidden from view title bars, member rows, and the Command Palette
+  elsewhere, and a hidden action invoked anyway shows an error naming the primary
+  window before any prompt or dispatch, so build, freehand, and unmanaged windows
+  no longer open duplicate primary windows or leave stray pending commands. (#84)
 - **Fixed.** In-flight members in the dashboard's Initiatives view (planned,
   in progress, or in review) now show a play button that opens the same actions
   picker the Deliveries view offers for that slug; when no delivery matches, an
