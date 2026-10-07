@@ -643,6 +643,37 @@ test("session from a companion half anchors on the product primary and matches t
   assert.match(clone.warnings[0], /^anchored-from-companion: /);
 });
 
+test("session, next, and doctor from the companion clone describe the product primary (#92 companion-cwd-window-role)", () => {
+  const { repo, docs } = makePairRepo();
+  fs.mkdirSync(path.join(docs, "features"), { recursive: true });
+
+  const primary = run(repo, "session").json;
+  for (const cwd of [docs, path.join(docs, "features")]) {
+    const record = run(cwd, "session").json;
+    assert.equal(record.role, "primary", cwd);
+    assert.equal(record.worktree.path, repo);
+    assert.deepEqual(strip(record), strip(primary));
+    assert.match(record.warnings[0], /^anchored-from-companion: /);
+  }
+
+  const nextPrimary = run(repo, "next").json;
+  const nextClone = run(docs, "next");
+  assert.equal(nextClone.code, 0);
+  assert.equal(nextClone.json.role, "primary");
+  assert.deepEqual(nextClone.json.status, nextPrimary.status);
+  assert.deepEqual(nextClone.json.next, nextPrimary.next);
+
+  const { env } = restrictedPath(okStubs);
+  const doctorClone = byId(runWith({ cwd: docs, env }, "doctor").json)["session-workspace"];
+  const doctorPrimary = byId(runWith({ cwd: repo, env }, "doctor").json)["session-workspace"];
+  assert.deepEqual(doctorClone, doctorPrimary);
+
+  git(docs, "switch", "-q", "-c", "tmp-branch");
+  const onBranch = run(docs, "session").json;
+  assert.equal(onBranch.role, "primary");
+  assert.equal(onBranch.worktree.branch, "main");
+});
+
 test("session: plan pair (both detached), half-promoted pair, and a product half without a companion half", () => {
   const { repo, docs, wt, docsWt } = makePairRepo();
   const plan = path.join(wt, "plan-1");
