@@ -632,13 +632,13 @@ test("session from a companion half anchors on the product primary and matches t
   assert.equal(approved.next.window, "primary");
   assert.deepEqual(approved.next.target, { path: repo, workspace: null });
 
-  // The primary and the companion clone: primary → primary with companion: null; clone → unmanaged, anchored on the product primary.
+  // The primary and the companion clone: primary → primary with companion: null; clone → primary, anchored on the product primary.
   const primary = run(repo, "session").json;
   assert.equal(primary.role, "primary");
   assert.equal(primary.companion, null);
   assert.equal(primary.workspace, null);
   const clone = run(docs, "session").json;
-  assert.equal(clone.role, "unmanaged");
+  assert.equal(clone.role, "primary");
   assert.equal(clone.root, repo);
   assert.match(clone.warnings[0], /^anchored-from-companion: /);
 });

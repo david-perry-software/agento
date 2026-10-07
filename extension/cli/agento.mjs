@@ -119,10 +119,10 @@ const MANAGED_HALF = /^(plan|feature|issue|freehand)-(.+)$/;
 // today's behaviour silently (an in-repo project's own managed worktree looks the
 // same); several matches keep it too and warn.
 function anchorRoot(dir) {
-  if (hasCompanionConfig(dir)) return { root: dir, warnings: [] };
+  if (hasCompanionConfig(dir)) return { root: dir, warnings: [], fromClone: false };
   const ownList = parseWorktreeList(git(dir, "worktree", "list", "--porcelain"));
   const clone = ownList[0]?.path ?? dir;
-  if (!samePath(clone, dir) && hasCompanionConfig(clone)) return { root: dir, warnings: [] };
+  if (!samePath(clone, dir) && hasCompanionConfig(clone)) return { root: dir, warnings: [], fromClone: false };
   const halfName = path.basename(dir);
   const looksLikeHalf = !samePath(clone, dir) && MANAGED_HALF.test(halfName) && path.basename(path.dirname(dir)) === `${path.basename(clone)}-worktrees`;
   const parent = path.dirname(clone);
@@ -130,7 +130,7 @@ function anchorRoot(dir) {
   try {
     siblings = fs.readdirSync(parent, { withFileTypes: true });
   } catch {
-    return { root: dir, warnings: [] };
+    return { root: dir, warnings: [], fromClone: false };
   }
   const matches = [];
   for (const entry of siblings) {
@@ -148,14 +148,19 @@ function anchorRoot(dir) {
     const product = matches[0];
     const productHalf = path.resolve(product, loadAgentoConfig(product).config.worktrees.dir, halfName);
     const anchored = looksLikeHalf && fs.existsSync(productHalf) ? productHalf : product;
-    return { root: anchored, warnings: [`anchored-from-companion: ${dir} is a companion checkout of ${product}; the record describes ${anchored}`] };
+    return {
+      root: anchored,
+      warnings: [`anchored-from-companion: ${dir} is a companion checkout of ${product}; the record describes ${anchored}`],
+      fromClone: samePath(clone, dir) && !looksLikeHalf,
+    };
   }
-  if (matches.length > 1) return { root: dir, warnings: [`companion-anchor: ${matches.length} sibling checkouts name ${clone} as their artifacts.repo (${matches.join(", ")}); keep one product per companion`] };
-  return { root: dir, warnings: [] };
+  if (matches.length > 1) return { root: dir, warnings: [`companion-anchor: ${matches.length} sibling checkouts name ${clone} as their artifacts.repo (${matches.join(", ")}); keep one product per companion`], fromClone: false };
+  return { root: dir, warnings: [], fromClone: false };
 }
 
 const anchor = anchorRoot(toplevel);
 const root = anchor.root;
+const roleCwd = anchor.fromClone ? root : startDir;
 const { config, source } = loadAgentoConfig(root);
 const repoName = path.basename(root);
 const worktreesDir = path.resolve(root, config.worktrees.dir);
@@ -660,7 +665,7 @@ const DOCTOR_CHECKS = {
   "session-workspace"() {
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { worktree } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+    const { worktree } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const workspace = describeWorkspace(worktree, sessionWorktreesDir);
     if (!workspace) return { status: "ok", detail: "not a managed pair", fallback: null };
     if (workspace.current) return { status: "ok", detail: `${workspace.path} carries the session auto-approve settings`, fallback: null };
@@ -1505,10 +1510,10 @@ switch (command) {
 
   case "session": {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    // startDir (not root): a subdirectory inside a worktree resolves to that worktree's entry.
+    // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const companion = describeCompanion(worktree);
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
@@ -1554,7 +1559,7 @@ switch (command) {
     const requestedSlug = rest[0] ? requireSlug(rest[0]) : null;
     const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { role, worktree, reason: hostedReason } = deriveRole({ cwd: startDir, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+    const { role, worktree, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
     const roadmaps = allRoadmaps(null, [companionHalfOf(describeCompanion(worktree))]);
     const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps, config });
