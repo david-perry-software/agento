@@ -352,6 +352,27 @@ test("every agent or tool-restricted prompt that needs ask-questions lists vscod
   assert.deepEqual(missing, [], `files that need ask-questions but do not list ${ASK_QUESTIONS_TOOL} in tools:\n${missing.join("\n")}`);
 });
 
+test("ask-questions clarification always offers a §10 recommended choice (#90 planner-ask-questions-tool)", () => {
+  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m)?.[1] ?? "";
+  const paragraph = section.match(/\*\*Recommended choice\.\*\*[\s\S]*?(?=\n\n|$)/)?.[0];
+  assert.ok(paragraph, "delivery-policy §10 must define a **Recommended choice.** paragraph");
+  assert.match(paragraph, /`recommended: true`/, "§10 recommended choice must set recommended: true in the question tool");
+  assert.match(paragraph, /\(recommended\)/, "§10 recommended choice must mark the fallback option (recommended)");
+  const askers = [];
+  const missing = [];
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+    const text = fs.readFileSync(file, "utf8");
+    if (!/ask-questions\s+tool/.test(text)) continue;
+    askers.push(path.basename(file));
+    if (!/§10\s+recommended\s+choice/.test(text)) missing.push(path.relative(repoRoot, file));
+  }
+  for (const agent of ["delivery-planner.agent.md", "initiative-architect.agent.md"]) {
+    assert.ok(askers.includes(agent), `${agent} should ask clarifying questions with the ask-questions tool`);
+  }
+  assert.deepEqual(missing, [], `files that use the ask-questions tool without citing the §10 recommended choice:\n${missing.join("\n")}`);
+});
+
 test("prompts and agents never direct users to gh pr edit --body", () => {
   const offenders = [];
   for (const file of [...promptFiles, ...agentFiles]) {
