@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixed.** `agento.mjs session` and `agento.mjs next` (the delivery-policy §11
+  window check) reported `role: unmanaged` and rejected every `/agento …` command
+  when the terminal sat in the companion clone of a primary window, including any
+  subdirectory of it and with the clone on any branch. They now return the product
+  primary's record, keeping the `anchored-from-companion` warning; the doctor
+  `session-workspace` check uses the same anchored cwd. (#92)
+
 - **Fixed.** The 📋 Agento Planner and 🏛️ Agento Architect now list
   `vscode/askQuestions` in their `tools:`. Their clarifying questions open in the
   VS Code question carousel instead of always falling back to a numbered list in

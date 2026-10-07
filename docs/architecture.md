@@ -150,9 +150,11 @@ resolves `artifacts.repo.dir` to exactly that clone. Exactly one match → the r
 computed from that product (for a half `<kind>-<id>`, from the product half of the
 same name when it exists) and `warnings[]` carries `anchored-from-companion`; zero
 matches → today's behaviour (`unmanaged`); several → `unmanaged` plus a warning
-listing them. The hooks pass `--root <cwd>` unchanged, so a terminal sitting in the
-companion folder of a pair window prints the same `Session:` line as the product
-folder.
+listing them. From the companion clone itself (its root or any subdirectory, on any
+branch), `role` and `worktree` are the product primary's; from a half, they are the
+product half's; the clone's own `worktrees[]` entry stays `unmanaged`. The hooks pass
+`--root <cwd>` unchanged, so a terminal sitting in the companion folder of a pair
+window prints the same `Session:` line as the product folder.
 
 **Layout rule — the checkout decides, the primary anchors.** Companion mode is on for
 a checkout when *its own* `.github/agento.json` sets `artifacts.repo`; the companion
