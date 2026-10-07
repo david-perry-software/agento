@@ -2,7 +2,7 @@
 name: "📋 Agento Planner"
 description: "Use when: creating a new feature or issue plan — researches the codebase, asks clarifying questions, writes dated plan.md and roadmap.md delivery artifacts, and opens the work branch with a draft PR"
 argument-hint: "Describe the feature or issue to plan"
-tools: [read, search, edit, execute, web, agent, browser]
+tools: [read, search, edit, execute, web, agent, browser, vscode/askQuestions]
 agents: ["Explore"]
 user-invocable: true
 disable-model-invocation: false

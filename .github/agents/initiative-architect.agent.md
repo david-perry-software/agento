@@ -2,7 +2,7 @@
 name: "🏛️ Agento Architect"
 description: "Use when: turning a large brief into an initiative — clarifies scope, researches the codebase, decomposes the brief into independently shippable features with dependencies and waves, writes brief.md + breakdown.md, and publishes them to the default branch through a merged PR from the primary window"
 argument-hint: "Brief text, or a repository-relative path to a file containing it"
-tools: [read, search, edit, execute, agent]
+tools: [read, search, edit, execute, agent, vscode/askQuestions]
 agents: ["Explore"]
 user-invocable: true
 disable-model-invocation: false
