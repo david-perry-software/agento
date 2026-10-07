@@ -335,6 +335,23 @@ test("every command and agent declares Needs: and Fallback: from the §10 vocabu
   }
 });
 
+// VS Code gives an agent with a `tools:` list only those tools, and no alias covers this one.
+const ASK_QUESTIONS_TOOL = "vscode/askQuestions";
+
+test("every agent or tool-restricted prompt that needs ask-questions lists vscode/askQuestions (#90 planner-ask-questions-tool)", () => {
+  const missing = [];
+  let checked = 0;
+  for (const file of [...agentFiles, ...promptFiles]) {
+    const label = path.relative(repoRoot, file);
+    const meta = parseFrontmatter(splitFrontmatter(file).frontmatter, label);
+    if (!Array.isArray(meta.tools) || !declarations(file).needs.includes("ask-questions")) continue;
+    checked += 1;
+    if (!meta.tools.includes(ASK_QUESTIONS_TOOL)) missing.push(`${path.basename(file)} tools=[${meta.tools.join(", ")}]`);
+  }
+  assert.ok(checked >= 2, `expected at least the Planner and Architect to be checked, got ${checked}`);
+  assert.deepEqual(missing, [], `files that need ask-questions but do not list ${ASK_QUESTIONS_TOOL} in tools:\n${missing.join("\n")}`);
+});
+
 test("prompts and agents never direct users to gh pr edit --body", () => {
   const offenders = [];
   for (const file of [...promptFiles, ...agentFiles]) {
