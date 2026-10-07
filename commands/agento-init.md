@@ -44,8 +44,9 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    branch from `git remote show origin` as `<default>`.
 
 2. **Companion name.** Ask once, with the ask-questions tool (or its declared
-   fallback, §10): "Name of the companion artifact repository under `<owner>`?"
-   with default `<repo>-docs`. Accept only names matching `^[A-Za-z0-9_.-]{1,100}$`
+   fallback) per the §10 recommended choice: "Name of the companion artifact
+   repository under `<owner>`?" with default `<repo>-docs` as the recommended
+   option. Accept only names matching `^[A-Za-z0-9_.-]{1,100}$`
    that differ from `<repo>`; re-ask otherwise. Call the answer `<name>`.
 
 3. **Companion repository and clone.** Adopt, never recreate:
@@ -146,7 +147,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    Fill the owner and companion placeholders from steps 1–2 and the remaining
    placeholders from the project's actual files (package.json scripts, README,
    existing tooling); ask the user for anything you cannot infer, with the
-   ask-questions tool (or its declared fallback, §10). If AGENTS.md already has an
+   ask-questions tool (or its declared fallback) per the §10 recommended choice. If
+   AGENTS.md already has an
    `## Agento` section, leave it alone unless `--force` was given.
 
    ```markdown
@@ -201,7 +203,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    `gh api repos/{owner}/{repo}/rulesets --jq '.[] | select(.target=="branch") | .name'`
    and `gh api repos/{owner}/{repo}/branches/<default>/protection` (404 means none).
    If neither a ruleset nor branch protection covers the default branch, ask the user
-   (with the ask-questions tool or its declared fallback, §10) whether to create a
+   (with the ask-questions tool or its declared fallback, per the §10 recommended
+   choice) whether to create a
    ruleset now that: requires a pull
    request before merging, requires the project's CI check(s) to pass, blocks force
    pushes, and blocks deletion — `gh api -X POST repos/{owner}/{repo}/rulesets` with
@@ -265,7 +268,8 @@ below is yours, so the delivery guard keeps governing them.
   `branches.issue` prefix is an in-flight delivery whose in-repo artifacts the move
   would strand (its branch keeps the roots, the default branch loses them). List
   them and stop unless the user explicitly accepts the move now — ask with the
-  ask-questions tool (or its declared fallback, §10) and record the answer in the
+  ask-questions tool (or its declared fallback) per the §10 recommended choice and
+  record the answer in the
   report. The clean path is to ship those deliveries first and re-run.
 - **M3 — Companion branch.** `git -C ../<name> switch -c changes/agento-init
   origin/<default>` (resume it with `git -C ../<name> switch changes/agento-init`

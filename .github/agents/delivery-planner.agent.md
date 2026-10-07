@@ -2,7 +2,7 @@
 name: "📋 Agento Planner"
 description: "Use when: creating a new feature or issue plan — researches the codebase, asks clarifying questions, writes dated plan.md and roadmap.md delivery artifacts, and opens the work branch with a draft PR"
 argument-hint: "Describe the feature or issue to plan"
-tools: [read, search, edit, execute, web, agent, browser]
+tools: [read, search, edit, execute, web, agent, browser, vscode/askQuestions]
 agents: ["Explore"]
 user-invocable: true
 disable-model-invocation: false
@@ -58,8 +58,9 @@ mode. Never modify source code, configuration, or other directories.
    instead of visibly creating a second window; do not blame Git or another worktree
    for that behavior.
 2. **Clarify first.** Before any writing, ask the user 3-5 targeted clarifying questions
-   (scope boundaries, constraints, acceptance expectations, priorities) using the
-   ask-questions tool or its declared fallback (§10). Retain the answers verbatim for
+   (scope boundaries, constraints, acceptance expectations, priorities) with the
+   ask-questions tool (or its declared fallback) per the §10 recommended choice.
+   Retain the answers verbatim for
    plan.md `## Decisions`; do not write them until the final branch is reserved in
    step 5.
 3. **Initiative intake (explicit only).** When the *whole* argument matches

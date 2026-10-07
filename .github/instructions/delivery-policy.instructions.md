@@ -286,7 +286,8 @@ a missing capability is never discovered mid-command. `agento.mjs doctor [--for
 
 - `terminal` — a shell the agent can run commands in (Agent mode; Plan and Ask chat
   modes have none).
-- `ask-questions` — the structured ask-questions chat tool for clarification.
+- `ask-questions` — the structured ask-questions chat tool (`vscode/askQuestions` in
+  an agent's `tools:`) for clarification.
 - `browser` — the integrated browser tools for driving a URL and capturing state.
 - `gh` — the GitHub CLI, installed and authenticated (`doctor` check `gh`).
 - `code` — the VS Code CLI for opening a worktree window (`doctor` check `code`).
@@ -306,7 +307,8 @@ restate them):
 - `terminal` unavailable → reject: "switch to Agent mode and re-send the command";
   no partial help in Plan or Ask mode.
 - `ask-questions` unavailable → ask the same questions as a numbered list in chat,
-  end the turn, wait for the reply, and retain the answers verbatim in the artifact.
+  end the turn, wait for the reply, and retain the answers verbatim in the artifact;
+  each question still carries its recommended choice (below).
 - `browser` unavailable → run the step's `verify:` headless (curl, CLI, tests) where
   faithful; otherwise report the step blocked per §2 and pause. Never silently skip.
 - `code` unavailable → keep the worktree and print `code --new-window
@@ -317,6 +319,14 @@ restate them):
   `gh auth login` in their own terminal (§1), then re-sends the command.
 - `network` unreachable → `doctor` reports `warn`; fetch/push/PR steps are retried
   before the turn ends and the command pauses if they still fail.
+
+**Recommended choice.** Every clarifying question offers 2–4 concrete options with
+exactly one recommended — open-ended questions included — and a free-text answer
+stays allowed. With the ask-questions tool, the recommended option is listed first
+and carries `recommended: true`. In the numbered-list fallback (the tool is missing,
+or the agent runs as a subagent, where VS Code withholds it), options are lettered
+and the recommended one is bold and suffixed `(recommended)` with a one-line reason.
+Retain the answers verbatim, noting which option was the recommended one.
 
 **Declaration contract.** Every prompt (`.github/prompts/*.prompt.md`) and agent
 (`.github/agents/*.agent.md`) opens its body with exactly two lines:

@@ -46,7 +46,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 3. **Skip what's installed.** Compare candidates against `.agents/skills/`; mark
    already-installed ones and exclude them from the proposal.
 4. **Propose and confirm.** Present one table: `domain | skill | source | why it
-   fits`. Then ask with the ask-questions tool (or its declared fallback, §10)
+   fits`. Then ask with the ask-questions tool (or its declared fallback) per the
+   §10 recommended choice
    which to install (multi-select; default: none). No installs happen before this
    answer.
 5. **Install approved skills** from the repo root:
