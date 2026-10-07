@@ -58,8 +58,9 @@ mode. Never modify source code, configuration, or other directories.
    instead of visibly creating a second window; do not blame Git or another worktree
    for that behavior.
 2. **Clarify first.** Before any writing, ask the user 3-5 targeted clarifying questions
-   (scope boundaries, constraints, acceptance expectations, priorities) using the
-   ask-questions tool or its declared fallback (§10). Retain the answers verbatim for
+   (scope boundaries, constraints, acceptance expectations, priorities) with the
+   ask-questions tool (or its declared fallback) per the §10 recommended choice.
+   Retain the answers verbatim for
    plan.md `## Decisions`; do not write them until the final branch is reserved in
    step 5.
 3. **Initiative intake (explicit only).** When the *whole* argument matches

@@ -75,7 +75,8 @@ value. The product checkout stays on `main`, untouched. The in-repo layout
    original argument (or the file path) for its `Source:` line.
 3. **Clarify first.** Ask 3–5 targeted questions (scope boundaries, what must ship
    first, target size of a member feature, constraints, what is explicitly out) with
-   the ask-questions tool or its declared fallback (§10). Retain the answers verbatim
+   the ask-questions tool (or its declared fallback) per the §10 recommended choice.
+   Retain the answers verbatim
    for `breakdown.md ## Decisions`; write nothing until step 5 has reserved the branch.
 4. **Research.** Use the Explore subagent for codebase questions instead of manual
    search chains, and load every matching installed skill for the domains the brief
