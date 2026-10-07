@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Fixed.** The 📋 Agento Planner and 🏛️ Agento Architect now list
+  `vscode/askQuestions` in their `tools:`. Their clarifying questions open in the
+  VS Code question carousel instead of always falling back to a numbered list in
+  chat. Delivery policy §10 adds a recommended-choice rule: every clarifying
+  question offers 2–4 concrete options with exactly one recommended
+  (`recommended: true` in the carousel, a bold `(recommended)` option with a
+  one-line reason in the chat fallback), and free-text answers stay allowed. The
+  Planner, Architect, `/agento agento-init`, and `/agento install-skills` cite the
+  rule. New tests require the tool wherever an agent with a `tools:` list needs
+  `ask-questions`, and the §10 citation wherever the tool is used. (#90)
+
 - **Fixed.** `/agento ship` no longer sends an approved delivery back to the
   Builder when the owner worktree is dirty only with untracked byproducts such as
   stray screenshots or test output. `agento.mjs ship-preflight` now reports
