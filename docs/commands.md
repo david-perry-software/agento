@@ -163,12 +163,23 @@ default the clone the CLI runs from: every verb reports `profilesFile { path, ex
 and `hint`; `apply` and `clear` rewrite the agents, prompts, handoff pins, and
 `commands/` mirrors and report `changed[]`; `models pins` reports each agent's current pin
 and any BYOK tier warning; `init` copies `templates/model-profiles.json` only when the
-file is absent). Every call prints one JSON
-document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`),
+file is absent),
+`release <merge-sha> [--wait N] [--interval N]` (the deploy-wait verdict for
+`checks.releaseWorkflow`, derived afresh from the GitHub REST API on every call so a
+lost output costs nothing: `verdict` ∈ `success | superseded-success | not-triggered
+| not-configured | pending | dispatch-required | failed | no-run`, plus `run` and
+`supersededBy` (`{ id, event, status, conclusion, url, headSha }` or `null`), `reason`,
+`mergeDate`, `graceSeconds`, `polls`, and `waitedSeconds`; `--wait N` (0–60, default 0)
+re-polls a `pending` verdict every `--interval` seconds (default 10) and never loops on
+`dispatch-required`; `/agento ship` drives it). Every call prints one JSON
+document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`;
+`release`: `success`, `superseded-success`, `not-triggered`, or `not-configured`),
+2 = `release` still `pending` or `dispatch-required` (rerun, or dispatch once),
 3 = resolution failure
 (`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`,
 `next` `ambiguous | blocked | unsupported | missing`, `models` `not-found | invalid |
-dirty | failed`),
+dirty | failed`, `release` `gh-missing | auth | unknown-sha | gh-error`),
+4 = `release` `failed` or `no-run`,
 1 = usage error. Every window-sensitive command runs `session` first and compares
 `role` with its `Window check per §11: requires role …` line (policy §11); a mismatch
 is a `rejected` receipt listing the record's alternatives.
