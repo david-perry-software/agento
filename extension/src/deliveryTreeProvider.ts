@@ -2,6 +2,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { DeliveryTreeGroup, DeliveryTreeItem, DeliveryTreeModel } from "./deliveryTreeModel.js";
+import type { TreeIdScope } from "./treeItemIds.js";
 
 interface GroupElement {
   kind: "group";
@@ -32,7 +33,7 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
 
   readonly onDidChangeTreeData = this.didChangeTreeData.event;
 
-  constructor(roadmapRoot: string) {
+  constructor(roadmapRoot: string, private readonly treeId: TreeIdScope) {
     this.snapshot = {
       model: { kind: "empty", message: "No deliveries found.", warnings: [] },
       roadmapRoot,
@@ -50,7 +51,8 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
 
   getTreeItem(element: DeliveryTreeElement): vscode.TreeItem {
     if (element.kind === "group") {
-      const item = new vscode.TreeItem(element.group.label, vscode.TreeItemCollapsibleState.Expanded);
+      const item = new vscode.TreeItem(element.group.label, vscode.TreeItemCollapsibleState.Collapsed);
+      item.id = this.treeId("deliveries", "group", element.group.lifecycle);
       item.contextValue = "agento.lifecycle";
       item.iconPath = new vscode.ThemeIcon("folder");
       return item;

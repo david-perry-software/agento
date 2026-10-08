@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 
 import type { SessionDoctorModel } from "./sessionDoctorModel.js";
+import type { TreeIdScope } from "./treeItemIds.js";
 
 interface GroupElement {
   kind: "group";
@@ -33,6 +34,8 @@ export class SessionDoctorProvider implements vscode.TreeDataProvider<SessionDoc
 
   readonly onDidChangeTreeData = this.didChangeTreeData.event;
 
+  constructor(private readonly treeId: TreeIdScope) {}
+
   get current(): SessionDoctorModel {
     return this.model;
   }
@@ -44,7 +47,8 @@ export class SessionDoctorProvider implements vscode.TreeDataProvider<SessionDoc
 
   getTreeItem(element: SessionDoctorElement): vscode.TreeItem {
     if (element.kind === "group") {
-      const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Expanded);
+      const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.Collapsed);
+      item.id = this.treeId("sessionDoctor", "group", element.id);
       item.contextValue = `agento.sessionDoctor.${element.id}`;
       item.iconPath = new vscode.ThemeIcon(element.id === "doctor" ? "pulse" : "folder");
       return item;

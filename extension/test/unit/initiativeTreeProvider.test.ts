@@ -83,6 +83,25 @@ test("initiative provider presentation resolves CLI breakdown paths for initiati
   });
 });
 
+test("initiative provider presentation collapses initiatives and groups with stable id parts", () => {
+  const initiative = initiativeTreeChildren(model)[0]!;
+  const [diagnostic, group] = initiativeTreeChildren(model, initiative);
+  const member = initiativeTreeChildren(model, group)[0]!;
+
+  assert.deepEqual(
+    [initiative, group, diagnostic, member].map((element) => {
+      const spec = initiativeTreeItemSpec(element, "/artifacts");
+      return [spec.collapsible, spec.idParts];
+    }),
+    [
+      ["collapsed", ["initiative", "agento-extension"]],
+      ["collapsed", ["group", "agento-extension", "ready"]],
+      ["none", undefined],
+      ["none", undefined],
+    ],
+  );
+});
+
 test("initiative provider presentation renders explicit empty and error rows", () => {
   for (const [kind, message, contextValue, icon] of [
     ["empty", "No initiatives found.", "agento.empty", "info"],
@@ -93,5 +112,7 @@ test("initiative provider presentation renders explicit empty and error rows", (
     assert.equal(spec.label, message);
     assert.equal(spec.contextValue, contextValue);
     assert.equal(spec.icon, icon);
+    assert.equal(spec.collapsible, "none");
+    assert.equal(spec.idParts, undefined);
   }
 });

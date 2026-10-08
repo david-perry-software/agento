@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Changed.** The dashboard's Deliveries lifecycle groups, initiatives and their
+  Ready / In flight / Blocked / Complete groups, and the Session & Doctor groups now
+  start collapsed in every new or reloaded window instead of expanded. Group nodes
+  carry ids that are stable within a window (a group you expand stays expanded when
+  its count changes on refresh) and fresh per window, so no remembered expansion is
+  restored on reload.
+
 - **Added.** `agento.mjs release <merge-sha> [--wait N] [--interval N]` derives the
   `/agento ship` deploy-wait verdict for `checks.releaseWorkflow` from the GitHub
   REST API on every call: no state files, one JSON document, at most 60 s per call

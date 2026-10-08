@@ -43,7 +43,8 @@ export type InitiativeTreeElement = InitiativeElement | GroupElement | MemberEle
 
 export interface InitiativeTreeItemSpec {
   label: string;
-  collapsible: "none" | "expanded";
+  collapsible: "none" | "collapsed";
+  idParts?: string[];
   contextValue: string;
   icon: string;
   description?: string;
@@ -106,7 +107,8 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
   if (element.kind === "initiative") {
     return {
       label: element.item.slug,
-      collapsible: "expanded",
+      collapsible: "collapsed",
+      idParts: ["initiative", element.item.slug],
       contextValue: "agento.initiative",
       icon: element.item.valid ? "type-hierarchy" : "warning",
       description: element.item.description,
@@ -117,7 +119,8 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
   if (element.kind === "group") {
     return {
       label: `${element.group.label} (${element.group.items.length})`,
-      collapsible: "expanded",
+      collapsible: "collapsed",
+      idParts: ["group", element.initiativeSlug, element.group.kind],
       contextValue: `agento.initiativeGroup.${element.group.kind}`,
       icon: GROUP_ICONS[element.group.kind],
     };
