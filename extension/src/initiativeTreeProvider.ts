@@ -6,6 +6,7 @@ import {
   initiativeTreeItemSpec,
   type InitiativeTreeElement,
 } from "./initiativeTreePresentation.js";
+import type { TreeIdScope } from "./treeItemIds.js";
 
 export type { InitiativeTreeElement } from "./initiativeTreePresentation.js";
 
@@ -20,7 +21,7 @@ export class InitiativeTreeProvider implements vscode.TreeDataProvider<Initiativ
 
   readonly onDidChangeTreeData = this.didChangeTreeData.event;
 
-  constructor(artifactRoot: string) {
+  constructor(artifactRoot: string, private readonly treeId: TreeIdScope) {
     this.snapshot = {
       model: { kind: "empty", message: "No initiatives found." },
       artifactRoot,
@@ -38,10 +39,13 @@ export class InitiativeTreeProvider implements vscode.TreeDataProvider<Initiativ
 
   getTreeItem(element: InitiativeTreeElement): vscode.TreeItem {
     const spec = initiativeTreeItemSpec(element, this.snapshot.artifactRoot);
-    const collapsibleState = spec.collapsible === "expanded"
-      ? vscode.TreeItemCollapsibleState.Expanded
+    const collapsibleState = spec.collapsible === "collapsed"
+      ? vscode.TreeItemCollapsibleState.Collapsed
       : vscode.TreeItemCollapsibleState.None;
     const item = new vscode.TreeItem(spec.label, collapsibleState);
+    if (spec.idParts) {
+      item.id = this.treeId("initiatives", ...spec.idParts);
+    }
     item.contextValue = spec.contextValue;
     item.iconPath = new vscode.ThemeIcon(spec.icon);
     item.description = spec.description;

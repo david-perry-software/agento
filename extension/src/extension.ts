@@ -89,7 +89,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const scheduler = new RefreshScheduler(configuration.get<number>("refreshDebounceMs", 3000));
   const treeId = createTreeIdScope();
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
-  const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
+  const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const sessionDoctor = new SessionDoctorProvider();
   const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
