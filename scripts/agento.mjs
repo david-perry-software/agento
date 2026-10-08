@@ -352,6 +352,24 @@ function resolveSessionPaths(kind, id) {
 
 const originOf = (dir) => git(dir, "remote", "get-url", "origin") || null;
 
+// The pair's `.code-workspace` document for a resolved session (companion mode);
+// with `write`, written when missing or stale.
+function writeSessionWorkspace(resolved, { write = true } = {}) {
+  const autoApprove = resolved.layout.config.worktrees?.autoApprove !== false;
+  const document = sessionWorkspaceDocument({ product: resolved.worktree, companion: resolved.companion.worktree, autoApprove });
+  let exists = fs.existsSync(resolved.workspace);
+  let current = exists ? workspaceDocumentCurrent(resolved.workspace, document) : false;
+  let written = false;
+  if (write && !current) {
+    fs.mkdirSync(path.dirname(resolved.workspace), { recursive: true });
+    fs.writeFileSync(resolved.workspace, JSON.stringify(document, null, 2) + "\n");
+    exists = true;
+    current = true;
+    written = true;
+  }
+  return { exists, current, autoApprove, document, written };
+}
+
 // The multi-root workspace file a paired session opens (product side, next to the
 // product half); null for the primary, unmanaged cwds, and in-repo mode.
 function describeWorkspace(worktree, sessionWorktreesDir) {
@@ -592,6 +610,42 @@ function primaryWorktreesDir(worktrees) {
   const primaryRoot = worktrees[0]?.path ?? root;
   const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
   return path.resolve(primaryRoot, primaryConfig.worktrees.dir);
+}
+
+// The `session` record: role, worktree, worktrees, companion, workspace, delivery,
+// lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups.
+function sessionRecord({ pr: withPr = false } = {}) {
+  // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
+  const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+  const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+  const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
+  const companion = describeCompanion(worktree);
+  const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
+  const prBranch = delivery?.branch ?? worktree.branch;
+  const { pr, warnings: prWarnings } = withPr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
+  const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
+  const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
+  const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
+  const unregistered = companionWarning({ pair: companion, onDisk: Boolean(companion) && fs.existsSync(companion.path), productWorktrees: worktrees, companionClone: artifacts.dir, productRoot: worktrees[0]?.path ?? root });
+  return {
+    status: "ok",
+    role,
+    hosted,
+    worktree,
+    worktrees: classified,
+    companion,
+    workspace: describeWorkspace(worktree, sessionWorktreesDir),
+    delivery,
+    pr,
+    companionPr,
+    lifecycle,
+    allowed,
+    elsewhere,
+    warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...companionPrWarnings, ...warnings, ...(unregistered ? [unregistered] : [])],
+    root,
+    configSource: source,
+  };
 }
 
 // --- doctor ----------------------------------------------------------------
@@ -1440,22 +1494,11 @@ switch (command) {
     if (!resolved.layout.artifacts.external || !resolved.workspace || !resolved.companion) {
       emit({ status: "not-applicable", message: "workspace is only available in companion mode (artifacts.repo set)", root, configSource: source });
     }
-    const autoApprove = resolved.layout.config.worktrees?.autoApprove !== false;
     const folders = [
       { path: resolved.worktree, exists: fs.existsSync(resolved.worktree) },
       { path: resolved.companion.worktree, exists: fs.existsSync(resolved.companion.worktree) },
     ];
-    const document = sessionWorkspaceDocument({ product: resolved.worktree, companion: resolved.companion.worktree, autoApprove });
-    let exists = fs.existsSync(resolved.workspace);
-    let current = exists ? workspaceDocumentCurrent(resolved.workspace, document) : false;
-    let written = false;
-    if (options.write && !current) {
-      fs.mkdirSync(path.dirname(resolved.workspace), { recursive: true });
-      fs.writeFileSync(resolved.workspace, JSON.stringify(document, null, 2) + "\n");
-      exists = true;
-      current = true;
-      written = true;
-    }
+    const { exists, current, autoApprove, document, written } = writeSessionWorkspace(resolved, { write: Boolean(options.write) });
     emit({
       status: "ok",
       path: resolved.workspace,
@@ -1510,37 +1553,7 @@ switch (command) {
 
   case "session": {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
-    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
-    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
-    const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-    const companion = describeCompanion(worktree);
-    const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
-    const prBranch = delivery?.branch ?? worktree.branch;
-    const { pr, warnings: prWarnings } = options.pr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
-    const { pr: companionPr, warnings: companionPrWarnings } = options.pr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
-    const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
-    const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
-    const unregistered = companionWarning({ pair: companion, onDisk: Boolean(companion) && fs.existsSync(companion.path), productWorktrees: worktrees, companionClone: artifacts.dir, productRoot: worktrees[0]?.path ?? root });
-    emit({
-      status: "ok",
-      role,
-      hosted,
-      worktree,
-      worktrees: classified,
-      companion,
-      workspace: describeWorkspace(worktree, sessionWorktreesDir),
-      delivery,
-      pr,
-      companionPr,
-      lifecycle,
-      allowed,
-      elsewhere,
-      warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...companionPrWarnings, ...warnings, ...(unregistered ? [unregistered] : [])],
-      root,
-      configSource: source,
-    });
+    emit(sessionRecord({ pr: Boolean(options.pr) }));
     break;
   }
 
