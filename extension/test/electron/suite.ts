@@ -19,6 +19,7 @@ import { runNewInitiativeFlow, submittedInitiativeBrief, type NewInitiativeTarge
 import { runNewPlanFlow, type NewPlanTarget } from "../../src/newPlanFlow.js";
 import { createSessionDoctorError } from "../../src/sessionDoctorModel.js";
 import type { SessionDoctorElement } from "../../src/sessionDoctorProvider.js";
+import { lifecycleStyle } from "../../src/statusStyle.js";
 import type { CliResult } from "../../src/cliClient.js";
 import { cliStartSession } from "../../src/startSessionCli.js";
 import { CLOSED_GATE, gateRejection, windowGate, type GatedCommand } from "../../src/windowGate.js";
@@ -116,6 +117,17 @@ function sessionDoctorRows(api: ExtensionApi, label: string): SessionDoctorEleme
   const group = api.sessionDoctor.getChildren().find((element) => api.sessionDoctor.getTreeItem(element).label === label);
   assert.ok(group, `${label} group is present`);
   return api.sessionDoctor.getChildren(group);
+}
+
+function iconOf(item: vscode.TreeItem): [string, string | undefined] {
+  assert.ok(item.iconPath instanceof vscode.ThemeIcon, `${String(item.label)} has a ThemeIcon`);
+  return [item.iconPath.id, item.iconPath.color?.id];
+}
+
+function statusBarColors(api: ExtensionApi): [string | undefined, string | undefined] {
+  const color = api.statusBar.color;
+  assert.ok(color === undefined || color instanceof vscode.ThemeColor, "status bar color is a ThemeColor");
+  return [color?.id, api.statusBar.backgroundColor?.id];
 }
 
 function sessionResponse(role: string, warnings: string[] = []) {
@@ -521,6 +533,9 @@ export async function run(): Promise<void> {
   assert.deepEqual(api.windowGate(), { primary: true, canPlan: true });
   assert.equal(api.statusBar.text, "Agento: primary · 2 active");
   assert.equal(api.statusBar.command, "agento.sessionDoctor.focus");
+  assert.equal(api.sessionDoctor.current.kind, "ready");
+  if (api.sessionDoctor.current.kind !== "ready") return;
+  assert.equal(statusBarColors(api)[0], lifecycleStyle(api.sessionDoctor.current.session.lifecycle).color);
   await focusSessionDoctor(api);
   assert.equal(api.sessionDoctorView.visible, true);
 
@@ -545,6 +560,18 @@ export async function run(): Promise<void> {
     ["Planned", "Building", "In Review", "Shipped"],
   );
   groups.forEach((group) => assertCollapsedGroup(api.deliveries.getTreeItem(group)));
+  assert.deepEqual(groups.map((group) => iconOf(api.deliveries.getTreeItem(group))), [
+    ["circle-large-outline", "agento.status.planned"],
+    ["sync", "agento.status.building"],
+    ["eye", "agento.status.inReview"],
+    ["pass-filled", "agento.status.shipped"],
+  ]);
+  for (const group of groups) {
+    const [, groupColor] = iconOf(api.deliveries.getTreeItem(group));
+    for (const leaf of deliveryElements(api, group)) {
+      assert.deepEqual(iconOf(api.deliveries.getTreeItem(leaf)), ["git-pull-request", groupColor], "leaves share their group color");
+    }
+  }
   const items = groups.flatMap((group) => deliveryElements(api, group));
   items.forEach((item) => assertLeaf(api.deliveries.getTreeItem(item)));
   assert.deepEqual(
@@ -626,20 +653,24 @@ export async function run(): Promise<void> {
   assert.match(String(completedFolderItem.id), /initiatives\/completed$/);
   assert.equal(completedFolderItem.contextValue, "agento.initiativesCompleted");
   assert.equal(completedFolderItem.command, undefined);
+  assert.deepEqual(iconOf(completedFolderItem), ["archive", "agento.status.complete"]);
   const completedInitiatives = api.initiatives.getChildren(completedFolder);
   assert.deepEqual(completedInitiatives.map((element) => api.initiatives.getTreeItem(element).label), ["finished-initiative"]);
   assert.equal(api.initiatives.getTreeItem(completedInitiatives[0]!).contextValue, "agento.initiative");
+  assert.deepEqual(iconOf(api.initiatives.getTreeItem(completedInitiatives[0]!)), ["type-hierarchy", "agento.status.complete"]);
 
   const initiative = api.initiatives.getChildren()[0];
   assert.ok(initiative?.kind === "initiative");
   const initiativeItem = api.initiatives.getTreeItem(initiative);
   assert.equal(initiativeItem.label, "agento-extension");
+  assert.deepEqual(iconOf(initiativeItem), ["type-hierarchy", undefined]);
   assert.equal(initiativeItem.description, "1/6 complete | 3 in flight | 1 ready");
   assertCollapsedGroup(initiativeItem);
   const initiativeChildren = api.initiatives.getChildren(initiative);
   const diagnostic = initiativeChildren.find((element) => element.kind === "diagnostic");
   assert.ok(diagnostic);
   assert.match(String(api.initiatives.getTreeItem(diagnostic).label), /anomalous-delivery: merged-but-not-complete/);
+  assert.deepEqual(iconOf(api.initiatives.getTreeItem(diagnostic)), ["warning", "agento.health.warn"]);
   const initiativeGroups = initiativeChildren.filter((element): element is Extract<InitiativeTreeElement, { kind: "group" }> => element.kind === "group");
   assert.deepEqual(initiativeGroups.map((group) => api.initiatives.getTreeItem(group).label), [
     "Ready (1)",
@@ -648,6 +679,18 @@ export async function run(): Promise<void> {
     "Complete (1)",
   ]);
   const [readyGroupId] = initiativeGroups.map((group) => assertCollapsedGroup(api.initiatives.getTreeItem(group)));
+  assert.deepEqual(initiativeGroups.map((group) => iconOf(api.initiatives.getTreeItem(group))), [
+    ["play-circle", "agento.status.ready"],
+    ["sync", "agento.status.inFlight"],
+    ["lock", "agento.status.blocked"],
+    ["pass-filled", "agento.status.complete"],
+  ]);
+  for (const group of initiativeGroups) {
+    const groupIcon = iconOf(api.initiatives.getTreeItem(group));
+    for (const member of api.initiatives.getChildren(group)) {
+      assert.deepEqual(iconOf(api.initiatives.getTreeItem(member)), groupIcon, "members share their group glyph and color");
+    }
+  }
   const initiativeMembers = initiativeGroups.flatMap((group) => api.initiatives.getChildren(group));
   initiativeMembers.forEach((member) => assertLeaf(api.initiatives.getTreeItem(member)));
   assert.deepEqual(initiativeMembers.map((member) => api.initiatives.getTreeItem(member).label), [
@@ -761,6 +804,7 @@ export async function run(): Promise<void> {
   const emptyItem = api.deliveries.getTreeItem(api.deliveries.getChildren()[0]!);
   assert.equal(emptyItem.label, "No deliveries found.");
   assert.equal(emptyItem.contextValue, "agento.empty");
+  assert.deepEqual(iconOf(emptyItem), ["info", undefined]);
 
   api.deliveries.update({
     model: createDeliveryTreeError(new Error("fixture status failure")),
@@ -769,6 +813,7 @@ export async function run(): Promise<void> {
   const errorItem = api.deliveries.getTreeItem(api.deliveries.getChildren()[0]!);
   assert.equal(errorItem.label, "Unable to load deliveries: fixture status failure");
   assert.equal(errorItem.contextValue, "agento.error");
+  assert.deepEqual(iconOf(errorItem), ["error", "agento.health.fail"]);
 
   const artifactRoot = api.initiatives.current.artifactRoot;
   const healthyModel = api.initiatives.current.model;
@@ -778,6 +823,7 @@ export async function run(): Promise<void> {
   const emptyInitiative = api.initiatives.getTreeItem(api.initiatives.getChildren()[0]!);
   assert.equal(emptyInitiative.label, "No initiatives found.");
   assert.equal(emptyInitiative.contextValue, "agento.empty");
+  assert.deepEqual(iconOf(emptyInitiative), ["info", undefined]);
 
   api.initiatives.update({
     model: createInitiativeTreeModel({ status: "ok", items: [{ slug: "malformed" }] }, new Map()),
@@ -791,6 +837,7 @@ export async function run(): Promise<void> {
   const errorInitiative = api.initiatives.getTreeItem(api.initiatives.getChildren()[0]!);
   assert.equal(errorInitiative.label, "Unable to load initiatives: fixture initiative failure");
   assert.equal(errorInitiative.contextValue, "agento.error");
+  assert.deepEqual(iconOf(errorInitiative), ["error", "agento.health.fail"]);
 
   const healthy = healthyModel.items[0]!;
   api.initiatives.update({
@@ -811,9 +858,11 @@ export async function run(): Promise<void> {
   });
   const partialRoots = api.initiatives.getChildren();
   assert.deepEqual(partialRoots.map((element) => api.initiatives.getTreeItem(element).label), ["invalid-initiative", "agento-extension"]);
+  assert.deepEqual(iconOf(api.initiatives.getTreeItem(partialRoots[0]!)), ["warning", "agento.health.fail"]);
   const invalidDiagnostic = api.initiatives.getChildren(partialRoots[0]).find((element) => element.kind === "diagnostic");
   assert.ok(invalidDiagnostic);
   assert.equal(api.initiatives.getTreeItem(invalidDiagnostic).label, "dependency cycle among: a, b");
+  assert.deepEqual(iconOf(api.initiatives.getTreeItem(invalidDiagnostic)), ["error", "agento.health.fail"]);
   assert.ok(api.initiatives.getChildren(partialRoots[1]).some((element) => element.kind === "group"), "healthy initiative remains usable");
 
   await waitForSessionDoctor(
@@ -856,6 +905,7 @@ export async function run(): Promise<void> {
     resolveBatch(1, "build", 1, ["fixture CLI warning"]);
     await newerApplied;
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
+    assert.deepEqual(statusBarColors(api), ["agento.status.building", "statusBarItem.warningBackground"]);
     assert.deepEqual(api.windowGate(), CLOSED_GATE, "a build window closes the gate");
     await assertGatedCommandsRejected(api, [
       ["agento.newPlan"],
@@ -900,6 +950,16 @@ export async function run(): Promise<void> {
     const sessionDoctorGroups = api.sessionDoctor.getChildren();
     assert.deepEqual(sessionDoctorGroups.map((group) => api.sessionDoctor.getTreeItem(group).label), ["Session", "Companion", "Warnings", "Doctor"]);
     sessionDoctorGroups.forEach((group) => assertCollapsedGroup(api.sessionDoctor.getTreeItem(group)));
+    assert.deepEqual(sessionDoctorGroups.map((group) => iconOf(api.sessionDoctor.getTreeItem(group))), [
+      ["folder", undefined],
+      ["folder", undefined],
+      ["folder", undefined],
+      ["pulse", "agento.health.fail"],
+    ]);
+    const lifecycleRow = sessionDoctorRows(api, "Session").find((element) => api.sessionDoctor.getTreeItem(element).label === "Lifecycle");
+    assert.ok(lifecycleRow);
+    assert.deepEqual(iconOf(api.sessionDoctor.getTreeItem(lifecycleRow)), ["sync", "agento.status.building"]);
+    assert.deepEqual(iconOf(api.sessionDoctor.getTreeItem(sessionDoctorRows(api, "Warnings")[0]!)), ["warning", "agento.health.warn"]);
 
     assert.deepEqual(
       sessionDoctorRows(api, "Session").map((element) => [api.sessionDoctor.getTreeItem(element).label, api.sessionDoctor.getTreeItem(element).description]),
@@ -921,6 +981,11 @@ export async function run(): Promise<void> {
       ["node", "ok"],
       ["browser", "warn"],
       ["gh", "fail"],
+    ]);
+    assert.deepEqual(doctorRows.map(iconOf), [
+      ["pass", "agento.health.ok"],
+      ["warning", "agento.health.warn"],
+      ["error", "agento.health.fail"],
     ]);
     assert.equal(doctorRows[0]?.tooltip, "Detail: node fixture\nFallback: none");
     assert.equal(doctorRows[1]?.tooltip, "Detail: browser fixture warning\nFallback: run headless verification");
@@ -964,6 +1029,8 @@ export async function run(): Promise<void> {
       "invalid session refresh",
     );
     assert.deepEqual(api.windowGate(), CLOSED_GATE, "an invalid session record closes the gate");
+    assert.equal(api.statusBar.text, "Agento: unavailable");
+    assert.deepEqual(statusBarColors(api), [undefined, "statusBarItem.errorBackground"]);
   } finally {
     api.client.run = originalRun;
   }
@@ -973,6 +1040,7 @@ export async function run(): Promise<void> {
   assert.equal(retryItem.label, "Unable to load Session & Doctor: fixture session failure");
   assert.equal(retryItem.contextValue, "agento.sessionDoctor.error");
   assert.equal(retryItem.command?.command, "agento.refresh");
+  assert.deepEqual(iconOf(retryItem), ["error", "agento.health.fail"]);
   await waitForSessionDoctor(
     api,
     () => api.sessionDoctor.current.kind === "ready",

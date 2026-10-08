@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Added.** Status colors in the dashboard. Deliveries lifecycle groups, initiative
+  groups and members, the Completed folder, diagnostics, Session & Doctor rows, and
+  error rows show tinted status icons (planned blue, building yellow, paused orange,
+  in review purple, approved and shipped green, blocked and failing red). Lifecycle
+  groups get status-specific glyphs instead of a plain folder. The status bar item's
+  color follows the session lifecycle, with a warning or error background when the
+  doctor reports `warn` or `fail`. Every color is a contributed `agento.status.*` /
+  `agento.health.*` id that themes and `workbench.colorCustomizations` can override.
+
 - **Changed.** The dashboard's Initiatives view groups initiatives whose members are
   all complete (and whose breakdown is valid) under one **Completed (N)** folder,
   placed after the active initiatives and collapsed in every new or reloaded window.

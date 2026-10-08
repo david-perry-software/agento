@@ -187,7 +187,79 @@
           "description": "Agento plugin clone that model profiles are applied to and the doctor's model-profile check reads. Empty: the first enabled chat.pluginLocations entry whose .claude-plugin/plugin.json is named agento."
         }
       }
-    }
+    },
+    "colors": [
+      {
+        "id": "agento.status.planned",
+        "description": "Agento dashboard icon color for planned deliveries.",
+        "defaults": { "dark": "charts.blue", "light": "charts.blue", "highContrast": "charts.blue", "highContrastLight": "charts.blue" }
+      },
+      {
+        "id": "agento.status.building",
+        "description": "Agento dashboard icon color for deliveries being built.",
+        "defaults": { "dark": "charts.yellow", "light": "charts.yellow", "highContrast": "charts.yellow", "highContrastLight": "charts.yellow" }
+      },
+      {
+        "id": "agento.status.paused",
+        "description": "Agento dashboard icon color for paused deliveries.",
+        "defaults": { "dark": "charts.orange", "light": "charts.orange", "highContrast": "charts.orange", "highContrastLight": "charts.orange" }
+      },
+      {
+        "id": "agento.status.inReview",
+        "description": "Agento dashboard icon color for deliveries in review.",
+        "defaults": { "dark": "charts.purple", "light": "charts.purple", "highContrast": "charts.purple", "highContrastLight": "charts.purple" }
+      },
+      {
+        "id": "agento.status.approved",
+        "description": "Agento dashboard icon color for approved deliveries.",
+        "defaults": { "dark": "charts.green", "light": "charts.green", "highContrast": "charts.green", "highContrastLight": "charts.green" }
+      },
+      {
+        "id": "agento.status.shipped",
+        "description": "Agento dashboard icon color for shipped deliveries.",
+        "defaults": { "dark": "charts.green", "light": "charts.green", "highContrast": "charts.green", "highContrastLight": "charts.green" }
+      },
+      {
+        "id": "agento.status.postShipPending",
+        "description": "Agento dashboard icon color for shipped deliveries with post-ship steps pending.",
+        "defaults": { "dark": "charts.orange", "light": "charts.orange", "highContrast": "charts.orange", "highContrastLight": "charts.orange" }
+      },
+      {
+        "id": "agento.status.ready",
+        "description": "Agento dashboard icon color for initiative members ready to plan.",
+        "defaults": { "dark": "charts.blue", "light": "charts.blue", "highContrast": "charts.blue", "highContrastLight": "charts.blue" }
+      },
+      {
+        "id": "agento.status.inFlight",
+        "description": "Agento dashboard icon color for initiative members in flight.",
+        "defaults": { "dark": "charts.yellow", "light": "charts.yellow", "highContrast": "charts.yellow", "highContrastLight": "charts.yellow" }
+      },
+      {
+        "id": "agento.status.blocked",
+        "description": "Agento dashboard icon color for blocked initiative members.",
+        "defaults": { "dark": "charts.red", "light": "charts.red", "highContrast": "charts.red", "highContrastLight": "charts.red" }
+      },
+      {
+        "id": "agento.status.complete",
+        "description": "Agento dashboard icon color for complete initiatives and members.",
+        "defaults": { "dark": "charts.green", "light": "charts.green", "highContrast": "charts.green", "highContrastLight": "charts.green" }
+      },
+      {
+        "id": "agento.health.ok",
+        "description": "Agento dashboard icon color for passing doctor checks.",
+        "defaults": { "dark": "charts.green", "light": "charts.green", "highContrast": "charts.green", "highContrastLight": "charts.green" }
+      },
+      {
+        "id": "agento.health.warn",
+        "description": "Agento dashboard icon color for doctor and session warnings.",
+        "defaults": { "dark": "charts.yellow", "light": "charts.yellow", "highContrast": "charts.yellow", "highContrastLight": "charts.yellow" }
+      },
+      {
+        "id": "agento.health.fail",
+        "description": "Agento dashboard icon color for failing checks, errors, and invalid initiatives.",
+        "defaults": { "dark": "charts.red", "light": "charts.red", "highContrast": "charts.red", "highContrastLight": "charts.red" }
+      }
+    ]
   },
   "scripts": {
     "copy-cli": "node scripts/copy-cli.mjs",

@@ -46,7 +46,7 @@ test("initiative provider presentation builds initiative, diagnostic, group, and
   assert.deepEqual(initiativeTreeChildren(model, members[0]), []);
 });
 
-test("initiative provider presentation assigns context values and icons", () => {
+test("initiative provider presentation assigns context values, icons, and colors", () => {
   const initiative = initiativeTreeChildren(model)[0]!;
   const [diagnostic, group] = initiativeTreeChildren(model, initiative);
   const member = initiativeTreeChildren(model, group)[0]!;
@@ -54,14 +54,43 @@ test("initiative provider presentation assigns context values and icons", () => 
   assert.deepEqual(
     [initiative, diagnostic, group, member].map((element) => {
       const spec = initiativeTreeItemSpec(element, "/artifacts");
-      return [spec.contextValue, spec.icon];
+      return [spec.contextValue, spec.icon, spec.color];
     }),
     [
-      ["agento.initiative", "type-hierarchy"],
-      ["agento.initiativeDiagnostic.anomaly", "warning"],
-      ["agento.initiativeGroup.ready", "play-circle"],
-      ["agento.initiativeMember.ready", "play-circle"],
+      ["agento.initiative", "type-hierarchy", undefined],
+      ["agento.initiativeDiagnostic.anomaly", "warning", "agento.health.warn"],
+      ["agento.initiativeGroup.ready", "play-circle", "agento.status.ready"],
+      ["agento.initiativeMember.ready", "play-circle", "agento.status.ready"],
     ],
+  );
+});
+
+test("initiative provider presentation tints every member group and its members with the group status color", () => {
+  const base = (model as Extract<InitiativeTreeModel, { kind: "ready" }>).items[0]!;
+  const member = base.groups[0]!.items[0]!;
+  const kinds = [
+    ["ready", "play-circle", "agento.status.ready"],
+    ["in-flight", "sync", "agento.status.inFlight"],
+    ["blocked", "lock", "agento.status.blocked"],
+    ["complete", "pass-filled", "agento.status.complete"],
+  ] as const;
+  const grouped: InitiativeTreeModel = {
+    kind: "ready",
+    items: [{
+      ...base,
+      diagnostics: [],
+      groups: kinds.map(([kind]) => ({ kind, label: kind, items: [member] })),
+    }],
+  };
+  const groups = initiativeTreeChildren(grouped, initiativeTreeChildren(grouped)[0]);
+
+  assert.deepEqual(
+    groups.map((group) => {
+      const groupSpec = initiativeTreeItemSpec(group, "/artifacts");
+      const memberSpec = initiativeTreeItemSpec(initiativeTreeChildren(grouped, group)[0]!, "/artifacts");
+      return [groupSpec.contextValue, groupSpec.icon, groupSpec.color, memberSpec.icon, memberSpec.color];
+    }),
+    kinds.map(([kind, icon, color]) => [`agento.initiativeGroup.${kind}`, icon, color, icon, color]),
   );
 });
 
@@ -171,6 +200,7 @@ test("initiative provider presentation renders the Completed folder collapsed wi
     idParts: ["completed"],
     contextValue: "agento.initiativesCompleted",
     icon: "archive",
+    color: "agento.status.complete",
     tooltip: "2 completed initiatives",
   });
 
@@ -195,16 +225,40 @@ test("initiative provider presentation renders nested completed initiatives like
   assert.deepEqual(initiativeTreeChildren(emptyModel, nested), initiativeTreeChildren(emptyModel, root));
 });
 
+test("initiative provider presentation tints done initiatives complete and invalid ones as failures", () => {
+  assert.deepEqual(
+    [
+      initiative("active", false, true),
+      initiative("shipped", true, true),
+      initiative("broken", false, false),
+      initiative("done-broken", true, false),
+    ].map((item) => {
+      const spec = initiativeTreeItemSpec({ kind: "initiative", item }, "/artifacts");
+      return [item.slug, spec.icon, spec.color];
+    }),
+    [
+      ["active", "type-hierarchy", undefined],
+      ["shipped", "type-hierarchy", "agento.status.complete"],
+      ["broken", "warning", "agento.health.fail"],
+      ["done-broken", "warning", "agento.health.fail"],
+    ],
+  );
+  const errorDiagnostic = initiativeTreeChildren({ kind: "ready", items: [] }, { kind: "initiative", item: initiative("broken", false, false) })[0]!;
+  const spec = initiativeTreeItemSpec(errorDiagnostic, "/artifacts");
+  assert.deepEqual([spec.contextValue, spec.icon, spec.color], ["agento.initiativeDiagnostic.error", "error", "agento.health.fail"]);
+});
+
 test("initiative provider presentation renders explicit empty and error rows", () => {
-  for (const [kind, message, contextValue, icon] of [
-    ["empty", "No initiatives found.", "agento.empty", "info"],
-    ["error", "Unable to load initiatives.", "agento.error", "error"],
+  for (const [kind, message, contextValue, icon, color] of [
+    ["empty", "No initiatives found.", "agento.empty", "info", undefined],
+    ["error", "Unable to load initiatives.", "agento.error", "error", "agento.health.fail"],
   ] as const) {
     const element = initiativeTreeChildren({ kind, message })[0]!;
     const spec = initiativeTreeItemSpec(element, "/artifacts");
     assert.equal(spec.label, message);
     assert.equal(spec.contextValue, contextValue);
     assert.equal(spec.icon, icon);
+    assert.equal(spec.color, color);
     assert.equal(spec.collapsible, "none");
     assert.equal(spec.idParts, undefined);
   }

@@ -7,6 +7,7 @@ import type {
   InitiativeTreeItem,
   InitiativeTreeModel,
 } from "./initiativeTreeModel.js";
+import { healthStyle, initiativeGroupStyle } from "./statusStyle.js";
 
 interface InitiativeElement {
   kind: "initiative";
@@ -58,6 +59,7 @@ export interface InitiativeTreeItemSpec {
   idParts?: string[];
   contextValue: string;
   icon: string;
+  color?: string;
   description?: string;
   tooltip?: string;
   command?: {
@@ -67,12 +69,9 @@ export interface InitiativeTreeItemSpec {
   };
 }
 
-const GROUP_ICONS: Record<InitiativeMemberGroup["kind"], string> = {
-  ready: "play-circle",
-  "in-flight": "sync",
-  blocked: "lock",
-  complete: "pass-filled",
-};
+const COMPLETE_COLOR = initiativeGroupStyle("complete").color;
+const FAIL_COLOR = healthStyle("fail").color;
+const WARN_COLOR = healthStyle("warn").color;
 
 function breakdownCommand(artifactRoot: string, breakdown?: string): InitiativeTreeItemSpec["command"] {
   return breakdown
@@ -130,6 +129,7 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
       idParts: ["initiative", element.item.slug],
       contextValue: "agento.initiative",
       icon: element.item.valid ? "type-hierarchy" : "warning",
+      color: !element.item.valid ? FAIL_COLOR : element.item.done ? COMPLETE_COLOR : undefined,
       description: element.item.description,
       tooltip: element.item.tooltip,
       command: breakdownCommand(artifactRoot, element.item.breakdown),
@@ -143,6 +143,7 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
       idParts: ["completed"],
       contextValue: "agento.initiativesCompleted",
       icon: "archive",
+      color: COMPLETE_COLOR,
       tooltip: `${count} completed initiative${count === 1 ? "" : "s"}`,
     };
   }
@@ -152,7 +153,7 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
       collapsible: "collapsed",
       idParts: ["group", element.initiativeSlug, element.group.kind],
       contextValue: `agento.initiativeGroup.${element.group.kind}`,
-      icon: GROUP_ICONS[element.group.kind],
+      ...initiativeGroupStyle(element.group.kind),
     };
   }
   if (element.kind === "member") {
@@ -160,7 +161,7 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
       label: element.item.slug,
       collapsible: "none",
       contextValue: `agento.initiativeMember.${element.groupKind}`,
-      icon: GROUP_ICONS[element.groupKind],
+      ...initiativeGroupStyle(element.groupKind),
       description: element.item.description,
       tooltip: element.item.tooltip,
       command: breakdownCommand(artifactRoot, element.breakdown),
@@ -172,6 +173,7 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
       collapsible: "none",
       contextValue: `agento.initiativeDiagnostic.${element.diagnostic.kind}`,
       icon: element.diagnostic.kind === "error" ? "error" : "warning",
+      color: element.diagnostic.kind === "error" ? FAIL_COLOR : WARN_COLOR,
       tooltip: element.diagnostic.message,
     };
   }
@@ -180,5 +182,6 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
     collapsible: "none",
     contextValue: `agento.${element.severity}`,
     icon: element.severity === "error" ? "error" : "info",
+    color: element.severity === "error" ? FAIL_COLOR : undefined,
   };
 }
