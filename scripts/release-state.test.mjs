@@ -204,3 +204,53 @@ test("releaseVerdict reads lazy facts only on the path it takes", () => {
   const noFilters = parseWorkflowTriggers("on: push\n");
   assert.equal(releaseVerdict(facts({ triggers: () => noFilters, files: untouched("files"), now: at(600) })).verdict, "no-run");
 });
+
+// --- superseded runs ---------------------------------------------------------------
+
+const cancelled = run(20, { conclusion: "cancelled", created_at: "2026-10-07T10:00:05Z" });
+const later = (id, sha, fields = {}) => run(id, { head_sha: sha, created_at: `2026-10-07T10:0${id % 10}:30Z`, ...fields });
+const DESC = "d".repeat(40);
+const SIDE = "e".repeat(40);
+
+test("releaseVerdict: a cancelled exact run plus a passing descendant is superseded-success", () => {
+  const result = releaseVerdict(facts({ exactRuns: [cancelled], laterRuns: [later(31, DESC)], descendantOf: { [DESC]: "ahead" } }));
+  assert.equal(result.verdict, "superseded-success");
+  assert.equal(result.run.id, 20);
+  assert.equal(result.supersededBy.id, 31);
+});
+
+test("releaseVerdict: a cancelled exact run plus a later non-descendant is failed", () => {
+  const result = releaseVerdict(facts({ exactRuns: [cancelled], laterRuns: [later(31, SIDE)], descendantOf: { [SIDE]: "diverged" } }));
+  assert.equal(result.verdict, "failed");
+  assert.equal(result.supersededBy, null);
+  assert.match(result.reason, /cancelled/);
+});
+
+test("releaseVerdict: a cancelled exact run plus a pending descendant is pending", () => {
+  const result = releaseVerdict(facts({ exactRuns: [cancelled], laterRuns: [later(31, DESC, { status: "queued", conclusion: null })], descendantOf: { [DESC]: "ahead" } }));
+  assert.equal(result.verdict, "pending");
+  assert.equal(result.run.id, 20);
+});
+
+test("releaseVerdict: a later workflow_dispatch run is never superseded proof", () => {
+  const dispatch = later(31, DESC, { event: "workflow_dispatch" });
+  const result = releaseVerdict(facts({ exactRuns: [cancelled], laterRuns: [dispatch], descendantOf: { [DESC]: "ahead" } }));
+  assert.equal(result.verdict, "failed");
+});
+
+test("releaseVerdict: descendants are checked oldest first and earlier runs are ignored", () => {
+  const earlier = run(19, { head_sha: DESC, created_at: "2026-10-07T09:59:00Z" });
+  const failedFirst = later(31, DESC, { conclusion: "failure" });
+  const identical = later(32, "f".repeat(40));
+  const seen = [];
+  const descendantOf = (sha) => {
+    seen.push(sha);
+    return sha === DESC ? "ahead" : "identical";
+  };
+  const result = releaseVerdict(facts({ exactRuns: [cancelled], laterRuns: [identical, failedFirst, earlier], descendantOf }));
+  assert.equal(result.verdict, "superseded-success");
+  assert.equal(result.supersededBy.id, 32);
+  assert.deepEqual(seen, [DESC, "f".repeat(40)]);
+  const otherBranch = later(33, DESC, { head_branch: "release" });
+  assert.equal(releaseVerdict(facts({ exactRuns: [cancelled], laterRuns: [otherBranch], descendantOf })).verdict, "failed");
+});

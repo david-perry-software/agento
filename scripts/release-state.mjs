@@ -214,6 +214,28 @@ export function withinGrace({ mergeDate, now, graceSeconds = GRACE_SECONDS }) {
 // Facts may be plain values or zero-argument functions, so the caller can fetch
 // only what the decision path actually reads.
 const read = (facts, key) => (typeof facts[key] === "function" ? facts[key]() : facts[key]);
+const DESCENDANT = new Set(["ahead", "identical"]);
+
+// A cancelled exact run is proven by a later default-branch push run whose commit
+// contains the merge; workflow_dispatch runs never count as proof.
+function supersededVerdict(facts, run, verdict) {
+  const since = Date.parse(run.created_at ?? facts.mergeDate);
+  const candidates = (read(facts, "laterRuns") ?? [])
+    .filter((later) => later.event === "push" && later.id !== run.id && later.head_sha !== run.head_sha)
+    .filter((later) => !later.head_branch || later.head_branch === facts.defaultBranch)
+    .filter((later) => !(Date.parse(later.created_at) < since))
+    .sort((a, b) => -newestFirst(a, b));
+  const descendantOf = (sha) => (typeof facts.descendantOf === "function" ? facts.descendantOf(sha) : facts.descendantOf?.[sha]);
+  let pending = null;
+  for (const later of candidates) {
+    if (!DESCENDANT.has(descendantOf(later.head_sha))) continue;
+    const state = classifyRun(later);
+    if (state === "success") return verdict("superseded-success", `run ${run.id} was cancelled; descendant push run ${later.id} succeeded`, { supersededBy: later });
+    if (state === "pending") pending ??= later;
+  }
+  if (pending) return verdict("pending", `run ${run.id} was cancelled; descendant push run ${pending.id} is ${pending.status}`, { supersededBy: pending });
+  return verdict("failed", `${run.event} run ${run.id} was cancelled and no later descendant push run succeeded`);
+}
 
 // The single release-wait decision over pre-fetched facts:
 // { sha, exactRuns, triggers, files, filesTruncated, mergeDate, now, graceSeconds,
@@ -227,7 +249,7 @@ export function releaseVerdict(facts) {
     if (state === "success") return verdict("success", `${run.event} run ${run.id} succeeded`);
     if (state === "pending") return verdict("pending", `${run.event} run ${run.id} is ${run.status}`);
     if (state === "failed") return verdict("failed", `${run.event} run ${run.id} concluded ${run.conclusion}`);
-    return verdict("failed", `${run.event} run ${run.id} was cancelled`);
+    return supersededVerdict(facts, run, verdict);
   }
 
   const triggers = read(facts, "triggers");
