@@ -3011,3 +3011,178 @@ test("doctor --for models needs only the terminal checks", () => {
   assert.deepEqual(json.for, { command: "models", needs: ["terminal"] });
   assert.deepEqual(json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
 });
+
+// --- release ---------------------------------------------------------------------
+
+const MERGE = "1".repeat(40);
+const PARENT = "0".repeat(40);
+const LATER = "2".repeat(40);
+const RUNS = "repos/{owner}/{repo}/actions/workflows/release.yml/runs";
+const releaseConfig = { checks: { releaseWorkflow: "release.yml" } };
+const releaseRun = (id, fields = {}) => ({ id, event: "push", status: "completed", conclusion: "success", head_sha: MERGE, head_branch: "main", created_at: "2026-10-07T10:00:05Z", html_url: `https://github.test/runs/${id}`, ...fields });
+const mergeCommitAt = (date) => ({ sha: MERGE, commit: { committer: { date } }, parents: [{ sha: PARENT }] });
+const workflowFile = (text) => ({ content: Buffer.from(text).toString("base64"), encoding: "base64" });
+
+// A gh stub answering `gh api <path>` from routes keyed on path prefix (longest wins);
+// an array value is a sequence, one entry per call, repeating the last.
+function releaseGh(routes) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-gh-"));
+  fs.writeFileSync(path.join(dir, "routes.json"), JSON.stringify(routes));
+  const script = `#!/usr/bin/env node
+const fs = require("fs");
+const dir = ${JSON.stringify(dir)};
+const args = process.argv.slice(2);
+fs.appendFileSync(dir + "/calls.log", args.join(" ") + "\\n");
+if (args[0] === "--version") { console.log("gh version 9.9.9"); process.exit(0); }
+if (args[0] !== "api") process.exit(1);
+const target = args[args.length - 1];
+const routes = JSON.parse(fs.readFileSync(dir + "/routes.json", "utf8"));
+const key = Object.keys(routes).filter((k) => target.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+if (!key) { process.stderr.write("gh: Not Found (HTTP 404)\\n"); process.exit(1); }
+let reply = routes[key];
+if (Array.isArray(reply)) {
+  const counter = dir + "/count-" + Buffer.from(key).toString("hex").slice(0, 60);
+  const n = fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0;
+  fs.writeFileSync(counter, String(n + 1));
+  reply = reply[Math.min(n, reply.length - 1)];
+}
+if (reply && reply.__stderr) { process.stderr.write(reply.__stderr + "\\n"); process.exit(reply.__exit || 1); }
+process.stdout.write(JSON.stringify(reply));
+`;
+  const { env } = restrictedPath({ gh: script });
+  const calls = () => (fs.existsSync(path.join(dir, "calls.log")) ? fs.readFileSync(path.join(dir, "calls.log"), "utf8").trim().split("\n") : []);
+  return { env, calls, apiCalls: () => calls().filter((c) => c.startsWith("api ")) };
+}
+
+const recent = () => new Date(Date.now() - 30_000).toISOString();
+const releaseRoutes = (extra = {}) => ({
+  [`repos/{owner}/{repo}/commits/`]: mergeCommitAt("2020-01-01T00:00:00Z"),
+  [`${RUNS}?head_sha=`]: { total_count: 0, workflow_runs: [] },
+  [`${RUNS}?branch=`]: { total_count: 0, workflow_runs: [] },
+  [`repos/{owner}/{repo}/contents/.github/workflows/release.yml`]: workflowFile("on:\n  push:\n    branches: [main]\n    paths-ignore: ['docs/**']\n  workflow_dispatch:\n"),
+  [`repos/{owner}/{repo}/compare/${PARENT}...`]: { status: "ahead", files: [{ filename: "src/app.js" }] },
+  ...extra,
+});
+const release = (repo, gh, ...args) => runWith({ cwd: repo, env: gh.env }, "release", ...args);
+
+test("release: unset checks.releaseWorkflow is not-configured, exit 0, with no gh call", () => {
+  const repo = makeRepo();
+  const gh = releaseGh(releaseRoutes());
+  const { code, json } = release(repo, gh, MERGE);
+  assert.equal(code, 0);
+  assert.equal(json.status, "ok");
+  assert.equal(json.verdict, "not-configured");
+  assert.equal(json.workflow, null);
+  assert.deepEqual(gh.calls(), []);
+});
+
+test("release: an exact successful push run is success, exit 0, in two API calls", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(101)] } }));
+  const { code, json } = release(repo, gh, MERGE.slice(0, 7));
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.verdict, "success");
+  assert.equal(json.sha, MERGE);
+  assert.equal(json.workflow, "release.yml");
+  assert.deepEqual(json.run, { id: 101, event: "push", status: "completed", conclusion: "success", url: "https://github.test/runs/101", headSha: MERGE });
+  assert.equal(json.supersededBy, null);
+  assert.equal(json.mergeDate, "2020-01-01T00:00:00Z");
+  assert.equal(json.graceSeconds, 180);
+  assert.equal(json.polls, 1);
+  assert.equal(json.waitedSeconds, 0);
+  for (const key of ["reason", "root", "configSource"]) assert.ok(key in json, key);
+  assert.equal(gh.apiCalls().length, 2, gh.apiCalls().join("\n"));
+  assert.match(gh.apiCalls()[1], new RegExp(`head_sha=${MERGE}&per_page=100$`));
+});
+
+test("release: an exact in-progress run is pending, exit 2", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(102, { status: "in_progress", conclusion: null })] } }));
+  const { code, json } = release(repo, gh, MERGE);
+  assert.equal(code, 2);
+  assert.equal(json.status, "pending");
+  assert.equal(json.verdict, "pending");
+});
+
+test("release: a dispatch-only workflow is dispatch-required, exit 2", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`repos/{owner}/{repo}/contents/.github/workflows/release.yml`]: workflowFile("on:\n  workflow_dispatch:\n") }));
+  const { code, json } = release(repo, gh, MERGE);
+  assert.equal(code, 2);
+  assert.equal(json.status, "pending");
+  assert.equal(json.verdict, "dispatch-required");
+  assert.ok(gh.apiCalls().every((c) => !c.includes("/compare/")), gh.apiCalls().join("\n"));
+});
+
+test("release: a failed exact run is failed, exit 4", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(103, { conclusion: "failure" })] } }));
+  const { code, json } = release(repo, gh, MERGE);
+  assert.equal(code, 4);
+  assert.equal(json.status, "failed");
+  assert.equal(json.verdict, "failed");
+});
+
+test("release: no run long after the merge is no-run, exit 4; within grace it is pending", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const late = release(repo, releaseGh(releaseRoutes()), MERGE);
+  assert.equal(late.code, 4);
+  assert.equal(late.json.verdict, "no-run");
+  const early = release(repo, releaseGh(releaseRoutes({ [`repos/{owner}/{repo}/commits/`]: mergeCommitAt(recent()) })), MERGE);
+  assert.equal(early.code, 2);
+  assert.equal(early.json.verdict, "pending");
+});
+
+test("release: a docs-only merge against paths-ignore is not-triggered, exit 0", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`repos/{owner}/{repo}/compare/${PARENT}...`]: { status: "ahead", files: [{ filename: "docs/a.md" }] } }));
+  const { code, json } = release(repo, gh, MERGE);
+  assert.equal(code, 0);
+  assert.equal(json.verdict, "not-triggered");
+});
+
+test("release: a cancelled run with a passing descendant push run is superseded-success, exit 0", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({
+    [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(104, { conclusion: "cancelled" })] },
+    [`${RUNS}?branch=`]: { workflow_runs: [releaseRun(105, { head_sha: LATER, created_at: "2026-10-07T10:05:00Z" })] },
+    [`repos/{owner}/{repo}/compare/${MERGE}...${LATER}`]: { status: "ahead" },
+  }));
+  const { code, json } = release(repo, gh, MERGE);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.verdict, "superseded-success");
+  assert.equal(json.run.id, 104);
+  assert.equal(json.supersededBy.id, 105);
+  assert.equal(json.supersededBy.url, "https://github.test/runs/105");
+  assert.ok(gh.apiCalls().some((c) => c.includes("branch=main&event=push&created=%3E%3D")), gh.apiCalls().join("\n"));
+});
+
+test("release: gh missing, HTTP 401, and an unknown SHA exit 3", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const missing = runWith({ cwd: repo, env: restrictedPath().env }, "release", MERGE);
+  assert.equal(missing.code, 3);
+  assert.equal(missing.json.status, "error");
+  assert.equal(missing.json.reason, "gh-missing");
+
+  const auth = release(repo, releaseGh(releaseRoutes({ [`repos/{owner}/{repo}/commits/`]: { __stderr: "gh: Bad credentials (HTTP 401)" } })), MERGE);
+  assert.equal(auth.code, 3);
+  assert.equal(auth.json.reason, "auth");
+  assert.match(auth.json.message, /gh auth login/);
+
+  const unknown = release(repo, releaseGh(releaseRoutes({ [`repos/{owner}/{repo}/commits/`]: { __stderr: "gh: No commit found for SHA: 1111111 (HTTP 422)" } })), MERGE);
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.json.reason, "unknown-sha");
+});
+
+test("release: usage errors exit 1 and the usage lists the subcommand", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes());
+  for (const args of [[MERGE, "--wait", "61"], [MERGE, "--wait", "-1"], [MERGE, "--wait", "1.5"], [MERGE, "--interval", "0"], ["XYZ"], [], [MERGE, "extra"]]) {
+    const { code, json } = release(repo, gh, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error");
+  }
+  assert.deepEqual(gh.calls(), []);
+  assert.ok(run(repo, "bogus").json.usage.some((line) => line.includes("release <merge-sha> [--wait N] [--interval N]")));
+});
