@@ -1,4 +1,5 @@
 import { pendingDispatchKey, savePendingDispatch, type PendingDispatchStore } from "./pendingDispatch.js";
+import { runStartSession, type StartSessionRunner } from "./startSessionCli.js";
 
 export type NewPlanTarget = { kind: "folder" | "workspace"; path: string };
 
@@ -6,33 +7,23 @@ export interface NewPlanRequest {
   command: string;
 }
 
+export const OPEN_IN_CHAT = "Open in chat";
+
 export interface NewPlanFlowDependencies {
-  readSession: (cwd?: string) => Promise<unknown>;
+  readSession: () => Promise<unknown>;
+  startSession: StartSessionRunner;
   submitCommand: (command: string, target: NewPlanTarget) => Promise<void>;
   pendingStore: PendingDispatchStore;
   openTarget: (target: NewPlanTarget) => PromiseLike<unknown>;
-  sleep: (milliseconds: number) => Promise<void>;
   now: () => number;
-  isCancellationRequested: () => boolean;
   offerRecovery: (message: string, actions: readonly ["Retry", "Focus target"]) => Promise<"Retry" | "Focus target" | undefined>;
+  offerOpenInChat: (message: string) => Promise<typeof OPEN_IN_CHAT | undefined>;
 }
 
-export interface NewPlanFlowOptions {
-  pollIntervalMs: number;
-  timeoutMs: number;
-}
-
-// Production defaults for the New Plan handoff poll. Hoisted out of `startNewPlan`
-// (extension.ts) so the value is unit-testable. A normal start-session takes about
-// 2 minutes, so the poll window must comfortably exceed that (issue #77).
-export const NEW_PLAN_FLOW_DEFAULTS: NewPlanFlowOptions = {
-  pollIntervalMs: 1000,
-  timeoutMs: 300000,
-};
-
+// `reported`: the flow already showed the reason to the user (with Open in chat).
 export type NewPlanFlowResult =
   | { kind: "complete"; command: string; target: NewPlanTarget }
-  | { kind: "timeout" | "cancelled" | "ambiguous" | "failed"; command: string; reason: string };
+  | { kind: "failed"; command: string; reason: string; reported?: boolean };
 
 interface Worktree {
   path: string;
@@ -44,8 +35,6 @@ interface Worktree {
 
 interface Session {
   worktrees: Worktree[];
-  companion: Record<string, unknown> | null;
-  workspace: Record<string, unknown> | null;
   role: string | null;
   worktree: { path: string; detached: boolean } | null;
 }
@@ -75,13 +64,6 @@ function parseWorktree(value: unknown): Worktree {
   };
 }
 
-function nullableRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | null {
-  const value = record[key];
-  if (value === undefined || value === null) return null;
-  if (!isRecord(value)) throw new Error(`session ${key} is invalid`);
-  return value;
-}
-
 function nullableString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   if (value === undefined || value === null) return null;
@@ -103,8 +85,6 @@ function parseSession(value: unknown): Session {
   }
   return {
     worktrees: value.worktrees.map(parseWorktree),
-    companion: nullableRecord(value, "companion"),
-    workspace: nullableRecord(value, "workspace"),
     role: nullableString(value, "role"),
     worktree: nullableSessionWorktree(value.worktree),
   };
@@ -136,22 +116,6 @@ function primaryTarget(session: Session): NewPlanTarget {
   const matches = productWorktrees(session).filter((worktree) => worktree.role === "primary");
   if (matches.length !== 1) throw new Error(`Expected one primary checkout, found ${matches.length}.`);
   return { kind: "folder", path: matches[0]!.path };
-}
-
-function newPlanningWorktrees(session: Session, existingPaths: ReadonlySet<string>): Worktree[] {
-  return productWorktrees(session).filter((worktree) =>
-    worktree.isManaged && worktree.dirPrefix === "plan" && !existingPaths.has(worktree.path)
-  );
-}
-
-function targetFromSession(session: Session, worktreePath: string): NewPlanTarget | null {
-  if (session.companion !== null) {
-    const workspacePath = session.workspace?.path;
-    return session.workspace?.exists === true && typeof workspacePath === "string" && workspacePath.length > 0
-      ? { kind: "workspace", path: workspacePath }
-      : null;
-  }
-  return { kind: "folder", path: worktreePath };
 }
 
 async function handoff(
@@ -195,7 +159,6 @@ async function handoff(
 export async function runNewPlanFlow(
   request: NewPlanRequest,
   dependencies: NewPlanFlowDependencies,
-  options: NewPlanFlowOptions,
 ): Promise<NewPlanFlowResult> {
   try {
     const before = parseSession(await dependencies.readSession());
@@ -205,42 +168,14 @@ export async function runNewPlanFlow(
       return { kind: "complete", command: request.command, target };
     }
     const primary = primaryTarget(before);
-    const existingPaths = new Set(productWorktrees(before).map((worktree) => worktree.path));
-    await dependencies.submitCommand("/agento start-session", primary);
+    const started = await runStartSession(dependencies.startSession, [], primary.path);
+    if (started.kind === "ok") return handoff(request, started.target, dependencies);
 
-    while (true) {
-      const deadline = dependencies.now() + options.timeoutMs;
-      while (dependencies.now() < deadline) {
-        if (dependencies.isCancellationRequested()) {
-          return { kind: "cancelled", command: request.command, reason: "Waiting for the planning worktree was cancelled." };
-        }
-        const current = parseSession(await dependencies.readSession());
-        const candidates = newPlanningWorktrees(current, existingPaths);
-        if (candidates.length > 1) {
-          return {
-            kind: "ambiguous",
-            command: request.command,
-            reason: `Found ${candidates.length} new planning worktrees; no target was selected.`,
-          };
-        }
-        if (candidates.length === 1) {
-          if (dependencies.isCancellationRequested()) {
-            return { kind: "cancelled", command: request.command, reason: "Waiting for the planning worktree was cancelled." };
-          }
-          const candidate = candidates[0]!;
-          const targetSession = parseSession(await dependencies.readSession(candidate.path));
-          const target = targetFromSession(targetSession, candidate.path);
-          if (target) return handoff(request, target, dependencies);
-        }
-        await dependencies.sleep(options.pollIntervalMs);
-      }
-
-      const reason = "Timed out waiting for a new planning worktree.";
-      const selection = await dependencies.offerRecovery(reason, ["Retry", "Focus target"]);
-      if (selection === "Retry") continue;
-      if (selection === "Focus target") await dependencies.openTarget(primary);
-      return { kind: "timeout", command: request.command, reason };
+    const reason = `Unable to start a planning session: ${started.reason}`;
+    if ((await dependencies.offerOpenInChat(reason)) === OPEN_IN_CHAT) {
+      await dependencies.submitCommand("/agento start-session", primary);
     }
+    return { kind: "failed", command: request.command, reason, reported: true };
   } catch (error) {
     const reason = `Unable to start a new plan: ${error instanceof Error ? error.message : String(error)}`;
     return { kind: "failed", command: request.command, reason };

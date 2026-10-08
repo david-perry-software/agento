@@ -170,24 +170,20 @@ async function assertNewPlanCommand(
   const planPath = path.join(path.dirname(fixture), `plan-${expectedCommand.includes("initiative:") ? "member" : "generic"}`);
   const workspacePath = `${planPath}.code-workspace`;
   const primary = { path: fixture, role: "primary", isManaged: false, dirPrefix: null, repo: "product" };
-  const planned = { path: planPath, role: "plan", isManaged: true, dirPrefix: "plan", repo: "product" };
-  const snapshots = [
-    { status: "ok", worktrees: [primary] },
-    { status: "ok", worktrees: [primary, planned] },
-    {
-      status: "ok",
-      worktrees: [primary, planned],
-      companion: companion ? { path: `${planPath}-artifacts`, registered: true } : null,
-      workspace: companion ? { path: workspacePath, exists: true } : null,
-    },
-  ];
+  const expectedTarget: NewPlanTarget = companion
+    ? { kind: "workspace", path: workspacePath }
+    : { kind: "folder", path: planPath };
   const submitted: Array<{ command: string; target: NewPlanTarget }> = [];
   const opened: NewPlanTarget[] = [];
+  const runs: string[] = [];
   const pending = new Map<string, unknown>();
-  let snapshot = 0;
 
   api.setNewPlanRunner((request) => runNewPlanFlow(request, {
-      readSession: async () => snapshots[Math.min(snapshot++, snapshots.length - 1)],
+      readSession: async () => ({ status: "ok", worktrees: [primary] }),
+      startSession: async (_args, root) => {
+        runs.push(root);
+        return { status: "ok", outcome: "created", target: expectedTarget, warnings: [] };
+      },
       submitCommand: async (command, target) => { submitted.push({ command, target }); },
       pendingStore: {
         get: <T>(key: string) => pending.get(key) as T | undefined,
@@ -197,11 +193,10 @@ async function assertNewPlanCommand(
         },
       },
       openTarget: async (target) => { opened.push(target); },
-      sleep: async () => undefined,
       now: () => 1,
-      isCancellationRequested: () => false,
       offerRecovery: async () => undefined,
-    }, { pollIntervalMs: 1, timeoutMs: 10 }));
+      offerOpenInChat: async () => undefined,
+    }));
 
   try {
     await execute();
@@ -210,10 +205,8 @@ async function assertNewPlanCommand(
     api.setNewPlanPrompts();
   }
 
-  const expectedTarget: NewPlanTarget = companion
-    ? { kind: "workspace", path: workspacePath }
-    : { kind: "folder", path: planPath };
-  assert.deepEqual(submitted, [{ command: "/agento start-session", target: { kind: "folder", path: fixture } }]);
+  assert.deepEqual(runs, [fixture]);
+  assert.deepEqual(submitted, []);
   assert.deepEqual(opened, [expectedTarget]);
   assert.equal(
     [...pending.values()].map((value) => (value as { command: string }).command).at(0),
