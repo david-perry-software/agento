@@ -40,8 +40,16 @@ test("routes start-session commands and refreshed start-session transitions to a
     { kind: "start-session", command: "/agento continue member", args: [], then: "/agento continue member" },
   );
   assert.deepEqual(
-    routeCommandAction(here, { currentWindow: "primary", slug: "widget", next: startNext(["feature/widget", 3], null) }),
-    { kind: "start-session", command: here.command, args: [], then: null },
+    routeCommandAction({ command: "/agento start-session feature/widget", window: "here", reason: null }, { currentWindow: "primary", slug: "widget", next: startNext(["feature/widget", 3], null) }),
+    { kind: "reject", reason: "The refreshed start-session has invalid arguments." },
+  );
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento continue", window: "here", reason: null }, { currentWindow: "primary", slug: "widget", next: startNext(["feature/widget"], null) }),
+    { kind: "start-session", command: "/agento continue", args: ["feature/widget"], then: null },
+  );
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento delivery-status", window: "here", reason: null }, { currentWindow: "primary", slug: "widget", next: startNext(["feature/widget"], null) }),
+    { kind: "submit", command: "/agento delivery-status" },
   );
   assert.deepEqual(
     routeCommandAction({ command: "/agento start-session issue/bug --resume", window: "here", reason: null }, { currentWindow: "primary" }),

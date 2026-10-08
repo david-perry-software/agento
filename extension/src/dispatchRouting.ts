@@ -69,9 +69,14 @@ export function routeCommandAction(
       return { kind: "submit", command: action.command };
     }
     const command = action.window === "here" ? action.command : continueCommand;
-    if (next.command === "start-session") {
-      const args = Array.isArray(next.args) && next.args.every((arg) => typeof arg === "string") ? next.args as string[] : [];
-      return { kind: "start-session", command, args, then: typeof next.then === "string" && next.then.length > 0 ? next.then : null };
+    // Only start-session and continue actions follow a refreshed start-session; others (status) still submit.
+    const followsNext = command === continueCommand || /^\/agento continue(?: |$)/.test(command) || startSessionArgs(command) !== null;
+    if (next.command === "start-session" && followsNext) {
+      const args = next.args ?? [];
+      if (!Array.isArray(args) || !args.every((arg) => typeof arg === "string")) {
+        return { kind: "reject", reason: "The refreshed start-session has invalid arguments." };
+      }
+      return { kind: "start-session", command, args: args as string[], then: typeof next.then === "string" && next.then.length > 0 ? next.then : null };
     }
     return { kind: "submit", command };
   }
