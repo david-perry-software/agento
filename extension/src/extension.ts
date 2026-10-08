@@ -90,7 +90,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const treeId = createTreeIdScope();
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
-  const sessionDoctor = new SessionDoctorProvider();
+  const sessionDoctor = new SessionDoctorProvider(treeId);
   const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
