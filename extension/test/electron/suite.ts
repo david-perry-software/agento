@@ -549,7 +549,7 @@ export async function run(): Promise<void> {
   items.forEach((item) => assertLeaf(api.deliveries.getTreeItem(item)));
   assert.deepEqual(
     items.map((item) => api.deliveries.getTreeItem(item).label),
-    ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery"],
+    ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery", "finished-delivery"],
   );
   assert.equal(api.deliveries.getTreeItem(items[0]!).description, "feature | 1/3 | planned | PR #101 draft");
   assert.ok(items[0]?.kind === "delivery");
@@ -617,6 +617,18 @@ export async function run(): Promise<void> {
   assert.ok(roadmapEditor, "delivery activation opens its roadmap");
   assert.equal(activeEditor.viewColumn, vscode.ViewColumn.One);
   assert.equal(roadmapEditor.viewColumn, vscode.ViewColumn.Two);
+
+  const initiativeRoots = api.initiatives.getChildren();
+  assert.deepEqual(initiativeRoots.map((element) => api.initiatives.getTreeItem(element).label), ["agento-extension", "Completed (1)"]);
+  const completedFolder = initiativeRoots[1]!;
+  const completedFolderItem = api.initiatives.getTreeItem(completedFolder);
+  assertCollapsedGroup(completedFolderItem);
+  assert.match(String(completedFolderItem.id), /initiatives\/completed$/);
+  assert.equal(completedFolderItem.contextValue, "agento.initiativesCompleted");
+  assert.equal(completedFolderItem.command, undefined);
+  const completedInitiatives = api.initiatives.getChildren(completedFolder);
+  assert.deepEqual(completedInitiatives.map((element) => api.initiatives.getTreeItem(element).label), ["finished-initiative"]);
+  assert.equal(api.initiatives.getTreeItem(completedInitiatives[0]!).contextValue, "agento.initiative");
 
   const initiative = api.initiatives.getChildren()[0];
   assert.ok(initiative?.kind === "initiative");

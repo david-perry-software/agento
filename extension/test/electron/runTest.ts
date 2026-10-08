@@ -13,12 +13,12 @@ interface Scenario {
   launchArgs: string[];
 }
 
-const roadmap = (slug: string, status: string, ticked: number, total: number) => `\`\`\`yaml
+const roadmap = (slug: string, status: string, ticked: number, total: number, initiative = "agento-extension") => `\`\`\`yaml
 status: ${status}
 branch: feature/${slug}
 last-updated: 2026-09-19
 next-step: "Fixture step"
-initiative: "agento-extension"
+initiative: "${initiative}"
 \`\`\`
 
 ## Phase 1: Fixture
@@ -41,11 +41,15 @@ async function writeDeliveries(root: string): Promise<void> {
     { slug: "building-delivery", status: "in-progress", ticked: 2, total: 4 },
     { slug: "anomalous-delivery", status: "in-review", ticked: 2, total: 2 },
     { slug: "complete-delivery", status: "complete", ticked: 1, total: 1 },
+    { slug: "finished-delivery", status: "complete", ticked: 1, total: 1, initiative: "finished-initiative" },
   ];
   for (const fixture of fixtures) {
     const directory = path.join(root, "features", "2026", "09", fixture.slug);
     await mkdir(directory, { recursive: true });
-    await writeFile(path.join(directory, "roadmap.md"), roadmap(fixture.slug, fixture.status, fixture.ticked, fixture.total));
+    await writeFile(
+      path.join(directory, "roadmap.md"),
+      roadmap(fixture.slug, fixture.status, fixture.ticked, fixture.total, fixture.initiative),
+    );
   }
   await mkdir(path.join(root, "features", "2026", "09", "x"), { recursive: true });
 }
@@ -106,6 +110,36 @@ Exercise the Initiatives tree.
 
 ### complete-delivery
 - Summary: Complete work
+- Requires: none
+- Recommended after: none
+- Wave: 1
+- Size: S
+
+## Recommended order
+
+Fixture order.
+`,
+  );
+  const finished = path.join(root, "initiatives", "2026", "09", "finished-initiative");
+  await mkdir(finished, { recursive: true });
+  await writeFile(
+    path.join(finished, "breakdown.md"),
+    `\`\`\`yaml
+initiative: finished-initiative
+created: 2026-09-01
+last-updated: 2026-09-19
+\`\`\`
+
+# Finished Initiative
+
+## Goal
+
+Exercise the Completed folder.
+
+## Features
+
+### finished-delivery
+- Summary: Shipped work
 - Requires: none
 - Recommended after: none
 - Wave: 1
