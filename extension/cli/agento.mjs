@@ -19,6 +19,7 @@
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
+//   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
@@ -35,12 +36,13 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
+import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict } from "./release-state.mjs";
 import { classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 24);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 25);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -82,6 +84,11 @@ function parseArgs(argv) {
     else if (arg === "--for") {
       options.for = argv[++i];
       if (!options.for || !/^[a-z0-9-]+$/.test(options.for)) usage(`--for takes a command name matching [a-z0-9-]+, got ${JSON.stringify(options.for ?? "")}`);
+    } else if (arg === "--wait" || arg === "--interval") {
+      const value = argv[++i];
+      const [min, max] = arg === "--wait" ? [0, 60] : [1, 60];
+      if (!/^\d+$/.test(value ?? "") || Number(value) < min || Number(value) > max) usage(`${arg} takes an integer from ${min} to ${max} seconds, got ${JSON.stringify(value ?? "")}`);
+      options[arg.slice(2)] = Number(value);
     } else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
     else positional.push(arg);
   }
@@ -1249,6 +1256,104 @@ function tierWarnings(targets) {
   return warn ? [warn] : [];
 }
 
+// --- release ---------------------------------------------------------------
+
+const RELEASE_EXIT = { success: 0, "superseded-success": 0, "not-triggered": 0, "not-configured": 0, pending: 2, "dispatch-required": 2, failed: 4, "no-run": 4 };
+const RELEASE_STATUS = { 0: "ok", 2: "pending", 4: "failed" };
+
+class GhFailure extends Error {
+  constructor(reason, message) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
+// `{owner}/{repo}` placeholders are filled in by gh from the cwd's git remote.
+function ghApi(apiPath, { notFound = "gh-error" } = {}) {
+  let out;
+  try {
+    out = execFileSync("gh", ["api", "-H", "Accept: application/vnd.github+json", apiPath], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
+    const stderr = (error?.stderr ?? "").toString().trim();
+    const first = stderr.split("\n")[0] || error?.message || "unknown error";
+    if (/HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(stderr)) {
+      throw new GhFailure("auth", `gh is not authenticated for this repository (${first}); run \`gh auth login\` in your own terminal, then re-run`);
+    }
+    if (/HTTP 404|HTTP 422/.test(stderr)) {
+      if (notFound === null) return null;
+      if (notFound === "unknown-sha") throw new GhFailure("unknown-sha", `GitHub does not know the commit: ${first}`);
+    }
+    if (error?.code === "ETIMEDOUT") throw new GhFailure("gh-error", `gh api ${apiPath} timed out after 15 s`);
+    throw new GhFailure("gh-error", `gh api ${apiPath} failed: ${first}`);
+  }
+  try {
+    return JSON.parse(out);
+  } catch {
+    throw new GhFailure("gh-error", `gh api ${apiPath} returned non-JSON output`);
+  }
+}
+
+const runSummary = (run) => (run ? { id: run.id, event: run.event, status: run.status, conclusion: run.conclusion ?? null, url: run.html_url ?? null, headSha: run.head_sha } : null);
+
+function once(fn) {
+  let done = false;
+  let value;
+  return () => {
+    if (!done) {
+      value = fn();
+      done = true;
+    }
+    return value;
+  };
+}
+
+// The immutable facts about a merge commit, fetched at most once per call.
+function releaseContext(workflow, shaArg) {
+  const commit = ghApi(`repos/{owner}/{repo}/commits/${shaArg}`, { notFound: "unknown-sha" });
+  const sha = commit.sha;
+  const mergeDate = commit.commit?.committer?.date ?? null;
+  const parent = commit.parents?.[0]?.sha ?? null;
+  const runs = `repos/{owner}/{repo}/actions/workflows/${encodeURIComponent(workflow)}/runs`;
+  const diff = once(() => (parent ? ghApi(`repos/{owner}/{repo}/compare/${parent}...${sha}`) : null));
+  const descendants = new Map();
+  return {
+    sha,
+    mergeDate,
+    exactRunsPath: `${runs}?head_sha=${sha}&per_page=100`,
+    laterRunsPath: `${runs}?branch=${encodeURIComponent(config.branches.default)}&event=push&created=${encodeURIComponent(`>=${mergeDate}`)}&per_page=100`,
+    // A missing or non-file workflow is treated as unparsed: wait for a run rather than declare none needed.
+    triggers: once(() => {
+      if (!/\.ya?ml$/.test(workflow)) return { push: null, dispatch: false, unparsed: true };
+      const file = ghApi(`repos/{owner}/{repo}/contents/.github/workflows/${encodeURIComponent(workflow)}?ref=${sha}`, { notFound: null });
+      if (!file?.content) return { push: null, dispatch: false, unparsed: true };
+      return parseWorkflowTriggers(Buffer.from(file.content, file.encoding === "base64" ? "base64" : "utf8").toString("utf8"));
+    }),
+    files: () => (diff()?.files ?? []).map((f) => f.filename),
+    // GitHub caps compare files[] at 300; a root commit has no parent diff at all.
+    filesTruncated: () => !diff() || (diff().files?.length ?? 0) >= 300,
+    descendantOf: (head) => {
+      if (!descendants.has(head)) descendants.set(head, ghApi(`repos/{owner}/{repo}/compare/${sha}...${head}`).status);
+      return descendants.get(head);
+    },
+  };
+}
+
+function releaseSnapshot(ctx) {
+  return releaseVerdict({
+    sha: ctx.sha,
+    defaultBranch: config.branches.default,
+    mergeDate: ctx.mergeDate,
+    now: Date.now(),
+    exactRuns: () => ghApi(ctx.exactRunsPath).workflow_runs ?? [],
+    laterRuns: () => ghApi(ctx.laterRunsPath).workflow_runs ?? [],
+    triggers: ctx.triggers,
+    files: ctx.files,
+    filesTruncated: ctx.filesTruncated,
+    descendantOf: ctx.descendantOf,
+  });
+}
+
 switch (command) {
   case "config":
     emit({
@@ -1845,6 +1950,42 @@ switch (command) {
       }
     }
     emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+    break;
+  }
+
+  case "release": {
+    const [shaArg, ...extra] = rest;
+    if (!shaArg || extra.length) usage("release takes exactly one <merge-sha>");
+    if (!/^[0-9a-f]{7,40}$/.test(shaArg)) usage(`release: <merge-sha> must be 7-40 lowercase hex characters, got ${JSON.stringify(shaArg)}`);
+    const workflow = config.checks?.releaseWorkflow ?? null;
+    const report = (fields, code) => emit({ status: "ok", verdict: null, sha: shaArg, workflow, run: null, supersededBy: null, reason: null, mergeDate: null, graceSeconds: GRACE_SECONDS, polls: 0, waitedSeconds: 0, ...fields, root, configSource: source }, code);
+    if (!workflow) report({ verdict: "not-configured", reason: "checks.releaseWorkflow is not set; there is no release to wait for" }, 0);
+    try {
+      try {
+        execFileSync("gh", ["--version"], { cwd: root, stdio: "ignore", timeout: 15000 });
+      } catch {
+        throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
+      }
+      const ctx = releaseContext(workflow, shaArg);
+      const wait = options.wait ?? 0;
+      const interval = options.interval ?? 10;
+      const sleeper = new Int32Array(new SharedArrayBuffer(4));
+      let result = releaseSnapshot(ctx);
+      let polls = 1;
+      let waited = 0;
+      // dispatch-required never loops: only the caller can start that run.
+      while (result.verdict === "pending" && waited + interval <= wait) {
+        Atomics.wait(sleeper, 0, 0, interval * 1000);
+        waited += interval;
+        result = releaseSnapshot(ctx);
+        polls += 1;
+      }
+      const code = RELEASE_EXIT[result.verdict];
+      report({ status: RELEASE_STATUS[code], verdict: result.verdict, sha: ctx.sha, run: runSummary(result.run), supersededBy: runSummary(result.supersededBy), reason: result.reason, mergeDate: ctx.mergeDate, polls, waitedSeconds: waited }, code);
+    } catch (error) {
+      if (!(error instanceof GhFailure)) throw error;
+      report({ status: "error", reason: error.reason, message: error.message }, 3);
+    }
     break;
   }
 
