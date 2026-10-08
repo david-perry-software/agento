@@ -69,6 +69,48 @@ available in the current window and the commands assigned to another window. Its
 New Plan title action appears only in the primary window or an unpromoted plan
 window.
 
+## Status colors
+
+Every dashboard icon is tinted by status, so paused, blocked, in-review, and shipped
+work stands out without reading labels. Deliveries lifecycle groups get a status
+glyph and color, and each delivery row keeps its pull-request glyph in its group's
+color. Initiative groups and their members share the group's glyph and color.
+
+| Status | Glyph | Color id | Default |
+| --- | --- | --- | --- |
+| Planned delivery | `circle-large-outline` | `agento.status.planned` | `charts.blue` |
+| Building delivery | `sync` | `agento.status.building` | `charts.yellow` |
+| Paused delivery | `debug-pause` | `agento.status.paused` | `charts.orange` |
+| In-review delivery | `eye` | `agento.status.inReview` | `charts.purple` |
+| Approved delivery | `check` | `agento.status.approved` | `charts.green` |
+| Shipped delivery | `pass-filled` | `agento.status.shipped` | `charts.green` |
+| Post-ship pending delivery | `clock` | `agento.status.postShipPending` | `charts.orange` |
+| Ready initiative member | `play-circle` | `agento.status.ready` | `charts.blue` |
+| In-flight initiative member | `sync` | `agento.status.inFlight` | `charts.yellow` |
+| Blocked initiative member | `lock` | `agento.status.blocked` | `charts.red` |
+| Complete initiative, member, or Completed folder | `pass-filled`, `type-hierarchy`, `archive` | `agento.status.complete` | `charts.green` |
+| Doctor check ok | `pass` | `agento.health.ok` | `charts.green` |
+| Doctor check warn, CLI warning, initiative anomaly | `warning` | `agento.health.warn` | `charts.yellow` |
+| Doctor check fail, load error, invalid initiative | `error`, `warning` | `agento.health.fail` | `charts.red` |
+
+The Session `Lifecycle` row uses the delivery glyph and color for its lifecycle,
+and the Doctor group's `pulse` glyph takes the color of the worst check. Initiatives
+still in progress and empty-state rows stay uncolored.
+
+The status bar item's text color follows the session lifecycle. When the doctor
+reports `warn` or `fail`, the item gets the theme's warning or error background
+instead, which overrides the lifecycle color: health outranks lifecycle.
+
+Each color id is contributed by the extension, so a theme or your settings can
+override it:
+
+```jsonc
+"workbench.colorCustomizations": {
+  "agento.status.paused": "#ff8800",
+  "agento.status.shipped": "#6a737d"
+}
+```
+
 ## Refresh and recovery
 
 Run **Agento: Refresh** (`agento.refresh`) after an external change. The extension
