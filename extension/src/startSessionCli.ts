@@ -2,6 +2,8 @@ import { START_SESSION_TIMEOUT_MS, type CliClient } from "./cliClient.js";
 
 export type StartSessionTarget = { kind: "folder" | "workspace"; path: string };
 
+export const OPEN_IN_CHAT = "Open in chat";
+
 export type StartSessionOutcome =
   | { kind: "ok"; target: StartSessionTarget; outcome: string | null; warnings: string[] }
   | { kind: "error"; reason: string };
@@ -50,9 +52,9 @@ export function parseStartSessionResult(value: unknown): StartSessionOutcome {
 }
 
 // One call that never throws: CLI failures (spawn, timeout, invalid JSON) become errors too.
-export async function runStartSession(runner: StartSessionRunner, args: string[], root: string): Promise<StartSessionOutcome> {
+export async function runStartSession(run: () => PromiseLike<unknown>): Promise<StartSessionOutcome> {
   try {
-    return parseStartSessionResult(await runner(args, root));
+    return parseStartSessionResult(await run());
   } catch (error) {
     return { kind: "error", reason: error instanceof Error ? error.message : String(error) };
   }

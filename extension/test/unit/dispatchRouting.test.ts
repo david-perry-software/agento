@@ -29,6 +29,34 @@ test("submits the exact selected command when the refreshed target is here", () 
   });
 });
 
+test("routes start-session commands and refreshed start-session transitions to a CLI run", () => {
+  const startNext = (args: unknown, then: unknown) => ({ status: "ok", next: { command: "start-session", args, window: "here", then, target: { path: "/repo" } } });
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento start-session feature/widget", window: "here", reason: null }, { currentWindow: "primary", slug: "widget", next: startNext(["feature/widget", "--resume"], "/agento continue widget") }),
+    { kind: "start-session", command: "/agento start-session feature/widget", args: ["feature/widget", "--resume"], then: "/agento continue widget" },
+  );
+  assert.deepEqual(
+    routeCommandAction(elsewhere, { currentWindow: "primary", slug: "member", next: startNext([], "/agento continue member") }),
+    { kind: "start-session", command: "/agento continue member", args: [], then: "/agento continue member" },
+  );
+  assert.deepEqual(
+    routeCommandAction(here, { currentWindow: "primary", slug: "widget", next: startNext(["feature/widget", 3], null) }),
+    { kind: "start-session", command: here.command, args: [], then: null },
+  );
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento start-session issue/bug --resume", window: "here", reason: null }, { currentWindow: "primary" }),
+    { kind: "start-session", command: "/agento start-session issue/bug --resume", args: ["issue/bug", "--resume"], then: null },
+  );
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento start-session", window: "here", reason: null }, { currentWindow: "primary" }),
+    { kind: "start-session", command: "/agento start-session", args: [], then: null },
+  );
+  assert.deepEqual(
+    routeCommandAction({ command: "/agento start-freehand tidy", window: "here", reason: null }, { currentWindow: "primary" }),
+    { kind: "submit", command: "/agento start-freehand tidy" },
+  );
+});
+
 test("uses continue and the CLI target for primary and secondary handoffs", () => {
   assert.deepEqual(
     routeCommandAction(elsewhere, {

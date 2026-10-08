@@ -28,7 +28,6 @@ import {
 import {
   createInitiativePlanRequest,
   createNewPlanRequest,
-  OPEN_IN_CHAT,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
   type NewPlanFlowResult,
@@ -37,7 +36,7 @@ import {
 import { RefreshScheduler } from "./refreshScheduler.js";
 import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
 import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
-import { cliStartSession } from "./startSessionCli.js";
+import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createWatchers } from "./watchers.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -299,6 +298,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       openTarget,
       chatMode,
       commandFile,
+      startSession: async (args) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) throw new Error("No workspace folder is open.");
+        return vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "Starting Agento session" },
+          () => startSession(args, folder.uri.fsPath),
+        );
+      },
+      offerOpenInChat: (message) => vscode.window.showErrorMessage(message, OPEN_IN_CHAT),
     },
     executeCommand,
   );

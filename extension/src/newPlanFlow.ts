@@ -1,13 +1,11 @@
 import { pendingDispatchKey, savePendingDispatch, type PendingDispatchStore } from "./pendingDispatch.js";
-import { runStartSession, type StartSessionRunner } from "./startSessionCli.js";
+import { OPEN_IN_CHAT, runStartSession, type StartSessionRunner } from "./startSessionCli.js";
 
 export type NewPlanTarget = { kind: "folder" | "workspace"; path: string };
 
 export interface NewPlanRequest {
   command: string;
 }
-
-export const OPEN_IN_CHAT = "Open in chat";
 
 export interface NewPlanFlowDependencies {
   readSession: () => Promise<unknown>;
@@ -168,7 +166,7 @@ export async function runNewPlanFlow(
       return { kind: "complete", command: request.command, target };
     }
     const primary = primaryTarget(before);
-    const started = await runStartSession(dependencies.startSession, [], primary.path);
+    const started = await runStartSession(() => dependencies.startSession([], primary.path));
     if (started.kind === "ok") return handoff(request, started.target, dependencies);
 
     const reason = `Unable to start a planning session: ${started.reason}`;

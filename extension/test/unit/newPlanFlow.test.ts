@@ -4,12 +4,12 @@ import test from "node:test";
 import {
   createInitiativePlanRequest,
   createNewPlanRequest,
-  OPEN_IN_CHAT,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
   type NewPlanTarget,
 } from "../../src/newPlanFlow.js";
 import { pendingDispatchKey, type PendingDispatchStore } from "../../src/pendingDispatch.js";
+import { OPEN_IN_CHAT } from "../../src/startSessionCli.js";
 
 class MemoryStore implements PendingDispatchStore {
   readonly values = new Map<string, unknown>();

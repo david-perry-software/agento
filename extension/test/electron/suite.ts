@@ -550,6 +550,8 @@ export async function run(): Promise<void> {
       openTarget: async (opened) => { routedTargets.push(`${opened.kind}:${opened.path}`); },
       chatMode: () => ({ mode: null, reason: "unused" }),
       commandFile: () => ({ file: null, reason: "unused" }),
+      startSession: async () => assert.fail("cross-window routes never run start-session"),
+      offerOpenInChat: async () => undefined,
     },
   );
   assert.equal(crossWindowRoute.kind, "open");
@@ -829,6 +831,8 @@ export async function run(): Promise<void> {
         openTarget: async (target) => { openedTargets.push(target.path); },
         chatMode: () => ({ mode: null, reason: "unused" }),
         commandFile: () => ({ file: null, reason: "unused" }),
+        startSession: async () => assert.fail("cross-window routes never run start-session"),
+        offerOpenInChat: async () => undefined,
       },
     );
     assert.equal(route.kind, "open");
