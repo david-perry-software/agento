@@ -4,7 +4,7 @@
 |---|---|---|
 | `/agento agento-init [--force] [--migrate]` | default | Scaffold Agento into the current project (companion artifact repository created and cloned, config, AGENTS.md section, CI poller); `--migrate` also moves an existing in-repo artifact tree into the companion through a companion PR and a product PR |
 | `/agento install-skills` | default | Detect the project stack, propose matching agent skills, install approved ones, update the AGENTS.md skills table |
-| `/agento start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode) |
+| `/agento start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode); one `agento.mjs start-session` call does the work and the prompt only formats its JSON |
 | `/agento new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
 | `/agento new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test |
 | `/agento new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window |
@@ -99,7 +99,27 @@ a migrated branch too), `workspace <kind> <id> [--write]` (companion mode only:
 report the canonical two-folder `.code-workspace` document, whether the on-disk file
 exists and is current, and with `--write` create or refresh it with the session
 settings block unless `worktrees.autoApprove` is `false`; in the in-repo layout it
-returns `status: "not-applicable"`), `ports <slug>`,
+returns `status: "not-applicable"`), `start-session [<feature|issue>/<slug> |
+<session-id>] [--resume] [--no-open]` (the whole `/agento start-session` in one
+deterministic call: the §11 window check — role `primary` on the default branch with
+a clean `git status --porcelain` — then the `doctor --for start-session` checks, a
+bounded `git fetch origin` (30 s, `GIT_TERMINAL_PROMPT=0`) in the product clone and
+the companion clone, the session id (UTC `YYYYMMDD-HHMMSS`, `-2`, `-3` on a
+collision) or the roadmap resolution and branch owner, `git worktree add` for each
+missing half, the post-add check of both halves, the `.code-workspace` file, and
+`code --new-window <target>` unless `--no-open`; a registered session is reused
+untouched and reported `outcome: "resumed"`; output `{ status: ok | rejected |
+failed, mode, subject, outcome, product, companion, workspace: { path, written },
+target: { kind: folder | workspace, path }, opened, openCommand, next[],
+preflight[], reason, message, fix, reauth, allowed, elsewhere, warnings }` —
+`rejected` writes nothing (wrong window, dirty or off-default primary, a failed
+capability check with `capability`/`fallback`, a roadmap `conflict` /
+`branch-mismatch` / `missing` / complete, an unpublished branch), `failed` names
+`reason: "fetch-auth"` with `reauth`, `"post-add-check"` with `half`,
+`registeredIn`, `origin`, `expectedOrigin`, and the `git -C <clone> worktree remove
+<path>` `fix` (nothing is removed, no workspace file written, no window opened), or
+`"worktree-add"` with the git error; an unreachable origin only adds a `warnings[]`
+entry; exit 0 for `ok`, 3 for `rejected`/`failed`, 1 for a usage error), `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
