@@ -235,13 +235,34 @@ Ownership does not apply when resuming only the post-ship epilogue.
      zero ahead/behind there too, so both defaults carry the merged delivery before
      teardown.
    - Release workflow: if the target repo's `.github/agento.json` sets
-     `checks.releaseWorkflow`, dispatch that workflow (or resolve its existing run
-     whose `headSha` exactly matches the merge commit, allowing for GitHub's short
-     run-registration delay) and watch it with bounded foreground polls via
-     `scripts/wait-for-checks.sh run <run-id>` (exit 2 = still pending: rerun it);
-     record the outcome. Otherwise skip this step. A failed, cancelled, or timed out
-     release run is a resumable hard stop; never substitute a run for another commit
-     or trigger a duplicate release.
+     `checks.releaseWorkflow`, derive its verdict for the code PR's merge commit
+     (`gh pr view <n> --json mergeCommit`) by running, in the foreground from the
+     product checkout, `node <agento-root>/scripts/agento.mjs release <merge-sha>
+     --wait 50`. Every call returns within 60 s with one JSON document and derives
+     the verdict from GitHub afresh, so a lost output costs nothing; never write your
+     own run lookup, never poll with `gh run watch`. Act on the exit code:
+     - **2 with `verdict: pending`** — rerun the same command; repeat while it stays
+       pending.
+     - **2 with `verdict: dispatch-required`** — the workflow has no push trigger for
+       the default branch. First run `gh run list --workflow <workflow> --event
+       workflow_dispatch --json databaseId,createdAt,url` and, if a run was created
+       after the JSON's `mergeDate`, do not dispatch: report that run (follow it with
+       `scripts/wait-for-checks.sh run <run-id>`, rerunning on exit 2). Otherwise run
+       `gh workflow run <workflow> --ref <default>` exactly once, then follow the run
+       it created the same way. Never dispatch twice for one merge.
+     - **0** — record the verdict: `success` with `run.url`; `superseded-success`
+       with both `run.url` (the merge's cancelled run) and `supersededBy.url` (the
+       descendant run that shipped it); `not-triggered` or `not-configured` with its
+       `reason`.
+     - **4** (`failed`, or `no-run` after the grace window) — a resumable hard stop:
+       write nothing further and end with the §9 failed result line naming the
+       verdict, `reason`, and `run.url`; re-sending `/agento ship <slug>` re-derives
+       the verdict. Never substitute a run for another commit or trigger a
+       duplicate release.
+     - **3** — `gh` is missing or not authenticated: stop per policy §1, naming
+       `gh auth login` for the user to run.
+
+     Otherwise (no `checks.releaseWorkflow`) skip this step.
    - **Teardown** (only when `owner !== null`): first, when `companion.registered`,
      `git -C <artifactsRoot> worktree remove <companion.path>` (the companion clone
      is `artifactsRoot` from `agento.mjs paths <type> <slug>`; literal resolved path)
@@ -264,8 +285,9 @@ Ownership does not apply when resuming only the post-ship epilogue.
      `/agento ship <slug>` as its own block per policy §12, preceded by one line
      saying to close the flagged window first. When `owner === null`, delete the
      merged local branch from the primary as before.
-4. **Report** merge result, PR number, release workflow result and run URL (or that no
-   release workflow is configured), the removed worktree path(s) and workspace file
+4. **Report** merge result, PR number, the release verdict from `agento.mjs release`
+   with its run URL — both URLs for `superseded-success`, the `reason` for
+   `not-triggered` or `not-configured` — the removed worktree path(s) and workspace file
    (or that none was registered), and any accepted gaps carried into Follow-ups.
    *Companion mode*: name both merged PR numbers (code `#<n>`, companion `#<m>`),
    both synced defaults (product and companion), and both removed halves plus the
