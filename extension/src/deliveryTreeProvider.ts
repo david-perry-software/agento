@@ -2,6 +2,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 
 import type { DeliveryTreeGroup, DeliveryTreeItem, DeliveryTreeModel } from "./deliveryTreeModel.js";
+import { healthStyle, lifecycleStyle } from "./statusStyle.js";
 import type { TreeIdScope } from "./treeItemIds.js";
 
 interface GroupElement {
@@ -54,13 +55,17 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
       const item = new vscode.TreeItem(element.group.label, vscode.TreeItemCollapsibleState.Collapsed);
       item.id = this.treeId("deliveries", "group", element.group.lifecycle);
       item.contextValue = "agento.lifecycle";
-      item.iconPath = new vscode.ThemeIcon("folder");
+      const style = lifecycleStyle(element.group.lifecycle);
+      item.iconPath = new vscode.ThemeIcon(style.icon, style.color ? new vscode.ThemeColor(style.color) : undefined);
       return item;
     }
     if (element.kind === "message") {
       const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.None);
       item.contextValue = `agento.${element.severity}`;
-      item.iconPath = new vscode.ThemeIcon(element.severity === "error" ? "error" : "info");
+      const fail = healthStyle("fail");
+      item.iconPath = element.severity === "error"
+        ? new vscode.ThemeIcon(fail.icon, new vscode.ThemeColor(fail.color!))
+        : new vscode.ThemeIcon("info");
       return item;
     }
 
@@ -68,7 +73,8 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
     item.description = element.item.description;
     item.tooltip = element.item.tooltip;
     item.contextValue = "agento.delivery";
-    item.iconPath = new vscode.ThemeIcon("git-pull-request");
+    const color = lifecycleStyle(element.item.lifecycle).color;
+    item.iconPath = new vscode.ThemeIcon("git-pull-request", color ? new vscode.ThemeColor(color) : undefined);
     item.command = {
       command: "agento.openRoadmap",
       title: "Open Roadmap",
