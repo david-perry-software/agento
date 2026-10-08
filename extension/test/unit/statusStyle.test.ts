@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
@@ -84,4 +85,35 @@ test("STATUS_COLOR_IDS lists every emitted color id exactly once", () => {
     "agento.status.ready",
     "agento.status.shipped",
   ]);
+});
+
+test("the manifest declares exactly the emitted agento colors, each with all four theme defaults", async () => {
+  const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
+    contributes: { colors?: Array<{ id: string; description?: string; defaults?: Record<string, string> }> };
+  };
+  const declared = (manifest.contributes.colors ?? []).filter((color) => color.id.startsWith("agento."));
+  const expectedDefaults: Record<string, string> = {
+    "agento.status.planned": "charts.blue",
+    "agento.status.ready": "charts.blue",
+    "agento.status.building": "charts.yellow",
+    "agento.status.inFlight": "charts.yellow",
+    "agento.health.warn": "charts.yellow",
+    "agento.status.paused": "charts.orange",
+    "agento.status.postShipPending": "charts.orange",
+    "agento.status.inReview": "charts.purple",
+    "agento.status.approved": "charts.green",
+    "agento.status.shipped": "charts.green",
+    "agento.status.complete": "charts.green",
+    "agento.health.ok": "charts.green",
+    "agento.status.blocked": "charts.red",
+    "agento.health.fail": "charts.red",
+  };
+
+  assert.deepEqual(declared.map((color) => color.id).sort(), [...STATUS_COLOR_IDS].sort());
+  for (const color of declared) {
+    assert.ok(color.description, `${color.id} has no description`);
+    for (const theme of ["dark", "light", "highContrast", "highContrastLight"]) {
+      assert.equal(color.defaults?.[theme], expectedDefaults[color.id], `${color.id} ${theme}`);
+    }
+  }
 });
