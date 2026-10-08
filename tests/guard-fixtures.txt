@@ -24,6 +24,7 @@ allow git push -u origin feature/widget
 allow ls -la
 allow echo 'push origin main'
 allow pkill -f 'gh run watch'
+allow node scripts/agento.mjs release abc1234 --wait 50
 
 # Default-branch protection through chained switches and merges
 deny  git switch main; git commit -m x
