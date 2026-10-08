@@ -96,6 +96,16 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.doesNotMatch(source, /registerCommand\([^\n]*(repair|doctor)/i);
 });
 
+test("activate creates one tree id scope and hands it to all three tree providers", async () => {
+  const source = await readFile("src/extension.ts", "utf8");
+
+  assert.equal(source.match(/createTreeIdScope\(/g)?.length, 1);
+  assert.match(source, /const treeId = createTreeIdScope\(\);/);
+  assert.match(source, /new DeliveryTreeProvider\([^\n]*, treeId\)/);
+  assert.match(source, /new InitiativeTreeProvider\([^\n]*, treeId\)/);
+  assert.match(source, /new SessionDoctorProvider\(treeId\)/);
+});
+
 test("New Plan and start-session dispatch run the CLI directly, with no chat round-trip or poll", async () => {
   const source = await readFile("src/extension.ts", "utf8");
   assert.match(source, /const startSession = cliStartSession\(client\)/);
