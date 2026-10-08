@@ -65,6 +65,22 @@ test("session doctor model preserves complete CLI state and derives status text"
     "/agento ship session-doctor-panel",
   ]);
   assert.equal(model.statusBarText, "Agento: build · 2 active");
+  assert.deepEqual(model.statusBarStyle, { color: "agento.status.building", background: "warning" });
+});
+
+test("session doctor model colors the status bar by lifecycle and backs it by doctor health", () => {
+  const style = (lifecycle: string, doctorStatus: string) => {
+    const model = createSessionDoctorModel({ ...session, lifecycle }, { ...doctor, status: doctorStatus }, status);
+    assert.equal(model.kind, "ready", model.kind === "error" ? model.message : undefined);
+    assert.equal(model.statusBarText, "Agento: build · 2 active");
+    return model.statusBarStyle;
+  };
+
+  assert.deepEqual(style("paused", "ok"), { color: "agento.status.paused" });
+  assert.deepEqual(style("in-review", "warn"), { color: "agento.status.inReview", background: "warning" });
+  assert.deepEqual(style("shipped", "fail"), { color: "agento.status.shipped", background: "error" });
+  assert.deepEqual(style("no-delivery", "ok"), {});
+  assert.deepEqual(style("no-delivery", "fail"), { background: "error" });
 });
 
 test('session doctor model renders a detached companion as "detached" (#75 session-doctor-detached-companion)', () => {
@@ -119,6 +135,7 @@ test("session doctor model rejects malformed required response fields", () => {
     if (model.kind === "error") {
       assert.match(model.message, /^Invalid Session & Doctor response:/);
       assert.equal(model.statusBarText, "Agento: unavailable");
+      assert.deepEqual(model.statusBarStyle, { background: "error" });
     }
   }
 });
@@ -128,5 +145,6 @@ test("session doctor model returns an explicit transport error", () => {
     kind: "error",
     message: "Unable to load Session & Doctor: exit 3",
     statusBarText: "Agento: unavailable",
+    statusBarStyle: { background: "error" },
   });
 });

@@ -32,6 +32,7 @@ export class SessionDoctorProvider implements vscode.TreeDataProvider<SessionDoc
     kind: "error",
     message: "Session & Doctor has not loaded.",
     statusBarText: "Agento: unavailable",
+    statusBarStyle: { background: "error" },
   };
 
   readonly onDidChangeTreeData = this.didChangeTreeData.event;

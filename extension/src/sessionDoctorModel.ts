@@ -1,4 +1,5 @@
 import { projectCommandActions, type CommandAction } from "./commandActions.js";
+import { lifecycleStyle } from "./statusStyle.js";
 
 export interface SessionSummary {
   role: string;
@@ -23,6 +24,11 @@ export interface DoctorCheck {
   fallback: string | null;
 }
 
+export interface StatusBarStyle {
+  color?: string;
+  background?: "warning" | "error";
+}
+
 export type SessionDoctorModel =
   | {
       kind: "ready";
@@ -32,8 +38,9 @@ export type SessionDoctorModel =
       checks: DoctorCheck[];
       actions: CommandAction[];
       statusBarText: string;
+      statusBarStyle: StatusBarStyle;
     }
-  | { kind: "error"; message: string; statusBarText: string };
+  | { kind: "error"; message: string; statusBarText: string; statusBarStyle: StatusBarStyle };
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -143,6 +150,14 @@ function parseChecks(doctor: UnknownRecord): DoctorCheck[] {
   });
 }
 
+function statusBarStyle(lifecycle: string, doctorStatus: string): StatusBarStyle {
+  const color = lifecycleStyle(lifecycle).color;
+  return {
+    ...(color ? { color } : {}),
+    ...(doctorStatus === "ok" ? {} : { background: doctorStatus === "warn" ? "warning" as const : "error" as const }),
+  };
+}
+
 export function createSessionDoctorModel(
   sessionValue: unknown,
   doctorValue: unknown,
@@ -169,11 +184,12 @@ export function createSessionDoctorModel(
     const delivery = optionalRecord(sessionValue, "delivery");
     const branch = nullableString(worktree, "branch");
     const role = requiredString(sessionValue, "role");
+    const lifecycle = requiredString(sessionValue, "lifecycle");
     return {
       kind: "ready",
       session: {
         role,
-        lifecycle: requiredString(sessionValue, "lifecycle"),
+        lifecycle,
         deliverySlug: delivery ? requiredString(delivery, "slug") : null,
         worktreePath: requiredString(worktree, "path"),
         branch: branch ?? "detached",
@@ -184,6 +200,7 @@ export function createSessionDoctorModel(
       checks: parseChecks(doctorValue),
       actions: projectCommandActions(sessionValue),
       statusBarText: `Agento: ${role} · ${statusValue.resumable.length} active`,
+      statusBarStyle: statusBarStyle(lifecycle, doctorValue.status),
     };
   } catch (error) {
     return createSessionDoctorError(error, "Invalid Session & Doctor response");
@@ -192,5 +209,10 @@ export function createSessionDoctorModel(
 
 export function createSessionDoctorError(error: unknown, prefix = "Unable to load Session & Doctor"): SessionDoctorModel {
   const detail = error instanceof Error ? error.message : String(error);
-  return { kind: "error", message: `${prefix}: ${detail}`, statusBarText: "Agento: unavailable" };
+  return {
+    kind: "error",
+    message: `${prefix}: ${detail}`,
+    statusBarText: "Agento: unavailable",
+    statusBarStyle: { background: "error" },
+  };
 }

@@ -34,7 +34,7 @@ import {
   type NewPlanRequest,
 } from "./newPlanFlow.js";
 import { RefreshScheduler } from "./refreshScheduler.js";
-import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
+import { createSessionDoctorError, createSessionDoctorModel, type SessionDoctorModel } from "./sessionDoctorModel.js";
 import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createTreeIdScope } from "./treeItemIds.js";
@@ -76,6 +76,13 @@ interface NewInitiativePrompts {
 
 interface ConfigResult {
   artifactsRoot?: unknown;
+}
+
+function applyStatusBar(statusBar: vscode.StatusBarItem, model: SessionDoctorModel): void {
+  const { color, background } = model.statusBarStyle;
+  statusBar.text = model.statusBarText;
+  statusBar.color = color ? new vscode.ThemeColor(color) : undefined;
+  statusBar.backgroundColor = background ? new vscode.ThemeColor(`statusBarItem.${background}Background`) : undefined;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
@@ -178,7 +185,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       initiatives.update({ model: createInitiativeTreeError(message), artifactRoot: context.extensionPath });
       const model = createSessionDoctorError(message);
       sessionDoctor.update(model);
-      statusBar.text = model.statusBarText;
+      applyStatusBar(statusBar, model);
       output.appendLine(message);
       return;
     }
@@ -207,7 +214,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         applyGate(snapshot.gate);
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
-        statusBar.text = snapshot.sessionDoctor.statusBarText;
+        applyStatusBar(statusBar, snapshot.sessionDoctor);
         for (const warning of snapshot.deliveries.model.warnings) {
           output.appendLine(warning);
         }
@@ -230,7 +237,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         });
         const model = createSessionDoctorError(error);
         sessionDoctor.update(model);
-        statusBar.text = model.statusBarText;
+        applyStatusBar(statusBar, model);
         output.appendLine(String(error));
       },
     );
