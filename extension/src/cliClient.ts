@@ -44,6 +44,13 @@ export interface CliClientOptions {
   timeoutMs?: number;
 }
 
+export interface CliRunOptions {
+  timeoutMs?: number;
+}
+
+// `start-session` runs two bounded 30 s fetches plus worktree checkouts.
+export const START_SESSION_TIMEOUT_MS = 120_000;
+
 export class CliClient {
   private readonly timeoutMs: number;
 
@@ -51,7 +58,7 @@ export class CliClient {
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
-  run(args: string[], root: string): Promise<CliResult> {
+  run(args: string[], root: string, runOptions: CliRunOptions = {}): Promise<CliResult> {
     const startedAt = Date.now();
     return new Promise((resolve, reject) => {
       execFile(
@@ -61,7 +68,7 @@ export class CliClient {
           cwd: root,
           env: process.env,
           maxBuffer: 16 * 1024 * 1024,
-          timeout: this.timeoutMs,
+          timeout: runOptions.timeoutMs ?? this.timeoutMs,
         },
         (error, stdout, stderr) => {
           const code = typeof error?.code === "number" ? error.code : 0;

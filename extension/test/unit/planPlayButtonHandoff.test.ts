@@ -5,7 +5,8 @@
 //
 // Evidence directory (companion repo): issues/2026/10/plan-play-button-handoff/evidence/.
 // These three tests are the exposing regression tests from plan.md "## Approach";
-// they fail before the fix and pass after it (steps 2.1–2.3).
+// they fail before the fix and pass after it (steps 2.1–2.3). Since start-session-cli
+// there is no poll at all: (c) hands the CLI result off directly, however long it took.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -14,7 +15,6 @@ import { consumePendingCommands, dispatchCommandToTarget } from "../../src/comma
 import {
   createInitiativePlanRequest,
   createNewPlanRequest,
-  NEW_PLAN_FLOW_DEFAULTS,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
   type NewPlanTarget,
@@ -42,7 +42,6 @@ function dependencies(snapshots: unknown[], overrides: Partial<Omit<NewPlanFlowD
   const pendingStore = new MemoryStore();
   const submitted: Array<{ command: string; target: NewPlanTarget }> = [];
   const opened: NewPlanTarget[] = [];
-  let now = 0;
   let index = 0;
   const value: NewPlanFlowDependencies & {
     pendingStore: MemoryStore;
@@ -50,13 +49,13 @@ function dependencies(snapshots: unknown[], overrides: Partial<Omit<NewPlanFlowD
     opened: typeof opened;
   } = {
     readSession: async () => snapshots[Math.min(index++, snapshots.length - 1)],
+    startSession: async () => { throw new Error("start-session must not run"); },
     submitCommand: async (command, target) => { submitted.push({ command, target }); },
     pendingStore,
     openTarget: async (target) => { opened.push(target); },
-    sleep: async (milliseconds) => { now += milliseconds; },
-    now: () => now,
-    isCancellationRequested: () => false,
+    now: () => 0,
     offerRecovery: async () => undefined,
+    offerOpenInChat: async () => undefined,
     submitted,
     opened,
     ...overrides,
@@ -77,7 +76,7 @@ test("(a) a plan-role detached session submits the new-feature / new-issue comma
 
   for (const request of requests) {
     const deps = dependencies([planSession]);
-    const result = await runNewPlanFlow(request, deps, NEW_PLAN_FLOW_DEFAULTS);
+    const result = await runNewPlanFlow(request, deps);
 
     assert.deepEqual(result, {
       kind: "complete",
@@ -130,36 +129,27 @@ test("(b) chat.open options attach the command file, and the no-file fallback lo
   assert.deepEqual(fallbackLogs, ["dispatch: no command file for start-session: no plugin root"]);
 });
 
-test("(c) a start-session finishing at 20:37:16.546Z after a 20:35:14.000Z submit completes under NEW_PLAN_FLOW_DEFAULTS", async () => {
+test("(c) a start-session finishing at 20:37:16.546Z after a 20:35:14.000Z start is handed off directly, with no poll to time out", async () => {
   const submitAt = Date.parse("2026-10-02T20:35:14.000Z");
-  const worktreeAt = Date.parse("2026-10-02T20:37:05.100Z");
   const workspaceAt = Date.parse("2026-10-02T20:37:16.546Z");
   const primary = { path: "/repo", role: "primary", isManaged: false, dirPrefix: null, repo: "product" };
-  const planned = { path: "/repo/worktrees/plan-new", role: "plan", isManaged: true, dirPrefix: "plan", repo: "product" };
-  const companion = { path: "/docs/worktrees/plan-new", registered: true };
   const workspacePath = "/repo/worktrees/plan-new.code-workspace";
   let now = submitAt;
-  const pendingStore = new MemoryStore();
-  const deps: NewPlanFlowDependencies = {
-    readSession: async (cwd?: string) => {
-      const exists = now >= workspaceAt;
-      if (cwd) {
-        return session([primary, planned], { companion, workspace: { path: workspacePath, exists } });
-      }
-      if (now < worktreeAt) return session([primary]);
-      return session([primary, planned], { companion, workspace: { path: workspacePath, exists } });
+  const opened: NewPlanTarget[] = [];
+  const deps = dependencies([session([primary])], {
+    startSession: async () => {
+      now = workspaceAt;
+      return { status: "ok", outcome: "created", target: { kind: "workspace", path: workspacePath }, warnings: [] };
     },
-    submitCommand: async () => undefined,
-    pendingStore,
-    openTarget: async () => undefined,
-    sleep: async (milliseconds) => { now += milliseconds; },
+    openTarget: async (target) => { opened.push(target); },
     now: () => now,
-    isCancellationRequested: () => false,
-    offerRecovery: async () => undefined,
-  };
+  });
   const request = createNewPlanRequest("feature", "Add guided planning");
 
-  const result = await runNewPlanFlow(request, deps, NEW_PLAN_FLOW_DEFAULTS);
+  const result = await runNewPlanFlow(request, deps);
 
-  assert.equal(result.kind, "complete");
+  assert.deepEqual(result, { kind: "complete", command: request.command, target: { kind: "workspace", path: workspacePath } });
+  assert.deepEqual(opened, [{ kind: "workspace", path: workspacePath }]);
+  assert.deepEqual(deps.submitted, []);
+  assert.equal((deps.pendingStore.values.get(pendingDispatchKey(workspacePath)) as { createdAt: number }).createdAt, workspaceAt);
 });

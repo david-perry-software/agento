@@ -35,9 +35,88 @@ function dependencies(overrides: Partial<CommandDispatcherDependencies> = {}): C
     openTarget: async () => undefined,
     chatMode: () => ({ mode: null, reason: "unused" }),
     commandFile: () => ({ file: null, reason: "unused" }),
+    startSession: async () => { throw new Error("start-session must not run"); },
+    offerOpenInChat: async () => undefined,
     ...overrides,
   };
 }
+
+const workspace = { kind: "workspace" as const, path: "/repo/wt/feature-widget.code-workspace" };
+
+function startSessionNext(args: string[], then: string | null) {
+  return { status: "ok", next: { command: "start-session", args, window: "here", then, target: { path: "/repo", workspace: null }, reason: "start it" } };
+}
+
+function startSessionHarness(result: unknown, overrides: Partial<CommandDispatcherDependencies> = {}) {
+  const store = new MemoryStore();
+  const runs: string[][] = [];
+  const opened: string[] = [];
+  const calls: unknown[][] = [];
+  const offered: string[] = [];
+  const deps = dependencies({
+    pendingStore: store,
+    startSession: async (args) => { runs.push(args); return result; },
+    openTarget: async (target) => { opened.push(`${target.kind}:${target.path}`); },
+    executeCommand: async (...args) => { calls.push(args); },
+    offerOpenInChat: async (message) => { offered.push(message); return undefined; },
+    ...overrides,
+  });
+  return { deps, store, runs, opened, calls, offered };
+}
+
+const startedOk = { status: "ok", outcome: "created", target: workspace, warnings: [] };
+
+test("a start-session play button runs the CLI with next.args, queues next.then for the returned target, and opens it", async () => {
+  for (const [args, then] of [[["feature/widget"], "/agento continue widget"], [["feature/widget", "--resume"], "/agento continue widget"], [[], "/agento continue member"]] as const) {
+    const h = startSessionHarness(startedOk, { loadNext: async () => startSessionNext([...args], then) });
+    const action: CommandAction = { command: "/agento start-session feature/widget", window: "here", reason: null };
+    const route = await dispatchCommandAction(action, "widget", h.deps);
+    assert.deepEqual(route, { kind: "start-session", command: action.command, args: [...args], then });
+    assert.deepEqual(h.runs, [[...args]]);
+    assert.equal((h.store.values.get(pendingDispatchKey(workspace.path)) as { command: string }).command, then);
+    assert.deepEqual(h.opened, [`workspace:${workspace.path}`]);
+    assert.deepEqual(h.calls, [], "nothing is submitted to chat");
+  }
+});
+
+test("/agento continue from the primary runs start-session when the refreshed next says so", async () => {
+  const h = startSessionHarness(startedOk, { loadNext: async () => startSessionNext(["issue/bug", "--resume"], "/agento continue bug") });
+  const route = await dispatchCommandAction({ command: "/agento continue", window: "here", reason: null }, "bug", h.deps);
+  assert.equal(route.kind, "start-session");
+  assert.deepEqual(h.runs, [["issue/bug", "--resume"]]);
+  assert.deepEqual(h.opened, [`workspace:${workspace.path}`]);
+});
+
+test("a bare /agento start-session without a slug runs plan mode and opens the target with nothing queued", async () => {
+  const h = startSessionHarness(startedOk);
+  const route = await dispatchCommandAction({ command: "/agento start-session", window: "here", reason: null }, undefined, h.deps);
+  assert.deepEqual(route, { kind: "start-session", command: "/agento start-session", args: [], then: null });
+  assert.deepEqual(h.runs, [[]]);
+  assert.equal(h.store.values.size, 0);
+  assert.deepEqual(h.opened, [`workspace:${workspace.path}`]);
+});
+
+test("a failed start-session shows the CLI reason with Open in chat, which submits the original command", async () => {
+  const failed = { status: "failed", reason: "post-add-check", message: "companion half is registered in the product clone", fix: "git -C /repo worktree remove /docs/wt/feature-widget" };
+  const action: CommandAction = { command: "/agento start-session feature/widget", window: "here", reason: null };
+
+  const declined = startSessionHarness(failed, { loadNext: async () => startSessionNext(["feature/widget"], "/agento continue widget") });
+  const route = await dispatchCommandAction(action, "widget", declined.deps);
+  assert.equal(route.kind, "reject");
+  assert.match((route as { reason: string }).reason, /post-add-check: companion half .* Fix: git -C \/repo worktree remove/);
+  assert.deepEqual(declined.offered, [(route as { reason: string }).reason]);
+  assert.deepEqual(declined.calls, []);
+  assert.deepEqual(declined.opened, []);
+  assert.equal(declined.store.values.size, 0);
+
+  const accepted = startSessionHarness({ status: "rejected", reason: "primary checkout is dirty (/repo)" }, {
+    loadNext: async () => startSessionNext(["feature/widget"], "/agento continue widget"),
+    offerOpenInChat: async () => "Open in chat",
+  });
+  await dispatchCommandAction(action, "widget", accepted.deps);
+  assert.deepEqual(accepted.calls, [["workbench.action.chat.open", { query: action.command }]]);
+  assert.deepEqual(accepted.opened, []);
+});
 
 test("submits in-window commands without a mode when none resolves, logging the reason", async () => {
   const calls: unknown[][] = [];

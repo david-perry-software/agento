@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -33,6 +33,34 @@ function layout() {
 }
 
 const role = (l, cwd) => deriveRole({ cwd, worktrees: l.worktrees, worktreesDir: l.worktreesDir, config });
+
+test("nextSessionId formats UTC time and suffixes collisions", () => {
+  const now = new Date("2026-10-08T00:01:13.456Z");
+  assert.equal(nextSessionId({ now, taken: [] }), "20261008-000113");
+  assert.equal(nextSessionId({ now, taken: undefined }), "20261008-000113");
+  assert.equal(nextSessionId({ now, taken: ["20261008-000113"] }), "20261008-000113-2");
+  assert.equal(nextSessionId({ now, taken: new Set(["20261008-000113", "20261008-000113-2"]) }), "20261008-000113-3");
+  assert.equal(nextSessionId({ now, taken: ["20261008-000113-2"] }), "20261008-000113");
+  assert.match(nextSessionId({ now: new Date() }), /^\d{8}-\d{6}$/);
+});
+
+test("classifyFetchFailure separates authentication failures from other fetch failures", () => {
+  const auth = [
+    "remote: Invalid username or password.\nfatal: Authentication failed for 'https://github.com/o/r.git/'",
+    "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    "git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.",
+    "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403",
+    "fatal: unable to access 'https://example.com/r.git/': The requested URL returned error: 401",
+  ];
+  for (const stderr of auth) assert.equal(classifyFetchFailure(stderr), "auth", stderr);
+  const other = [
+    "fatal: '/tmp/missing/origin.git' does not appear to be a git repository\nfatal: Could not read from remote repository.",
+    "fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: github.com",
+    "",
+    null,
+  ];
+  for (const stderr of other) assert.equal(classifyFetchFailure(stderr), "other", String(stderr));
+});
 
 test("parseWorktreeList handles branch, detached, and trailing blank lines", () => {
   const porcelain = [

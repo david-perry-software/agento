@@ -14,6 +14,20 @@
   `--max-seconds 60` in both modes and prints a poll line only when the snapshot
   changes, plus the `RESULT:` line.
 
+- **New `agento.mjs start-session [<feature|issue>/<slug> | <session-id>]
+  [--resume] [--no-open]`.** The whole `/agento start-session` — window check,
+  `doctor --for start-session`, bounded fetch of both clones, session id or roadmap
+  and owner resolution, `git worktree add` for each half, the post-add check, the
+  `.code-workspace` file, and `code --new-window` — runs as one deterministic CLI
+  call that prints one JSON document (`ok` | `rejected` | `failed`; exit 0 / 3).
+  The prompt (and its `commands/start-session.md` mirror) shrinks from 160 to 93
+  lines and only formats that JSON, so a start takes seconds instead of minutes of
+  model turns; pin it to a fast model via `prompts.start-session`. The dashboard's
+  New Plan, the Deliveries/Initiatives play buttons, and `/agento continue` routes
+  that start a session call `agento.mjs start-session --no-open` directly, queue the
+  follow-up command for the returned target, and open it — no chat round-trip and
+  no 300 s poll; failures show the CLI reason with an **Open in chat** fallback.
+
 - **Fixed.** `agento.mjs session` and `agento.mjs next` (the delivery-policy §11
   window check) reported `role: unmanaged` and rejected every `/agento …` command
   when the terminal sat in the companion clone of a primary window, including any

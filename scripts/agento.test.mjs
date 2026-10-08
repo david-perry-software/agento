@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES } from "./session-state.mjs";
+import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(repoRoot, "scripts", "agento.mjs");
@@ -3219,4 +3219,384 @@ test("release --wait never loops on dispatch-required", () => {
   assert.equal(json.verdict, "dispatch-required");
   assert.equal(json.polls, 1);
   assert.equal(json.waitedSeconds, 0);
+});
+
+// --- start-session -------------------------------------------------------------
+
+// A PATH with node, git, python3, and (unless `code: false`) a `code` stub that logs
+// every call other than `--version`, so no test ever opens a real window.
+function startSessionEnv({ code = true } = {}) {
+  const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-code-log-")), "code.log");
+  const stubs = { python3: okStubs.python3 };
+  if (code) stubs.code = `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.99.0; exit 0; fi\nprintf '%s\\n' "$*" >> '${log}'\n`;
+  const { env } = restrictedPath(stubs);
+  const opened = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : []);
+  return { env, opened };
+}
+
+const startSession = (cwd, env, ...args) => runWith({ cwd, env }, "start-session", ...args);
+
+// Publish <branch> from main (optionally writing files first), then return to main;
+// `keepLocal` keeps the local branch, `localAhead` adds an unpushed commit to it.
+function publishBranch(work, branch, write = null, { keepLocal = false, localAhead = false } = {}) {
+  git(work, "switch", "-q", "-c", branch);
+  write?.(work);
+  git(work, "add", "-A");
+  git(work, "commit", "-q", "--allow-empty", "-m", `plan ${branch}`);
+  git(work, "push", "-q", "-u", "origin", branch);
+  if (localAhead) git(work, "commit", "-q", "--allow-empty", "-m", `local ${branch}`);
+  git(work, "switch", "-q", "main");
+  if (!keepLocal && !localAhead) git(work, "branch", "-q", "-D", branch);
+}
+
+const roadmapFor = (type, slug, status = "in-progress", branch = `${type}/${slug}`) => (w) =>
+  writeRoadmap(w, `${type === "feature" ? "features" : "issues"}/2026/10/${slug}`, `status: ${status}\nbranch: ${branch}\nnext-step: "1.2"`);
+
+const worktreeCount = (clone) => git(clone, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("worktree ")).length;
+
+test("start-session validates its arguments and is listed in the usage header", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env } = startSessionEnv();
+  for (const args of [["a", "b"], ["--resume"], ["Bad_Id"], ["feature/Bad_Slug"], ["chore/x"], ["--bogus"]]) {
+    const { code, json } = startSession(repo, env, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+  assert.match(run(repo).json.usage.join("\n"), /start-session \[<feature\|issue>\/<slug> \| <session-id>\] \[--resume\] \[--no-open\]/);
+  assert.match(run(repo).json.usage.join("\n"), /Options: --root <dir>/);
+  assert.deepEqual(fs.readdirSync(wt), []);
+});
+
+test("start-session rejects a managed window, a primary off the default branch (including one on the delivery branch), and a dirty primary, writing nothing", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env, opened } = startSessionEnv();
+  const plan = path.join(wt, "plan-existing");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+
+  const fromPlan = startSession(plan, env);
+  assert.equal(fromPlan.code, 3);
+  assert.equal(fromPlan.json.status, "rejected");
+  assert.match(fromPlan.json.reason, /^wrong window: role=plan \(.*plan-existing, branch detached\)$/);
+  const record = run(plan, "session").json;
+  assert.deepEqual(fromPlan.json.allowed, record.allowed);
+  assert.deepEqual(fromPlan.json.elsewhere, record.elsewhere);
+
+  publishBranch(repo, "feature/widget", roadmapFor("feature", "widget"), { keepLocal: true });
+  git(repo, "switch", "-q", "feature/widget");
+  const offMain = startSession(repo, env, "feature/widget");
+  assert.equal(offMain.code, 3);
+  assert.equal(offMain.json.status, "rejected");
+  assert.match(offMain.json.reason, /^primary checkout not on main \(.*, branch feature\/widget\)$/);
+  git(repo, "switch", "-q", "main");
+
+  fs.writeFileSync(path.join(repo, "scratch.txt"), "x");
+  const dirty = startSession(repo, env);
+  assert.equal(dirty.code, 3);
+  assert.equal(dirty.json.status, "rejected");
+  assert.match(dirty.json.reason, /^primary checkout is dirty/);
+  fs.rmSync(path.join(repo, "scratch.txt"));
+
+  assert.deepEqual(fs.readdirSync(wt), ["plan-existing"]);
+  assert.equal(worktreeCount(repo), 2);
+  assert.deepEqual(opened(), []);
+});
+
+test("start-session warns and continues when origin is unreachable, and stops with a re-login command on an authentication failure", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env } = startSessionEnv();
+  git(repo, "remote", "set-url", "origin", path.join(path.dirname(repo), "missing.git"));
+  const offline = startSession(repo, env, "20261008-1", "--no-open");
+  assert.equal(offline.code, 0);
+  assert.equal(offline.json.status, "ok");
+  assert.equal(offline.json.outcome, "created");
+  assert.ok(offline.json.warnings.some((w) => /^fetch: product .*missing\.git not fetched \(.*\); continuing from local refs$/.test(w)), offline.json.warnings.join("\n"));
+
+  const ssh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-ssh-")), "ssh");
+  fs.writeFileSync(ssh, "#!/bin/sh\necho 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n", { mode: 0o755 });
+  git(repo, "remote", "set-url", "origin", "git@example.invalid:o/r.git");
+  const auth = startSession(repo, { ...env, GIT_SSH_COMMAND: ssh }, "20261008-2", "--no-open");
+  assert.equal(auth.code, 3);
+  assert.equal(auth.json.status, "failed");
+  assert.equal(auth.json.reason, "fetch-auth");
+  assert.match(auth.json.message, /Permission denied \(publickey\)/);
+  assert.match(auth.json.reauth, /git@example\.invalid:o\/r\.git/);
+  assert.equal(fs.existsSync(path.join(wt, "plan-20261008-2")), false);
+});
+
+test("start-session plan mode creates a detached session at origin/main and resumes it untouched, promoted or not (in-repo)", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const origin = path.join(path.dirname(repo), "project.git");
+  const { env, opened } = startSessionEnv();
+
+  const fresh = startSession(repo, env, "--no-open");
+  assert.equal(fresh.code, 0);
+  const { json } = fresh;
+  assert.equal(json.status, "ok");
+  assert.equal(json.mode, "plan");
+  assert.equal(json.outcome, "created");
+  assert.match(json.subject, /^\d{8}-\d{6}(-\d+)?$/);
+  const half = path.join(wt, `plan-${json.subject}`);
+  assert.deepEqual(json.product, { path: half, branch: null, detached: true, state: { onDisk: true, registeredIn: "product", origin, expectedOrigin: origin, ok: true } });
+  assert.equal(git(half, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(json.companion, null);
+  assert.equal(json.workspace, null);
+  assert.deepEqual(json.target, { kind: "folder", path: half });
+  assert.equal(json.opened, false);
+  assert.equal(json.openCommand, `code --new-window ${half}`);
+  assert.deepEqual(json.next, ["/agento new-feature <description>", "/agento new-issue <description>"]);
+  assert.equal(json.reason, null);
+  assert.deepEqual(opened(), []);
+
+  const created = startSession(repo, env, "20261008-1", "--no-open");
+  assert.equal(created.json.outcome, "created");
+  assert.equal(created.json.subject, "20261008-1");
+  const session = path.join(wt, "plan-20261008-1");
+  const marker = path.join(session, "notes.txt");
+  fs.writeFileSync(marker, "keep");
+  const head = git(session, "rev-parse", "HEAD");
+  for (const extra of [[], ["--resume"]]) {
+    const again = startSession(repo, env, "20261008-1", ...extra, "--no-open");
+    assert.equal(again.code, 0);
+    assert.equal(again.json.outcome, "resumed");
+    assert.equal(fs.readFileSync(marker, "utf8"), "keep");
+    assert.equal(git(session, "rev-parse", "HEAD"), head);
+  }
+
+  git(session, "switch", "-q", "-c", "feature/widget");
+  const promoted = startSession(repo, env, "20261008-1", "--no-open");
+  assert.equal(promoted.json.outcome, "resumed");
+  assert.equal(promoted.json.product.branch, "feature/widget");
+  assert.equal(promoted.json.product.detached, false);
+  assert.equal(git(session, "branch", "--show-current"), "feature/widget");
+});
+
+test("start-session plan mode creates and resumes a companion pair and writes or refreshes its workspace file", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const { env } = startSessionEnv();
+  const product = path.join(wt, "plan-20261008-1");
+  const half = path.join(docsWt, "plan-20261008-1");
+  const file = path.join(wt, "plan-20261008-1.code-workspace");
+
+  const { code, json } = startSession(repo, env, "20261008-1", "--no-open");
+  assert.equal(code, 0);
+  assert.equal(json.outcome, "created");
+  assert.equal(json.product.path, product);
+  assert.equal(json.companion.path, half);
+  assert.equal(json.companion.detached, true);
+  assert.equal(json.companion.state.registeredIn, "companion");
+  assert.equal(json.companion.state.ok, true);
+  assert.equal(git(half, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+  assert.deepEqual(json.workspace, { path: file, written: true });
+  assert.deepEqual(json.target, { kind: "workspace", path: file });
+  assert.equal(json.openCommand, `code --new-window ${file}`);
+  const expected = { folders: [{ path: product }, { path: half }], settings: SESSION_WORKSPACE_SETTINGS };
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), expected);
+
+  const again = startSession(repo, env, "20261008-1", "--no-open");
+  assert.equal(again.json.outcome, "resumed");
+  assert.deepEqual(again.json.workspace, { path: file, written: false });
+
+  fs.writeFileSync(file, "{}\n");
+  const refreshed = startSession(repo, env, "20261008-1", "--resume", "--no-open");
+  assert.equal(refreshed.json.outcome, "resumed");
+  assert.deepEqual(refreshed.json.workspace, { path: file, written: true });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), expected);
+
+  git(product, "switch", "-q", "-c", "feature/widget");
+  git(half, "switch", "-q", "-c", "feature/widget");
+  const promoted = startSession(repo, env, "20261008-1", "--no-open");
+  assert.equal(promoted.json.outcome, "resumed");
+  assert.equal(promoted.json.product.branch, "feature/widget");
+  assert.equal(promoted.json.companion.branch, "feature/widget");
+  assert.equal(worktreeCount(repo), 2);
+  assert.equal(worktreeCount(docs), 2);
+});
+
+test("start-session build mode: origin-only branch tracks, a local branch is used, a managed owner resumes, missing/complete/mismatched roadmaps reject (in-repo)", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env } = startSessionEnv();
+
+  publishBranch(repo, "feature/remote", roadmapFor("feature", "remote"));
+  const remote = startSession(repo, env, "feature/remote", "--no-open");
+  assert.equal(remote.code, 0);
+  assert.equal(remote.json.mode, "build");
+  assert.equal(remote.json.subject, "feature/remote");
+  assert.equal(remote.json.outcome, "created");
+  const remoteHalf = path.join(wt, "feature-remote");
+  assert.equal(remote.json.product.path, remoteHalf);
+  assert.equal(remote.json.product.branch, "feature/remote");
+  assert.equal(remote.json.product.state.ok, true);
+  assert.equal(git(remoteHalf, "rev-parse", "--abbrev-ref", "@{upstream}"), "origin/feature/remote");
+  assert.deepEqual(remote.json.next, ["/agento build-feature remote"]);
+  assert.equal(remote.json.companion, null);
+  assert.deepEqual(remote.json.target, { kind: "folder", path: remoteHalf });
+
+  publishBranch(repo, "feature/local", roadmapFor("feature", "local"), { localAhead: true });
+  const localTip = git(repo, "rev-parse", "refs/heads/feature/local");
+  const local = startSession(repo, env, "feature/local", "--no-open");
+  assert.equal(local.json.outcome, "created");
+  assert.equal(git(path.join(wt, "feature-local"), "rev-parse", "HEAD"), localTip);
+  assert.notEqual(localTip, git(repo, "rev-parse", "origin/feature/local"));
+
+  publishBranch(repo, "issue/bug", roadmapFor("issue", "bug"));
+  const issue = startSession(repo, env, "issue/bug", "--no-open");
+  assert.equal(issue.json.outcome, "created");
+  assert.equal(issue.json.product.path, path.join(wt, "issue-bug"));
+  assert.deepEqual(issue.json.next, ["/agento build-issue bug"]);
+
+  publishBranch(repo, "feature/owned", roadmapFor("feature", "owned"), { keepLocal: true });
+  const promoted = path.join(wt, "plan-20261008-9");
+  git(repo, "worktree", "add", "-q", promoted, "feature/owned");
+  fs.writeFileSync(path.join(promoted, "wip.txt"), "keep");
+  for (const extra of [[], ["--resume"]]) {
+    const owned = startSession(repo, env, "feature/owned", ...extra, "--no-open");
+    assert.equal(owned.code, 0);
+    assert.equal(owned.json.outcome, "resumed");
+    assert.equal(owned.json.product.path, promoted);
+    assert.equal(owned.json.product.branch, "feature/owned");
+  }
+  assert.equal(fs.readFileSync(path.join(promoted, "wip.txt"), "utf8"), "keep");
+  assert.equal(fs.existsSync(path.join(wt, "feature-owned")), false);
+
+  roadmapFor("feature", "ghost", "planned")(repo);
+  roadmapFor("feature", "done", "complete")(repo);
+  roadmapFor("feature", "odd", "planned", "feature/other")(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "roadmaps on main");
+  git(repo, "push", "-q", "origin", "main");
+  const ghost = startSession(repo, env, "feature/ghost", "--no-open");
+  assert.equal(ghost.code, 3);
+  assert.equal(ghost.json.status, "rejected");
+  assert.match(ghost.json.reason, /feature\/ghost exists neither locally nor on origin; the delivery planner must publish it/);
+  const done = startSession(repo, env, "feature/done", "--no-open");
+  assert.equal(done.json.status, "rejected");
+  assert.match(done.json.reason, /complete.*no build session is needed/);
+  const odd = startSession(repo, env, "feature/odd", "--no-open");
+  assert.equal(odd.json.status, "rejected");
+  assert.equal(odd.json.resolution, "branch-mismatch");
+  assert.match(odd.json.reason, /branch mismatch/);
+  const nope = startSession(repo, env, "feature/nope", "--no-open");
+  assert.equal(nope.json.status, "rejected");
+  assert.equal(nope.json.resolution, "missing");
+  for (const slug of ["ghost", "done", "odd", "nope"]) assert.equal(fs.existsSync(path.join(wt, `feature-${slug}`)), false);
+});
+
+test("start-session build mode in companion mode: a mirrored companion branch tracks, an absent one is created --no-track with a push warning, a promoted pair resumes", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const { env } = startSessionEnv();
+
+  publishBranch(repo, "feature/mirror");
+  publishBranch(docs, "feature/mirror", roadmapFor("feature", "mirror"));
+  const mirror = startSession(repo, env, "feature/mirror", "--no-open");
+  assert.equal(mirror.code, 0, JSON.stringify(mirror.json));
+  assert.equal(mirror.json.outcome, "created");
+  const mirrorHalf = path.join(docsWt, "feature-mirror");
+  assert.equal(mirror.json.companion.path, mirrorHalf);
+  assert.equal(mirror.json.companion.branch, "feature/mirror");
+  assert.equal(mirror.json.companion.state.ok, true);
+  assert.equal(git(mirrorHalf, "rev-parse", "--abbrev-ref", "@{upstream}"), "origin/feature/mirror");
+  assert.equal(mirror.json.product.branch, "feature/mirror");
+  const mirrorFile = path.join(wt, "feature-mirror.code-workspace");
+  assert.deepEqual(mirror.json.workspace, { path: mirrorFile, written: true });
+  assert.deepEqual(mirror.json.target, { kind: "workspace", path: mirrorFile });
+  assert.ok(!mirror.json.warnings.some((w) => w.startsWith("companion-branch:")));
+
+  roadmapFor("feature", "legacy")(docs);
+  git(docs, "add", "-A");
+  git(docs, "commit", "-q", "-m", "legacy roadmap");
+  git(docs, "push", "-q", "origin", "main");
+  publishBranch(repo, "feature/legacy");
+  const legacy = startSession(repo, env, "feature/legacy", "--no-open");
+  assert.equal(legacy.code, 0, JSON.stringify(legacy.json));
+  const legacyHalf = path.join(docsWt, "feature-legacy");
+  assert.equal(legacy.json.companion.branch, "feature/legacy");
+  assert.equal(git(legacyHalf, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+  assert.throws(() => git(legacyHalf, "rev-parse", "--abbrev-ref", "@{upstream}"));
+  assert.ok(legacy.json.warnings.some((w) => /^companion-branch: feature\/legacy did not exist .*push -u origin feature\/legacy$/.test(w)), legacy.json.warnings.join("\n"));
+
+  publishBranch(repo, "feature/promo", null, { keepLocal: true });
+  publishBranch(docs, "feature/promo", roadmapFor("feature", "promo"), { keepLocal: true });
+  git(repo, "worktree", "add", "-q", path.join(wt, "plan-20261008-7"), "feature/promo");
+  git(docs, "worktree", "add", "-q", path.join(docsWt, "plan-20261008-7"), "feature/promo");
+  const promo = startSession(repo, env, "feature/promo", "--no-open");
+  assert.equal(promo.code, 0, JSON.stringify(promo.json));
+  assert.equal(promo.json.outcome, "resumed");
+  assert.equal(promo.json.product.path, path.join(wt, "plan-20261008-7"));
+  assert.equal(promo.json.companion.path, path.join(docsWt, "plan-20261008-7"));
+  assert.deepEqual(promo.json.workspace, { path: path.join(wt, "plan-20261008-7.code-workspace"), written: true });
+  assert.equal(fs.existsSync(path.join(wt, "feature-promo")), false);
+  assert.equal(fs.existsSync(path.join(docsWt, "feature-promo")), false);
+});
+
+test("start-session fails the post-add check for a companion half registered in the product clone, writing, opening, and removing nothing (#86)", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const base = path.dirname(repo);
+  const { env, opened } = startSessionEnv();
+  const product = path.join(wt, "plan-20261004-1");
+  const stray = path.join(docsWt, "plan-20261004-1");
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(repo, "worktree", "add", "-q", "--detach", stray, "origin/main");
+  const before = [git(repo, "worktree", "list", "--porcelain"), git(docs, "worktree", "list", "--porcelain")];
+
+  const { code, json } = startSession(repo, env, "20261004-1");
+  assert.equal(code, 3);
+  assert.equal(json.status, "failed");
+  assert.equal(json.reason, "post-add-check");
+  assert.equal(json.half, "companion");
+  assert.equal(json.registeredIn, "product");
+  assert.equal(json.origin, path.join(base, "project.git"));
+  assert.equal(json.expectedOrigin, path.join(base, "project-docs.git"));
+  assert.equal(json.fix, `git -C ${repo} worktree remove ${stray}`);
+  assert.equal(json.workspace, null);
+  assert.equal(json.opened, false);
+  assert.deepEqual(opened(), []);
+  assert.equal(fs.existsSync(path.join(wt, "plan-20261004-1.code-workspace")), false);
+  assert.deepEqual([git(repo, "worktree", "list", "--porcelain"), git(docs, "worktree", "list", "--porcelain")], before);
+  assert.ok(fs.existsSync(product) && fs.existsSync(stray));
+
+  // A failing `git worktree add` reports its stderr: the branch is checked out in an unmanaged worktree.
+  const other = makeWorktreeRepo();
+  publishBranch(other.repo, "feature/busy", roadmapFor("feature", "busy"), { keepLocal: true });
+  git(other.repo, "worktree", "add", "-q", path.join(path.dirname(other.repo), "elsewhere"), "feature/busy");
+  const busy = startSession(other.repo, env, "feature/busy", "--no-open");
+  assert.equal(busy.code, 3);
+  assert.equal(busy.json.status, "failed");
+  assert.equal(busy.json.reason, "worktree-add");
+  assert.equal(busy.json.half, "product");
+  assert.match(busy.json.message, /worktree add .*feature\/busy/);
+  assert.equal(fs.existsSync(path.join(other.wt, "feature-busy")), false);
+});
+
+test("start-session opens the target with code --new-window unless --no-open, reopens on resume, and reports openCommand without code", () => {
+  const pair = makePairRepo();
+  const { env, opened } = startSessionEnv();
+  const file = path.join(pair.wt, "plan-20261008-1.code-workspace");
+  const first = startSession(pair.repo, env, "20261008-1");
+  assert.equal(first.code, 0);
+  assert.equal(first.json.opened, true);
+  assert.deepEqual(opened(), [`--new-window ${file}`]);
+  const again = startSession(pair.repo, env, "20261008-1");
+  assert.equal(again.json.outcome, "resumed");
+  assert.equal(again.json.opened, true);
+  assert.deepEqual(opened(), [`--new-window ${file}`, `--new-window ${file}`]);
+  const quiet = startSession(pair.repo, env, "20261008-1", "--no-open");
+  assert.equal(quiet.json.opened, false);
+  assert.equal(quiet.json.openCommand, `code --new-window ${file}`);
+  assert.equal(opened().length, 2);
+
+  const inRepo = makeWorktreeRepo();
+  const folder = startSession(inRepo.repo, env, "20261008-2");
+  assert.equal(folder.json.opened, true);
+  assert.equal(opened().at(-1), `--new-window ${path.join(inRepo.wt, "plan-20261008-2")}`);
+
+  const bare = startSessionEnv({ code: false });
+  const missing = startSession(inRepo.repo, bare.env, "20261008-3");
+  assert.equal(missing.code, 0);
+  assert.equal(missing.json.opened, false);
+  assert.equal(missing.json.openCommand, `code --new-window ${path.join(inRepo.wt, "plan-20261008-3")}`);
+  const codeCheck = missing.json.preflight.find((p) => p.id === "code");
+  assert.equal(codeCheck.status, "warn");
+  assert.equal(codeCheck.capability, "code");
+  assert.match(codeCheck.fallback, /code --new-window/);
+  assert.ok(missing.json.warnings.some((w) => /^open: code CLI not found on PATH; run code --new-window /.test(w)), missing.json.warnings.join("\n"));
 });

@@ -28,16 +28,15 @@ import {
 import {
   createInitiativePlanRequest,
   createNewPlanRequest,
-  NEW_PLAN_FLOW_DEFAULTS,
   runNewPlanFlow,
   type NewPlanFlowDependencies,
-  type NewPlanFlowOptions,
   type NewPlanFlowResult,
   type NewPlanRequest,
 } from "./newPlanFlow.js";
 import { RefreshScheduler } from "./refreshScheduler.js";
 import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
 import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
+import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createWatchers } from "./watchers.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -54,7 +53,6 @@ export interface ExtensionApi {
   startNewPlan: (
     request: NewPlanRequest,
     dependencies?: NewPlanFlowDependencies,
-    options?: NewPlanFlowOptions,
   ) => Promise<NewPlanFlowResult>;
   setNewPlanRunner: (runner?: (request: NewPlanRequest) => Promise<NewPlanFlowResult>) => void;
   setNewPlanPrompts: (prompts?: NewPlanPrompts) => void;
@@ -281,6 +279,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.Uri.file(target.path),
     { forceNewWindow: true },
   );
+  const startSession = cliStartSession(client);
   const dispatchAction = (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => dispatchCommandAction(
     action,
     slug,
@@ -299,6 +298,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       openTarget,
       chatMode,
       commandFile,
+      startSession: async (args) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) throw new Error("No workspace folder is open.");
+        return vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: "Starting Agento session" },
+          () => startSession(args, folder.uri.fsPath),
+        );
+      },
+      offerOpenInChat: (message) => vscode.window.showErrorMessage(message, OPEN_IN_CHAT),
     },
     executeCommand,
   );
@@ -306,12 +314,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     vscode.workspace.workspaceFile?.fsPath,
     ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
   ].filter((target): target is string => Boolean(target)));
-  const productionNewPlanDependencies = (token: vscode.CancellationToken): NewPlanFlowDependencies => ({
-    readSession: async (cwd) => {
-      const root = cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  const productionNewPlanDependencies = (): NewPlanFlowDependencies => ({
+    readSession: async () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
       if (!root) throw new Error("No workspace folder is open.");
       return (await client.run(["session"], root)).json;
     },
+    startSession: async (args, root) => vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Starting Agento planning session" },
+      () => startSession(args, root),
+    ),
     submitCommand: (command, target) => dispatchCommandToTarget(
       command,
       target,
@@ -329,25 +341,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     ),
     pendingStore,
     openTarget,
-    sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     now: Date.now,
-    isCancellationRequested: () => token.isCancellationRequested,
     offerRecovery: async (message, actions) => vscode.window.showWarningMessage(message, ...actions),
+    offerOpenInChat: async (message) => vscode.window.showErrorMessage(message, OPEN_IN_CHAT),
   });
   const startNewPlan = async (
     request: NewPlanRequest,
     dependencies?: NewPlanFlowDependencies,
-    options: NewPlanFlowOptions = NEW_PLAN_FLOW_DEFAULTS,
   ): Promise<NewPlanFlowResult> => {
-    if (dependencies) return runNewPlanFlow(request, dependencies, options);
-    return await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "Starting Agento planning session", cancellable: true },
-      async (_progress, token) => {
-        const result = await runNewPlanFlow(request, productionNewPlanDependencies(token), options);
-        if (result.kind === "failed" || result.kind === "ambiguous") await vscode.window.showErrorMessage(result.reason);
-        return result;
-      },
-    );
+    if (dependencies) return runNewPlanFlow(request, dependencies);
+    const result = await runNewPlanFlow(request, productionNewPlanDependencies());
+    if (result.kind === "failed" && !result.reported) await vscode.window.showErrorMessage(result.reason);
+    return result;
   };
   let newPlanRunner = (request: NewPlanRequest) => startNewPlan(request);
   const setNewPlanRunner = (runner?: (request: NewPlanRequest) => Promise<NewPlanFlowResult>): void => {

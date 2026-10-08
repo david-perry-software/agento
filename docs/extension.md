@@ -98,11 +98,27 @@ consumed with the same agent-mode dispatch. The New Plan action
 (`agento.newPlan`) collects a feature or issue description. From an unpromoted
 planning window (Session & Doctor reports `role: plan` with a detached worktree)
 it submits `/agento new-feature …` or `/agento new-issue …` in that same window —
-no new session is started. From the primary window it starts a planning session in
-the primary checkout and waits up to 300 s (polling every second) for the new
-planning worktree, with the Retry / Focus target recovery prompt if it times out.
+no new session is started. From the primary window it runs
+`agento.mjs start-session --no-open` in the primary checkout (a progress
+notification, bounded at 120 s), saves the new-feature or new-issue command as the
+pending command for the returned `target` (the plan folder, or its
+`.code-workspace` in companion mode), and opens that target itself — nothing goes
+through chat and nothing is polled. A `rejected` or `failed` result (or a CLI
+timeout) shows the CLI's reason in an error notification with an **Open in chat**
+action that submits `/agento start-session` to the primary window's chat instead;
+a failed window open keeps the Retry / Focus target recovery prompt.
 `agento.planInitiativeMember` uses the selected ready initiative member and takes
 the same in-window path from an unpromoted planning window.
+
+Start-session actions take the same CLI path: a Deliveries or Initiatives play
+button, a Session & Doctor action, or `/agento continue` whose refreshed
+`agento.mjs next` is a `start-session` transition runs `agento.mjs start-session
+<next.args> --no-open` (an `/agento start-session …` action without a slug runs
+its own arguments), saves `next.then` (for example `/agento continue <slug>`) as
+the pending command for the returned target, and opens it. Failures show the CLI
+reason with the same **Open in chat** action, which submits the original command.
+Other actions on the same delivery (for example `/agento delivery-status`) still
+submit to chat.
 
 The planning entry points are gated on the window role from the latest applied
 `agento.mjs session` refresh, through two context keys:

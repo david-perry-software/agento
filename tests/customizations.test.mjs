@@ -271,19 +271,29 @@ test("status: paused is reserved for the user; the Autopilot resumes session bre
   }
 });
 
-test("start-session and start-freehand write the workspace file through agento.mjs workspace (#58 session-auto-approve)", () => {
+test("start-session and start-freehand write the workspace file through the CLI (#58 session-auto-approve)", () => {
+  // start-session delegates the whole start (workspace file included) to `agento.mjs start-session`.
   const pairs = [
-    [rel(".github", "prompts", "start-session.prompt.md"), rel("commands", "start-session.md")],
-    [rel(".github", "prompts", "start-freehand.prompt.md"), rel("commands", "start-freehand.md")],
+    [rel(".github", "prompts", "start-session.prompt.md"), rel("commands", "start-session.md"), /agento\.mjs start-session/],
+    [rel(".github", "prompts", "start-freehand.prompt.md"), rel("commands", "start-freehand.md"), /agento\.mjs workspace/],
   ];
-  for (const [prompt, mirror] of pairs) {
+  for (const [prompt, mirror, call] of pairs) {
     const promptBody = splitFrontmatter(prompt).body;
     const mirrorBody = fs.readFileSync(mirror, "utf8");
     assert.doesNotMatch(promptBody, /settings:\s*\{\}/, `${path.relative(repoRoot, prompt)} should not hand-write settings: {}`);
-    assert.match(promptBody, /agento\.mjs workspace/, `${path.relative(repoRoot, prompt)} should call agento.mjs workspace`);
+    assert.match(promptBody, call, `${path.relative(repoRoot, prompt)} should call ${call.source}`);
     assert.doesNotMatch(mirrorBody, /settings:\s*\{\}/, `${path.relative(repoRoot, mirror)} should not hand-write settings: {}`);
-    assert.match(mirrorBody, /agento\.mjs workspace/, `${path.relative(repoRoot, mirror)} should call agento.mjs workspace`);
+    assert.match(mirrorBody, call, `${path.relative(repoRoot, mirror)} should call ${call.source}`);
   }
+});
+
+test("start-session is one agento.mjs start-session call with no hand-run fallback procedure", () => {
+  const prompt = rel(".github", "prompts", "start-session.prompt.md");
+  const body = splitFrontmatter(prompt).body;
+  assert.equal(fs.readFileSync(rel("commands", "start-session.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/start-session.md must mirror the prompt byte for byte");
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs start-session /);
+  assert.doesNotMatch(body, /git -C <\w+> worktree add/, "the CLI runs git worktree add; the prompt must not");
+  assert.doesNotMatch(body, /date -u \+%Y/, "the CLI generates the session id; the prompt must not");
 });
 
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {

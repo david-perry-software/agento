@@ -26,6 +26,37 @@ export function sessionWorkspaceDocument({ product, companion, autoApprove = tru
   };
 }
 
+// A plan session id: UTC `YYYYMMDD-HHMMSS` from `now`, then `-2`, `-3`, … until the
+// id is not in `taken` (an array or Set of ids already used by either clone).
+export function nextSessionId({ now, taken }) {
+  const iso = now.toISOString();
+  const base = `${iso.slice(0, 10).replaceAll("-", "")}-${iso.slice(11, 19).replaceAll(":", "")}`;
+  const used = taken instanceof Set ? taken : new Set(taken ?? []);
+  if (!used.has(base)) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
+const FETCH_AUTH_PATTERNS = [
+  /authentication failed/i,
+  /could not read username/i,
+  /could not read password/i,
+  /permission denied \(publickey/i,
+  /terminal prompts disabled/i,
+  /\b(401|403)\b/,
+  /unauthorized/i,
+  /forbidden/i,
+];
+
+// `"auth"` when a failed `git fetch` needs the user to re-authenticate, else `"other"`
+// (unreachable remote, timeout, missing path) — the caller warns and continues.
+export function classifyFetchFailure(stderr) {
+  const text = stderr ?? "";
+  return FETCH_AUTH_PATTERNS.some((re) => re.test(text)) ? "auth" : "other";
+}
+
 // `git worktree list --porcelain`: blank-line separated blocks of
 // `worktree <path>` / `HEAD <sha>` / `branch refs/heads/<name>` | `detached`.
 export function parseWorktreeList(porcelain) {
