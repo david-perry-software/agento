@@ -1,0 +1,265 @@
+// Release-wait decision core for `agento.mjs release`: pure functions over facts
+// already fetched from the GitHub REST API. No I/O, no clocks — `now` is passed in.
+
+// GitHub workflow filter glob → RegExp. A leading `!` is stripped and reported as
+// `negated` on the returned RegExp.
+export function globToRegExp(pattern) {
+  const negated = pattern.startsWith("!");
+  const body = negated ? pattern.slice(1) : pattern;
+  let out = "";
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i];
+    if (ch === "*") {
+      if (body[i + 1] === "*") {
+        if (body[i + 2] === "/") {
+          out += "(?:.*/)?";
+          i += 2;
+        } else {
+          out += ".*";
+          i += 1;
+        }
+      } else out += "[^/]*";
+    } else if (ch === "?") out += "[^/]";
+    else if (ch === "+") out += "+";
+    else if (ch === "[") {
+      const close = body.indexOf("]", i + 1);
+      if (close === -1) out += "\\[";
+      else {
+        out += body.slice(i, close + 1);
+        i = close;
+      }
+    } else out += ch.replace(/[.^$|(){}\\/]/g, "\\$&");
+  }
+  let re;
+  try {
+    re = new RegExp(`^${out}$`);
+  } catch {
+    re = new RegExp(`^${body.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}$`);
+  }
+  re.negated = negated;
+  return re;
+}
+
+// GitHub's rule for filter lists: the last matching pattern wins, `!` patterns exclude.
+export function matchesFilter(patterns, value) {
+  let matched = false;
+  for (const pattern of patterns) {
+    const re = globToRegExp(pattern);
+    if (re.test(value)) matched = !re.negated;
+  }
+  return matched;
+}
+
+const FILTER_KEYS = { branches: "branches", "branches-ignore": "branchesIgnore", paths: "paths", "paths-ignore": "pathsIgnore", tags: "tags", "tags-ignore": "tagsIgnore" };
+const EMPTY_VALUES = new Set(["", "null", "~", "{}"]);
+
+const unquote = (s) => s.trim().replace(/^(["'])(.*)\1$/, "$2");
+const indentOf = (line) => line.length - line.trimStart().length;
+
+function stripComment(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === "#" && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i).trimEnd();
+  }
+  return line.trimEnd();
+}
+
+function flowList(text) {
+  const inner = text.trim();
+  if (!inner.startsWith("[") || !inner.endsWith("]")) return null;
+  const body = inner.slice(1, -1).trim();
+  return body ? body.split(",").map(unquote) : [];
+}
+
+// Small line-based reader for a workflow's `on:` key. Anything outside the
+// supported forms sets `unparsed: true`; callers then assume the workflow runs.
+export function parseWorkflowTriggers(yamlText) {
+  const result = { push: null, dispatch: false, unparsed: false };
+  const unparsed = () => ({ ...result, push: null, unparsed: true });
+  const lines = String(yamlText ?? "").split(/\r?\n/).map(stripComment);
+  const start = lines.findIndex((l) => /^(?:on|"on"|'on'):/.test(l));
+  if (start === -1) return unparsed();
+  const inline = lines[start].replace(/^(?:on|"on"|'on'):/, "").trim();
+  const emptyPush = () => ({ branches: null, branchesIgnore: null, paths: null, pathsIgnore: null, tags: null, tagsIgnore: null });
+  const addEvent = (name) => {
+    if (name === "push") result.push = emptyPush();
+    else if (name === "workflow_dispatch") result.dispatch = true;
+  };
+
+  if (inline) {
+    const list = flowList(inline);
+    if (list) list.forEach(addEvent);
+    else if (/^[A-Za-z_]+$/.test(inline)) addEvent(inline);
+    else return unparsed();
+    return result;
+  }
+
+  const block = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line.trim()) continue;
+    if (indentOf(line) === 0) break;
+    block.push(line);
+  }
+  if (!block.length) return unparsed();
+  const eventIndent = indentOf(block[0]);
+
+  for (let i = 0; i < block.length; i += 1) {
+    const line = block[i];
+    const indent = indentOf(line);
+    if (indent < eventIndent) return unparsed();
+    if (indent > eventIndent) continue;
+    const text = line.trim();
+    const item = text.match(/^-\s+(.+)$/);
+    if (item) {
+      addEvent(unquote(item[1]));
+      continue;
+    }
+    const entry = text.match(/^([A-Za-z_]+):\s*(.*)$/);
+    if (!entry) return unparsed();
+    const [, name, value] = entry;
+    if (name !== "push") {
+      addEvent(name);
+      continue;
+    }
+    result.push = emptyPush();
+    if (!EMPTY_VALUES.has(value)) return unparsed();
+    const children = [];
+    while (i + 1 < block.length && indentOf(block[i + 1]) > eventIndent) children.push(block[++i]);
+    if (!parsePushFilters(children, result.push)) return unparsed();
+  }
+  return result;
+}
+
+function parsePushFilters(children, push) {
+  if (!children.length) return true;
+  const keyIndent = indentOf(children[0]);
+  let current = null;
+  for (const line of children) {
+    const indent = indentOf(line);
+    const text = line.trim();
+    const item = text.match(/^-\s+(.+)$/);
+    if (item && current && indent >= keyIndent) {
+      push[current].push(unquote(item[1]));
+      continue;
+    }
+    if (indent !== keyIndent) return false;
+    const entry = text.match(/^([a-z-]+):\s*(.*)$/);
+    if (!entry || !Object.hasOwn(FILTER_KEYS, entry[1])) return false;
+    current = FILTER_KEYS[entry[1]];
+    if (entry[2]) {
+      const list = flowList(entry[2]);
+      push[current] = list ?? [unquote(entry[2])];
+      current = null;
+    } else push[current] = [];
+  }
+  return true;
+}
+
+// Whether a push to `branch` starts the workflow, ignoring path filters.
+export function branchTriggered(push, branch) {
+  if (!push) return false;
+  if (push.branches) return matchesFilter(push.branches, branch);
+  if (push.branchesIgnore) return !matchesFilter(push.branchesIgnore, branch);
+  // Only tag filters defined: branch pushes do not trigger the workflow.
+  return !(push.tags || push.tagsIgnore);
+}
+
+// Whether pushing `files` to `branch` starts the workflow. Unknown workflow shape
+// or a truncated file list errs toward "triggered".
+export function pushTriggered({ triggers, branch, files = [], filesTruncated = false }) {
+  if (!triggers || triggers.unparsed) return true;
+  const { push } = triggers;
+  if (!branchTriggered(push, branch)) return false;
+  if (filesTruncated) return true;
+  if (push.paths) return files.some((file) => matchesFilter(push.paths, file));
+  if (push.pathsIgnore) return files.some((file) => !matchesFilter(push.pathsIgnore, file));
+  return true;
+}
+
+export const GRACE_SECONDS = 180;
+const PENDING_STATUSES = new Set(["queued", "in_progress", "waiting", "requested", "pending"]);
+const newestFirst = (a, b) => Date.parse(b.created_at ?? 0) - Date.parse(a.created_at ?? 0) || (b.id ?? 0) - (a.id ?? 0);
+
+// The merge's own run: the newest `push` run on the SHA, else the newest
+// `workflow_dispatch` run, so a later same-SHA smoke dispatch never shadows it.
+export function pickExactRun(runs, sha) {
+  const exact = (runs ?? []).filter((run) => !sha || run.head_sha === sha);
+  for (const event of ["push", "workflow_dispatch"]) {
+    const match = exact.filter((run) => run.event === event).sort(newestFirst)[0];
+    if (match) return match;
+  }
+  return null;
+}
+
+export function classifyRun(run) {
+  if (PENDING_STATUSES.has(run.status)) return "pending";
+  if (run.status !== "completed") return "pending";
+  if (run.conclusion === "success") return "success";
+  if (run.conclusion === "cancelled") return "cancelled";
+  return "failed";
+}
+
+// Anchored to the merge commit's GitHub committer date, so reruns never reset it.
+export function withinGrace({ mergeDate, now, graceSeconds = GRACE_SECONDS }) {
+  const anchor = Date.parse(mergeDate);
+  if (Number.isNaN(anchor)) return false;
+  return (Number(now) - anchor) / 1000 < graceSeconds;
+}
+
+// Facts may be plain values or zero-argument functions, so the caller can fetch
+// only what the decision path actually reads.
+const read = (facts, key) => (typeof facts[key] === "function" ? facts[key]() : facts[key]);
+const DESCENDANT = new Set(["ahead", "identical"]);
+
+// A cancelled exact run is proven by a later default-branch push run whose commit
+// contains the merge; workflow_dispatch runs never count as proof.
+function supersededVerdict(facts, run, verdict) {
+  const since = Date.parse(run.created_at ?? facts.mergeDate);
+  const candidates = (read(facts, "laterRuns") ?? [])
+    .filter((later) => later.event === "push" && later.id !== run.id && later.head_sha !== run.head_sha)
+    .filter((later) => !later.head_branch || later.head_branch === facts.defaultBranch)
+    .filter((later) => !(Date.parse(later.created_at) < since))
+    .sort((a, b) => -newestFirst(a, b));
+  const descendantOf = (sha) => (typeof facts.descendantOf === "function" ? facts.descendantOf(sha) : facts.descendantOf?.[sha]);
+  let pending = null;
+  for (const later of candidates) {
+    if (!DESCENDANT.has(descendantOf(later.head_sha))) continue;
+    const state = classifyRun(later);
+    if (state === "success") return verdict("superseded-success", `run ${run.id} was cancelled; descendant push run ${later.id} succeeded`, { supersededBy: later });
+    if (state === "pending") pending ??= later;
+  }
+  if (pending) return verdict("pending", `run ${run.id} was cancelled; descendant push run ${pending.id} is ${pending.status}`, { supersededBy: pending });
+  return verdict("failed", `${run.event} run ${run.id} was cancelled and no later descendant push run succeeded`);
+}
+
+// The single release-wait decision over pre-fetched facts:
+// { sha, exactRuns, triggers, files, filesTruncated, mergeDate, now, graceSeconds,
+//   laterRuns, descendantOf, defaultBranch }.
+export function releaseVerdict(facts) {
+  const graceSeconds = facts.graceSeconds ?? GRACE_SECONDS;
+  const run = pickExactRun(read(facts, "exactRuns"), facts.sha);
+  const verdict = (name, reason, extra = {}) => ({ verdict: name, run: run ?? null, supersededBy: null, reason, ...extra });
+  if (run) {
+    const state = classifyRun(run);
+    if (state === "success") return verdict("success", `${run.event} run ${run.id} succeeded`);
+    if (state === "pending") return verdict("pending", `${run.event} run ${run.id} is ${run.status}`);
+    if (state === "failed") return verdict("failed", `${run.event} run ${run.id} concluded ${run.conclusion}`);
+    return supersededVerdict(facts, run, verdict);
+  }
+
+  const triggers = read(facts, "triggers");
+  if (triggers && !triggers.unparsed && !branchTriggered(triggers.push, facts.defaultBranch)) {
+    if (triggers.dispatch) return verdict("dispatch-required", `the workflow has no push trigger for ${facts.defaultBranch}; dispatch it once`);
+    return verdict("not-triggered", `the workflow has neither a push trigger for ${facts.defaultBranch} nor workflow_dispatch`);
+  }
+  const pathFiltered = triggers && !triggers.unparsed && (triggers.push.paths || triggers.push.pathsIgnore);
+  const triggered = !pathFiltered || pushTriggered({ triggers, branch: facts.defaultBranch, files: read(facts, "files"), filesTruncated: read(facts, "filesTruncated") });
+  if (!triggered) return verdict("not-triggered", "the merge changed only files the workflow's path filters exclude");
+  if (withinGrace({ mergeDate: facts.mergeDate, now: facts.now, graceSeconds })) return verdict("pending", `no run yet; within the ${graceSeconds} s grace window after the merge commit`);
+  return verdict("no-run", `no run for the merge ${graceSeconds} s after the merge commit`);
+}

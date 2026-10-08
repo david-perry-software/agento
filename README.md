@@ -511,8 +511,11 @@ rule table and testing notes: [docs/hooks.md](docs/hooks.md).
 `true` makes each managed session `.code-workspace` auto-approve terminal commands
 and file edits in that window, with the delivery guard and GitHub rulesets still
 acting as the safety layer. Set
-`checks.releaseWorkflow` to a workflow file name and `/agento ship` will dispatch and wait
-on it after merging. Hooks, the CLI, and the prompts all read this file, so a project
+`checks.releaseWorkflow` to a workflow file name and `/agento ship` will wait on it
+after merging through `agento.mjs release <merge-sha> --wait 50`, which finds the
+merge's own run, accepts a descendant push run when a newer merge cancelled it,
+reports `not-triggered` when `paths-ignore` skips the merge, and asks for one
+dispatch when the workflow has no push trigger. Hooks, the CLI, and the prompts all read this file, so a project
 on `trunk` with `planning/features` works end to end.
 
 **`AGENTS.md` `## Agento` section** — the narrative facts agents need: commands

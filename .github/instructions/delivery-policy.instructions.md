@@ -140,9 +140,11 @@ historical artifacts solely to adopt it.
   and reports their status while leaving the shell at 0. Interpret the captured
   status: an exposing test must be nonzero when expected; every unexpected nonzero is a
   real failure. Surface stderr once; do not blindly rerun the same command.
-- CI and deploy waits are bounded foreground polls: `scripts/wait-for-checks.sh pr <n>`
-  or `run <id>` (exit 2 = still pending: rerun). Never `--watch`, background
-  terminals, VS Code tasks, or ending the turn to "wait".
+- CI and deploy waits are bounded foreground polls, each call returning within 60 s:
+  CI waits use `scripts/wait-for-checks.sh pr <n>` or `run <id>`; deploy waits use
+  `node <agento-root>/scripts/agento.mjs release <merge-sha> --wait N` (N ≤ 60). Exit
+  2 = still pending: rerun. Never `--watch`, background terminals, VS Code tasks, or
+  ending the turn to "wait".
 
 ## 7. Git rules
 

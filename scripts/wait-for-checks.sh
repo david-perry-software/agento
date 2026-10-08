@@ -2,7 +2,8 @@
 # Bounded, foreground poller for GitHub PR checks or an Actions run.
 # Replaces open-ended `gh pr checks --watch` / `gh run watch`, which never return in an
 # automation shell and leave the agent idle. Every invocation terminates within
-# --max-seconds and reports one status line per poll.
+# --max-seconds (default 60; exit 2 means rerun) and prints a poll line only when the
+# snapshot changes, then one RESULT: line.
 #
 # Usage:
 #   scripts/wait-for-checks.sh pr  <number> [--max-seconds N] [--interval N] [--repo OWNER/NAME] [--no-checks-grace N]
@@ -19,10 +20,10 @@
 #   3  usage error, or gh unavailable / not authenticated (do not retry; reauth)
 set -uo pipefail
 
-usage() { sed -n '2,19p' "${BASH_SOURCE[0]}"; }
+usage() { sed -n '2,20p' "${BASH_SOURCE[0]}"; }
 
 kind="${1:-}"; target="${2:-}"; shift 2 2>/dev/null || { usage; exit 3; }
-max_seconds=300; interval=15; no_checks_grace=30; repo_args=()
+max_seconds=60; interval=15; no_checks_grace=30; repo_args=()
 while (($# > 0)); do
   case "$1" in
     --max-seconds) max_seconds="${2:-}"; shift 2 ;;
@@ -78,6 +79,12 @@ run_snapshot() {
 
 deadline=$((SECONDS + max_seconds))
 poll=0
+last_line=""
+# Unchanged snapshots stay silent so a long wait cannot flood the caller's output.
+report() {
+  [[ "$1" == "$last_line" ]] || echo "poll $poll $1"
+  last_line="$1"
+}
 while :; do
   poll=$((poll + 1))
   if ! snapshot=$("${kind}_snapshot" 2>&1); then
@@ -92,7 +99,7 @@ while :; do
   elif [[ "$kind" == "pr" ]]; then
     read -r pass fail pending skipped merge_state _ <<<"$snapshot"
     detail="${snapshot#* | }"
-    echo "poll $poll pr #$target: pass=$pass fail=$fail pending=$pending skipped=$skipped merge=$merge_state${detail:+ | $detail}"
+    report "pr #$target: pass=$pass fail=$fail pending=$pending skipped=$skipped merge=$merge_state${detail:+ | $detail}"
     if ((fail > 0)); then verdict=fail
     elif ((pending > 0)); then verdict=pending
     elif ((pass + skipped == 0)); then
@@ -105,7 +112,7 @@ while :; do
     else verdict=pass; fi
   else
     read -r status conclusion url <<<"$snapshot"
-    echo "poll $poll run $target: status=$status conclusion=$conclusion $url"
+    report "run $target: status=$status conclusion=$conclusion $url"
     if [[ "$status" != "completed" ]]; then verdict=pending
     elif [[ "$conclusion" == "success" ]]; then verdict=pass
     else verdict=fail; fi

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Added.** `agento.mjs release <merge-sha> [--wait N] [--interval N]` derives the
+  `/agento ship` deploy-wait verdict for `checks.releaseWorkflow` from the GitHub
+  REST API on every call: no state files, one JSON document, at most 60 s per call
+  (exit 0 done, 2 pending or dispatch-required, 3 `gh`/auth, 4 failed or no run). It
+  picks the merge's own `push` run over same-SHA dispatches, accepts a descendant
+  `push` run when a `concurrency` group cancelled the merge's run, reports
+  `not-triggered` for merges the workflow's `paths-ignore` skips, and anchors its
+  180 s no-run grace to the merge commit date. `/agento ship` and delivery policy §6
+  use it for deploy waits. `scripts/wait-for-checks.sh` now defaults to
+  `--max-seconds 60` in both modes and prints a poll line only when the snapshot
+  changes, plus the `RESULT:` line.
+
 - **New `agento.mjs start-session [<feature|issue>/<slug> | <session-id>]
   [--resume] [--no-open]`.** The whole `/agento start-session` — window check,
   `doctor --for start-session`, bounded fetch of both clones, session id or roadmap
