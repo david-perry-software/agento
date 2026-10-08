@@ -49,6 +49,13 @@ primary window. The play action on an in-flight member opens the
 same actions picker the Deliveries view offers for that slug; when no delivery
 matches, it shows an informational message naming the slug and dispatches nothing.
 
+Initiatives whose members are all complete and whose breakdown is valid move into
+a **Completed (N)** folder, the last row of the view, which starts collapsed in
+every new or reloaded window. The folder is hidden when no initiative is complete.
+A finished initiative with breakdown errors stays at the top level so its
+diagnostics remain visible. Initiatives inside the folder keep their groups,
+members, and actions.
+
 ## Session & Doctor
 
 The Session & Doctor view shows the current window role, worktree, branch,

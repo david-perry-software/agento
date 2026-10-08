@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Changed.** The dashboard's Initiatives view groups initiatives whose members are
+  all complete (and whose breakdown is valid) under one **Completed (N)** folder,
+  placed after the active initiatives and collapsed in every new or reloaded window.
+  The folder is hidden when nothing is complete; a finished initiative with
+  breakdown errors stays at the top level so its diagnostics stay visible.
+
 - **Changed.** The dashboard's Deliveries lifecycle groups, initiatives and their
   Ready / In flight / Blocked / Complete groups, and the Session & Doctor groups now
   start collapsed in every new or reloaded window instead of expanded. Group nodes
