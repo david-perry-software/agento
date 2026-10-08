@@ -17,7 +17,9 @@ code --install-extension agento-dashboard-0.6.1.vsix
 ```
 
 Open an initialized Agento project. The activity bar contains an **Agento** view
-container with Deliveries, Initiatives, and Session & Doctor views. The extension
+container with Deliveries, Initiatives, and Session & Doctor views. Every group in
+the three views starts collapsed in each new or reloaded window; groups you expand
+stay expanded across refreshes while that window stays open. The extension
 uses its bundled CLI, so the project does not need a separate Agento clone on
 `PATH`; the plugin must still be installed for Copilot Chat to run the submitted
 `/agento ...` commands.
