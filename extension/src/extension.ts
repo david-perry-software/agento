@@ -37,6 +37,7 @@ import { RefreshScheduler } from "./refreshScheduler.js";
 import { createSessionDoctorError, createSessionDoctorModel } from "./sessionDoctorModel.js";
 import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
+import { createTreeIdScope } from "./treeItemIds.js";
 import { createWatchers } from "./watchers.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -86,7 +87,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     output,
   });
   const scheduler = new RefreshScheduler(configuration.get<number>("refreshDebounceMs", 3000));
-  const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
+  const treeId = createTreeIdScope();
+  const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath);
   const sessionDoctor = new SessionDoctorProvider();
   const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
