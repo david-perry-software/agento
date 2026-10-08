@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { branchTriggered, globToRegExp, matchesFilter, parseWorkflowTriggers, pushTriggered } from "./release-state.mjs";
+import { branchTriggered, classifyRun, globToRegExp, matchesFilter, parseWorkflowTriggers, pickExactRun, pushTriggered, releaseVerdict, withinGrace } from "./release-state.mjs";
 
 // The `on:` block of Soshiki's staging-release.yml, verbatim apart from the trimmed inputs.
 const SOSHIKI = `name: Staging release
@@ -119,4 +119,88 @@ test("branchTriggered: branches-ignore and tag-only filters", () => {
   const tagsOnly = parseWorkflowTriggers("on:\n  push:\n    tags:\n      - 'v*'\n").push;
   assert.equal(branchTriggered(tagsOnly, "main"), false);
   assert.equal(branchTriggered(null, "main"), false);
+});
+
+// --- run selection, classification, grace, verdicts ------------------------------
+
+const SHA = "a".repeat(40);
+const MERGED = "2026-10-07T10:00:00Z";
+const at = (seconds) => Date.parse(MERGED) + seconds * 1000;
+const run = (id, fields = {}) => ({ id, event: "push", status: "completed", conclusion: "success", head_sha: SHA, head_branch: "main", created_at: MERGED, html_url: `https://example.test/runs/${id}`, ...fields });
+const soshiki = parseWorkflowTriggers(SOSHIKI);
+const facts = (fields = {}) => ({ sha: SHA, exactRuns: [], triggers: soshiki, files: ["apps/web/x.ts"], filesTruncated: false, mergeDate: MERGED, now: at(30), laterRuns: [], descendantOf: {}, defaultBranch: "main", ...fields });
+
+test("classifyRun maps run status and conclusion to four states", () => {
+  for (const status of ["queued", "in_progress", "waiting", "requested", "pending"]) assert.equal(classifyRun(run(1, { status, conclusion: null })), "pending");
+  assert.equal(classifyRun(run(1)), "success");
+  assert.equal(classifyRun(run(1, { conclusion: "cancelled" })), "cancelled");
+  for (const conclusion of ["failure", "timed_out", "action_required", "skipped", "neutral"]) assert.equal(classifyRun(run(1, { conclusion })), "failed");
+});
+
+test("withinGrace counts 180 s from the merge commit date", () => {
+  assert.equal(withinGrace({ mergeDate: MERGED, now: at(179) }), true);
+  assert.equal(withinGrace({ mergeDate: MERGED, now: at(180) }), false);
+  assert.equal(withinGrace({ mergeDate: MERGED, now: at(10), graceSeconds: 5 }), false);
+  assert.equal(withinGrace({ mergeDate: "garbage", now: at(0) }), false);
+});
+
+test("pickExactRun: a newer same-SHA workflow_dispatch run does not shadow the push run", () => {
+  const push = run(10, { created_at: "2026-10-07T10:00:05Z", conclusion: "success" });
+  const smoke = run(11, { event: "workflow_dispatch", created_at: "2026-10-07T10:30:00Z", conclusion: "failure" });
+  assert.equal(pickExactRun([smoke, push], SHA).id, 10);
+  assert.equal(releaseVerdict(facts({ exactRuns: [smoke, push] })).verdict, "success");
+  assert.equal(pickExactRun([smoke], SHA).id, 11);
+  assert.equal(pickExactRun([run(12, { head_sha: "b".repeat(40) })], SHA), null);
+  assert.equal(pickExactRun([run(13, { event: "schedule" })], SHA), null);
+  const older = run(14, { created_at: "2026-10-07T10:00:01Z" });
+  const newer = run(15, { created_at: "2026-10-07T10:00:09Z" });
+  assert.equal(pickExactRun([older, newer], SHA).id, 15);
+});
+
+test("releaseVerdict: an exact successful run is success", () => {
+  const result = releaseVerdict(facts({ exactRuns: [run(1)] }));
+  assert.equal(result.verdict, "success");
+  assert.equal(result.run.id, 1);
+  assert.equal(result.supersededBy, null);
+});
+
+test("releaseVerdict: an exact pending run is pending", () => {
+  const result = releaseVerdict(facts({ exactRuns: [run(2, { status: "in_progress", conclusion: null })], now: at(9999) }));
+  assert.equal(result.verdict, "pending");
+  assert.equal(result.run.id, 2);
+});
+
+test("releaseVerdict: an exact failed run is failed", () => {
+  const result = releaseVerdict(facts({ exactRuns: [run(3, { conclusion: "failure" })] }));
+  assert.equal(result.verdict, "failed");
+  assert.match(result.reason, /failure/);
+});
+
+test("releaseVerdict: no push trigger for the default branch is dispatch-required", () => {
+  const triggers = parseWorkflowTriggers("on:\n  workflow_dispatch:\n");
+  const result = releaseVerdict(facts({ triggers, files: () => assert.fail("files must not be fetched") }));
+  assert.equal(result.verdict, "dispatch-required");
+  assert.equal(result.run, null);
+  const neither = releaseVerdict(facts({ triggers: parseWorkflowTriggers("on: pull_request\n") }));
+  assert.equal(neither.verdict, "not-triggered");
+});
+
+test("releaseVerdict: a docs-only merge against paths-ignore is not-triggered", () => {
+  const result = releaseVerdict(facts({ files: ["docs/guide.md", "ROADMAP.md"], now: at(9999) }));
+  assert.equal(result.verdict, "not-triggered");
+  assert.equal(releaseVerdict(facts({ files: ["docs/guide.md"], filesTruncated: true, now: at(9999) })).verdict, "no-run");
+});
+
+test("releaseVerdict: no run within grace is pending, after grace is no-run", () => {
+  assert.equal(releaseVerdict(facts({ now: at(60) })).verdict, "pending");
+  const late = releaseVerdict(facts({ now: at(600) }));
+  assert.equal(late.verdict, "no-run");
+  assert.equal(late.run, null);
+});
+
+test("releaseVerdict reads lazy facts only on the path it takes", () => {
+  const untouched = (name) => () => assert.fail(`${name} must not be fetched`);
+  assert.equal(releaseVerdict(facts({ exactRuns: () => [run(1)], triggers: untouched("triggers"), files: untouched("files"), laterRuns: untouched("laterRuns") })).verdict, "success");
+  const noFilters = parseWorkflowTriggers("on: push\n");
+  assert.equal(releaseVerdict(facts({ triggers: () => noFilters, files: untouched("files"), now: at(600) })).verdict, "no-run");
 });

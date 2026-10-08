@@ -180,3 +180,64 @@ export function pushTriggered({ triggers, branch, files = [], filesTruncated = f
   if (push.pathsIgnore) return files.some((file) => !matchesFilter(push.pathsIgnore, file));
   return true;
 }
+
+export const GRACE_SECONDS = 180;
+const PENDING_STATUSES = new Set(["queued", "in_progress", "waiting", "requested", "pending"]);
+const newestFirst = (a, b) => Date.parse(b.created_at ?? 0) - Date.parse(a.created_at ?? 0) || (b.id ?? 0) - (a.id ?? 0);
+
+// The merge's own run: the newest `push` run on the SHA, else the newest
+// `workflow_dispatch` run, so a later same-SHA smoke dispatch never shadows it.
+export function pickExactRun(runs, sha) {
+  const exact = (runs ?? []).filter((run) => !sha || run.head_sha === sha);
+  for (const event of ["push", "workflow_dispatch"]) {
+    const match = exact.filter((run) => run.event === event).sort(newestFirst)[0];
+    if (match) return match;
+  }
+  return null;
+}
+
+export function classifyRun(run) {
+  if (PENDING_STATUSES.has(run.status)) return "pending";
+  if (run.status !== "completed") return "pending";
+  if (run.conclusion === "success") return "success";
+  if (run.conclusion === "cancelled") return "cancelled";
+  return "failed";
+}
+
+// Anchored to the merge commit's GitHub committer date, so reruns never reset it.
+export function withinGrace({ mergeDate, now, graceSeconds = GRACE_SECONDS }) {
+  const anchor = Date.parse(mergeDate);
+  if (Number.isNaN(anchor)) return false;
+  return (Number(now) - anchor) / 1000 < graceSeconds;
+}
+
+// Facts may be plain values or zero-argument functions, so the caller can fetch
+// only what the decision path actually reads.
+const read = (facts, key) => (typeof facts[key] === "function" ? facts[key]() : facts[key]);
+
+// The single release-wait decision over pre-fetched facts:
+// { sha, exactRuns, triggers, files, filesTruncated, mergeDate, now, graceSeconds,
+//   laterRuns, descendantOf, defaultBranch }.
+export function releaseVerdict(facts) {
+  const graceSeconds = facts.graceSeconds ?? GRACE_SECONDS;
+  const run = pickExactRun(read(facts, "exactRuns"), facts.sha);
+  const verdict = (name, reason, extra = {}) => ({ verdict: name, run: run ?? null, supersededBy: null, reason, ...extra });
+  if (run) {
+    const state = classifyRun(run);
+    if (state === "success") return verdict("success", `${run.event} run ${run.id} succeeded`);
+    if (state === "pending") return verdict("pending", `${run.event} run ${run.id} is ${run.status}`);
+    if (state === "failed") return verdict("failed", `${run.event} run ${run.id} concluded ${run.conclusion}`);
+    return verdict("failed", `${run.event} run ${run.id} was cancelled`);
+  }
+
+  const triggers = read(facts, "triggers");
+  if (triggers && !triggers.unparsed && !branchTriggered(triggers.push, facts.defaultBranch)) {
+    if (triggers.dispatch) return verdict("dispatch-required", `the workflow has no push trigger for ${facts.defaultBranch}; dispatch it once`);
+    return verdict("not-triggered", `the workflow has neither a push trigger for ${facts.defaultBranch} nor workflow_dispatch`);
+  }
+  const pathFiltered = triggers && !triggers.unparsed && (triggers.push.paths || triggers.push.pathsIgnore);
+  const triggered = !pathFiltered || pushTriggered({ triggers, branch: facts.defaultBranch, files: read(facts, "files"), filesTruncated: read(facts, "filesTruncated") });
+  if (!triggered) return verdict("not-triggered", "the merge changed only files the workflow's path filters exclude");
+  if (withinGrace({ mergeDate: facts.mergeDate, now: facts.now, graceSeconds })) return verdict("pending", `no run yet; within the ${graceSeconds} s grace window after the merge commit`);
+  return verdict("no-run", `no run for the merge ${graceSeconds} s after the merge commit`);
+}
