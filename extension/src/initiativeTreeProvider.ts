@@ -47,7 +47,7 @@ export class InitiativeTreeProvider implements vscode.TreeDataProvider<Initiativ
       item.id = this.treeId("initiatives", ...spec.idParts);
     }
     item.contextValue = spec.contextValue;
-    item.iconPath = new vscode.ThemeIcon(spec.icon);
+    item.iconPath = new vscode.ThemeIcon(spec.icon, spec.color ? new vscode.ThemeColor(spec.color) : undefined);
     item.description = spec.description;
     item.tooltip = spec.tooltip;
     if (spec.command) {
