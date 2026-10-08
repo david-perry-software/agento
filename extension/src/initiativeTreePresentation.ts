@@ -39,7 +39,18 @@ interface MessageElement {
   severity: "empty" | "error";
 }
 
-export type InitiativeTreeElement = InitiativeElement | GroupElement | MemberElement | DiagnosticElement | MessageElement;
+interface CompletedFolderElement {
+  kind: "completed";
+  items: InitiativeTreeItem[];
+}
+
+export type InitiativeTreeElement =
+  | InitiativeElement
+  | CompletedFolderElement
+  | GroupElement
+  | MemberElement
+  | DiagnosticElement
+  | MessageElement;
 
 export interface InitiativeTreeItemSpec {
   label: string;
@@ -76,9 +87,17 @@ function breakdownCommand(artifactRoot: string, breakdown?: string): InitiativeT
 export function initiativeTreeChildren(model: InitiativeTreeModel, element?: InitiativeTreeElement): InitiativeTreeElement[] {
   if (!element) {
     if (model.kind === "ready") {
-      return model.items.map((item) => ({ kind: "initiative", item }));
+      // Done-but-invalid initiatives stay at the root so their diagnostics remain visible.
+      const completed = model.items.filter((item) => item.done && item.valid);
+      const roots: InitiativeTreeElement[] = model.items
+        .filter((item) => !(item.done && item.valid))
+        .map((item) => ({ kind: "initiative", item }));
+      return completed.length > 0 ? [...roots, { kind: "completed", items: completed }] : roots;
     }
     return [{ kind: "message", label: model.message, severity: model.kind }];
+  }
+  if (element.kind === "completed") {
+    return element.items.map((item) => ({ kind: "initiative", item }));
   }
   if (element.kind === "initiative") {
     return [
@@ -114,6 +133,17 @@ export function initiativeTreeItemSpec(element: InitiativeTreeElement, artifactR
       description: element.item.description,
       tooltip: element.item.tooltip,
       command: breakdownCommand(artifactRoot, element.item.breakdown),
+    };
+  }
+  if (element.kind === "completed") {
+    const count = element.items.length;
+    return {
+      label: `Completed (${count})`,
+      collapsible: "collapsed",
+      idParts: ["completed"],
+      contextValue: "agento.initiativesCompleted",
+      icon: "archive",
+      tooltip: `${count} completed initiative${count === 1 ? "" : "s"}`,
     };
   }
   if (element.kind === "group") {
