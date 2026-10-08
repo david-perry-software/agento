@@ -102,6 +102,99 @@ test("initiative provider presentation collapses initiatives and groups with sta
   );
 });
 
+type ReadyModel = Extract<InitiativeTreeModel, { kind: "ready" }>;
+type Item = ReadyModel["items"][number];
+
+function initiative(slug: string, done: boolean, valid: boolean): Item {
+  const base = (model as ReadyModel).items[0]!;
+  return {
+    ...base,
+    slug,
+    dir: `initiatives/2026/09/${slug}`,
+    breakdown: `initiatives/2026/09/${slug}/breakdown.md`,
+    done,
+    valid,
+    diagnostics: valid ? [] : [{ kind: "error", message: `${slug}: breakdown error` }],
+  };
+}
+
+function slugsOf(elements: ReturnType<typeof initiativeTreeChildren>): string[] {
+  return elements.map((element) => {
+    if (element.kind === "initiative") return element.item.slug;
+    if (element.kind === "completed") return `completed:${element.items.map((item) => item.slug).join(",")}`;
+    return element.kind;
+  });
+}
+
+test("initiative provider presentation moves done and valid initiatives into a trailing Completed folder", () => {
+  const mixed: InitiativeTreeModel = {
+    kind: "ready",
+    items: [
+      initiative("shipped-one", true, true),
+      initiative("active", false, true),
+      initiative("done-invalid", true, false),
+      initiative("shipped-two", true, true),
+    ],
+  };
+  const roots = initiativeTreeChildren(mixed);
+  assert.deepEqual(slugsOf(roots), ["active", "done-invalid", "completed:shipped-one,shipped-two"]);
+  assert.deepEqual(slugsOf(initiativeTreeChildren(mixed, roots[2])), ["shipped-one", "shipped-two"]);
+  assert.deepEqual(
+    initiativeTreeChildren(mixed, roots[1]).map((element) => element.kind),
+    ["diagnostic", "group"],
+  );
+});
+
+test("initiative provider presentation shows only the folder when all are done and no folder when none are", () => {
+  const allDone: InitiativeTreeModel = {
+    kind: "ready",
+    items: [initiative("a", true, true), initiative("b", true, true)],
+  };
+  assert.deepEqual(slugsOf(initiativeTreeChildren(allDone)), ["completed:a,b"]);
+
+  const noneDone: InitiativeTreeModel = {
+    kind: "ready",
+    items: [initiative("a", false, true), initiative("b", true, false)],
+  };
+  assert.deepEqual(slugsOf(initiativeTreeChildren(noneDone)), ["a", "b"]);
+});
+
+test("initiative provider presentation renders the Completed folder collapsed with a stable id", () => {
+  const twoDone: InitiativeTreeModel = {
+    kind: "ready",
+    items: [initiative("a", true, true), initiative("b", true, true)],
+  };
+  const folder = initiativeTreeChildren(twoDone)[0]!;
+  assert.deepEqual(initiativeTreeItemSpec(folder, "/artifacts"), {
+    label: "Completed (2)",
+    collapsible: "collapsed",
+    idParts: ["completed"],
+    contextValue: "agento.initiativesCompleted",
+    icon: "archive",
+    tooltip: "2 completed initiatives",
+  });
+
+  const oneDone: InitiativeTreeModel = { kind: "ready", items: [initiative("a", true, true)] };
+  const single = initiativeTreeItemSpec(initiativeTreeChildren(oneDone)[0]!, "/artifacts");
+  assert.equal(single.label, "Completed (1)");
+  assert.equal(single.tooltip, "1 completed initiative");
+  assert.equal(single.command, undefined);
+});
+
+test("initiative provider presentation renders nested completed initiatives like root ones", () => {
+  const item = initiative("shipped", true, true);
+  const nested = initiativeTreeChildren(
+    { kind: "ready", items: [item] },
+    initiativeTreeChildren({ kind: "ready", items: [item] })[0],
+  )[0]!;
+  const root = { kind: "initiative", item } as const;
+  const emptyModel: InitiativeTreeModel = { kind: "ready", items: [] };
+
+  assert.deepEqual(nested, root);
+  assert.deepEqual(initiativeTreeItemSpec(nested, "/artifacts"), initiativeTreeItemSpec(root, "/artifacts"));
+  assert.deepEqual(initiativeTreeChildren(emptyModel, nested), initiativeTreeChildren(emptyModel, root));
+});
+
 test("initiative provider presentation renders explicit empty and error rows", () => {
   for (const [kind, message, contextValue, icon] of [
     ["empty", "No initiatives found.", "agento.empty", "info"],
