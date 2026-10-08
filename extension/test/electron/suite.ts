@@ -355,6 +355,17 @@ function deliveryElements(api: ExtensionApi, group: DeliveryTreeElement): Delive
   return api.deliveries.getChildren(group);
 }
 
+function assertCollapsedGroup(item: vscode.TreeItem): string {
+  assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed, `${String(item.label)} starts collapsed`);
+  assert.match(String(item.id), /^agento:/, `${String(item.label)} has a per-window id`);
+  return item.id!;
+}
+
+function assertLeaf(item: vscode.TreeItem): void {
+  assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.None, `${String(item.label)} is a leaf`);
+  assert.equal(item.id, undefined, `${String(item.label)} keeps a label-derived handle`);
+}
+
 async function assertGatedCommandsRejected(api: ExtensionApi, commands: Array<[GatedCommand, unknown?]>): Promise<void> {
   const window = vscode.window as { -readonly [K in keyof typeof vscode.window]: (typeof vscode.window)[K] };
   const originalError = window.showErrorMessage;
@@ -533,7 +544,9 @@ export async function run(): Promise<void> {
     groups.map((group) => api.deliveries.getTreeItem(group).label),
     ["Planned", "Building", "In Review", "Shipped"],
   );
+  groups.forEach((group) => assertCollapsedGroup(api.deliveries.getTreeItem(group)));
   const items = groups.flatMap((group) => deliveryElements(api, group));
+  items.forEach((item) => assertLeaf(api.deliveries.getTreeItem(item)));
   assert.deepEqual(
     items.map((item) => api.deliveries.getTreeItem(item).label),
     ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery"],
@@ -610,6 +623,7 @@ export async function run(): Promise<void> {
   const initiativeItem = api.initiatives.getTreeItem(initiative);
   assert.equal(initiativeItem.label, "agento-extension");
   assert.equal(initiativeItem.description, "1/6 complete | 3 in flight | 1 ready");
+  assertCollapsedGroup(initiativeItem);
   const initiativeChildren = api.initiatives.getChildren(initiative);
   const diagnostic = initiativeChildren.find((element) => element.kind === "diagnostic");
   assert.ok(diagnostic);
@@ -621,7 +635,9 @@ export async function run(): Promise<void> {
     "Blocked (1)",
     "Complete (1)",
   ]);
+  const [readyGroupId] = initiativeGroups.map((group) => assertCollapsedGroup(api.initiatives.getTreeItem(group)));
   const initiativeMembers = initiativeGroups.flatMap((group) => api.initiatives.getChildren(group));
+  initiativeMembers.forEach((member) => assertLeaf(api.initiatives.getTreeItem(member)));
   assert.deepEqual(initiativeMembers.map((member) => api.initiatives.getTreeItem(member).label), [
     "ready-delivery",
     "planned-delivery",
@@ -706,6 +722,7 @@ export async function run(): Promise<void> {
     (element): element is Extract<InitiativeTreeElement, { kind: "group" }> => element.kind === "group",
   );
   assert.deepEqual(refreshedGroups.map((group) => api.initiatives.getTreeItem(group).label), ["Ready (2)", "In flight (2)", "Complete (2)"]);
+  assert.equal(api.initiatives.getTreeItem(refreshedGroups[0]!).id, readyGroupId, "the ready group keeps its id across a count change");
   const refreshedDeliveryLabels = api.deliveries.getChildren().flatMap((group) => deliveryElements(api, group)).map((item) => api.deliveries.getTreeItem(item).label);
   assert.ok(refreshedDeliveryLabels.includes("building-delivery"), "Deliveries remains populated after initiative refresh");
 
@@ -867,6 +884,10 @@ export async function run(): Promise<void> {
     assert.equal(route.kind, "open");
     assert.deepEqual(loadedSlugs, ["session-doctor-panel"]);
     assert.deepEqual(openedTargets, ["/fixture/primary"]);
+
+    const sessionDoctorGroups = api.sessionDoctor.getChildren();
+    assert.deepEqual(sessionDoctorGroups.map((group) => api.sessionDoctor.getTreeItem(group).label), ["Session", "Companion", "Warnings", "Doctor"]);
+    sessionDoctorGroups.forEach((group) => assertCollapsedGroup(api.sessionDoctor.getTreeItem(group)));
 
     assert.deepEqual(
       sessionDoctorRows(api, "Session").map((element) => [api.sessionDoctor.getTreeItem(element).label, api.sessionDoctor.getTreeItem(element).description]),
