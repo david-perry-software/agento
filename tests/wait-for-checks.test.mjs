@@ -93,7 +93,22 @@ test("pr: zero checks succeeds once the no-checks grace period elapses", () => {
   const result = run(["pr", "7", "--interval", "1", "--max-seconds", "10", "--no-checks-grace", "2"], dir);
   assert.equal(result.status, 0, result.stdout);
   assert.match(result.stdout, /no checks reported/);
-  assert.match(result.stdout, /poll 2/);
+});
+
+test("pr: an unchanged pending snapshot prints one poll line plus RESULT", () => {
+  const dir = fakeGh([{ line: "0 0 1 0 BLOCKED | test=pending" }]);
+  const result = run(["pr", "7", "--interval", "1", "--max-seconds", "3"], dir);
+  assert.equal(result.status, 2, result.stdout);
+  assert.equal(Number(fs.readFileSync(path.join(dir, "count"), "utf8")) > 1, true);
+  assert.equal(result.stdout.match(/^poll /gm).length, 1, result.stdout);
+  assert.match(result.stdout, /^RESULT: still pending/m);
+  assert.equal(result.stdout.trim().split("\n").length, 2, result.stdout);
+});
+
+test("defaults to a 60 s budget", () => {
+  const usage = spawnSync("bash", [script, "--help", "x"], { encoding: "utf8" });
+  assert.match(usage.stdout, /default 60/);
+  assert.match(fs.readFileSync(script, "utf8"), /^max_seconds=60;/m);
 });
 
 test("run: completed success exits 0, failure exits 1", () => {
