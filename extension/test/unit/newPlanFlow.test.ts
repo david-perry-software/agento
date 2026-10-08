@@ -9,6 +9,7 @@ import {
   type NewPlanTarget,
 } from "../../src/newPlanFlow.js";
 import { pendingDispatchKey, type PendingDispatchStore } from "../../src/pendingDispatch.js";
+import { OPEN_IN_CHAT } from "../../src/startSessionCli.js";
 
 class MemoryStore implements PendingDispatchStore {
   readonly values = new Map<string, unknown>();
@@ -25,33 +26,45 @@ class MemoryStore implements PendingDispatchStore {
 
 const primary = { path: "/repo", role: "primary", isManaged: false, dirPrefix: null, repo: "product" };
 const existing = { path: "/repo/worktrees/build-old", role: "build", isManaged: true, dirPrefix: "build", repo: "product" };
-const planned = { path: "/repo/worktrees/plan-new", role: "plan", isManaged: true, dirPrefix: "plan", repo: "product" };
+const companionHalf = { path: "/docs/worktrees/plan-new", role: "plan", isManaged: true, dirPrefix: "plan", repo: "companion" };
 
 function session(worktrees: unknown[], extras: Record<string, unknown> = {}): unknown {
   return { status: "ok", worktrees, ...extras };
 }
 
-function dependencies(snapshots: unknown[], overrides: Partial<Omit<NewPlanFlowDependencies, "pendingStore">> = {}) {
+function started(target: NewPlanTarget): unknown {
+  return { status: "ok", mode: "plan", subject: "20261008-000113", outcome: "created", target, warnings: [] };
+}
+
+function dependencies(snapshot: unknown, startResult: unknown, overrides: Partial<Omit<NewPlanFlowDependencies, "pendingStore">> = {}) {
   const pendingStore = new MemoryStore();
   const submitted: Array<{ command: string; target: NewPlanTarget }> = [];
   const opened: NewPlanTarget[] = [];
-  let now = 0;
-  let index = 0;
+  const runs: Array<{ args: string[]; root: string }> = [];
+  const offered: string[] = [];
   const value: NewPlanFlowDependencies & {
     pendingStore: MemoryStore;
     submitted: typeof submitted;
     opened: typeof opened;
+    runs: typeof runs;
+    offered: typeof offered;
   } = {
-    readSession: async () => snapshots[Math.min(index++, snapshots.length - 1)],
+    readSession: async () => snapshot,
+    startSession: async (args, root) => {
+      runs.push({ args, root });
+      if (startResult instanceof Error) throw startResult;
+      return startResult;
+    },
     submitCommand: async (command, target) => { submitted.push({ command, target }); },
     pendingStore,
     openTarget: async (target) => { opened.push(target); },
-    sleep: async (milliseconds) => { now += milliseconds; },
-    now: () => now,
-    isCancellationRequested: () => false,
+    now: () => 1,
     offerRecovery: async () => undefined,
+    offerOpenInChat: async (message) => { offered.push(message); return undefined; },
     submitted,
     opened,
+    runs,
+    offered,
     ...overrides,
   };
   return value;
@@ -72,174 +85,123 @@ test("validates generic and initiative requests as canonical one-line commands",
   assert.throws(() => createInitiativePlanRequest("bad slug", "member"), /slug/);
 });
 
-test("routes start-session to the CLI-reported primary and hands the plan to a companion workspace", async () => {
-  const targetSession = session([primary, planned], {
-    companion: { path: "/docs/worktrees/plan-new", registered: true },
-    workspace: { path: "/repo/worktrees/plan-new.code-workspace", exists: true },
-  });
-  const deps = dependencies([
-    session([primary, existing]),
-    session([primary, existing]),
-    session([primary, existing, planned]),
-    targetSession,
-  ]);
+test("runs start-session in the CLI-reported primary and hands the plan to the returned companion workspace", async () => {
+  const workspace: NewPlanTarget = { kind: "workspace", path: "/repo/worktrees/plan-new.code-workspace" };
+  const deps = dependencies(session([primary, existing, companionHalf]), started(workspace));
   const request = createNewPlanRequest("feature", "Add guided planning");
 
-  const result = await runNewPlanFlow(request, deps, { pollIntervalMs: 10, timeoutMs: 100 });
+  const result = await runNewPlanFlow(request, deps);
 
-  assert.deepEqual(result, {
-    kind: "complete",
-    command: request.command,
-    target: { kind: "workspace", path: "/repo/worktrees/plan-new.code-workspace" },
+  assert.deepEqual(result, { kind: "complete", command: request.command, target: workspace });
+  assert.deepEqual(deps.runs, [{ args: [], root: "/repo" }]);
+  assert.deepEqual(deps.submitted, [], "a successful start never goes through chat");
+  assert.deepEqual(deps.opened, [workspace]);
+  assert.equal((deps.pendingStore.values.get(pendingDispatchKey(workspace.path)) as { command: string }).command, request.command);
+  assert.deepEqual(deps.offered, []);
+});
+
+test("opens the returned product folder when start-session reports no pair", async () => {
+  const folder: NewPlanTarget = { kind: "folder", path: "/repo/worktrees/plan-new" };
+  const deps = dependencies(session([primary]), started(folder));
+
+  const result = await runNewPlanFlow(createNewPlanRequest("issue", "Fix launch"), deps);
+
+  assert.equal(result.kind, "complete");
+  assert.deepEqual(deps.opened, [folder]);
+});
+
+test("a rejected start-session shows the CLI reason with Open in chat and writes nothing", async () => {
+  const deps = dependencies(session([primary]), {
+    status: "rejected",
+    reason: "primary checkout is dirty (/repo); commit, stash, or discard its changes first",
+    allowed: ["/agento start-session"],
   });
+  const request = createNewPlanRequest("feature", "Dirty primary");
+
+  const result = await runNewPlanFlow(request, deps);
+
+  assert.equal(result.kind, "failed");
+  assert.match((result as { reason: string }).reason, /^Unable to start a planning session: primary checkout is dirty/);
+  assert.equal((result as { reported?: boolean }).reported, true);
+  assert.deepEqual(deps.offered, [(result as { reason: string }).reason]);
+  assert.deepEqual(deps.submitted, []);
+  assert.deepEqual(deps.opened, []);
+  assert.equal(deps.pendingStore.values.size, 0);
+});
+
+test("Open in chat submits /agento start-session to the primary after a failed start", async () => {
+  const deps = dependencies(session([primary]), {
+    status: "failed",
+    reason: "post-add-check",
+    message: "companion half /docs/wt/plan-1 is registered in the product clone",
+    fix: "git -C /repo worktree remove /docs/wt/plan-1",
+  }, { offerOpenInChat: async () => OPEN_IN_CHAT });
+
+  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Wrong clone"), deps);
+
+  assert.equal(result.kind, "failed");
+  assert.match((result as { reason: string }).reason, /post-add-check: companion half .* Fix: git -C \/repo worktree remove \/docs\/wt\/plan-1/);
   assert.deepEqual(deps.submitted, [{ command: "/agento start-session", target: { kind: "folder", path: "/repo" } }]);
-  assert.deepEqual(deps.opened, [{ kind: "workspace", path: "/repo/worktrees/plan-new.code-workspace" }]);
-  assert.equal(
-    (deps.pendingStore.values.get(pendingDispatchKey("/repo/worktrees/plan-new.code-workspace")) as { command: string }).command,
-    request.command,
-  );
-});
-
-test("opens the product folder when the new plan has no companion", async () => {
-  const deps = dependencies([
-    session([primary]),
-    session([primary, planned]),
-    session([primary, planned], { companion: null, workspace: null }),
-  ]);
-
-  const result = await runNewPlanFlow(createNewPlanRequest("issue", "Fix launch"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
-
-  assert.equal(result.kind, "complete");
-  assert.deepEqual(deps.opened, [{ kind: "folder", path: planned.path }]);
-});
-
-test("waits for a reported companion workspace to exist", async () => {
-  const deps = dependencies([
-    session([primary]),
-    session([primary, planned]),
-    session([primary, planned], { companion: { registered: true }, workspace: { path: "/repo/plan.code-workspace", exists: false } }),
-    session([primary, planned], { companion: { registered: true }, workspace: { path: "/repo/plan.code-workspace", exists: true } }),
-  ]);
-
-  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Wait for pair"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
-
-  assert.equal(result.kind, "complete");
-  assert.deepEqual(deps.opened[0], { kind: "workspace", path: "/repo/plan.code-workspace" });
-});
-
-test("times out without writing pending state or opening an arbitrary target", async () => {
-  const deps = dependencies([session([primary]), session([primary])]);
-  const request = createNewPlanRequest("feature", "Never appears");
-
-  const result = await runNewPlanFlow(request, deps, { pollIntervalMs: 10, timeoutMs: 20 });
-
-  assert.deepEqual(result, { kind: "timeout", command: request.command, reason: "Timed out waiting for a new planning worktree." });
-  assert.equal(deps.pendingStore.values.size, 0);
   assert.deepEqual(deps.opened, []);
 });
 
-test("cancels without dispatching to the target", async () => {
-  let checks = 0;
-  const deps = dependencies([session([primary]), session([primary, planned])], {
-    isCancellationRequested: () => ++checks > 1,
-  });
+test("a CLI error (timeout, spawn failure) is reported like a failed start", async () => {
+  const deps = dependencies(session([primary]), new Error("Agento CLI timed out"));
 
-  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Cancel me"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
+  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Slow network"), deps);
 
-  assert.equal(result.kind, "cancelled");
-  assert.equal(deps.pendingStore.values.size, 0);
-  assert.deepEqual(deps.opened, []);
-});
-
-test("rejects ambiguous new managed planning worktrees", async () => {
-  const otherPlan = { ...planned, path: "/repo/worktrees/plan-other" };
-  const deps = dependencies([session([primary]), session([primary, planned, otherPlan])]);
-
-  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Ambiguous"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
-
-  assert.equal(result.kind, "ambiguous");
-  assert.match(result.reason, /2 new planning worktrees/);
+  assert.equal(result.kind, "failed");
+  assert.match((result as { reason: string }).reason, /Agento CLI timed out/);
+  assert.equal(deps.offered.length, 1);
   assert.equal(deps.pendingStore.values.size, 0);
 });
 
 test("clears a failed handoff and lets recovery retry or focus the target", async () => {
-  let attempts = 0;
-  const recoveryActions: string[][] = [];
-  const deps = dependencies([
-    session([primary]),
-    session([primary, planned]),
-    session([primary, planned], { companion: null, workspace: null }),
-  ], {
-    openTarget: async () => {
-      attempts += 1;
-      if (attempts === 1) throw new Error("open failed");
-    },
-    offerRecovery: async (_message, actions) => {
-      recoveryActions.push([...actions]);
-      return "Retry";
-    },
-  });
+  for (const choice of ["Retry", "Focus target"] as const) {
+    let attempts = 0;
+    const recoveryActions: string[][] = [];
+    const folder: NewPlanTarget = { kind: "folder", path: "/repo/worktrees/plan-new" };
+    const deps = dependencies(session([primary]), started(folder), {
+      openTarget: async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error("open failed");
+      },
+      offerRecovery: async (_message, actions) => {
+        recoveryActions.push([...actions]);
+        return choice;
+      },
+    });
 
-  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Recover"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
+    const result = await runNewPlanFlow(createNewPlanRequest("feature", "Recover"), deps);
 
-  assert.equal(result.kind, "complete");
-  assert.equal(attempts, 2);
-  assert.deepEqual(recoveryActions, [["Retry", "Focus target"]]);
-  assert.equal(deps.pendingStore.values.size, 1);
+    assert.equal(result.kind, "complete");
+    assert.equal(attempts, 2);
+    assert.deepEqual(recoveryActions, [["Retry", "Focus target"]]);
+    assert.equal((deps.pendingStore.values.get(pendingDispatchKey(folder.path)) as { command: string }).command, "/agento new-feature Recover");
+  }
 });
 
-test("focuses the target after a failed handoff when Focus target is selected", async () => {
-  let attempts = 0;
-  const deps = dependencies([
-    session([primary]),
-    session([primary, planned]),
-    session([primary, planned], { companion: null, workspace: null }),
-  ], {
-    openTarget: async () => {
-      attempts += 1;
-      if (attempts === 1) throw new Error("open failed");
-    },
-    offerRecovery: async () => "Focus target",
-  });
+test("runs start-session for non-plan roles and attached plan windows", async () => {
+  const folder: NewPlanTarget = { kind: "folder", path: "/repo/worktrees/plan-new" };
+  const buildDeps = dependencies(session([primary, existing], { role: "build", worktree: { path: existing.path, detached: false } }), started(folder));
+  assert.equal((await runNewPlanFlow(createNewPlanRequest("feature", "From build"), buildDeps)).kind, "complete");
+  assert.deepEqual(buildDeps.runs, [{ args: [], root: "/repo" }]);
 
-  const result = await runNewPlanFlow(createNewPlanRequest("feature", "Focus recovery"), deps, { pollIntervalMs: 10, timeoutMs: 100 });
-
-  assert.equal(result.kind, "complete");
-  assert.equal(attempts, 2);
-  assert.equal(
-    (deps.pendingStore.values.get(pendingDispatchKey(planned.path)) as { command: string }).command,
-    "/agento new-feature Focus recovery",
-  );
+  const planDeps = dependencies(session([primary], { role: "plan", worktree: { path: "/repo/worktrees/plan-current", detached: false } }), started(folder));
+  assert.equal((await runNewPlanFlow(createNewPlanRequest("issue", "From attached plan"), planDeps)).kind, "complete");
+  assert.deepEqual(planDeps.runs, [{ args: [], root: "/repo" }]);
+  assert.deepEqual(planDeps.submitted, []);
 });
 
-test("keeps the start-session path for non-plan roles and attached plan windows", async () => {
-  const buildSession = session([primary, existing], {
-    role: "build",
-    worktree: { path: existing.path, detached: false },
-  });
-  const buildDeps = dependencies([buildSession]);
-  const buildResult = await runNewPlanFlow(createNewPlanRequest("feature", "From build"), buildDeps, { pollIntervalMs: 10, timeoutMs: 100 });
-  assert.equal(buildResult.kind, "timeout");
-  assert.deepEqual(buildDeps.submitted, [{ command: "/agento start-session", target: { kind: "folder", path: "/repo" } }]);
-
-  const attachedPlanSession = session([primary], {
-    role: "plan",
-    worktree: { path: "/repo/worktrees/plan-current", detached: false },
-  });
-  const planDeps = dependencies([attachedPlanSession]);
-  const planResult = await runNewPlanFlow(createNewPlanRequest("issue", "From attached plan"), planDeps, { pollIntervalMs: 10, timeoutMs: 100 });
-  assert.equal(planResult.kind, "timeout");
-  assert.deepEqual(planDeps.submitted, [{ command: "/agento start-session", target: { kind: "folder", path: "/repo" } }]);
-});
-
-test("rejects a malformed session role or worktree field", async () => {
-  const badRole = session([primary], { role: 42 });
-  const badRoleResult = await runNewPlanFlow(createNewPlanRequest("feature", "Bad role"), dependencies([badRole]), { pollIntervalMs: 10, timeoutMs: 100 });
+test("rejects a malformed session role or worktree field without running the CLI", async () => {
+  const badRole = dependencies(session([primary], { role: 42 }), started({ kind: "folder", path: "/x" }));
+  const badRoleResult = await runNewPlanFlow(createNewPlanRequest("feature", "Bad role"), badRole);
   assert.equal(badRoleResult.kind, "failed");
   assert.match((badRoleResult as { reason: string }).reason, /session role is invalid/);
+  assert.deepEqual(badRole.runs, []);
 
-  const badWorktree = session([primary], { worktree: { path: "/repo", detached: "yes" } });
-  const badWorktreeResult = await runNewPlanFlow(createNewPlanRequest("feature", "Bad worktree"), dependencies([badWorktree]), { pollIntervalMs: 10, timeoutMs: 100 });
+  const badWorktree = dependencies(session([primary], { worktree: { path: "/repo", detached: "yes" } }), started({ kind: "folder", path: "/x" }));
+  const badWorktreeResult = await runNewPlanFlow(createNewPlanRequest("feature", "Bad worktree"), badWorktree);
   assert.equal(badWorktreeResult.kind, "failed");
   assert.match((badWorktreeResult as { reason: string }).reason, /session worktree is invalid/);
 });

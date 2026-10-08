@@ -63,6 +63,13 @@ A `prompts` key with no matching `.github/prompts/<name>.prompt.md` is an error.
 Each prompt's plugin-mode mirror `commands/<name>.md` receives the same bytes as the
 prompt.
 
+`/agento start-session` is a thin formatter: one `agento.mjs start-session` call
+does the window check, fetch, worktree adds, and window open, and the model only
+maps the JSON to the receipt and report. Pin it to a fast model (for example
+`"prompts": { "start-session": "<fast model>" }`); a slow reasoning model buys
+nothing here. The dashboard's New Plan and start-session play buttons call the CLI
+directly and use no model at all.
+
 A `model:` line in a `commands/<name>.md` mirror is a no-op for plugin commands:
 the dashboard dispatches a command by switching chat to the command's `agent:`
 and the agent's own `model:` then applies. A `prompts.<name>` pin takes effect

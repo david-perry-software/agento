@@ -95,3 +95,18 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.doesNotMatch(source, /setInterval\s*\(/);
   assert.doesNotMatch(source, /registerCommand\([^\n]*(repair|doctor)/i);
 });
+
+test("New Plan and start-session dispatch run the CLI directly, with no chat round-trip or poll", async () => {
+  const source = await readFile("src/extension.ts", "utf8");
+  assert.match(source, /const startSession = cliStartSession\(client\)/);
+  assert.match(source, /startSession: async \(args, root\) => vscode\.window\.withProgress/);
+  assert.match(source, /\(\) => startSession\(args, folder\.uri\.fsPath\)/);
+  assert.match(source, /offerOpenInChat: async \(message\) => vscode\.window\.showErrorMessage\(message, OPEN_IN_CHAT\)/);
+  assert.match(source, /offerOpenInChat: \(message\) => vscode\.window\.showErrorMessage\(message, OPEN_IN_CHAT\)/);
+  assert.doesNotMatch(source, /NEW_PLAN_FLOW_DEFAULTS|pollIntervalMs|isCancellationRequested/);
+  const flow = await readFile("src/newPlanFlow.ts", "utf8");
+  assert.doesNotMatch(flow, /sleep|timeoutMs|"ambiguous"|"timeout"/);
+  const cli = await readFile("src/startSessionCli.ts", "utf8");
+  assert.match(cli, /\["start-session", \.\.\.args, "--no-open"\]/);
+  assert.match(cli, /timeoutMs: START_SESSION_TIMEOUT_MS/);
+});

@@ -9,6 +9,7 @@ import {
   takePendingDispatch,
   type PendingDispatchStore,
 } from "./pendingDispatch.js";
+import { OPEN_IN_CHAT, runStartSession } from "./startSessionCli.js";
 
 export type CommandExecutor = (command: string, ...args: unknown[]) => Thenable<unknown>;
 
@@ -29,6 +30,9 @@ export interface CommandDispatcherDependencies {
   openTarget: (target: Extract<DispatchRoute, { kind: "open" }>["target"]) => Thenable<unknown>;
   chatMode: ChatModeResolver;
   commandFile: CommandFileResolver;
+  // `agento.mjs start-session <args> --no-open` in this (primary) window's checkout.
+  startSession: (args: string[]) => PromiseLike<unknown>;
+  offerOpenInChat: (message: string) => Thenable<string | undefined>;
 }
 
 function chatOpenOptions(
@@ -94,6 +98,23 @@ export async function dispatchCommandAction(
     }
     if (route.kind === "open") {
       await dispatchCommandToTarget(route.command, route.target, route.reason, dependencies, false);
+      return route;
+    }
+    if (route.kind === "start-session") {
+      const started = await runStartSession(() => dependencies.startSession(route.args));
+      if (started.kind === "error") {
+        const message = `Unable to start the session: ${started.reason}`;
+        dependencies.output.appendLine(message);
+        if ((await dependencies.offerOpenInChat(message)) === OPEN_IN_CHAT) {
+          await chatOpenOptions(route.command, { executeCommand, chatMode: dependencies.chatMode, commandFile: dependencies.commandFile, output: dependencies.output });
+        }
+        return { kind: "reject", reason: message };
+      }
+      if (route.then) {
+        await dispatchCommandToTarget(route.then, started.target, "Continue in the session window.", dependencies, false);
+      } else {
+        await dependencies.openTarget(started.target);
+      }
       return route;
     }
 

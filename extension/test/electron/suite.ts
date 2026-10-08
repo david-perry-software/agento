@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import * as vscode from "vscode";
@@ -17,6 +20,7 @@ import { runNewPlanFlow, type NewPlanTarget } from "../../src/newPlanFlow.js";
 import { createSessionDoctorError } from "../../src/sessionDoctorModel.js";
 import type { SessionDoctorElement } from "../../src/sessionDoctorProvider.js";
 import type { CliResult } from "../../src/cliClient.js";
+import { cliStartSession } from "../../src/startSessionCli.js";
 import { CLOSED_GATE, gateRejection, windowGate, type GatedCommand } from "../../src/windowGate.js";
 
 async function waitForReadyTree(api: ExtensionApi): Promise<void> {
@@ -159,35 +163,45 @@ function statusResponse(active: number) {
   };
 }
 
+// A throwaway primary checkout with a bare origin (plus, for `companion`, an `artifacts`
+// companion clone with its own bare origin) for the real `agento.mjs start-session`.
+function makeStartSessionFixture(companion: boolean): { base: string; product: string } {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-e2e-start-session-"));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=Agento Test", "-c", "user.email=agento@example.invalid", ...args], { cwd, stdio: "ignore" });
+  const clone = (name: string, files: Record<string, string>) => {
+    const origin = path.join(base, `${name}.git`);
+    const work = path.join(base, name);
+    git(base, "init", "--bare", "-q", "-b", "main", origin);
+    git(base, "clone", "-q", origin, work);
+    for (const [rel, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(work, rel)), { recursive: true });
+      fs.writeFileSync(path.join(work, rel), content);
+    }
+    git(work, "add", "-A");
+    git(work, "commit", "-q", "--allow-empty", "-m", "fixture");
+    git(work, "push", "-q", "-u", "origin", "main");
+  };
+  clone("product", { ".github/agento.json": JSON.stringify(companion ? { artifacts: { repo: { name: "artifacts" } } } : {}) });
+  if (companion) clone("artifacts", {});
+  return { base, product: path.join(base, "product") };
+}
+
 async function assertNewPlanCommand(
   api: ExtensionApi,
   expectedCommand: string,
-  fixture: string,
   companion: boolean,
   execute: () => Thenable<unknown>,
   prompts?: string[],
 ): Promise<void> {
-  const planPath = path.join(path.dirname(fixture), `plan-${expectedCommand.includes("initiative:") ? "member" : "generic"}`);
-  const workspacePath = `${planPath}.code-workspace`;
-  const primary = { path: fixture, role: "primary", isManaged: false, dirPrefix: null, repo: "product" };
-  const planned = { path: planPath, role: "plan", isManaged: true, dirPrefix: "plan", repo: "product" };
-  const snapshots = [
-    { status: "ok", worktrees: [primary] },
-    { status: "ok", worktrees: [primary, planned] },
-    {
-      status: "ok",
-      worktrees: [primary, planned],
-      companion: companion ? { path: `${planPath}-artifacts`, registered: true } : null,
-      workspace: companion ? { path: workspacePath, exists: true } : null,
-    },
-  ];
+  const startFixture = makeStartSessionFixture(companion);
   const submitted: Array<{ command: string; target: NewPlanTarget }> = [];
   const opened: NewPlanTarget[] = [];
   const pending = new Map<string, unknown>();
-  let snapshot = 0;
 
   api.setNewPlanRunner((request) => runNewPlanFlow(request, {
-      readSession: async () => snapshots[Math.min(snapshot++, snapshots.length - 1)],
+      readSession: async () => (await api.client.run(["session"], startFixture.product)).json,
+      startSession: cliStartSession(api.client),
       submitCommand: async (command, target) => { submitted.push({ command, target }); },
       pendingStore: {
         get: <T>(key: string) => pending.get(key) as T | undefined,
@@ -197,29 +211,38 @@ async function assertNewPlanCommand(
         },
       },
       openTarget: async (target) => { opened.push(target); },
-      sleep: async () => undefined,
       now: () => 1,
-      isCancellationRequested: () => false,
       offerRecovery: async () => undefined,
-    }, { pollIntervalMs: 1, timeoutMs: 10 }));
+      offerOpenInChat: async (message) => assert.fail(message),
+    }));
 
   try {
     await execute();
+    assert.deepEqual(submitted, [], "a successful New Plan never submits to chat");
+    assert.equal(opened.length, 1);
+    const target = opened[0]!;
+    const plan = /plan-\d{8}-\d{6}(?:-\d+)?/;
+    const worktrees = path.join(startFixture.base, "product-worktrees");
+    if (companion) {
+      assert.equal(target.kind, "workspace");
+      assert.equal(path.dirname(target.path), worktrees);
+      assert.match(path.basename(target.path), new RegExp(`^${plan.source}\\.code-workspace$`));
+    } else {
+      assert.equal(target.kind, "folder");
+      assert.equal(path.dirname(target.path), worktrees);
+      assert.match(path.basename(target.path), new RegExp(`^${plan.source}$`));
+    }
+    assert.ok(fs.existsSync(target.path), `${target.path} was created by agento.mjs start-session`);
+    const records = [...pending.values()] as Array<{ target: string; command: string }>;
+    assert.equal(records.length, 1);
+    assert.equal(records[0]!.target, target.path, "the pending command is queued for the returned target");
+    assert.equal(records[0]!.command, expectedCommand);
+    if (prompts) assert.deepEqual(prompts, ["quickPick", "input:feature"]);
   } finally {
     api.setNewPlanRunner();
     api.setNewPlanPrompts();
+    fs.rmSync(startFixture.base, { recursive: true, force: true });
   }
-
-  const expectedTarget: NewPlanTarget = companion
-    ? { kind: "workspace", path: workspacePath }
-    : { kind: "folder", path: planPath };
-  assert.deepEqual(submitted, [{ command: "/agento start-session", target: { kind: "folder", path: fixture } }]);
-  assert.deepEqual(opened, [expectedTarget]);
-  assert.equal(
-    [...pending.values()].map((value) => (value as { command: string }).command).at(0),
-    expectedCommand,
-  );
-  if (prompts) assert.deepEqual(prompts, ["quickPick", "input:feature"]);
 }
 
 async function assertNewInitiativeCommand(
@@ -517,7 +540,8 @@ export async function run(): Promise<void> {
   );
   assert.equal(api.deliveries.getTreeItem(items[0]!).description, "feature | 1/3 | planned | PR #101 draft");
   assert.ok(items[0]?.kind === "delivery");
-  const deliveryAction = items[0].item.actions.find((action) => action.window === "here");
+  // A non-start-session action still submits to chat even though the refreshed next is start-session.
+  const deliveryAction = items[0].item.actions.find((action) => action.window === "here" && action.command === "/agento delivery-status");
   assert.ok(deliveryAction);
   await vscode.commands.executeCommand("agento.dispatchAction", deliveryAction, items[0].item.slug, executeCommand);
   // Same fallback: no plugin root in the fixture, so { query } is the expected options shape.
@@ -557,6 +581,8 @@ export async function run(): Promise<void> {
       openTarget: async (opened) => { routedTargets.push(`${opened.kind}:${opened.path}`); },
       chatMode: () => ({ mode: null, reason: "unused" }),
       commandFile: () => ({ file: null, reason: "unused" }),
+      startSession: async () => assert.fail("cross-window routes never run start-session"),
+      offerOpenInChat: async () => undefined,
     },
   );
   assert.equal(crossWindowRoute.kind, "open");
@@ -632,7 +658,6 @@ export async function run(): Promise<void> {
   await assertNewPlanCommand(
     api,
     "/agento new-feature Add guided planning",
-    fixture,
     process.env.AGENTO_ELECTRON_SCENARIO === "companion",
     () => vscode.commands.executeCommand("agento.newPlan"),
     promptEvents,
@@ -645,7 +670,6 @@ export async function run(): Promise<void> {
   await assertNewPlanCommand(
     api,
     `/agento new-feature initiative:${readyMember.initiativeSlug}/${readyMember.item.slug}`,
-    fixture,
     process.env.AGENTO_ELECTRON_SCENARIO === "companion",
     () => vscode.commands.executeCommand("agento.planInitiativeMember", readyMember),
   );
@@ -836,6 +860,8 @@ export async function run(): Promise<void> {
         openTarget: async (target) => { openedTargets.push(target.path); },
         chatMode: () => ({ mode: null, reason: "unused" }),
         commandFile: () => ({ file: null, reason: "unused" }),
+        startSession: async () => assert.fail("cross-window routes never run start-session"),
+        offerOpenInChat: async () => undefined,
       },
     );
     assert.equal(route.kind, "open");
