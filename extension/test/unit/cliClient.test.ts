@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { buildCliArgs, CliClient, CliError, CliParseError, parseCliOutput } from "../../src/cliClient.js";
+import { buildCliArgs, CliClient, CliError, CliParseError, parseCliOutput, START_SESSION_TIMEOUT_MS } from "../../src/cliClient.js";
 
 const extensionRoot = process.cwd();
 const cliPath = path.join(extensionRoot, "cli", "agento.mjs");
@@ -53,4 +53,16 @@ test("CliClient rejects malformed output with CliParseError", async (context) =>
 test("CliClient names agento.nodePath when spawning fails", async () => {
   const client = new CliClient({ nodePath: "/missing/node", cliPath, output });
   await assert.rejects(client.run(["session"], extensionRoot), (error) => error instanceof CliError && error.message.includes("agento.nodePath"));
+});
+
+test("CliClient.run accepts a per-call timeout that overrides the client default", async (context) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "agento-cli-timeout-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const script = path.join(root, "slow.mjs");
+  await writeFile(script, 'setTimeout(() => process.stdout.write(JSON.stringify({ status: "ok" })), 400);');
+  const client = new CliClient({ nodePath: process.execPath, cliPath: script, output, timeoutMs: 100 });
+  await assert.rejects(client.run([], root), CliError);
+  const result = await client.run([], root, { timeoutMs: 10_000 });
+  assert.deepEqual(result.json, { status: "ok" });
+  assert.equal(START_SESSION_TIMEOUT_MS, 120_000);
 });
