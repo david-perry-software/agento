@@ -3186,3 +3186,37 @@ test("release: usage errors exit 1 and the usage lists the subcommand", () => {
   assert.deepEqual(gh.calls(), []);
   assert.ok(run(repo, "bogus").json.usage.some((line) => line.includes("release <merge-sha> [--wait N] [--interval N]")));
 });
+
+test("release --wait polls until a pending run succeeds", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const pending = { workflow_runs: [releaseRun(106, { status: "in_progress", conclusion: null })] };
+  const gh = releaseGh(releaseRoutes({ [`${RUNS}?head_sha=`]: [pending, { workflow_runs: [releaseRun(106)] }] }));
+  const { code, json } = release(repo, gh, MERGE, "--wait", "3", "--interval", "1");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.verdict, "success");
+  assert.ok(json.polls >= 2, String(json.polls));
+  assert.equal(json.waitedSeconds, json.polls - 1);
+  assert.equal(gh.apiCalls().filter((c) => c.includes("/commits/")).length, 1);
+});
+
+test("release --wait gives up within its budget on an always-pending run, exit 2", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(107, { status: "queued", conclusion: null })] } }));
+  const started = Date.now();
+  const { code, json } = release(repo, gh, MERGE, "--wait", "2", "--interval", "1");
+  assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+  assert.equal(code, 2);
+  assert.equal(json.verdict, "pending");
+  assert.equal(json.polls, 3);
+  assert.equal(json.waitedSeconds, 2);
+});
+
+test("release --wait never loops on dispatch-required", () => {
+  const repo = makeRepo({ config: releaseConfig });
+  const gh = releaseGh(releaseRoutes({ [`repos/{owner}/{repo}/contents/.github/workflows/release.yml`]: workflowFile("on: workflow_dispatch\n") }));
+  const { code, json } = release(repo, gh, MERGE, "--wait", "5", "--interval", "1");
+  assert.equal(code, 2);
+  assert.equal(json.verdict, "dispatch-required");
+  assert.equal(json.polls, 1);
+  assert.equal(json.waitedSeconds, 0);
+});

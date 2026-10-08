@@ -1967,9 +1967,21 @@ switch (command) {
         throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
       }
       const ctx = releaseContext(workflow, shaArg);
-      const result = releaseSnapshot(ctx);
+      const wait = options.wait ?? 0;
+      const interval = options.interval ?? 10;
+      const sleeper = new Int32Array(new SharedArrayBuffer(4));
+      let result = releaseSnapshot(ctx);
+      let polls = 1;
+      let waited = 0;
+      // dispatch-required never loops: only the caller can start that run.
+      while (result.verdict === "pending" && waited + interval <= wait) {
+        Atomics.wait(sleeper, 0, 0, interval * 1000);
+        waited += interval;
+        result = releaseSnapshot(ctx);
+        polls += 1;
+      }
       const code = RELEASE_EXIT[result.verdict];
-      report({ status: RELEASE_STATUS[code], verdict: result.verdict, sha: ctx.sha, run: runSummary(result.run), supersededBy: runSummary(result.supersededBy), reason: result.reason, mergeDate: ctx.mergeDate, polls: 1 }, code);
+      report({ status: RELEASE_STATUS[code], verdict: result.verdict, sha: ctx.sha, run: runSummary(result.run), supersededBy: runSummary(result.supersededBy), reason: result.reason, mergeDate: ctx.mergeDate, polls, waitedSeconds: waited }, code);
     } catch (error) {
       if (!(error instanceof GhFailure)) throw error;
       report({ status: "error", reason: error.reason, message: error.message }, 3);
