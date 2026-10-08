@@ -13,6 +13,7 @@
 //   node scripts/agento.mjs ports <slug>
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ worktreeState { onDisk, registeredIn, origin, expectedOrigin, ok }; + companion half and .code-workspace in companion mode, with companion.state likewise)
 //   node scripts/agento.mjs workspace <feature|issue|plan|freehand> <slug|session-id> [--write]   (pair workspace file status; write the canonical document with --write)
+//   node scripts/agento.mjs start-session [<feature|issue>/<slug> | <session-id>] [--resume] [--no-open]   (window check, doctor, fetch, worktree pair, post-add check, workspace file, code --new-window)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
@@ -35,12 +36,12 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
-import { classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
+import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 24);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 25);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -75,6 +76,8 @@ function parseArgs(argv) {
     else if (arg === "--pr") options.pr = true;
     else if (arg === "--write") options.write = true;
     else if (arg === "--apply") options.apply = true;
+    else if (arg === "--resume") options.resume = true;
+    else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--plugin-root") {
       options.pluginRoot = argv[++i];
       if (!options.pluginRoot) usage("--plugin-root takes a directory");
@@ -329,14 +332,14 @@ function managedWorktreePath(worktrees, kind, id, worktreesBaseDir) {
   return fallback?.path ?? path.join(worktreesBaseDir, name);
 }
 
-function resolveSessionPaths(kind, id) {
+function resolveSessionPaths(kind, id, layoutOverride = null) {
   const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
   const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
   const branch = kind === "plan" ? null : `${prefixes[kind]}${id}`;
   // Deliveries are branch-aware: an in-repo checkout whose delivery branch flips to
   // a companion reports that companion's roots and pair (plan/freehand unchanged).
-  const branchLayout = artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
-  const layout = branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout();
+  const branchLayout = !layoutOverride && artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
+  const layout = layoutOverride ?? (branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout());
   const productWorktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
   const worktree = managedWorktreePath(productWorktrees, kind, id, worktreesDir);
   const companion = layout.artifacts.external
@@ -1181,6 +1184,228 @@ function dispatchFor(command) {
   return { prompt, agent: agent ?? null };
 }
 
+// --- start-session ---------------------------------------------------------
+
+const SESSION_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
+
+function startSessionArgs() {
+  if (rest.length > 1) usage(`start-session takes at most one argument (<feature|issue>/<slug> or a session id), got ${JSON.stringify(rest.join(" "))}`);
+  const arg = rest[0] ?? null;
+  const build = arg?.match(/^(feature|issue)\/(.*)$/);
+  if (build) return { mode: "build", type: build[1], slug: requireSlug(build[2]), subject: `${build[1]}/${build[2]}` };
+  if (arg === null) {
+    if (options.resume) usage("start-session --resume needs a session id or <feature|issue>/<slug>");
+    return { mode: "plan", id: null };
+  }
+  if (!SESSION_ID.test(arg)) usage(`start-session takes <feature|issue>/<slug> or a session id matching [a-z0-9][a-z0-9-]{1,63}, got ${JSON.stringify(arg)}`);
+  return { mode: "plan", id: arg };
+}
+
+// A bounded, prompt-free git call that reports stderr instead of swallowing it.
+function gitRun(dir, args, timeout = 30000) {
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes" };
+  try {
+    const stdout = execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, env });
+    return { ok: true, stdout: stdout.trim(), stderr: "", timedOut: false };
+  } catch (error) {
+    const timedOut = error?.code === "ETIMEDOUT" || Boolean(error?.signal && !error?.status);
+    const stderr = (error?.stderr ?? "").toString().trim();
+    return { ok: false, stdout: (error?.stdout ?? "").toString().trim(), stderr: timedOut ? `git ${args[0]} timed out after ${timeout / 1000} s` : stderr || error?.message || "unknown error", timedOut };
+  }
+}
+
+function reauthFor(url) {
+  if (/^https:\/\/github\.com\//.test(url ?? "")) return "gh auth login";
+  return `re-authenticate the credentials for ${url ?? "origin"} (credential helper or SSH key)`;
+}
+
+function capabilityOf(checkId) {
+  return Object.entries(CAPABILITY_CHECKS).find(([, ids]) => ids.includes(checkId))?.[0] ?? checkId;
+}
+
+// Ids already used by a managed plan session in either clone (path on disk,
+// registered worktree, or workspace file), so a generated id never collides.
+function takenPlanIds(dirs, lists) {
+  const ids = new Set();
+  const add = (name) => {
+    const match = name.match(/^plan-(.+?)(\.code-workspace)?$/);
+    if (match) ids.add(match[1]);
+  };
+  for (const dir of dirs) {
+    if (!dir || !fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) add(name);
+  }
+  for (const list of lists) for (const w of list) add(path.basename(w.path));
+  return ids;
+}
+
+const registeredAt = (list, p) => list.find((w) => samePath(w.path, p)) ?? null;
+
+function startSession() {
+  const args = startSessionArgs();
+  const record = sessionRecord();
+  const primary = record.worktrees[0]?.path ?? root;
+  const out = {
+    status: "ok",
+    mode: args.mode,
+    subject: args.mode === "build" ? args.subject : args.id,
+    outcome: null,
+    product: null,
+    companion: null,
+    workspace: null,
+    target: null,
+    opened: false,
+    openCommand: null,
+    next: [],
+    preflight: [],
+    reason: null,
+    message: null,
+    fix: null,
+    reauth: null,
+    allowed: record.allowed,
+    elsewhere: record.elsewhere,
+    warnings: [...record.warnings],
+    root,
+    configSource: source,
+  };
+  const finish = (fields = {}) => {
+    const result = { ...out, ...fields };
+    emit(result, result.status === "ok" ? 0 : 3);
+  };
+  const reject = (reason, fields = {}) => finish({ status: "rejected", reason, ...fields });
+  const fail = (reason, message, fields = {}) => finish({ status: "failed", reason, message, ...fields });
+
+  // Window check (§11): the primary checkout, on the default branch, clean.
+  const { worktree } = record;
+  const where = `${worktree.path}, branch ${worktree.detached || !worktree.branch ? "detached" : worktree.branch}`;
+  if (record.role !== "primary") reject(`wrong window: role=${record.role} (${where})`);
+  if (worktree.branch !== config.branches.default) reject(`primary checkout not on ${config.branches.default} (${where})`);
+  if (git(primary, "status", "--porcelain") !== "") reject(`primary checkout is dirty (${worktree.path}); commit, stash, or discard its changes first`);
+
+  // Capability preflight (§10): fail rejects, warn proceeds with the fallback.
+  const doctor = runDoctor(checksFor(COMMAND_NEEDS["start-session"]));
+  const failed = doctor.checks.find((c) => c.status === "fail");
+  if (failed) reject(failed.detail, { capability: capabilityOf(failed.id), check: failed.id, fallback: failed.fallback });
+  out.preflight = doctor.checks.filter((c) => c.status === "warn").map(({ id, status, detail, fallback }) => ({ id, capability: capabilityOf(id), status, detail, fallback }));
+
+  const fetch = (dir, label) => {
+    const result = gitRun(dir, ["fetch", "origin"]);
+    if (result.ok) return;
+    const url = originOf(dir);
+    if (!result.timedOut && classifyFetchFailure(result.stderr) === "auth") {
+      fail("fetch-auth", `git -C ${dir} fetch origin: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(url) });
+    }
+    out.warnings.push(`fetch: ${label} ${url ?? "origin"} not fetched (${result.stderr.split("\n")[0]}); continuing from local refs`);
+  };
+  fetch(primary, "product");
+
+  // Which halves this session uses, before anything is written.
+  let resolved;
+  let productBranch = null;
+  if (args.mode === "plan") {
+    const productList = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const id = args.id ?? nextSessionId({ now: new Date(), taken: takenPlanIds([worktreesDir, companionWorktreesDir], [productList, companionWorktrees()]) });
+    out.subject = id;
+    resolved = resolveSessionPaths("plan", id, checkoutLayout());
+    out.next = ["/agento new-feature <description>", "/agento new-issue <description>"];
+  } else {
+    const { type, slug } = args;
+    const { result, layout } = resolveWithLayout(type, slug);
+    if (result.status !== "ok") reject(result.message, { resolution: result.status });
+    const content = result.source === "local" ? fs.readFileSync(result.path, "utf8") : layout.agit("show", `origin/${result.branch}:${result.path}`);
+    if (header(content, "status") === "complete") reject(`${type}/${slug} is complete (status: complete); no build session is needed`);
+    productBranch = result.branch;
+    const productList = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    // The window check already keeps the primary on the default branch, so an owner here is managed.
+    const owner = findOwner({ worktrees: productList, worktreesDir: primaryWorktreesDir(productList), branch: productBranch, config });
+    resolved = owner ? resolveSessionPaths(owner.dirPrefix, owner.id, layout) : resolveSessionPaths(type, slug, layout);
+    if (!owner && !registeredAt(productList, resolved.worktree)) {
+      const local = git(root, "rev-parse", "--verify", "--quiet", `refs/heads/${productBranch}`);
+      const remote = git(root, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${productBranch}`);
+      if (!local && !remote) reject(`${productBranch} exists neither locally nor on origin; the delivery planner must publish it`);
+    }
+    out.next = [`/agento build-${type} ${slug}`];
+  }
+
+  const companionClone = resolved.companion ? resolved.layout.artifactsRoot : null;
+  if (companionClone) fetch(companionClone, "companion");
+  const defaultRef = `origin/${config.branches.default}`;
+  const companionDefault = `origin/${resolved.layout.config.branches.default}`;
+
+  // Product half: reuse when registered, never touch an unregistered path on disk.
+  const productList = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+  if (registeredAt(productList, resolved.worktree)) out.outcome = "resumed";
+  else if (!fs.existsSync(resolved.worktree)) {
+    let addArgs;
+    if (args.mode === "plan") addArgs = ["worktree", "add", "--detach", resolved.worktree, defaultRef];
+    else if (git(root, "rev-parse", "--verify", "--quiet", `refs/heads/${productBranch}`)) addArgs = ["worktree", "add", resolved.worktree, productBranch];
+    else addArgs = ["worktree", "add", "--track", "-b", productBranch, resolved.worktree, `origin/${productBranch}`];
+    const add = gitRun(primary, addArgs, 120000);
+    if (!add.ok) fail("worktree-add", `git -C ${primary} ${addArgs.join(" ")}: ${add.stderr}`, { half: "product" });
+    if (args.mode === "plan" && git(resolved.worktree, "rev-parse", "HEAD") !== git(root, "rev-parse", defaultRef)) {
+      fail("worktree-add", `${resolved.worktree} is not detached at ${defaultRef}`, { half: "product" });
+    }
+    out.outcome = "created";
+  } else out.outcome = "resumed";
+
+  // Companion half: same name, same branch (build) or detached at its default (plan).
+  if (resolved.companion) {
+    const half = resolved.companion.worktree;
+    const list = parseWorktreeList(git(companionClone, "worktree", "list", "--porcelain"));
+    if (!registeredAt(list, half) && !fs.existsSync(half)) {
+      const branch = args.mode === "build" ? productBranch : null;
+      let addArgs;
+      if (!branch) addArgs = ["worktree", "add", "--detach", half, companionDefault];
+      else if (git(companionClone, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) addArgs = ["worktree", "add", half, branch];
+      else if (git(companionClone, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) addArgs = ["worktree", "add", "--track", "-b", branch, half, `origin/${branch}`];
+      else {
+        addArgs = ["worktree", "add", "--no-track", "-b", branch, half, companionDefault];
+        out.warnings.push(`companion-branch: ${branch} did not exist in ${companionClone}; created from ${companionDefault} without upstream — publish it with git -C ${half} push -u origin ${branch}`);
+      }
+      const add = gitRun(companionClone, addArgs, 120000);
+      if (!add.ok) fail("worktree-add", `git -C ${companionClone} ${addArgs.join(" ")}: ${add.stderr}`, { half: "companion" });
+    }
+  }
+
+  // Post-add check on both halves, created or reused: right clone, right origin.
+  const freshProduct = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+  const freshCompanion = companionClone ? parseWorktreeList(git(companionClone, "worktree", "list", "--porcelain")) : [];
+  const describeHalf = (halfPath, own, clone) => {
+    const onDisk = fs.existsSync(halfPath);
+    const state = halfState({ path: halfPath, own, worktrees: freshProduct, companionWorktrees: freshCompanion, origin: onDisk ? originOf(halfPath) : null, expectedOrigin: originOf(clone), onDisk });
+    const entry = registeredAt(own === "product" ? freshProduct : freshCompanion, halfPath);
+    return { path: entry?.path ?? halfPath, branch: entry?.branch ?? null, detached: entry ? Boolean(entry.detached) : false, state };
+  };
+  out.product = describeHalf(resolved.worktree, "product", root);
+  out.companion = resolved.companion ? describeHalf(resolved.companion.worktree, "companion", companionClone) : null;
+  for (const [half, described] of [["product", out.product], ["companion", out.companion]]) {
+    if (!described || described.state.ok) continue;
+    const { registeredIn, origin, expectedOrigin } = described.state;
+    const clone = registeredIn === "product" ? primary : registeredIn === "companion" ? companionClone : null;
+    const message = registeredIn
+      ? `${half} half ${described.path} is registered in the ${registeredIn} clone with origin ${origin ?? "none"} (expected ${expectedOrigin}); nothing was removed`
+      : `${half} half ${described.path} exists but is not a registered worktree of either clone; nothing was removed`;
+    fail("post-add-check", message, { half, registeredIn, origin, expectedOrigin, fix: clone ? `git -C ${clone} worktree remove ${described.path}` : null });
+  }
+
+  if (resolved.companion && resolved.workspace) {
+    const { written } = writeSessionWorkspace(resolved);
+    out.workspace = { path: resolved.workspace, written };
+    out.target = { kind: "workspace", path: resolved.workspace };
+  } else out.target = { kind: "folder", path: out.product.path };
+
+  out.openCommand = `code --new-window ${out.target.path}`;
+  if (!options.noOpen) {
+    try {
+      execFileSync("code", ["--new-window", out.target.path], { cwd: root, stdio: "ignore", timeout: 15000 });
+      out.opened = true;
+    } catch (error) {
+      out.warnings.push(`open: ${error?.code === "ENOENT" ? "code CLI not found on PATH" : `code --new-window failed: ${error?.message ?? error}`}; run ${out.openCommand}`);
+    }
+  }
+  finish();
+}
+
 // --- model profiles --------------------------------------------------------
 
 const MODELS_HINT =
@@ -1554,6 +1779,11 @@ switch (command) {
   case "session": {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
     emit(sessionRecord({ pr: Boolean(options.pr) }));
+    break;
+  }
+
+  case "start-session": {
+    startSession();
     break;
   }
 
