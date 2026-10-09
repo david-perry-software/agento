@@ -1372,6 +1372,44 @@ test("paths places artifactRoot under the companion checkout when artifacts.repo
   assert.equal(plan.artifactRoot, null);
 });
 
+test("paths and config from a managed worktree report the primary's worktrees.dir (in-repo)", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const plan = path.join(wt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+
+  const paths = run(plan, "paths", "feature", "xy");
+  assert.equal(paths.code, 0);
+  assert.equal(paths.json.worktreesDir, wt);
+  assert.equal(paths.json.worktree, path.join(wt, "feature-xy"));
+  assert.equal(paths.json.workspace, null);
+
+  const config = run(plan, "config");
+  assert.equal(config.code, 0);
+  assert.equal(config.json.config.worktrees.dir, wt);
+  assert.equal(config.json.config.worktrees.dir, run(repo, "config").json.config.worktrees.dir);
+});
+
+test("paths, workspace, and config from a managed worktree report the primary's worktrees.dir (companion mode)", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const plan = path.join(wt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", path.join(docsWt, "plan-1"), "origin/main");
+
+  const paths = run(plan, "paths", "feature", "xy");
+  assert.equal(paths.code, 0);
+  assert.equal(paths.json.worktreesDir, wt);
+  assert.equal(paths.json.worktree, path.join(wt, "feature-xy"));
+  assert.equal(paths.json.workspace, path.join(wt, "feature-xy.code-workspace"));
+  assert.equal(paths.json.companion.worktree, path.join(docsWt, "feature-xy"));
+
+  const workspace = run(plan, "workspace", "feature", "xy");
+  assert.equal(workspace.code, 0);
+  assert.equal(workspace.json.path, path.join(wt, "feature-xy.code-workspace"));
+  assert.equal(workspace.json.folders[0].path, path.join(wt, "feature-xy"));
+
+  assert.equal(run(plan, "config").json.config.worktrees.dir, wt);
+});
+
 test("usage errors exit 1 and never throw", () => {
   const repo = makeRepo();
   assert.equal(run(repo, "resolve", "thing", "x").code, 1);

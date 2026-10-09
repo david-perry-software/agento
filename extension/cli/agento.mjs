@@ -189,7 +189,6 @@ const worktreesDirByPrimary = new Map();
 const roleCwd = anchor.fromClone ? root : startDir;
 const { config, source } = loadAgentoConfig(root);
 const repoName = path.basename(root);
-const worktreesDir = path.resolve(root, config.worktrees.dir);
 const currentBranch = git(root, "branch", "--show-current");
 const gitAdapter = {
   lsTree: (ref) => git(root, "ls-tree", "-r", "--name-only", ref),
@@ -364,7 +363,7 @@ function resolveSessionPaths(kind, id, layoutOverride = null) {
   const branchLayout = !layoutOverride && artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
   const layout = layoutOverride ?? (branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout());
   const productList = productWorktrees();
-  const worktree = managedWorktreePath(productList, kind, id, worktreesDir);
+  const worktree = managedWorktreePath(productList, kind, id, primaryWorktreesDir(productList));
   const companion = layout.artifacts.external
     ? {
         worktreesDir: layout.companionWorktreesDir,
@@ -1446,7 +1445,7 @@ function startSession() {
   let productBranch = null;
   if (args.mode === "plan") {
     const productList = productWorktrees();
-    const id = args.id ?? nextSessionId({ now: new Date(), taken: takenPlanIds([worktreesDir, companionWorktreesDir], [productList, companionWorktrees()]) });
+    const id = args.id ?? nextSessionId({ now: new Date(), taken: takenPlanIds([primaryWorktreesDir(productList), companionWorktreesDir], [productList, companionWorktrees()]) });
     out.subject = id;
     resolved = resolveSessionPaths("plan", id, checkoutLayout());
     out.next = ["/agento new-feature <description>", "/agento new-issue <description>"];
@@ -1940,7 +1939,7 @@ switch (command) {
       pluginRoot: PLUGIN_ROOT,
       currentBranch,
       artifactsRoot,
-      config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: worktreesDir } },
+      config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: primaryWorktreesDir() } },
     });
     break;
 
@@ -2054,7 +2053,7 @@ switch (command) {
     };
     emit({
       status: "ok",
-      worktreesDir,
+      worktreesDir: primaryWorktreesDir(resolved.productWorktrees),
       worktree: resolved.worktree,
       // Post-`git worktree add` check: on disk, registered in the right clone, right origin.
       worktreeState: stateOf(resolved.worktree, "product", originOf(root)),
