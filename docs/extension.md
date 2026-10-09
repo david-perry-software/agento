@@ -175,8 +175,12 @@ override it:
 Run **Agento: Refresh** (`agento.refresh`) after an external change. The extension
 also refreshes on activation, when Session & Doctor first becomes visible, and after
 watched roadmap, review, or Git state changes. File events are debounced by at least
-three seconds. Load failures remain visible in the affected tree and are written to
-the **Agento** output channel; run Refresh to retry.
+three seconds. Each refresh is one `agento.mjs dashboard --pr` call: the CLI returns
+the session, doctor, status, and initiative documents together, and Deliveries,
+Initiatives, Session & Doctor, the status bar, and the window banner all update from
+that snapshot. A newer refresh always wins over a slower older one. Load failures
+remain visible in the affected tree and are written to the **Agento** output channel;
+a failed dashboard section affects only the views that read it. Run Refresh to retry.
 
 If a command must continue in another window, Agento records it for the exact
 CLI-selected target and opens that folder or companion workspace. The target window
@@ -270,8 +274,8 @@ description and first error — plus *Clear*. The choice runs `agento.mjs models
 <name>` or `models clear` with `--plugin-root` set to the plugin clone: the
 `agento.pluginRoot` setting, else the first enabled `chat.pluginLocations` entry whose
 `.claude-plugin/plugin.json` is named `agento`. The bundled CLI's own plugin root is
-`extension/`, so the extension always passes `--plugin-root`; the Session & Doctor
-`doctor` call passes it too, so its `model-profile` check reports the clone. See
+`extension/`, so the extension always passes `--plugin-root`; the refresh's
+`dashboard` call passes it too, so the Session & Doctor `model-profile` check reports the clone. See
 [model-profiles.md](model-profiles.md).
 
 ## Settings

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Changed.** The VS Code dashboard refreshes with one CLI spawn,
+  `agento.mjs dashboard --pr`, instead of five or more (`session`, `doctor`,
+  `status`, `initiative`, and one `initiative <slug>` per initiative). Deliveries,
+  Initiatives, Session & Doctor, the status bar, and the window banner now update
+  together from one snapshot. A failed section shows its error only in the views
+  that read it. Per-section CLI timings are written to the Agento output channel.
+
 - **Added.** `agento.mjs dashboard [--pr] [--plugin-root <dir>]` returns the
   `session`, `doctor`, `status` (as `deliveries`), and `initiative` documents (the
   list plus every initiative's detail) in one JSON document from one process, each
