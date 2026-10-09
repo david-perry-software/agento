@@ -3600,3 +3600,51 @@ test("start-session opens the target with code --new-window unless --no-open, re
   assert.match(codeCheck.fallback, /code --new-window/);
   assert.ok(missing.json.warnings.some((w) => /^open: code CLI not found on PATH; run code --new-window /.test(w)), missing.json.warnings.join("\n"));
 });
+
+// --- dashboard: one process per refresh ---------------------------------------
+
+// A restricted PATH whose `git` appends its arguments to `log` before running the real binary.
+function gitLoggingPath(extra = {}) {
+  const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-bin-"));
+  fs.symlinkSync(process.execPath, path.join(bin, "node"));
+  const log = path.join(bin, "git.log");
+  fs.writeFileSync(path.join(bin, "git"), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nexec ${JSON.stringify(realGit)} "$@"\n`, { mode: 0o755 });
+  for (const [name, script] of Object.entries(extra)) fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
+  return { log, env: { ...baseEnv, PATH: bin } };
+}
+
+// `worktree list --porcelain` calls per (real) `-C` directory; clears the log.
+function worktreeListCalls(log) {
+  const counts = {};
+  for (const line of fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n") : []) {
+    const match = line.match(/^-C (.+) worktree list --porcelain$/);
+    if (!match) continue;
+    const dir = fs.realpathSync(match[1]);
+    counts[dir] = (counts[dir] ?? 0) + 1;
+  }
+  fs.rmSync(log, { force: true });
+  return counts;
+}
+
+test("session, status --pr, and initiative read each clone's worktree list once from a product cwd", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  writeRoadmap(repo, "features/2026/09/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2"');
+  writeBreakdown(repo, "initiatives/2026/09/demo", null, [{ slug: "alpha" }, { slug: "beta" }]);
+  git(repo, "worktree", "add", "-q", "-b", "feature/alpha", path.join(wt, "feature-alpha"));
+  const { log, env } = gitLoggingPath();
+  for (const args of [["session"], ["status", "--pr"], ["initiative"]]) {
+    assert.equal(runWith({ cwd: repo, env }, ...args).code, 0);
+    assert.deepEqual(worktreeListCalls(log), { [fs.realpathSync(repo)]: 1 }, `in-repo ${args.join(" ")}`);
+  }
+
+  const pair = makePairRepo();
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/alpha", path.join(pair.wt, "feature-alpha"));
+  git(pair.docs, "worktree", "add", "-q", "-b", "feature/alpha", path.join(pair.docsWt, "feature-alpha"));
+  writeRoadmap(path.join(pair.docsWt, "feature-alpha"), "features/2026/09/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2"');
+  writeBreakdown(pair.docs, "initiatives/2026/09/demo", null, [{ slug: "alpha" }, { slug: "beta" }]);
+  for (const args of [["session"], ["status", "--pr"], ["initiative"]]) {
+    assert.equal(runWith({ cwd: pair.repo, env }, ...args).code, 0);
+    assert.deepEqual(worktreeListCalls(log), { [fs.realpathSync(pair.repo)]: 1, [fs.realpathSync(pair.docs)]: 1 }, `companion ${args.join(" ")}`);
+  }
+});
