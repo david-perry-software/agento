@@ -49,6 +49,7 @@ test("session doctor model preserves complete CLI state and derives status text"
     worktreePath: "/repo/worktree",
     branch: "feature/session-doctor-panel",
     workspace: "/repo/session.code-workspace (exists)",
+    hosted: false,
   });
   assert.deepEqual(model.companion, {
     path: "/repo/docs-worktree",
@@ -81,6 +82,19 @@ test("session doctor model colors the status bar by lifecycle and backs it by do
   assert.deepEqual(style("shipped", "fail"), { color: "agento.status.shipped", background: "error" });
   assert.deepEqual(style("no-delivery", "ok"), {});
   assert.deepEqual(style("no-delivery", "fail"), { background: "error" });
+});
+
+test("session doctor model reads hosted only when the CLI reports hosted: true", () => {
+  const hosted = (value: unknown) => {
+    const model = createSessionDoctorModel({ ...session, hosted: value }, doctor, status);
+    assert.equal(model.kind, "ready", model.kind === "error" ? model.message : undefined);
+    return model.kind === "ready" ? model.session.hosted : undefined;
+  };
+
+  assert.equal(hosted(true), true);
+  assert.equal(hosted(false), false);
+  assert.equal(hosted(undefined), false);
+  assert.equal(hosted("true"), false);
 });
 
 test('session doctor model renders a detached companion as "detached" (#75 session-doctor-detached-companion)', () => {

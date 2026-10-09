@@ -8,6 +8,7 @@ export interface SessionSummary {
   worktreePath: string;
   branch: string;
   workspace: string;
+  hosted: boolean;
 }
 
 export interface CompanionSummary {
@@ -194,6 +195,7 @@ export function createSessionDoctorModel(
         worktreePath: requiredString(worktree, "path"),
         branch: branch ?? "detached",
         workspace: parseWorkspace(sessionValue),
+        hosted: sessionValue.hosted === true,
       },
       companion: parseCompanion(sessionValue),
       warnings: [...sessionValue.warnings],
