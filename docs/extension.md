@@ -33,17 +33,20 @@ steps, roadmap status, and product pull request. Its tooltip includes product an
 companion pull requests, worktree ownership, workspace, companion checkout, and
 initiative data when the CLI supplies them.
 
-Select a delivery to open its `roadmap.md` beside the active editor. Use the play
-action to choose from commands the CLI currently allows for that delivery. The
-New Plan title action appears only in the primary window or an unpromoted plan
-window (see [Command routing](#command-routing)).
+Select a delivery to open its `roadmap.md` as a rendered Markdown preview in the
+active editor group; each file keeps its own tab, and selecting it again focuses
+that tab. To edit the source, use **Reopen Editor With… → Text Editor** on the
+preview tab. Use the play action to choose from commands the CLI currently allows
+for that delivery. The New Plan title action appears only in the primary window or
+an unpromoted plan window (see [Command routing](#command-routing)).
 
 ## Initiatives
 
 The Initiatives view groups members as Ready, In flight, Blocked, and Complete.
 Member details include wave, blockers, readiness, and whether the member is the
 recommended next feature. Select an initiative or member to open its
-`breakdown.md`. The play action on a ready member starts the guided planning flow
+`breakdown.md` as a rendered Markdown preview in the active editor group, the same
+way. The play action on a ready member starts the guided planning flow
 for that exact initiative member; it appears only in the primary window or an
 unpromoted plan window. The New Initiative title action appears only in the
 primary window. The play action on an in-flight member opens the

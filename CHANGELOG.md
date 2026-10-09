@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Changed.** Selecting a delivery in the dashboard's Deliveries view, or an
+  initiative or member in the Initiatives view, now opens its `roadmap.md` or
+  `breakdown.md` as a rendered Markdown preview in the active editor group instead
+  of a source editor in a new split beside it. Each file keeps its own pinned tab,
+  and selecting it again focuses that tab. Use **Reopen Editor With… → Text Editor**
+  to edit the source. If the built-in Markdown preview is unavailable, the file
+  opens as source text in the active group and the reason is logged to the Agento
+  output channel.
+
 - **Added.** A window banner at the top of the Agento sidebar. The new **Window**
   view shows a bright, colored banner naming the window type (`PRIMARY WINDOW`,
   `PLAN WINDOW`, `BUILD WINDOW`, `FREEHAND WINDOW`, `UNMANAGED WINDOW`, or a grey

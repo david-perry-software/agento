@@ -125,6 +125,55 @@ async function focusWindowBanner(api: ExtensionApi): Promise<string> {
   return api.windowBanner.html;
 }
 
+const MARKDOWN_PREVIEW_VIEW_TYPE = "vscode.markdown.preview.editor";
+
+function previewTabsFor(uri: vscode.Uri): vscode.Tab[] {
+  return vscode.window.tabGroups.all.flatMap((group) => group.tabs).filter((tab) =>
+    tab.input instanceof vscode.TabInputCustom
+    && tab.input.viewType === MARKDOWN_PREVIEW_VIEW_TYPE
+    && tab.input.uri.fsPath === uri.fsPath);
+}
+
+async function runOpenCommandUntilPreviewActive(command: vscode.Command, uri: vscode.Uri, label: string): Promise<vscode.Tab> {
+  await vscode.commands.executeCommand(command.command, ...(command.arguments ?? []));
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    if (tab?.input instanceof vscode.TabInputCustom && tab.input.uri.fsPath === uri.fsPath) {
+      return tab;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for ${label} to open as the active preview tab`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+async function assertOpensMarkdownPreview(command: vscode.Command, activeDocument: vscode.TextDocument, label: string): Promise<vscode.Uri> {
+  const uri = command.arguments?.[0];
+  assert.ok(uri instanceof vscode.Uri);
+  await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
+  const tab = await runOpenCommandUntilPreviewActive(command, uri, label);
+  const markdown = vscode.extensions.getExtension("vscode.markdown-language-features");
+  assert.ok(markdown?.isActive, "the built-in Markdown extension is active in the test host");
+  assert.equal(vscode.window.tabGroups.all.length, 1, `${label} opens in the active group without a split`);
+  assert.ok(tab.input instanceof vscode.TabInputCustom);
+  assert.equal(tab.input.viewType, MARKDOWN_PREVIEW_VIEW_TYPE, `${label} opens as a Markdown preview`);
+  assert.equal(tab.isPreview, false, `${label} opens as a pinned tab`);
+  assert.equal(tab.group.viewColumn, vscode.ViewColumn.One);
+  assert.equal(
+    vscode.window.visibleTextEditors.some((editor) => editor.document.uri.fsPath === uri.fsPath),
+    false,
+    `${label} shows no source text editor`,
+  );
+
+  await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
+  await runOpenCommandUntilPreviewActive(command, uri, label);
+  assert.equal(previewTabsFor(uri).length, 1, `a repeat ${label} click focuses the existing preview tab`);
+  assert.equal(vscode.window.tabGroups.all.length, 1);
+  return uri;
+}
+
 function sessionDoctorRows(api: ExtensionApi, label: string): SessionDoctorElement[] {
   const group = api.sessionDoctor.getChildren().find((element) => api.sessionDoctor.getTreeItem(element).label === label);
   assert.ok(group, `${label} group is present`);
@@ -518,6 +567,29 @@ export async function run(): Promise<void> {
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
+  if (process.env.AGENTO_ELECTRON_SCENARIO === "no-markdown") {
+    assert.equal(vscode.extensions.getExtension("vscode.markdown-language-features"), undefined, "the built-in Markdown extension is disabled");
+    await waitForReadyTree(api);
+    const leaf = api.deliveries.getChildren().flatMap((group) => deliveryElements(api, group))[0];
+    assert.ok(leaf);
+    const command = api.deliveries.getTreeItem(leaf).command;
+    assert.ok(command);
+    const uri = command.arguments?.[0];
+    assert.ok(uri instanceof vscode.Uri);
+    const activeDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(fixture, ".github", "agento.json")));
+    await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
+    const result = await vscode.commands.executeCommand(command.command, ...(command.arguments ?? []));
+    assert.equal(result, "source", "the delivery roadmap falls back to source text");
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    assert.ok(tab?.input instanceof vscode.TabInputText, "the fallback opens a text editor tab");
+    assert.equal(tab.input.uri.fsPath, uri.fsPath);
+    assert.equal(tab.isPreview, false, "the fallback tab is pinned");
+    assert.equal(tab.group.viewColumn, vscode.ViewColumn.One);
+    assert.equal(vscode.window.tabGroups.all.length, 1, "the fallback opens in the active group without a split");
+    assert.equal(previewTabsFor(uri).length, 0);
+    console.log("Electron no-markdown scenario passed: source fallback in the active group");
+    return;
+  }
   if (process.env.AGENTO_ELECTRON_SCENARIO === "workspace") {
     assert.equal(vscode.workspace.workspaceFile?.fsPath, path.join(path.dirname(fixture), "plan-e2e.code-workspace"));
     for (const [key, value] of Object.entries(SESSION_WORKSPACE_SETTINGS)) {
@@ -652,13 +724,8 @@ export async function run(): Promise<void> {
   const activeEditor = await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
   const deliveryTreeItem = api.deliveries.getTreeItem(items[0]!);
   assert.ok(deliveryTreeItem.command);
-  await vscode.commands.executeCommand(deliveryTreeItem.command.command, ...(deliveryTreeItem.command.arguments ?? []));
-  const roadmapUri = deliveryTreeItem.command.arguments?.[0];
-  assert.ok(roadmapUri instanceof vscode.Uri);
-  const roadmapEditor = vscode.window.visibleTextEditors.find((editor) => editor.document.uri.fsPath === roadmapUri.fsPath);
-  assert.ok(roadmapEditor, "delivery activation opens its roadmap");
   assert.equal(activeEditor.viewColumn, vscode.ViewColumn.One);
-  assert.equal(roadmapEditor.viewColumn, vscode.ViewColumn.Two);
+  const roadmapUri = await assertOpensMarkdownPreview(deliveryTreeItem.command, activeDocument, "delivery roadmap");
 
   const initiativeRoots = api.initiatives.getChildren();
   assert.deepEqual(initiativeRoots.map((element) => api.initiatives.getTreeItem(element).label), ["agento-extension", "Completed (1)"]);
@@ -762,17 +829,11 @@ export async function run(): Promise<void> {
 
   const memberTreeItem = api.initiatives.getTreeItem(readyMember);
   assert.ok(memberTreeItem.command);
-  await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
-  await vscode.commands.executeCommand(memberTreeItem.command.command, ...(memberTreeItem.command.arguments ?? []));
-  const breakdownUri = memberTreeItem.command.arguments?.[0];
-  assert.ok(breakdownUri instanceof vscode.Uri);
+  const breakdownUri = await assertOpensMarkdownPreview(memberTreeItem.command, activeDocument, "initiative member breakdown");
   const expectedArtifactRoot = process.env.AGENTO_ELECTRON_SCENARIO === "companion"
     ? path.join(path.dirname(fixture), "artifacts")
     : fixture;
   assert.equal(breakdownUri.fsPath, path.join(expectedArtifactRoot, "initiatives", "2026", "09", "agento-extension", "breakdown.md"));
-  const breakdownEditor = vscode.window.visibleTextEditors.find((editor) => editor.document.uri.fsPath === breakdownUri.fsPath);
-  assert.ok(breakdownEditor, "initiative member activation opens its breakdown");
-  assert.equal(breakdownEditor.viewColumn, vscode.ViewColumn.Two);
 
   const buildingRoadmap = vscode.Uri.file(path.join(expectedArtifactRoot, "features", "2026", "09", "building-delivery", "roadmap.md"));
   const buildingContents = Buffer.from(await vscode.workspace.fs.readFile(buildingRoadmap)).toString("utf8");
