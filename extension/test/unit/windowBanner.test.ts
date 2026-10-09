@@ -127,8 +127,8 @@ test("banner HTML is script-free, nonce-scoped, clickable, and uses the role col
   assert.doesNotMatch(html, /<script/i);
   assert.doesNotMatch(html, /\son[a-z]+=/i);
   assert.match(html, /<a class="banner" href="command:agento\.sessionDoctor\.focus" title="\/repo\/worktrees\/plan-1\nClick to open Session &amp; Doctor">/);
-  assert.match(html, /background: var\(--vscode-agento-role-build\);/);
-  assert.match(html, /color: var\(--vscode-agento-role-foreground\);/);
+  assert.ok(html.includes("background: var(--vscode-agento-role-build, var(--vscode-agento-role\\.build));"));
+  assert.ok(html.includes("color: var(--vscode-agento-role-foreground, var(--vscode-agento-role\\.foreground));"));
   assert.match(html, /<span class="title">BUILD WINDOW<\/span>/);
   assert.match(html, /<span class="detail">window-type-banner · feature\/window-type-banner · building<\/span>/);
   assert.equal(html.match(/href=/g)?.length, 1);
@@ -152,5 +152,5 @@ test("hostile branch names and error messages are HTML-escaped", () => {
   }
   assert.match(branchHtml, /title="\/repo\/&lt;script&gt;/);
   assert.match(errorHtml, /<span class="title">AGENTO UNAVAILABLE<\/span>/);
-  assert.match(errorHtml, /var\(--vscode-agento-role-unavailable\)/);
+  assert.ok(errorHtml.includes("var(--vscode-agento-role-unavailable, var(--vscode-agento-role\\.unavailable))"));
 });

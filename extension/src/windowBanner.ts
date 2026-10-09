@@ -58,8 +58,10 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-function cssVariable(colorId: string): string {
-  return `--vscode-${colorId.replaceAll(".", "-")}`;
+// VS Code webviews replace only the first dot of a color id (`--vscode-agento-role.build`); fall back for both spellings.
+function cssColor(colorId: string): string {
+  const [prefix, ...rest] = colorId.split(".");
+  return `var(--vscode-${colorId.replaceAll(".", "-")}, var(--vscode-${prefix}-${rest.join("\\.")}))`;
 }
 
 export function renderWindowBannerHtml(banner: WindowBannerModel, nonce: string): string {
@@ -73,8 +75,8 @@ export function renderWindowBannerHtml(banner: WindowBannerModel, nonce: string)
 <style nonce="${safeNonce}">
 html, body { height: 100%; margin: 0; padding: 0; }
 body {
-  background: var(${cssVariable(banner.colorId)});
-  color: var(${cssVariable(ROLE_FOREGROUND_COLOR)});
+  background: ${cssColor(banner.colorId)};
+  color: ${cssColor(ROLE_FOREGROUND_COLOR)};
   font-family: var(--vscode-font-family);
 }
 a.banner {
@@ -85,7 +87,7 @@ a.banner {
   color: inherit;
   text-decoration: none;
 }
-a.banner:focus-visible { outline: 2px solid var(${cssVariable(ROLE_FOREGROUND_COLOR)}); outline-offset: -4px; }
+a.banner:focus-visible { outline: 2px solid ${cssColor(ROLE_FOREGROUND_COLOR)}; outline-offset: -4px; }
 .title { display: block; font-weight: 700; font-size: 1.15em; letter-spacing: 0.08em; text-transform: uppercase; }
 .detail { display: block; margin-top: 2px; font-size: 0.9em; overflow-wrap: anywhere; }
 </style>
