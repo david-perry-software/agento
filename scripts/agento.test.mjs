@@ -3676,6 +3676,84 @@ test("start-session opens the target with code --new-window unless --no-open, re
   assert.ok(missing.json.warnings.some((w) => /^open: code CLI not found on PATH; run code --new-window /.test(w)), missing.json.warnings.join("\n"));
 });
 
+// --- close-session -------------------------------------------------------------
+
+// A PATH with node and git plus, when `status` is given, a `code` stub printing it
+// for `code --status`; never the real VS Code.
+function closeSessionEnv(status = null) {
+  const stubs = status === null ? {} : { code: `#!/bin/sh\nprintf '%s\\n' '${status.replaceAll("'", "")}'\n` };
+  return restrictedPath(stubs).env;
+}
+
+const closeSession = (cwd, env, ...args) => runWith({ cwd, env }, "close-session", ...args);
+
+// Worktree registrations and local branches of each clone, for "nothing changed" checks.
+const cloneState = (...clones) => clones.map((c) => [git(c, "worktree", "list", "--porcelain"), git(c, "branch", "--list")]);
+
+test("close-session validates its arguments and is listed in the usage header", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  for (const args of [[], ["a", "b"], ["Bad_Id"], ["feature/Bad_Slug"], ["changes/"], ["changes/Bad_Slug"], ["chore/x"], ["x", "--bogus"]]) {
+    const { code, json } = closeSession(repo, env, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+  const usage = run(repo).json.usage.join("\n");
+  assert.match(usage, /close-session <feature\|issue>\/<slug> \| changes\/<slug> \| <session-id> \[--dry-run\] \[--ignore-occupants\]/);
+  assert.match(usage, /Options: --root <dir>/);
+  assert.deepEqual(fs.readdirSync(wt), []);
+});
+
+test("close-session rejects from a non-primary window with the session record's alternatives, removing nothing", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const plan = path.join(wt, "plan-20261009-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  const before = cloneState(repo);
+
+  const { code, json } = closeSession(plan, env, "20261009-1");
+  assert.equal(code, 3);
+  assert.equal(json.status, "rejected");
+  assert.match(json.reason, /^wrong window: role=plan \(.*plan-20261009-1, branch detached\)$/);
+  const record = run(plan, "session").json;
+  assert.deepEqual(json.allowed, record.allowed);
+  assert.deepEqual(json.elsewhere, record.elsewhere);
+  assert.equal(json.applied, false);
+  assert.deepEqual(cloneState(repo), before);
+  assert.ok(fs.existsSync(plan));
+});
+
+test("close-session warns and continues when origin is unreachable, and fails with a re-login command on an authentication failure before any write", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const first = path.join(wt, "plan-20261009-1");
+  const second = path.join(wt, "plan-20261009-2");
+  git(repo, "worktree", "add", "-q", "--detach", first, "origin/main");
+  git(repo, "worktree", "add", "-q", "--detach", second, "origin/main");
+
+  git(repo, "remote", "set-url", "origin", path.join(path.dirname(repo), "missing.git"));
+  const offline = closeSession(repo, env, "20261009-1");
+  assert.equal(offline.code, 0, JSON.stringify(offline.json));
+  assert.equal(offline.json.status, "ok");
+  assert.equal(offline.json.outcome, "closed");
+  assert.ok(offline.json.warnings.some((w) => /^fetch: product .*missing\.git not fetched \(.*\); continuing from local refs$/.test(w)), offline.json.warnings.join("\n"));
+  assert.equal(fs.existsSync(first), false);
+
+  const ssh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-ssh-")), "ssh");
+  fs.writeFileSync(ssh, "#!/bin/sh\necho 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n", { mode: 0o755 });
+  git(repo, "remote", "set-url", "origin", "git@example.invalid:o/r.git");
+  const before = cloneState(repo);
+  const auth = closeSession(repo, { ...env, GIT_SSH_COMMAND: ssh }, "20261009-2");
+  assert.equal(auth.code, 3);
+  assert.equal(auth.json.status, "failed");
+  assert.equal(auth.json.reason, "fetch-auth");
+  assert.match(auth.json.message, /Permission denied \(publickey\)/);
+  assert.match(auth.json.reauth, /git@example\.invalid:o\/r\.git/);
+  assert.equal(auth.json.applied, false);
+  assert.deepEqual(cloneState(repo), before);
+  assert.ok(fs.existsSync(second));
+});
+
 // --- dashboard: one process per refresh ---------------------------------------
 
 // A restricted PATH whose `git` appends its arguments to `log` before running the real binary.
