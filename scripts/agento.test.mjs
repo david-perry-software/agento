@@ -3850,6 +3850,172 @@ test("close-session closes a promoted plan-<id> worktree as the build it became"
   assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/feature/promo"));
 });
 
+// Land <branch> on origin/main (fast-forward push) and delete it from origin;
+// `syncMain` also fast-forwards the clone's local main.
+function landBranch(work, branch, { syncMain = true } = {}) {
+  git(work, "push", "-q", "origin", `${branch}:main`);
+  git(work, "push", "-q", "origin", "--delete", branch);
+  git(work, "fetch", "-q", "--prune", "origin");
+  if (syncMain) git(work, "merge", "-q", "--ff-only", "origin/main");
+}
+
+test("close-session build close passes every close-decision error through as rejected and rejects a primary on the branch with the fix", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const inRepo = makeWorktreeRepo();
+  writeRoadmap(inRepo.repo, "features/2026/09/dup", "status: planned\nbranch: feature/dup\nnext-step: \"1.1\"");
+  writeRoadmap(inRepo.repo, "features/2026/10/dup", "status: planned\nbranch: feature/dup\nnext-step: \"1.1\"");
+  roadmapFor("feature", "odd", "planned", "feature/other")(inRepo.repo);
+  git(inRepo.repo, "add", "-A");
+  git(inRepo.repo, "commit", "-q", "-m", "roadmaps");
+  git(inRepo.repo, "push", "-q", "origin", "main");
+  for (const [subject, reason] of [["feature/dup", "multiple-roadmaps"], ["feature/odd", "branch-mismatch"], ["feature/nope", "no-resolvable-roadmap"]]) {
+    const { code, json } = closeSession(inRepo.repo, env, subject);
+    assert.equal(code, 3, subject);
+    assert.equal(json.status, "rejected", subject);
+    assert.equal(json.reason, reason, subject);
+    assert.ok(json.message, subject);
+  }
+
+  publishBranch(repo, "feature/side", null, { keepLocal: true });
+  publishBranch(docs, "feature/side", roadmapFor("feature", "side"), { keepLocal: true });
+  git(repo, "worktree", "add", "-q", path.join(wt, "feature-side"), "feature/side");
+  git(docs, "worktree", "add", "-q", path.join(docsWt, "feature-side"), "feature/side");
+  fs.writeFileSync(path.join(docsWt, "feature-side", "notes.md"), "draft");
+  const before = cloneState(repo, docs);
+  const gap = closeSession(repo, env, "feature/side");
+  assert.equal(gap.code, 3);
+  assert.equal(gap.json.reason, "companion-unpushed");
+  assert.match(gap.json.message, /^The companion half at .*feature-side is dirty; commit and push it/);
+  assert.deepEqual(cloneState(repo, docs), before);
+
+  publishBranch(inRepo.repo, "feature/here", roadmapFor("feature", "here"), { keepLocal: true });
+  git(inRepo.repo, "switch", "-q", "feature/here");
+  const primaryOwns = closeSession(inRepo.repo, env, "feature/here");
+  assert.equal(primaryOwns.code, 3);
+  assert.equal(primaryOwns.json.reason, "primary-owns-branch");
+  assert.equal(primaryOwns.json.fix, "git switch main");
+  assert.equal(git(inRepo.repo, "branch", "--show-current"), "feature/here");
+});
+
+test("close-session build close (in-repo): dirty and unpushed halves reject; a clean pushed half is removed with its branch retained while on origin", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  publishBranch(repo, "feature/widget", roadmapFor("feature", "widget"), { keepLocal: true });
+  const half = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", half, "feature/widget");
+
+  fs.writeFileSync(path.join(half, "scratch.txt"), "x");
+  const dirty = closeSession(repo, env, "feature/widget");
+  assert.equal(dirty.code, 3);
+  assert.equal(dirty.json.reason, "dirty");
+  assert.deepEqual(dirty.json.dirty.product, ["scratch.txt"]);
+  assert.match(dirty.json.message, /feature-widget has uncommitted changes: scratch\.txt/);
+  fs.rmSync(path.join(half, "scratch.txt"));
+
+  git(half, "commit", "-q", "--allow-empty", "-m", "unpushed step");
+  const ahead = closeSession(repo, env, "feature/widget");
+  assert.equal(ahead.code, 3);
+  assert.equal(ahead.json.reason, "unpushed");
+  assert.match(ahead.json.message, /1 commit\(s\) .*unpushed step/);
+  assert.deepEqual(ahead.json.next, ["/agento ship widget"]);
+  assert.equal(worktreeCount(repo), 2);
+  git(half, "push", "-q");
+
+  const { code, json } = closeSession(repo, env, "feature/widget");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "build");
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(half, { branch: "feature/widget", detached: false }));
+  assert.deepEqual(json.branches.product, { name: "feature/widget", upstream: "origin/feature/widget", remoteExists: true, mergedIntoDefault: false, action: "retained", reason: "origin/feature/widget still exists" });
+  assert.equal(json.branches.companion, null);
+  assert.deepEqual(json.next, ["/agento ship widget"]);
+  assert.equal(worktreeCount(repo), 1);
+});
+
+test("close-session build close (in-repo): remote-roadmap-only is already-closed and still deletes a merged local branch, retaining unmerged or stale-main ones with the reason", () => {
+  const { repo } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  publishBranch(repo, "feature/gone", roadmapFor("feature", "gone"));
+  const gone = closeSession(repo, env, "feature/gone");
+  assert.equal(gone.code, 0, JSON.stringify(gone.json));
+  assert.equal(gone.json.outcome, "already-closed");
+  assert.equal(gone.json.product.registered, false);
+  assert.equal(gone.json.branches.product.action, "absent");
+
+  publishBranch(repo, "feature/unmerged", roadmapFor("feature", "unmerged"), { keepLocal: true });
+  git(repo, "push", "-q", "origin", "--delete", "feature/unmerged");
+  roadmapFor("feature", "unmerged")(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "roadmap on main");
+  git(repo, "push", "-q", "origin", "main");
+  const unmerged = closeSession(repo, env, "feature/unmerged");
+  assert.equal(unmerged.code, 0, JSON.stringify(unmerged.json));
+  assert.equal(unmerged.json.outcome, "already-closed");
+  assert.deepEqual(unmerged.json.branches.product, { name: "feature/unmerged", upstream: "origin/feature/unmerged", remoteExists: false, mergedIntoDefault: false, action: "retained", reason: "not merged into origin/main" });
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/feature/unmerged"));
+
+  roadmapFor("feature", "stale", "complete")(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "stale roadmap on main");
+  git(repo, "push", "-q", "origin", "main");
+  publishBranch(repo, "feature/stale", null, { keepLocal: true });
+  landBranch(repo, "feature/stale", { syncMain: false });
+  const stale = closeSession(repo, env, "feature/stale");
+  assert.equal(stale.code, 0, JSON.stringify(stale.json));
+  assert.equal(stale.json.branches.product.action, "retained");
+  assert.equal(stale.json.branches.product.mergedIntoDefault, true);
+  assert.match(stale.json.branches.product.reason, /^merged into origin\/main but not into main at .*; run git -C .* pull --ff-only, then re-send$/);
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/feature/stale"));
+
+  git(repo, "merge", "-q", "--ff-only", "origin/main");
+  const merged = closeSession(repo, env, "feature/stale");
+  assert.equal(merged.code, 0, JSON.stringify(merged.json));
+  assert.equal(merged.json.outcome, "already-closed");
+  assert.deepEqual(merged.json.branches.product, { name: "feature/stale", upstream: "origin/feature/stale", remoteExists: false, mergedIntoDefault: true, action: "deleted", reason: "merged into origin/main and gone from origin" });
+  assert.deepEqual(merged.json.next, []);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/stale"));
+});
+
+test("close-session build close (companion pair): removes both halves and the workspace file, retaining branches on origin; once landed, deletes the merged branch in each clone", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const open = (slug, status = "in-review") => {
+    publishBranch(repo, `feature/${slug}`, null, { keepLocal: true });
+    publishBranch(docs, `feature/${slug}`, roadmapFor("feature", slug, status), { keepLocal: true });
+    git(repo, "worktree", "add", "-q", path.join(wt, `feature-${slug}`), `feature/${slug}`);
+    git(docs, "worktree", "add", "-q", path.join(docsWt, `feature-${slug}`), `feature/${slug}`);
+    fs.writeFileSync(path.join(wt, `feature-${slug}.code-workspace`), "{}\n");
+  };
+
+  open("pw");
+  const { code, json } = closeSession(repo, env, "feature/pw");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(path.join(wt, "feature-pw"), { branch: "feature/pw", detached: false }));
+  assert.deepEqual(json.companion, removedHalf(path.join(docsWt, "feature-pw"), { branch: "feature/pw", detached: false }));
+  assert.deepEqual(json.workspace, { path: path.join(wt, "feature-pw.code-workspace"), existed: true, removed: true });
+  assert.equal(json.branches.product.action, "retained");
+  assert.equal(json.branches.companion.action, "retained");
+  assert.equal(json.branches.companion.reason, "origin/feature/pw still exists");
+  assert.deepEqual(json.next, ["/agento ship pw"]);
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+
+  open("done", "complete");
+  landBranch(repo, "feature/done");
+  landBranch(docs, "feature/done");
+  const landed = closeSession(repo, env, "feature/done");
+  assert.equal(landed.code, 0, JSON.stringify(landed.json));
+  assert.equal(landed.json.outcome, "closed");
+  assert.equal(landed.json.branches.product.action, "deleted");
+  assert.equal(landed.json.branches.companion.action, "deleted");
+  assert.deepEqual(landed.json.next, []);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/done"));
+  assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/feature/done"));
+  assert.equal(fs.existsSync(path.join(wt, "feature-done.code-workspace")), false);
+});
+
 // --- dashboard: one process per refresh ---------------------------------------
 
 // A restricted PATH whose `git` appends its arguments to `log` before running the real binary.
