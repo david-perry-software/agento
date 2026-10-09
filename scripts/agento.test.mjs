@@ -3629,13 +3629,14 @@ function worktreeListCalls(log) {
   return counts;
 }
 
-test("session, status --pr, and initiative read each clone's worktree list once from a product cwd", () => {
+test("session, status --pr, initiative, and dashboard read each clone's worktree list once from a product cwd", () => {
   const { repo, wt } = makeWorktreeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2"');
   writeBreakdown(repo, "initiatives/2026/09/demo", null, [{ slug: "alpha" }, { slug: "beta" }]);
   git(repo, "worktree", "add", "-q", "-b", "feature/alpha", path.join(wt, "feature-alpha"));
   const { log, env } = gitLoggingPath();
-  for (const args of [["session"], ["status", "--pr"], ["initiative"]]) {
+  const commands = [["session"], ["status", "--pr"], ["initiative"], ["dashboard"], ["dashboard", "--pr"]];
+  for (const args of commands) {
     assert.equal(runWith({ cwd: repo, env }, ...args).code, 0);
     assert.deepEqual(worktreeListCalls(log), { [fs.realpathSync(repo)]: 1 }, `in-repo ${args.join(" ")}`);
   }
@@ -3645,7 +3646,7 @@ test("session, status --pr, and initiative read each clone's worktree list once 
   git(pair.docs, "worktree", "add", "-q", "-b", "feature/alpha", path.join(pair.docsWt, "feature-alpha"));
   writeRoadmap(path.join(pair.docsWt, "feature-alpha"), "features/2026/09/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2"');
   writeBreakdown(pair.docs, "initiatives/2026/09/demo", null, [{ slug: "alpha" }, { slug: "beta" }]);
-  for (const args of [["session"], ["status", "--pr"], ["initiative"]]) {
+  for (const args of commands) {
     assert.equal(runWith({ cwd: pair.repo, env }, ...args).code, 0);
     assert.deepEqual(worktreeListCalls(log), { [fs.realpathSync(pair.repo)]: 1, [fs.realpathSync(pair.docs)]: 1 }, `companion ${args.join(" ")}`);
   }
