@@ -1,6 +1,6 @@
 ---
 description: "Close a clean isolated worktree — a detached planning session (session ID), a fully pushed build session (feature/<slug> or issue/<slug>), or a freehand session (changes/<slug>), with mode detected from worktree state"
-argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id>"
+argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]"
 ---
 
 Needs: terminal
@@ -18,116 +18,88 @@ sessions you abandon or supersede; closing a finished build before shipping stay
 valid (ship then takes its no-owner path).
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (shared rule 6 below). Window check per §11: requires role `primary`.
+delivery-policy.instructions.md §9, its `next:` command repeated in its own block
+directly above the result line per §12; a duplicate submission follows this
+command's §9 idempotency row. Window check per §11: requires role `primary`.
 
-**Dispatch on the argument:**
+## One call
 
-- `feature/<slug>` or `issue/<slug>` → **build close**.
-- `changes/<slug>` → **freehand close**.
-- A bare session ID matching `[a-z0-9][a-z0-9-]{1,63}` → resolve
-  `plan-<session-id>` inside the managed worktrees directory; if it is detached, run
-  **plan close**; if it sits on a `feature/<slug>` or `issue/<slug>` branch it was
-  promoted, so run **build close** for that branch using this worktree.
+Run exactly one command, passing the user's argument through unchanged and adding
+`--dry-run` or `--ignore-occupants` only when the user asked for them (the CLI path is
+announced in the session context as `Agento CLI:`):
 
-**Shared rules:**
+`node <agento-root>/scripts/agento.mjs close-session <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]`
 
-1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
-   `role: "primary"`; otherwise reject per §11 with the record's alternatives. Then
-   `git fetch origin`. Authentication or authorization failures halt immediately.
-2. Managed paths live under the managed worktrees directory; resolve the canonical
-   path for the argument with the Agento CLI — `node <agento-root>/scripts/agento.mjs
-   paths <feature|issue|plan|freehand> <slug|session-id>` (path announced in the
-   session context as `Agento CLI:`) — which reads `worktrees.dir` from the target
-   repository's `.github/agento.json` (default: sibling `<repo-name>-worktrees/`).
-   The same result names the pair: `companion.worktree` (the companion half, a
-   worktree of the companion clone at `artifactsRoot`) and `workspace` (the
-   `.code-workspace` file); both `null` in the in-repo layout, where every rule below
-   applies to the product half alone. Refuse to remove any other path, and never
-   remove the primary worktree or the companion clone itself.
-3. Inspect the target with `git -C <path> status --short` — the product half and, when
-   registered, the companion half. If tracked, untracked, staged, or conflicted
-   changes exist in either, stop and list them. Never use `--force`.
-4. Remove the companion half first, when registered: `git -C <artifactsRoot> worktree
-   remove <companion-absolute-path>` with the literal resolved path, then `git -C
-   <artifactsRoot> worktree prune`. Then remove the product half with `git worktree
-   remove <canonical-absolute-path>` using the resolved path literally (not a shell
-   variable), then run `git worktree prune`. Finally delete the workspace file when it
-   exists (`rm <workspace>`, literal path). The delivery guard checks each removal for
-   process working directories and matching VS Code folder or workspace windows and
-   asks the user to close them before approving removal.
-5. Do not kill processes or close windows automatically. When the guard reports active
-   occupants, show its details and wait for the user's decision; recommend closing the
-   listed terminal/process or VS Code window, then rerunning the removal command.
-6. Worktree already removed (the canonical path is neither registered per
-   `git worktree list --porcelain` nor present on disk — checked per half, the
-   companion's via `git -C <artifactsRoot> worktree list --porcelain`): report that
-   half as already closed and continue with the other half and the workspace file;
-   when nothing remains, stop successfully — but still delete each repository's local
-   branch when it is merged there (remote branch gone and an ancestor of that
-   repository's `origin/main`, `git branch -d` / `git -C <artifactsRoot> branch -d`)
-   and run `git worktree prune` in each.
+The CLI performs the whole close deterministically and prints one JSON document:
+the §11 window check from the session record (role `primary`); a bounded
+`git fetch --prune origin` in the product clone and, in companion mode, the companion
+clone; the dispatch (`feature/<slug>` or `issue/<slug>` → build close through the
+same decision `close-decision` reports; `changes/<slug>` → freehand close; a bare
+session ID → plan close, or the build close of the branch a promoted `plan-<id>`
+worktree now carries); the managed paths of both halves and the workspace file; the
+clean, pushed, and branch checks of every registered half; its own occupant check
+(processes whose working directory is inside a half, and VS Code windows that have
+it open — the same check and wording as the delivery guard, which cannot see a
+removal made inside the CLI); the removal in order — companion half, prune, product
+half, prune, workspace file — never forced; and the local-branch rule in each
+repository (deleted only when gone from origin, merged into that repository's
+`origin/<default>`, checked out nowhere else, and accepted by git's non-forced
+delete). Do not run any of these steps yourself, before or after the call, and do not
+rerun the CLI within one submission. Never kill processes or close windows. A
+duplicate submission is safe: halves already removed are reported
+`registered: false` and skipped, and merged local branches left behind are still
+deleted.
 
-## Plan close
+## Map the JSON to the response
 
-1. If the resolved path is not a registered worktree, report that no such planning
-   session is open and stop successfully.
-2. Require the worktree to be detached and its HEAD an ancestor of `origin/main`; a
-   registered companion half must likewise be detached with its HEAD an ancestor of
-   the companion's `origin/main` (a half left on a branch with commits is unpushed
-   work — stop and list it).
-3. Remove the pair and report the removed unpublished planning path(s).
+- **Exit 1** (`status: "usage-error"`): §9 rejected receipt quoting `message`; offer
+  `/agento close-session <session-id>`, `/agento close-session changes/<slug>`, and
+  `/agento close-session <feature|issue>/<slug>` as the alternatives, each in its own
+  §12 block.
+- **`status: "rejected"`**: §9 rejected receipt with `reason` verbatim (and
+  `message` when set) and the alternatives copied from `allowed[]` and `elsewhere[]`
+  per §9, each in its own §12 block. Nothing was removed. Add per `reason`:
+  - `dirty`: list `dirty.product` and `dirty.companion`; the user commits, pushes,
+    or discards them.
+  - `unpushed`: list `commits.product` and `commits.companion`; when `next` holds
+    `/agento finish-freehand`, emit it in its own block, preceded by one line saying
+    it runs in the freehand session's window.
+  - `primary-owns-branch`: the primary is on the delivery branch; quote `fix` (the
+    default-branch switch) for the user.
+  - `companion-unpushed`, `multiple-roadmaps`, `branch-mismatch`,
+    `no-resolvable-roadmap`, `unregistered`, `protected-path`: quote `message`.
+- **`status: "blocked"`** (`reason: "occupied"`): accepted receipt; list every
+  `occupants.product` and `occupants.companion` entry verbatim under its half's path;
+  ask the user to close the listed terminals or processes and the session's VS Code
+  window. Emit the re-send command `/agento close-session <argument>` in its own §12
+  block, followed — after one line naming it as the explicit override for occupants
+  the user has decided to leave — by `/agento close-session <argument> --ignore-occupants`
+  in its own block. Nothing was removed; the result is `completed` with state
+  `blocked`.
+- **`status: "failed"`**: accepted receipt and the §9 failed result with what
+  happened and that re-sending the command resumes:
+  - `fetch-auth`: quote `message`; the user runs `reauth` in their own terminal
+    (§1) and re-sends.
+  - `worktree-remove` or `branch-delete`: quote `message` (the failing git call and
+    its stderr) and name `half`; report each half with `removed: true` as already
+    removed.
+- **`status: "ok"`**: accepted receipt and the report:
+  1. `applied: false` (`--dry-run`): say first that this is a preview and nothing
+     was changed; every field below is what a real run would do.
+  2. `outcome` — `closed`, `already-closed` (no worktree owned the branch), or
+     `nothing-to-close` (no such session is open).
+  3. `product.path` and, with a pair, `companion.path`, each as removed
+     (`removed: true`) or already gone (`registered: false`); `workspace.path` and
+     whether it was removed.
+  4. `branches.product` and `branches.companion`: the branch `name` with `action`
+     (`deleted`, `retained`, `absent`) and its `reason` verbatim.
+  5. Every `warnings[]` entry verbatim (an unreachable origin, occupants ignored
+     with `--ignore-occupants`).
+  6. Each `next` command in its own §12 block, preceded by one line saying it runs
+     from this primary window: `/agento ship <slug>` when the delivery is not
+     complete, or `/agento start-freehand <slug> --resume` when freehand work still
+     needs publishing. An empty `next` means no further cleanup.
 
-## Build close
-
-1. Run `agento.mjs close-decision <type> <slug>`. It resolves the roadmap locally with
-   an `origin/<branch>` fallback and validates the `branch:` header. `status: error`
-   (`multiple-roadmaps`, `branch-mismatch`, `no-resolvable-roadmap`,
-   `companion-unpushed`) stops the close — report the `message` verbatim.
-   `companion-unpushed` means the companion half (`companion.path`) is dirty or ahead
-   of its upstream: the user commits and pushes (or discards) there first; never
-   remove it.
-2. Read `owner` (`{ path, role, dirPrefix, id } | null`), `reason`, and `companion`
-   (`{ path, branch, detached, dirty, ahead, registered } | null`) from the decision:
-   - `reason: managed-worktree-present` — `owner` is the managed worktree on the
-     branch; continue below with `owner.path` as the target.
-   - `reason: primary-owns-branch` — the primary worktree itself is on the delivery
-     branch. Stop: return the primary to `main` first (`git switch main`), nothing to
-     remove.
-   - `reason: remote-roadmap-only` (`owner: null`) — no worktree owns the branch:
-     report that the build session is already closed (or never opened) and stop
-     successfully per shared rule 6. Do not hard-fail on remote-only roadmap
-     resolution.
-3. Require an upstream for the branch and verify it is zero commits ahead of its
-   upstream. If commits are unpushed, stop and report them. (The companion half was
-   already checked by the CLI: `companion.ahead` is `0` and `companion.dirty` false
-   whenever the decision is `ok`.)
-4. Remove the pair per shared rule 4 (companion half when `companion.registered`, then
-   `owner.path`, then the workspace file). Do not delete a branch when it remains on
-   its origin or is not merged into that repository's `origin/main`. If the remote
-   branch no longer exists and the local branch is an ancestor of `origin/main`,
-   delete only that merged local branch with `git branch -d` — in the product repo
-   and, under the same conditions evaluated in the companion clone, with `git -C
-   <artifactsRoot> branch -d <branch>`.
-5. Report the removed path(s), retained or deleted local branch(es), and whether the
-   next action is `/agento ship <slug>` or no further cleanup.
-
-## Freehand close
-
-1. Resolve `freehand-<slug>` inside the managed worktrees directory and require the
-   registered worktree there to be on branch `changes/<slug>`. If no secondary
-   worktree owns that branch, report that there is no freehand session to close and
-   stop successfully. Freehand sessions have no delivery artifacts, so never look for
-   a roadmap.
-2. Require a clean status per shared rule 3 (both halves). If the branch has an
-   upstream — in either repository — require it to be zero commits ahead; unpushed
-   commits stop the close with `/agento finish-freehand` named as the way to publish
-   them.
-3. Remove the pair per shared rule 4. Delete the local branch with `git branch -d` only
-   when the remote branch no longer exists and the branch is an ancestor of
-   `origin/main`; otherwise retain it and say why. Apply the same rule in the companion
-   clone (`git -C <artifactsRoot> branch -d changes/<slug>`).
-4. Report the removed path(s), the retained or deleted local branch(es), and whether
-   the work was already merged or still needs `/agento finish-freehand` in a resumed
-   session; when it does, emit `/agento start-freehand <slug> --resume` as its own
-   block per policy §12, preceded by one line saying it runs from this primary window.
+There is no step-by-step fallback: if the CLI cannot run or prints no JSON, end with
+the §9 failed result quoting its stderr; re-sending the command resumes from git
+state.
