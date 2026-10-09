@@ -8,12 +8,13 @@ import { CliClient } from "./cliClient.js";
 import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor, type CommandFileResolver } from "./commandDispatcher.js";
 import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
+import { formatDashboardTimings, splitDashboardDocument } from "./dashboardDocument.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { initiativeMemberActionSource } from "./initiativeMemberActions.js";
-import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
+import { createInitiativeTreeError, createInitiativeTreeModel } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import { missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
@@ -116,7 +117,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.show();
   const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current));
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
-  const latestInitiativeRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
   let gate = CLOSED_GATE;
@@ -203,21 +203,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       deliveries: DeliveryTreeSnapshot;
       sessionDoctor: ReturnType<typeof createSessionDoctorModel>;
       gate: WindowGate;
+      initiatives: InitiativeTreeSnapshot;
+      timings: string | null;
     }>(
       async () => {
         const root = pluginRoot();
-        const [sessionResult, doctorResult, statusResult] = await Promise.all([
-          client.run(["session", "--pr"], folder.uri.fsPath),
-          client.run(root ? ["doctor", "--plugin-root", root] : ["doctor"], folder.uri.fsPath),
-          client.run(["status", "--pr"], folder.uri.fsPath),
-        ]);
+        const result = await client.run(["dashboard", "--pr", ...(root ? ["--plugin-root", root] : [])], folder.uri.fsPath);
+        const { session, doctor, deliveries: status, initiatives: initiativeSection, timings } = splitDashboardDocument(result.json);
+        const artifactRoot = roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath;
+        // Session & Doctor reads the session, doctor, and status documents; it errors only when one of them did.
+        const sessionDoctorError = [session, doctor, status].find((value) => value instanceof Error);
         return {
           deliveries: {
-            model: createDeliveryTreeModel(statusResult.json),
-            roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
+            model: status instanceof Error ? createDeliveryTreeError(status) : createDeliveryTreeModel(status),
+            roadmapRoot: artifactRoot,
           },
-          sessionDoctor: createSessionDoctorModel(sessionResult.json, doctorResult.json, statusResult.json),
-          gate: windowGate(sessionResult.json),
+          sessionDoctor: sessionDoctorError ? createSessionDoctorError(sessionDoctorError) : createSessionDoctorModel(session, doctor, status),
+          gate: session instanceof Error ? CLOSED_GATE : windowGate(session),
+          initiatives: {
+            model: initiativeSection instanceof Error
+              ? createInitiativeTreeError(initiativeSection)
+              : createInitiativeTreeModel(initiativeSection.list, initiativeSection.details),
+            artifactRoot,
+          },
+          timings: formatDashboardTimings(timings),
         };
       },
       (snapshot) => {
@@ -225,6 +234,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
         applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor);
+        initiatives.update(snapshot.initiatives);
+        if (snapshot.timings) {
+          output.appendLine(snapshot.timings);
+        }
         for (const warning of snapshot.deliveries.model.warnings) {
           output.appendLine(warning);
         }
@@ -238,41 +251,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         } else {
           output.appendLine(snapshot.sessionDoctor.message);
         }
-      },
-      (error) => {
-        applyGate(CLOSED_GATE);
-        deliveries.update({
-          model: createDeliveryTreeError(error),
-          roadmapRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
-        });
-        const model = createSessionDoctorError(error);
-        sessionDoctor.update(model);
-        applySessionIndicators(statusBar, windowBanner, model);
-        output.appendLine(String(error));
-      },
-    );
-    void latestInitiativeRefresh.run<InitiativeTreeSnapshot>(
-      async () => {
-        const listResult = await client.run(["initiative"], folder.uri.fsPath);
-        const details = await Promise.all(initiativeSlugs(listResult.json).map(async (slug) => {
-          try {
-            const detailResult = await client.run(["initiative", slug], folder.uri.fsPath);
-            return [slug, detailResult.json] as const;
-          } catch (error) {
-            return [slug, error instanceof Error ? error : new Error(String(error))] as const;
-          }
-        }));
-        return {
-          model: createInitiativeTreeModel(listResult.json, new Map(details)),
-          artifactRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
-        };
-      },
-      (snapshot) => {
-        initiatives.update(snapshot);
-        if (snapshot.model.kind === "error") {
-          output.appendLine(snapshot.model.message);
-        } else if (snapshot.model.kind === "ready") {
-          for (const item of snapshot.model.items) {
+        if (snapshot.initiatives.model.kind === "error") {
+          output.appendLine(snapshot.initiatives.model.message);
+        } else if (snapshot.initiatives.model.kind === "ready") {
+          for (const item of snapshot.initiatives.model.items) {
             for (const diagnostic of item.diagnostics) {
               output.appendLine(`initiative ${item.slug}: ${diagnostic.message}`);
             }
@@ -280,10 +262,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         }
       },
       (error) => {
-        initiatives.update({
-          model: createInitiativeTreeError(error),
-          artifactRoot: roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath,
-        });
+        applyGate(CLOSED_GATE);
+        const artifactRoot = roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath;
+        deliveries.update({ model: createDeliveryTreeError(error), roadmapRoot: artifactRoot });
+        const model = createSessionDoctorError(error);
+        sessionDoctor.update(model);
+        applySessionIndicators(statusBar, windowBanner, model);
+        initiatives.update({ model: createInitiativeTreeError(error), artifactRoot });
         output.appendLine(String(error));
       },
     );

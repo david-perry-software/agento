@@ -18,6 +18,7 @@
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
+//   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details } and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
@@ -25,10 +26,11 @@
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
@@ -43,7 +45,7 @@ import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowe
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 26);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 27);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -122,6 +124,9 @@ function hasCompanionConfig(dir) {
 
 const MANAGED_HALF = /^(plan|feature|issue|freehand)-(.+)$/;
 
+// anchorRoot's own worktree listing, reused as the product list when it anchors on that same dir.
+let anchorListing = null;
+
 // A cwd inside a companion clone or a companion half (`<clone>-worktrees/<kind>-<id>`)
 // has no artifacts.repo of its own. Re-anchor on the product checkout: the sibling
 // git checkout of the clone whose config resolves artifacts.dir to that clone — and,
@@ -130,7 +135,8 @@ const MANAGED_HALF = /^(plan|feature|issue|freehand)-(.+)$/;
 // same); several matches keep it too and warn.
 function anchorRoot(dir) {
   if (hasCompanionConfig(dir)) return { root: dir, warnings: [], fromClone: false };
-  const ownList = parseWorktreeList(git(dir, "worktree", "list", "--porcelain"));
+  anchorListing = { dir, text: git(dir, "worktree", "list", "--porcelain") };
+  const ownList = parseWorktreeList(anchorListing.text);
   const clone = ownList[0]?.path ?? dir;
   if (!samePath(clone, dir) && hasCompanionConfig(clone)) return { root: dir, warnings: [], fromClone: false };
   const halfName = path.basename(dir);
@@ -170,6 +176,16 @@ function anchorRoot(dir) {
 
 const anchor = anchorRoot(toplevel);
 const root = anchor.root;
+
+// The product clone's `git worktree list --porcelain`, read at most once per process;
+// `fresh` re-reads it after this process itself has added a worktree.
+let productWorktreeCache = anchorListing?.dir === root ? anchorListing.text : null;
+function productWorktreeText({ fresh = false } = {}) {
+  if (fresh || productWorktreeCache === null) productWorktreeCache = git(root, "worktree", "list", "--porcelain");
+  return productWorktreeCache;
+}
+const productWorktrees = ({ fresh = false } = {}) => parseWorktreeList(productWorktreeText({ fresh }));
+const worktreesDirByPrimary = new Map();
 const roleCwd = anchor.fromClone ? root : startDir;
 const { config, source } = loadAgentoConfig(root);
 const repoName = path.basename(root);
@@ -189,7 +205,7 @@ const gitAdapter = {
 function resolveArtifacts() {
   const repo = config.artifacts.repo ?? {};
   if (repo.name == null && repo.dir == null) return resolveArtifactsRoot({ config, rootDir: root });
-  const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+  const primaryRoot = productWorktrees()[0]?.path ?? root;
   const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
   const primaryRepo = primaryConfig.artifacts.repo ?? {};
   const anchored = primaryRepo.name != null || primaryRepo.dir != null ? primaryConfig : config;
@@ -237,7 +253,7 @@ function layoutFor(branch) {
   } catch {
     return null;
   }
-  const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+  const primaryRoot = productWorktrees()[0]?.path ?? root;
   const resolved = resolveArtifactsRoot({ config: branchConfig, rootDir: root, primaryRoot });
   if (!resolved.external) return null;
   const dir = resolved.dir;
@@ -347,8 +363,8 @@ function resolveSessionPaths(kind, id, layoutOverride = null) {
   // a companion reports that companion's roots and pair (plan/freehand unchanged).
   const branchLayout = !layoutOverride && artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
   const layout = layoutOverride ?? (branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout());
-  const productWorktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
-  const worktree = managedWorktreePath(productWorktrees, kind, id, worktreesDir);
+  const productList = productWorktrees();
+  const worktree = managedWorktreePath(productList, kind, id, worktreesDir);
   const companion = layout.artifacts.external
     ? {
         worktreesDir: layout.companionWorktreesDir,
@@ -357,7 +373,7 @@ function resolveSessionPaths(kind, id, layoutOverride = null) {
       }
     : null;
   const workspace = layout.artifacts.external ? path.join(path.dirname(worktree), `${kind}-${id}.code-workspace`) : null;
-  return { kind, id, branch, artifactRel, layout, worktree, companion, workspace, productWorktrees };
+  return { kind, id, branch, artifactRel, layout, worktree, companion, workspace, productWorktrees: productList };
 }
 
 const originOf = (dir) => git(dir, "remote", "get-url", "origin") || null;
@@ -593,48 +609,107 @@ function withExit(result) {
 function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
   if (!branch) return { pr: null, warnings: [`${label}: no branch to look up (detached HEAD)`] };
   const opts = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
+  if (!ghVersion().ok) return ghMissingLookup(label);
   try {
-    execFileSync("gh", ["--version"], opts);
-  } catch {
-    return { pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] };
-  }
-  try {
-    const out = execFileSync("gh", ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"], opts);
-    return { pr: JSON.parse(out), warnings: [] };
+    return { pr: JSON.parse(execFileSync("gh", prViewArgs(branch), opts)), warnings: [] };
   } catch (error) {
-    const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
-    return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
+    return failedLookup(label, branch, error);
   }
 }
 
+const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"];
+const ghMissingLookup = (label) => ({ pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] });
+
+function failedLookup(label, branch, error) {
+  const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
+  return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
+}
+
+const execFileAsync = promisify(execFile);
+
+// execFile with stdin closed, like the synchronous calls' `stdio: ["ignore", …]`.
+function execAsync(cmd, args, opts) {
+  const pending = execFileAsync(cmd, args, { encoding: "utf8", ...opts });
+  pending.child.stdin?.end();
+  return pending;
+}
+
+// lookupPullRequest's exact result, without blocking the process.
+async function lookupPullRequestAsync(branch, { cwd = root, label = "pr" } = {}) {
+  if (!branch) return lookupPullRequest(branch, { cwd, label });
+  if (!(await probeAsync("gh", ["--version"])).ok) return ghMissingLookup(label);
+  try {
+    const { stdout } = await execAsync("gh", prViewArgs(branch), { cwd, timeout: 15000 });
+    return { pr: JSON.parse(stdout), warnings: [] };
+  } catch (error) {
+    return failedLookup(label, branch, error);
+  }
+}
+
+// Runs the thunks with at most `limit` in flight; results keep the input order.
+async function runPool(tasks, limit = 4) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const index = next++;
+      results[index] = await tasks[index]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
+const lookupKey = (cwd, branch) => `${cwd}\0${branch}`;
+
+// Prefetch: the deduplicated `{ cwd, branch, label }` PR lookups and the doctor's
+// external probes (into the probe cache), through one pool. `gh --version` goes first
+// so the lookups waiting on it never hold the pool's slots, then the lookups (network
+// round-trips of up to a second each), then the probes. Returns the lookups keyed by
+// cwd + branch.
+async function lookupPullRequests(requests, { probes = [] } = {}) {
+  const unique = new Map();
+  for (const request of requests) {
+    const cwd = request.cwd ?? root;
+    if (request.branch && !unique.has(lookupKey(cwd, request.branch))) unique.set(lookupKey(cwd, request.branch), { ...request, cwd });
+  }
+  const results = new Map();
+  const ghFirst = unique.size ? [["gh", ["--version"]]] : [];
+  const probeTask = ([cmd, args]) => () => probeAsync(cmd, args);
+  const lookupTasks = [...unique].map(([key, { branch, cwd, label }]) => async () => results.set(key, await lookupPullRequestAsync(branch, { cwd, label })));
+  await runPool([...ghFirst.map(probeTask), ...lookupTasks, ...probes.map(probeTask)]);
+  return results;
+}
+
+// A lookupPullRequest-compatible function answering from `lookupPullRequests` results.
+const prefetchedLookup = (results) => (branch, opts = {}) => results.get(lookupKey(opts.cwd ?? root, branch)) ?? lookupPullRequest(branch, opts);
+
 // The mirrored artifact PR: the same branch name looked up in the companion clone
 // the layout names. In-repo layout → null with no gh call, so today's output is unchanged.
-function lookupCompanionPullRequest(branch, layout = checkoutLayout()) {
+function lookupCompanionPullRequest(branch, layout = checkoutLayout(), lookup = lookupPullRequest) {
   if (!layout.artifacts.external) return { pr: null, warnings: [] };
-  return lookupPullRequest(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
+  return lookup(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
 }
 
 // worktrees.dir is relative to the primary checkout; resolving it against a
 // secondary worktree's own basename would name the wrong sibling directory.
-function primaryWorktreesDir(worktrees) {
+function primaryWorktreesDir(worktrees = productWorktrees()) {
   const primaryRoot = worktrees[0]?.path ?? root;
-  const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
-  return path.resolve(primaryRoot, primaryConfig.worktrees.dir);
+  if (!worktreesDirByPrimary.has(primaryRoot)) {
+    const primaryConfig = primaryRoot === root ? config : loadAgentoConfig(primaryRoot).config;
+    worktreesDirByPrimary.set(primaryRoot, path.resolve(primaryRoot, primaryConfig.worktrees.dir));
+  }
+  return worktreesDirByPrimary.get(primaryRoot);
 }
 
 // The `session` record: role, worktree, worktrees, companion, workspace, delivery,
-// lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups.
-function sessionRecord({ pr: withPr = false } = {}) {
-  // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
-  const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
-  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-  const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
-  const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-  const companion = describeCompanion(worktree);
-  const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
-  const prBranch = delivery?.branch ?? worktree.branch;
-  const { pr, warnings: prWarnings } = withPr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
-  const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
+// lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups (`lookup`: a
+// lookupPullRequest-compatible function, e.g. one answering from prefetched results).
+// `context` is sessionContext(), passed in when the caller needed `prBranch` first.
+function sessionRecord({ pr: withPr = false, lookup = lookupPullRequest } = {}, context = sessionContext()) {
+  const { worktrees, sessionWorktreesDir, role, worktree, hosted, hostedReason, classified, companion, delivery, prBranch } = context;
+  const { pr, warnings: prWarnings } = withPr ? lookup(prBranch) : { pr: null, warnings: [] };
+  const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch, undefined, lookup) : { pr: null, warnings: [] };
   const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
   const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
   const unregistered = companionWarning({ pair: companion, onDisk: Boolean(companion) && fs.existsSync(companion.path), productWorktrees: worktrees, companionClone: artifacts.dir, productRoot: worktrees[0]?.path ?? root });
@@ -658,26 +733,77 @@ function sessionRecord({ pr: withPr = false } = {}) {
   };
 }
 
+// Everything the session record derives before its PR lookups, including the branch they use.
+function sessionContext() {
+  // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
+  const worktrees = productWorktrees();
+  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+  const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+  const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
+  const companion = describeCompanion(worktree);
+  const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
+  return { worktrees, sessionWorktreesDir, role, worktree, hosted, hostedReason, classified, companion, delivery, prBranch: delivery?.branch ?? worktree.branch };
+}
+
 // --- doctor ----------------------------------------------------------------
 
-// Every probe is bounded and never throws: a missing binary, a nonzero exit, and a
-// timeout all become a result the caller maps to ok | warn | fail.
-function probe(cmd, args) {
-  const opts = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } };
-  try {
-    return { ok: true, out: execFileSync(cmd, args, opts).trim().split("\n")[0] ?? "" };
-  } catch (error) {
-    const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0];
-    const stdout = (error?.stdout ?? "").toString().trim().split("\n")[0];
-    const timedOut = error?.code === "ETIMEDOUT" || (error?.signal && !error?.status);
-    return {
-      ok: false,
-      missing: error?.code === "ENOENT",
-      timedOut,
-      detail: timedOut ? `${cmd} timed out after 10 s` : stderr || stdout || error?.message || "unknown error",
-    };
-  }
+const probeCache = new Map();
+const probeKey = (cmd, args) => [cmd, ...args].join("\0");
+const probeOptions = () => ({ cwd: root, encoding: "utf8", timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+
+function probeFailure(cmd, error) {
+  const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0];
+  const stdout = (error?.stdout ?? "").toString().trim().split("\n")[0];
+  const timedOut = error?.code === "ETIMEDOUT" || (error?.signal && !error?.status);
+  return {
+    ok: false,
+    missing: error?.code === "ENOENT",
+    timedOut,
+    detail: timedOut ? `${cmd} timed out after 10 s` : stderr || stdout || error?.message || "unknown error",
+  };
 }
+
+// Every probe is bounded and never throws: a missing binary, a nonzero exit, and a
+// timeout all become a result the caller maps to ok | warn | fail. Each command +
+// arguments runs at most once per process (probeAsync may have run it already).
+function probe(cmd, args) {
+  const key = probeKey(cmd, args);
+  if (!probeCache.has(key)) {
+    try {
+      probeCache.set(key, { ok: true, out: execFileSync(cmd, args, { ...probeOptions(), stdio: ["ignore", "pipe", "pipe"] }).trim().split("\n")[0] ?? "" });
+    } catch (error) {
+      probeCache.set(key, probeFailure(cmd, error));
+    }
+  }
+  return probeCache.get(key);
+}
+
+const probesInFlight = new Map();
+
+// probe() without blocking the process; concurrent callers share one run.
+function probeAsync(cmd, args) {
+  const key = probeKey(cmd, args);
+  if (probeCache.has(key)) return Promise.resolve(probeCache.get(key));
+  if (!probesInFlight.has(key)) {
+    probesInFlight.set(
+      key,
+      execAsync(cmd, args, probeOptions()).then(
+        ({ stdout }) => ({ ok: true, out: stdout.trim().split("\n")[0] ?? "" }),
+        (error) => probeFailure(cmd, error),
+      ).then((result) => {
+        probeCache.set(key, result);
+        return result;
+      }),
+    );
+  }
+  return probesInFlight.get(key);
+}
+
+const ghVersion = () => probe("gh", ["--version"]);
+const lsRemoteArgs = () => ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default];
+
+// The external commands DOCTOR_CHECKS probe, so `dashboard` can run them concurrently first.
+const doctorProbes = () => [["gh", ["--version"]], ["gh", ["auth", "status"]], ["git", lsRemoteArgs()], ["code", ["--version"]], ["python3", ["--version"]]];
 
 const DOCTOR_CHECKS = {
   node() {
@@ -690,13 +816,13 @@ const DOCTOR_CHECKS = {
   "git-remote"() {
     const url = git(root, "remote", "get-url", "origin");
     if (!url) return { status: "fail", detail: "no `origin` remote", fallback: "add the remote (`git remote add origin <url>`) or work in a clone; push and PR steps need origin" };
-    const reach = probe("git", ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default]);
+    const reach = probe("git", lsRemoteArgs());
     return reach.ok
       ? { status: "ok", detail: `origin ${url}, ${config.branches.default} reachable`, fallback: null }
       : { status: "warn", detail: `origin ${url} unreachable: ${reach.detail}`, fallback: "work offline; fetch, push, and PR steps will fail until the network is back — retry them before ending the turn" };
   },
   gh() {
-    const version = probe("gh", ["--version"]);
+    const version = ghVersion();
     if (!version.ok) return { status: "fail", detail: version.missing ? "gh CLI not found on PATH" : `gh --version failed: ${version.detail}`, fallback: "install GitHub CLI (https://cli.github.com) — the user installs it; the agent does not" };
     const auth = probe("gh", ["auth", "status"]);
     return auth.ok
@@ -716,7 +842,7 @@ const DOCTOR_CHECKS = {
       : { status: "warn", detail: version.missing ? "python3 not found on PATH" : `python3 --version failed: ${version.detail}`, fallback: "hooks do not run: the delivery guard and SessionStart context are unavailable — proceed with care and apply the policy by hand" };
   },
   "worktrees-dir"() {
-    const dir = primaryWorktreesDir(parseWorktreeList(git(root, "worktree", "list", "--porcelain")));
+    const dir = primaryWorktreesDir();
     let existing = dir;
     while (!fs.existsSync(existing) && path.dirname(existing) !== existing) existing = path.dirname(existing);
     try {
@@ -727,7 +853,7 @@ const DOCTOR_CHECKS = {
     }
   },
   "session-workspace"() {
-    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const worktrees = productWorktrees();
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { worktree } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const workspace = describeWorkspace(worktree, sessionWorktreesDir);
@@ -755,7 +881,7 @@ const DOCTOR_CHECKS = {
     }
     const detail = `${dir} (${name}), origin ${url}, ${branch} present`;
     // Pre-migration leftovers in the product repo are ignored by every reader; say so once.
-    const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+    const primaryRoot = productWorktrees()[0]?.path ?? root;
     const stale = [config.artifacts.features, config.artifacts.issues, config.artifacts.initiatives].filter((rel) => holdsArtifacts(path.join(primaryRoot, rel)));
     if (stale.length) {
       return { status: "warn", detail: `${detail}; stale in-repo roots: ${stale.map((r) => `${r}/`).join(", ")}`, fallback: "the in-repo roots are ignored while artifacts.repo is set; move them into the companion (`/agento agento-init --migrate`) or remove them" };
@@ -865,17 +991,26 @@ function checksFor(needs) {
   return Object.keys(DOCTOR_CHECKS).filter((id) => ids.has(id));
 }
 
+// Each check runs at most once per process, so `dashboard` can run the local ones early.
+const doctorResults = new Map();
+
 function runDoctor(ids) {
   const checks = ids.map((id) => {
-    try {
-      return { id, ...DOCTOR_CHECKS[id]() };
-    } catch (error) {
-      return { id, status: "fail", detail: `check threw: ${error?.message ?? error}`, fallback: "report this as an Agento bug; run the probe by hand" };
+    if (!doctorResults.has(id)) {
+      try {
+        doctorResults.set(id, { id, ...DOCTOR_CHECKS[id]() });
+      } catch (error) {
+        doctorResults.set(id, { id, status: "fail", detail: `check threw: ${error?.message ?? error}`, fallback: "report this as an Agento bug; run the probe by hand" });
+      }
     }
+    return doctorResults.get(id);
   });
   const status = checks.reduce((worst, c) => (STATUS_RANK[c.status] > STATUS_RANK[worst] ? c.status : worst), "ok");
   return { status, checks };
 }
+
+// The checks that run no external probe (doctorProbes) and so need no network.
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"];
 
 // --- initiatives -----------------------------------------------------------
 
@@ -1310,7 +1445,7 @@ function startSession() {
   let resolved;
   let productBranch = null;
   if (args.mode === "plan") {
-    const productList = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const productList = productWorktrees();
     const id = args.id ?? nextSessionId({ now: new Date(), taken: takenPlanIds([worktreesDir, companionWorktreesDir], [productList, companionWorktrees()]) });
     out.subject = id;
     resolved = resolveSessionPaths("plan", id, checkoutLayout());
@@ -1322,7 +1457,7 @@ function startSession() {
     const content = result.source === "local" ? fs.readFileSync(result.path, "utf8") : layout.agit("show", `origin/${result.branch}:${result.path}`);
     if (header(content, "status") === "complete") reject(`${type}/${slug} is complete (status: complete); no build session is needed`);
     productBranch = result.branch;
-    const productList = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const productList = productWorktrees();
     // The window check already keeps the primary on the default branch, so an owner here is managed.
     const owner = findOwner({ worktrees: productList, worktreesDir: primaryWorktreesDir(productList), branch: productBranch, config });
     resolved = owner ? resolveSessionPaths(owner.dirPrefix, owner.id, layout) : resolveSessionPaths(type, slug, layout);
@@ -1340,7 +1475,7 @@ function startSession() {
   const companionDefault = `origin/${resolved.layout.config.branches.default}`;
 
   // Product half: reuse when registered, never touch an unregistered path on disk.
-  const productList = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+  const productList = productWorktrees();
   if (registeredAt(productList, resolved.worktree)) out.outcome = "resumed";
   else if (!fs.existsSync(resolved.worktree)) {
     let addArgs;
@@ -1375,7 +1510,7 @@ function startSession() {
   }
 
   // Post-add check on both halves, created or reused: right clone, right origin.
-  const freshProduct = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+  const freshProduct = productWorktrees({ fresh: true });
   const freshCompanion = companionClone ? parseWorktreeList(git(companionClone, "worktree", "list", "--porcelain")) : [];
   const describeHalf = (halfPath, own, clone) => {
     const onDisk = fs.existsSync(halfPath);
@@ -1633,6 +1768,168 @@ function releaseSnapshot(ctx) {
   });
 }
 
+// --- documents -------------------------------------------------------------
+
+// What `status` emits. `lookup` as in sessionRecord; `roadmaps` replaces the walk.
+function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = false, lookup = lookupPullRequest, roadmaps = null } = {}) {
+  const worktrees = productWorktrees();
+  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+  const items = (roadmaps ?? allRoadmaps(typeFilter, managedHalves(worktrees))).filter((r) => !slugFilter || r.slug === slugFilter);
+  const bySlug = new Map();
+  for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
+  const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
+  const order = ["in-progress", "paused", "in-review", "planned", "complete"];
+  items.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.slug.localeCompare(b.slug));
+  // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
+  const warnings = [];
+  const layout = checkoutLayout();
+  for (const item of items) {
+    // Complete roadmaps skip the lookup: their PRs are merged history, not dashboard state.
+    const looked = withPr && item.status !== "complete";
+    const { pr, warnings: prWarnings } = looked ? lookup(item.branch) : { pr: null, warnings: [] };
+    const { pr: companionPr, warnings: companionPrWarnings } = looked ? lookupCompanionPullRequest(item.branch, layout, lookup) : { pr: null, warnings: [] };
+    const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr, companionPr });
+    const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
+    const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
+    item.lifecycle = lifecycle;
+    item.owner = owner;
+    item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
+    item.companion = companionOfOwner(owner, layout);
+    const actions = deriveAllowed({ role: owner?.role ?? "primary", lifecycle, delivery: item, worktree: owner });
+    item.allowed = actions.allowed;
+    item.elsewhere = actions.elsewhere;
+    item.pr = pr;
+    item.companionPr = companionPr;
+    warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));
+  }
+  return {
+    status: "ok",
+    root,
+    currentBranch,
+    defaultBranch: config.branches.default,
+    items,
+    duplicates,
+    resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug),
+    lifecycles: LIFECYCLES,
+    warnings,
+  };
+}
+
+// The roadmaps `initiative` derives from. Same bases as `status`: a member planned on
+// an unmerged delivery branch lives only in its managed half and must not stay
+// "unplanned"/ready here (the Initiatives view would otherwise keep its plan play
+// button, which starts a second session instead of offering build/ap).
+const initiativeRoadmaps = () => allRoadmaps("feature", managedHalves(productWorktrees()));
+
+// What `initiative` emits.
+function initiativeListDocument(roadmaps, breakdowns = allBreakdowns()) {
+  const items = breakdowns.map((b) => {
+    const d = deriveInitiative(b, roadmaps);
+    return {
+      slug: b.slug,
+      dir: b.dir,
+      created: b.created,
+      lastUpdated: b.lastUpdated,
+      total: d.features.length,
+      complete: d.features.filter((f) => f.state === "complete").length,
+      inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
+      ready: d.features.filter((f) => f.ready).length,
+      done: d.done,
+      valid: d.status === "ok",
+    };
+  });
+  return { status: "ok", initiativesRoot: config.artifacts.initiatives, items, root, configSource: source };
+}
+
+// What `initiative <slug>` emits.
+function initiativeDetailDocument(slug, roadmaps, breakdowns = allBreakdowns()) {
+  const breakdown = breakdowns.find((b) => b.slug === slug);
+  if (!breakdown) return { status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.`, root, configSource: source };
+  const derived = deriveInitiative(breakdown, roadmaps);
+  return {
+    ...derived,
+    initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
+    anomalies: mergedAnomalies(derived.features),
+    root,
+    configSource: source,
+  };
+}
+
+// What `doctor [--for <command>]` emits; `command` must name a COMMAND_NEEDS entry.
+function doctorDocument(command = null) {
+  const needs = command ? COMMAND_NEEDS[command] : null;
+  const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
+  return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
+}
+
+// What `dashboard` emits: the session, doctor, status (`deliveries`), and initiative
+// documents from one process. The roadmaps are walked once for deliveries and
+// initiatives; every PR lookup (with `pr`) and the doctor's probes run through one
+// bounded pool while the local doctor checks and the initiatives are computed. A
+// section that throws becomes { status: "error", message }.
+async function dashboardDocument({ pr: withPr = false } = {}) {
+  const started = performance.now();
+  const attempt = (build) => {
+    try {
+      return { value: build() };
+    } catch (error) {
+      return { error };
+    }
+  };
+  const session = attempt(() => sessionContext());
+  const roadmaps = attempt(() => allRoadmaps(null, managedHalves(productWorktrees())));
+
+  const requests = [];
+  if (withPr) {
+    const layout = checkoutLayout();
+    const branches = [session.value?.prBranch, ...(roadmaps.value ?? []).filter((r) => r.status !== "complete").map((r) => r.branch)];
+    for (const branch of branches) {
+      requests.push({ branch, cwd: root, label: "pr" });
+      if (layout.artifacts.external) requests.push({ branch, cwd: layout.artifactsRoot, label: "companionPr" });
+    }
+  }
+  const timings = {};
+  const section = (name, build) => {
+    const sectionStarted = performance.now();
+    try {
+      return build();
+    } catch (error) {
+      return { status: "error", message: error?.message ?? String(error) };
+    } finally {
+      timings[name] = Math.round(performance.now() - sectionStarted);
+    }
+  };
+  const valueOf = (attempted) => {
+    if (attempted.error) throw attempted.error;
+    return attempted.value;
+  };
+
+  // The lookups wait on `gh --version`; with it cached they spawn on the next turn,
+  // before the synchronous work below blocks the event loop.
+  if (requests.length) await probeAsync("gh", ["--version"]);
+  const prefetch = lookupPullRequests(requests, { probes: doctorProbes() });
+  await new Promise((resolve) => setImmediate(resolve));
+  const initiatives = section("initiatives", () => {
+    const features = valueOf(roadmaps).filter((r) => r.type === "feature");
+    const breakdowns = allBreakdowns();
+    const list = initiativeListDocument(features, breakdowns);
+    return { list, details: Object.fromEntries(list.items.map((item) => [item.slug, initiativeDetailDocument(item.slug, features, breakdowns)])) };
+  });
+  runDoctor(LOCAL_DOCTOR_CHECKS);
+  const lookup = prefetchedLookup(await prefetch);
+
+  const document = {
+    status: "ok",
+    session: section("session", () => sessionRecord({ pr: withPr, lookup }, valueOf(session))),
+    doctor: section("doctor", () => doctorDocument()),
+    // statusDocument adds fields to its items; the initiatives read the records unchanged.
+    deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
+    initiatives,
+  };
+  timings.total = Math.round(performance.now() - started);
+  return { ...document, timings, root, configSource: source };
+}
+
 switch (command) {
   case "config":
     emit({
@@ -1671,54 +1968,14 @@ switch (command) {
   case "status": {
     const typeFilter = rest[0] ? requireType(rest[0]) : null;
     const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
-    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
-    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const items = allRoadmaps(typeFilter, managedHalves(worktrees)).filter((r) => !slugFilter || r.slug === slugFilter);
-    const bySlug = new Map();
-    for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
-    const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
-    const order = ["in-progress", "paused", "in-review", "planned", "complete"];
-    items.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.slug.localeCompare(b.slug));
-    // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
-    const warnings = [];
-    const layout = checkoutLayout();
-    for (const item of items) {
-      // Complete roadmaps skip the lookup: their PRs are merged history, not dashboard state.
-      const lookup = options.pr && item.status !== "complete";
-      const { pr, warnings: prWarnings } = lookup ? lookupPullRequest(item.branch) : { pr: null, warnings: [] };
-      const { pr: companionPr, warnings: companionPrWarnings } = lookup ? lookupCompanionPullRequest(item.branch, layout) : { pr: null, warnings: [] };
-      const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr, companionPr });
-      const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
-      const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
-      item.lifecycle = lifecycle;
-      item.owner = owner;
-      item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
-      item.companion = companionOfOwner(owner, layout);
-      const actions = deriveAllowed({ role: owner?.role ?? "primary", lifecycle, delivery: item, worktree: owner });
-      item.allowed = actions.allowed;
-      item.elsewhere = actions.elsewhere;
-      item.pr = pr;
-      item.companionPr = companionPr;
-      warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));
-    }
-    emit({
-      status: "ok",
-      root,
-      currentBranch,
-      defaultBranch: config.branches.default,
-      items,
-      duplicates,
-      resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug),
-      lifecycles: LIFECYCLES,
-      warnings,
-    });
+    emit(statusDocument({ typeFilter, slugFilter, pr: Boolean(options.pr) }));
     break;
   }
 
   case "close-decision": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    const worktreeList = git(root, "worktree", "list", "--porcelain");
+    const worktreeList = productWorktreeText();
     const { decision, layout } = decideWithLayout(type, slug, (l) =>
       closeBuildSessionDecision({ type, slug, currentBranch, worktreeList, git: l.artifactsGit, rootDir: root, artifactsRoot: l.artifactsRoot, config: l.config }),
     );
@@ -1751,7 +2008,7 @@ switch (command) {
   case "ship-preflight": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    const worktreeList = git(root, "worktree", "list", "--porcelain");
+    const worktreeList = productWorktreeText();
     const { decision: preflight, layout } = decideWithLayout(type, slug, (l) =>
       evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot: l.artifactsRoot, currentBranch, git: l.artifactsGit, config: l.config, worktreeList }),
     );
@@ -1846,38 +2103,9 @@ switch (command) {
 
   case "initiative": {
     const slug = rest[0] ? requireSlug(rest[0]) : null;
-    const breakdowns = allBreakdowns();
-    // Same bases as `status`: a member planned on an unmerged delivery branch lives
-    // only in its managed half and must not stay "unplanned"/ready here (the
-    // Initiatives view would otherwise keep its plan play button, which starts a
-    // second session instead of offering build/ap).
-    const roadmaps = allRoadmaps("feature", managedHalves(parseWorktreeList(git(root, "worktree", "list", "--porcelain"))));
-    if (!slug) {
-      const items = breakdowns.map((b) => {
-        const d = deriveInitiative(b, roadmaps);
-        return {
-          slug: b.slug,
-          dir: b.dir,
-          created: b.created,
-          lastUpdated: b.lastUpdated,
-          total: d.features.length,
-          complete: d.features.filter((f) => f.state === "complete").length,
-          inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
-          ready: d.features.filter((f) => f.ready).length,
-          done: d.done,
-          valid: d.status === "ok",
-        };
-      });
-      withExit({ status: "ok", initiativesRoot: config.artifacts.initiatives, items });
-    }
-    const breakdown = breakdowns.find((b) => b.slug === slug);
-    if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
-    const derived = deriveInitiative(breakdown, roadmaps);
-    withExit({
-      ...derived,
-      initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
-      anomalies: mergedAnomalies(derived.features),
-    });
+    const roadmaps = initiativeRoadmaps();
+    const document = slug ? initiativeDetailDocument(slug, roadmaps) : initiativeListDocument(roadmaps);
+    emit(document, document.status === "ok" ? 0 : 3);
     break;
   }
 
@@ -1894,18 +2122,23 @@ switch (command) {
 
   case "doctor": {
     if (rest.length) usage(`doctor takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    const needs = options.for ? COMMAND_NEEDS[options.for] : null;
-    if (options.for && !needs) usage(`--for: unknown command ${options.for}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
-    const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
+    if (options.for && !COMMAND_NEEDS[options.for]) usage(`--for: unknown command ${options.for}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+    const document = doctorDocument(options.for ?? null);
     // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
-    emit({ status, for: needs ? { command: options.for, needs } : null, checks, root, configSource: source }, status === "fail" ? 3 : 0);
+    emit(document, document.status === "fail" ? 3 : 0);
+    break;
+  }
+
+  case "dashboard": {
+    if (rest.length) usage(`dashboard takes no positional arguments, got ${JSON.stringify(rest[0])}`);
+    emit(await dashboardDocument({ pr: Boolean(options.pr) }));
     break;
   }
 
   case "next": {
     if (rest.length > 1) usage(`next takes at most one slug, got ${JSON.stringify(rest.slice(1).join(" "))}`);
     const requestedSlug = rest[0] ? requireSlug(rest[0]) : null;
-    const worktrees = parseWorktreeList(git(root, "worktree", "list", "--porcelain"));
+    const worktrees = productWorktrees();
     const sessionWorktreesDir = primaryWorktreesDir(worktrees);
     const { role, worktree, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
     const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
@@ -2045,7 +2278,7 @@ switch (command) {
     const fail = (reason, message, extra = {}) => emit({ status: "error", reason, source: root, destination, message, ...extra, root, configSource: source }, 3);
     if (!destTop || !samePath(destTop, destination)) fail("not-a-checkout", `${destination} is not the toplevel of a git checkout; pass the companion clone or one of its worktrees.`);
     const clone = parseWorktreeList(git(destination, "worktree", "list", "--porcelain"))[0]?.path ?? destination;
-    const primaryRoot = parseWorktreeList(git(root, "worktree", "list", "--porcelain"))[0]?.path ?? root;
+    const primaryRoot = productWorktrees()[0]?.path ?? root;
     if (samePath(clone, primaryRoot) || !samePath(path.dirname(clone), path.dirname(primaryRoot))) {
       fail("not-sibling", `${clone} must be a sibling checkout of the primary ${primaryRoot} (the companion is resolved as ../<name> from there).`, { clone, primary: primaryRoot });
     }
@@ -2204,11 +2437,7 @@ switch (command) {
     const report = (fields, code) => emit({ status: "ok", verdict: null, sha: shaArg, workflow, run: null, supersededBy: null, reason: null, mergeDate: null, graceSeconds: GRACE_SECONDS, polls: 0, waitedSeconds: 0, ...fields, root, configSource: source }, code);
     if (!workflow) report({ verdict: "not-configured", reason: "checks.releaseWorkflow is not set; there is no release to wait for" }, 0);
     try {
-      try {
-        execFileSync("gh", ["--version"], { cwd: root, stdio: "ignore", timeout: 15000 });
-      } catch {
-        throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
-      }
+      if (!ghVersion().ok) throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
       const ctx = releaseContext(workflow, shaArg);
       const wait = options.wait ?? 0;
       const interval = options.interval ?? 10;

@@ -236,6 +236,25 @@ function statusResponse(active: number) {
   };
 }
 
+// One `agento.mjs dashboard --pr` document composed from the per-subcommand fixtures.
+function dashboardResponse(
+  session: unknown,
+  doctor: unknown,
+  status: unknown,
+  initiatives: unknown = { list: { status: "ok", items: [] }, details: {} },
+) {
+  return {
+    status: "ok",
+    session,
+    doctor,
+    deliveries: status,
+    initiatives,
+    timings: { session: 1, doctor: 1, deliveries: 1, initiatives: 1, total: 4 },
+    root: "/fixture/product",
+    configSource: null,
+  };
+}
+
 // A throwaway primary checkout with a bare origin (plus, for `companion`, an `artifacts`
 // companion clone with its own bare origin) for the real `agento.mjs start-session`.
 function makeStartSessionFixture(companion: boolean): { base: string; product: string } {
@@ -957,20 +976,11 @@ export async function run(): Promise<void> {
   try {
     await vscode.commands.executeCommand("agento.refresh");
     await vscode.commands.executeCommand("agento.refresh");
-    assert.equal(pending.length, 8);
+    assert.equal(pending.length, 2, "one CLI spawn per refresh");
+    assert.deepEqual(pending.map((request) => request.args.slice(0, 2)), [["dashboard", "--pr"], ["dashboard", "--pr"]]);
 
     const resolveBatch = (batch: number, role: string, active: number, warnings: string[]) => {
-      for (const request of pending.slice(batch * 4, batch * 4 + 4)) {
-        const command = request.args[0];
-        const json = command === "session"
-          ? sessionResponse(role, warnings)
-          : command === "doctor"
-            ? doctorResponse
-            : command === "initiative"
-              ? { status: "ok", items: [] }
-              : statusResponse(active);
-        request.resolve({ code: 0, json, stderr: "" });
-      }
+      pending[batch]!.resolve({ code: 0, json: dashboardResponse(sessionResponse(role, warnings), doctorResponse, statusResponse(active)), stderr: "" });
     };
 
     const newerApplied = waitForSessionDoctor(
@@ -1080,24 +1090,17 @@ export async function run(): Promise<void> {
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
     assert.deepEqual(api.windowGate(), CLOSED_GATE, "a stale primary refresh does not reopen the gate");
 
-    const refreshWithSession = async (sessionJson: unknown, predicate: () => boolean, description: string) => {
+    const refreshWith = async (json: unknown, predicate: () => boolean, description: string) => {
       const start = pending.length;
       await vscode.commands.executeCommand("agento.refresh");
-      assert.equal(pending.length, start + 4);
+      assert.equal(pending.length, start + 1);
+      assert.equal(pending[start]!.args[0], "dashboard");
       const applied = waitForSessionDoctor(api, predicate, description);
-      for (const request of pending.slice(start)) {
-        const command = request.args[0];
-        const json = command === "session"
-          ? sessionJson
-          : command === "doctor"
-            ? doctorResponse
-            : command === "initiative"
-              ? { status: "ok", items: [] }
-              : statusResponse(0);
-        request.resolve({ code: 0, json, stderr: "" });
-      }
+      pending[start]!.resolve({ code: 0, json, stderr: "" });
       await applied;
     };
+    const refreshWithSession = (sessionJson: unknown, predicate: () => boolean, description: string) =>
+      refreshWith(dashboardResponse(sessionJson, doctorResponse, statusResponse(0)), predicate, description);
     const detachedPlan = sessionResponse("plan");
     await refreshWithSession(
       { ...detachedPlan, worktree: { ...detachedPlan.worktree, branch: null, detached: true } },
@@ -1125,6 +1128,29 @@ export async function run(): Promise<void> {
     assert.ok(bannerHtml.includes("--vscode-agento-role-unavailable"));
     assert.ok(bannerHtml.includes("command:agento.sessionDoctor.focus"));
     assert.doesNotMatch(bannerHtml, /<script/i);
+
+    // A failing dashboard section renders only the error state of the views that read it.
+    await refreshWith(
+      dashboardResponse(sessionResponse("primary"), doctorResponse, statusResponse(2), { status: "error", message: "fixture breakdown unreadable" }),
+      () => api.sessionDoctor.current.kind === "ready" && api.sessionDoctor.current.session.role === "primary",
+      "initiatives section error",
+    );
+    assert.equal(api.initiatives.current.model.kind, "error");
+    assert.equal(api.initiatives.current.model.kind === "error" && api.initiatives.current.model.message, "Unable to load initiatives: fixture breakdown unreadable");
+    assert.notEqual(api.deliveries.current.model.kind, "error");
+    assert.equal(api.statusBar.text, "Agento: primary · 2 active");
+    assert.deepEqual(api.windowGate(), { primary: true, canPlan: true });
+    await refreshWith(
+      dashboardResponse(sessionResponse("primary"), { status: "error", message: "fixture doctor crashed" }, statusResponse(1)),
+      () => api.sessionDoctor.current.kind === "error",
+      "doctor section error",
+    );
+    // Read through a widened type: the earlier `kind === "ready"` guard narrowed the property.
+    const failedModel = api.sessionDoctor.current as { kind: string; message?: string };
+    assert.deepEqual([failedModel.kind, failedModel.message], ["error", "Unable to load Session & Doctor: fixture doctor crashed"]);
+    assert.notEqual(api.deliveries.current.model.kind, "error");
+    assert.notEqual(api.initiatives.current.model.kind, "error");
+    assert.deepEqual(api.windowGate(), { primary: true, canPlan: true }, "a doctor failure leaves the session's gate open");
   } finally {
     api.client.run = originalRun;
   }

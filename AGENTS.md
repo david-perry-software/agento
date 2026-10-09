@@ -17,7 +17,7 @@ delivery system. Layout:
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,
   close-decision, ship-preflight, paths, ports, session, next, initiative, doctor,
-  migrate, release), `agento-config.mjs`, `session-state.mjs`,
+  dashboard, migrate, release), `agento-config.mjs`, `session-state.mjs`,
   `delivery-roadmap-resolver.mjs`, `release-state.mjs`,
   `wait-for-checks.sh`, `hooks/{delivery-guard,session-context,replay-guard}.sh`.
 - `extension/` — the VS Code dashboard, launcher, and router over the CLI;
