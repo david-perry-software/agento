@@ -3684,3 +3684,136 @@ test("status --pr probes gh --version once and runs pr view once per non-complet
   assert.deepEqual(branchesOf(pairCalls.views, pair.repo), open);
   assert.deepEqual(branchesOf(pairCalls.views, pair.docs), open);
 });
+
+// Product primary plus a build worktree on feature/alpha (and its companion half in
+// companion mode); the artifact checkout holds a committed breakdown with in-flight,
+// blocked, and ready members and in-progress, planned, in-review, and complete roadmaps.
+function makeDashboardRepo({ companion }) {
+  const pair = companion ? makePairRepo() : { ...makeWorktreeRepo(), docs: null };
+  const artifacts = pair.docs ?? pair.repo;
+  writeBreakdown(artifacts, "initiatives/2026/10/demo", null, [{ slug: "alpha" }, { slug: "beta" }, { slug: "gamma", requires: ["alpha"] }, { slug: "delta" }]);
+  writeRoadmap(artifacts, "features/2026/10/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2"');
+  writeRoadmap(artifacts, "features/2026/10/beta", 'status: planned\nbranch: feature/beta\ninitiative: "demo"\nnext-step: "1.1"');
+  writeRoadmap(artifacts, "features/2026/10/omega", 'status: complete\nbranch: feature/omega\nnext-step: ""', "- [x] 1.1 done — verify: x\n");
+  writeRoadmap(artifacts, "issues/2026/10/bug", 'status: in-review\nbranch: issue/bug\nnext-step: "review"');
+  git(artifacts, "add", "-A");
+  git(artifacts, "commit", "-q", "-m", "artifacts");
+  const build = path.join(pair.wt, "feature-alpha");
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/alpha", build);
+  if (companion) git(pair.docs, "worktree", "add", "-q", "-b", "feature/alpha", path.join(pair.docsWt, "feature-alpha"));
+  return { repo: pair.repo, docs: pair.docs, build, artifacts };
+}
+
+// `dashboard` from `cwd`: every section deep-equals its standalone subcommand run in the same state.
+function assertDashboardMatches(cwd, env, { pr }) {
+  const flag = pr ? ["--pr"] : [];
+  const sub = (...args) => runWith({ cwd, env }, ...args).json;
+  const dash = runWith({ cwd, env }, "dashboard", ...flag);
+  assert.equal(dash.code, 0);
+  assert.deepEqual(Object.keys(dash.json), ["status", "session", "doctor", "deliveries", "initiatives", "timings", "root", "configSource"]);
+  assert.equal(dash.json.status, "ok");
+  for (const key of ["session", "doctor", "deliveries", "initiatives", "total"]) assert.equal(typeof dash.json.timings[key], "number", key);
+  assert.deepEqual(dash.json.session, sub("session", ...flag));
+  assert.deepEqual(dash.json.doctor, sub("doctor"));
+  assert.deepEqual(dash.json.deliveries, sub("status", ...flag));
+  const list = sub("initiative");
+  assert.deepEqual(dash.json.initiatives.list, list);
+  assert.deepEqual(Object.keys(dash.json.initiatives.details), list.items.map((i) => i.slug));
+  for (const item of list.items) assert.deepEqual(dash.json.initiatives.details[item.slug], sub("initiative", item.slug));
+  return dash.json;
+}
+
+test("dashboard sections deep-equal session, doctor, status, and initiative in in-repo and companion fixtures", () => {
+  for (const companion of [false, true]) {
+    const { repo, build } = makeDashboardRepo({ companion });
+    const marker = path.join(path.dirname(repo), "gh-calls");
+    const open = restrictedPath({ gh: prStub(marker) }).env;
+    for (const cwd of [repo, build]) for (const pr of [false, true]) assertDashboardMatches(cwd, open, { pr });
+    const fromBuild = assertDashboardMatches(build, open, { pr: true });
+    assert.equal(fromBuild.session.delivery.slug, "alpha");
+    assert.equal(fromBuild.session.pr.number, 15);
+    assert.deepEqual(fromBuild.deliveries.items.map((i) => [i.slug, i.status]), [["alpha", "in-progress"], ["bug", "in-review"], ["beta", "planned"], ["omega", "complete"]]);
+    assert.deepEqual(fromBuild.initiatives.details.demo.features.filter((f) => f.ready).map((f) => f.slug), ["delta"]);
+    // PR lookups that fail (no PR, no gh) match the synchronous lookups too.
+    assertDashboardMatches(build, restrictedPath({ gh: prStub(marker, { product: "NONE", companion: "NONE" }) }).env, { pr: true });
+    const noGh = assertDashboardMatches(build, restrictedPath().env, { pr: true });
+    assert.ok(noGh.session.warnings.some((w) => /^pr: gh CLI not found on PATH/.test(w)), noGh.session.warnings.join("\n"));
+  }
+  assert.ok(run(makeRepo(), "nope").json.usage.some((line) => line.includes("agento.mjs dashboard [--pr] [--plugin-root <dir>]")));
+});
+
+test("dashboard runs no gh pr view without --pr; with --pr one gh --version and one pr view per distinct (clone, branch)", () => {
+  for (const companion of [false, true]) {
+    const { repo, docs, build } = makeDashboardRepo({ companion });
+    const marker = path.join(path.dirname(repo), "gh-calls");
+    const { env } = restrictedPath({ gh: prStub(marker, { logVersion: true }) });
+    const calls = () => {
+      const lines = fs.existsSync(marker) ? fs.readFileSync(marker, "utf8").trim().split("\n") : [];
+      fs.rmSync(marker, { force: true });
+      return lines;
+    };
+    assert.equal(runWith({ cwd: build, env }, "dashboard").code, 0);
+    assert.deepEqual(calls().filter((l) => / pr view /.test(l)), [], "no pr view without --pr");
+    assert.equal(runWith({ cwd: build, env }, "dashboard", "--pr").code, 0);
+    const lines = calls();
+    assert.equal(lines.filter((l) => l.endsWith(" --version")).length, 1);
+    const views = lines.filter((l) => / pr view /.test(l));
+    const byCwd = {};
+    for (const line of views) {
+      const [cwd, , , branch] = line.split(" ");
+      (byCwd[cwd] ??= []).push(branch);
+    }
+    // The session's feature/alpha lookup is shared with the status item's.
+    const expected = ["feature/alpha", "feature/beta", "issue/bug"];
+    assert.deepEqual(Object.keys(byCwd).sort(), (companion ? [build, docs] : [build]).sort());
+    for (const branches of Object.values(byCwd)) assert.deepEqual(branches.sort(), expected);
+  }
+});
+
+test("dashboard --pr runs PR lookups concurrently, never more than four gh processes at once", () => {
+  const { repo } = makeWorktreeRepo();
+  const slugs = ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"];
+  for (const slug of slugs) writeRoadmap(repo, `features/2026/10/${slug}`, `status: in-progress\nbranch: feature/${slug}\nnext-step: "1.2"`);
+  const active = fs.mkdtempSync(path.join(os.tmpdir(), "agento-gh-active-"));
+  const log = path.join(path.dirname(active), `${path.basename(active)}.log`);
+  const stub = `#!/bin/sh\nPATH=/usr/bin:/bin\ntouch ${JSON.stringify(active)}/$$\nn=$(ls ${JSON.stringify(active)} | wc -l)\necho "$n $*" >> ${JSON.stringify(log)}\nsleep 0.3\nrm -f ${JSON.stringify(active)}/$$\nif [ "$1" = "pr" ]; then echo '{"number":15,"state":"OPEN","isDraft":false,"mergeStateStatus":"CLEAN","url":"https://example.test/pr/15"}'; fi\n`;
+  const { env } = restrictedPath({ gh: stub });
+  const { code, json } = runWith({ cwd: repo, env }, "dashboard", "--pr");
+  assert.equal(code, 0);
+  assert.deepEqual(json.deliveries.items.map((i) => [i.slug, i.pr?.number]), slugs.map((s) => [s, 15]));
+  const lines = fs.readFileSync(log, "utf8").trim().split("\n");
+  // The primary session's own branch (main) is looked up too, as `session --pr` does.
+  const viewed = lines.filter((l) => / pr view /.test(l)).map((l) => l.split(" ")[3]).sort();
+  assert.deepEqual(viewed, ["feature/a1", "feature/a2", "feature/a3", "feature/a4", "feature/a5", "feature/a6", "feature/a7", "feature/a8", "main"]);
+  const peak = Math.max(...lines.map((l) => Number.parseInt(l, 10)));
+  assert.ok(peak <= 4, `peak ${peak} gh processes`);
+  assert.ok(peak >= 2, `peak ${peak}: lookups ran serially`);
+});
+
+test("dashboard turns a throwing section into { status: error, message } and keeps the others and exit 0", { skip: process.getuid?.() === 0 ? "root reads unreadable files" : false }, () => {
+  const { repo } = makeDashboardRepo({ companion: false });
+  const unreadable = path.join(repo, "features/2026/10/beta/roadmap.md");
+  fs.chmodSync(unreadable, 0o000);
+  try {
+    const { code, json } = runWith({ cwd: repo, env: restrictedPath().env }, "dashboard");
+    assert.equal(code, 0);
+    assert.equal(json.status, "ok");
+    assert.equal(json.deliveries.status, "error");
+    assert.match(json.deliveries.message, /EACCES/);
+    assert.equal(typeof json.doctor.status, "string");
+    assert.ok(json.doctor.checks.length > 0 && json.doctor.checks.every((c) => typeof c.id === "string"));
+  } finally {
+    fs.chmodSync(unreadable, 0o644);
+  }
+});
+
+test("dashboard --plugin-root reaches the doctor section's model-profile check like doctor --plugin-root", () => {
+  const { repo } = makeWorktreeRepo();
+  const plugin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-plugin-"));
+  fs.mkdirSync(path.join(plugin, ".github", "agents"), { recursive: true });
+  const modelProfile = (json) => json.checks.find((c) => c.id === "model-profile");
+  const viaDashboard = modelProfile(run(repo, "dashboard", "--plugin-root", plugin).json.doctor);
+  assert.deepEqual(viaDashboard, modelProfile(run(repo, "doctor", "--plugin-root", plugin).json));
+  assert.match(viaDashboard.detail, new RegExp(plugin));
+  assert.notDeepEqual(viaDashboard, modelProfile(run(repo, "dashboard").json.doctor));
+});

@@ -18,6 +18,7 @@
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
+//   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details } and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
@@ -25,10 +26,11 @@
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
 
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
@@ -43,7 +45,7 @@ import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowe
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 26);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 27);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -607,15 +609,79 @@ function withExit(result) {
 function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
   if (!branch) return { pr: null, warnings: [`${label}: no branch to look up (detached HEAD)`] };
   const opts = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
-  if (!ghVersion().ok) return { pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] };
+  if (!ghVersion().ok) return ghMissingLookup(label);
   try {
-    const out = execFileSync("gh", ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"], opts);
-    return { pr: JSON.parse(out), warnings: [] };
+    return { pr: JSON.parse(execFileSync("gh", prViewArgs(branch), opts)), warnings: [] };
   } catch (error) {
-    const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
-    return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
+    return failedLookup(label, branch, error);
   }
 }
+
+const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"];
+const ghMissingLookup = (label) => ({ pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] });
+
+function failedLookup(label, branch, error) {
+  const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
+  return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
+}
+
+const execFileAsync = promisify(execFile);
+
+// execFile with stdin closed, like the synchronous calls' `stdio: ["ignore", …]`.
+function execAsync(cmd, args, opts) {
+  const pending = execFileAsync(cmd, args, { encoding: "utf8", ...opts });
+  pending.child.stdin?.end();
+  return pending;
+}
+
+// lookupPullRequest's exact result, without blocking the process.
+async function lookupPullRequestAsync(branch, { cwd = root, label = "pr" } = {}) {
+  if (!branch) return lookupPullRequest(branch, { cwd, label });
+  if (!(await probeAsync("gh", ["--version"])).ok) return ghMissingLookup(label);
+  try {
+    const { stdout } = await execAsync("gh", prViewArgs(branch), { cwd, timeout: 15000 });
+    return { pr: JSON.parse(stdout), warnings: [] };
+  } catch (error) {
+    return failedLookup(label, branch, error);
+  }
+}
+
+// Runs the thunks with at most `limit` in flight; results keep the input order.
+async function runPool(tasks, limit = 4) {
+  const results = new Array(tasks.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < tasks.length) {
+      const index = next++;
+      results[index] = await tasks[index]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  return results;
+}
+
+const lookupKey = (cwd, branch) => `${cwd}\0${branch}`;
+
+// Prefetch: the doctor's external probes (into the probe cache) and the deduplicated
+// `{ cwd, branch, label }` PR lookups, through one pool; `gh --version` goes first so
+// the lookups waiting on it never hold the pool's slots. Returns the lookups keyed by
+// cwd + branch.
+async function lookupPullRequests(requests, { probes = [] } = {}) {
+  const unique = new Map();
+  for (const request of requests) {
+    const cwd = request.cwd ?? root;
+    if (request.branch && !unique.has(lookupKey(cwd, request.branch))) unique.set(lookupKey(cwd, request.branch), { ...request, cwd });
+  }
+  const results = new Map();
+  const ghFirst = unique.size ? [["gh", ["--version"]]] : [];
+  const probeTasks = [...ghFirst, ...probes].map(([cmd, args]) => () => probeAsync(cmd, args));
+  const lookupTasks = [...unique].map(([key, { branch, cwd, label }]) => async () => results.set(key, await lookupPullRequestAsync(branch, { cwd, label })));
+  await runPool([...probeTasks, ...lookupTasks]);
+  return results;
+}
+
+// A lookupPullRequest-compatible function answering from `lookupPullRequests` results.
+const prefetchedLookup = (results) => (branch, opts = {}) => results.get(lookupKey(opts.cwd ?? root, branch)) ?? lookupPullRequest(branch, opts);
 
 // The mirrored artifact PR: the same branch name looked up in the companion clone
 // the layout names. In-repo layout → null with no gh call, so today's output is unchanged.
@@ -638,15 +704,9 @@ function primaryWorktreesDir(worktrees = productWorktrees()) {
 // The `session` record: role, worktree, worktrees, companion, workspace, delivery,
 // lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups (`lookup`: a
 // lookupPullRequest-compatible function, e.g. one answering from prefetched results).
-function sessionRecord({ pr: withPr = false, lookup = lookupPullRequest } = {}) {
-  // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
-  const worktrees = productWorktrees();
-  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-  const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
-  const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-  const companion = describeCompanion(worktree);
-  const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
-  const prBranch = delivery?.branch ?? worktree.branch;
+// `context` is sessionContext(), passed in when the caller needed `prBranch` first.
+function sessionRecord({ pr: withPr = false, lookup = lookupPullRequest } = {}, context = sessionContext()) {
+  const { worktrees, sessionWorktreesDir, role, worktree, hosted, hostedReason, classified, companion, delivery, prBranch } = context;
   const { pr, warnings: prWarnings } = withPr ? lookup(prBranch) : { pr: null, warnings: [] };
   const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch, undefined, lookup) : { pr: null, warnings: [] };
   const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
@@ -672,29 +732,77 @@ function sessionRecord({ pr: withPr = false, lookup = lookupPullRequest } = {}) 
   };
 }
 
-// --- doctor ----------------------------------------------------------------
-
-// Every probe is bounded and never throws: a missing binary, a nonzero exit, and a
-// timeout all become a result the caller maps to ok | warn | fail.
-function probe(cmd, args) {
-  const opts = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } };
-  try {
-    return { ok: true, out: execFileSync(cmd, args, opts).trim().split("\n")[0] ?? "" };
-  } catch (error) {
-    const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0];
-    const stdout = (error?.stdout ?? "").toString().trim().split("\n")[0];
-    const timedOut = error?.code === "ETIMEDOUT" || (error?.signal && !error?.status);
-    return {
-      ok: false,
-      missing: error?.code === "ENOENT",
-      timedOut,
-      detail: timedOut ? `${cmd} timed out after 10 s` : stderr || stdout || error?.message || "unknown error",
-    };
-  }
+// Everything the session record derives before its PR lookups, including the branch they use.
+function sessionContext() {
+  // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
+  const worktrees = productWorktrees();
+  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+  const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
+  const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
+  const companion = describeCompanion(worktree);
+  const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
+  return { worktrees, sessionWorktreesDir, role, worktree, hosted, hostedReason, classified, companion, delivery, prBranch: delivery?.branch ?? worktree.branch };
 }
 
-// The one `gh --version` probe per process, shared by PR lookups, the doctor, and release.
-const ghVersion = once(() => probe("gh", ["--version"]));
+// --- doctor ----------------------------------------------------------------
+
+const probeCache = new Map();
+const probeKey = (cmd, args) => [cmd, ...args].join("\0");
+const probeOptions = () => ({ cwd: root, encoding: "utf8", timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+
+function probeFailure(cmd, error) {
+  const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0];
+  const stdout = (error?.stdout ?? "").toString().trim().split("\n")[0];
+  const timedOut = error?.code === "ETIMEDOUT" || (error?.signal && !error?.status);
+  return {
+    ok: false,
+    missing: error?.code === "ENOENT",
+    timedOut,
+    detail: timedOut ? `${cmd} timed out after 10 s` : stderr || stdout || error?.message || "unknown error",
+  };
+}
+
+// Every probe is bounded and never throws: a missing binary, a nonzero exit, and a
+// timeout all become a result the caller maps to ok | warn | fail. Each command +
+// arguments runs at most once per process (probeAsync may have run it already).
+function probe(cmd, args) {
+  const key = probeKey(cmd, args);
+  if (!probeCache.has(key)) {
+    try {
+      probeCache.set(key, { ok: true, out: execFileSync(cmd, args, { ...probeOptions(), stdio: ["ignore", "pipe", "pipe"] }).trim().split("\n")[0] ?? "" });
+    } catch (error) {
+      probeCache.set(key, probeFailure(cmd, error));
+    }
+  }
+  return probeCache.get(key);
+}
+
+const probesInFlight = new Map();
+
+// probe() without blocking the process; concurrent callers share one run.
+function probeAsync(cmd, args) {
+  const key = probeKey(cmd, args);
+  if (probeCache.has(key)) return Promise.resolve(probeCache.get(key));
+  if (!probesInFlight.has(key)) {
+    probesInFlight.set(
+      key,
+      execAsync(cmd, args, probeOptions()).then(
+        ({ stdout }) => ({ ok: true, out: stdout.trim().split("\n")[0] ?? "" }),
+        (error) => probeFailure(cmd, error),
+      ).then((result) => {
+        probeCache.set(key, result);
+        return result;
+      }),
+    );
+  }
+  return probesInFlight.get(key);
+}
+
+const ghVersion = () => probe("gh", ["--version"]);
+const lsRemoteArgs = () => ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default];
+
+// The external commands DOCTOR_CHECKS probe, so `dashboard` can run them concurrently first.
+const doctorProbes = () => [["gh", ["--version"]], ["gh", ["auth", "status"]], ["git", lsRemoteArgs()], ["code", ["--version"]], ["python3", ["--version"]]];
 
 const DOCTOR_CHECKS = {
   node() {
@@ -707,7 +815,7 @@ const DOCTOR_CHECKS = {
   "git-remote"() {
     const url = git(root, "remote", "get-url", "origin");
     if (!url) return { status: "fail", detail: "no `origin` remote", fallback: "add the remote (`git remote add origin <url>`) or work in a clone; push and PR steps need origin" };
-    const reach = probe("git", ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default]);
+    const reach = probe("git", lsRemoteArgs());
     return reach.ok
       ? { status: "ok", detail: `origin ${url}, ${config.branches.default} reachable`, fallback: null }
       : { status: "warn", detail: `origin ${url} unreachable: ${reach.detail}`, fallback: "work offline; fetch, push, and PR steps will fail until the network is back — retry them before ending the turn" };
@@ -1652,11 +1760,11 @@ function releaseSnapshot(ctx) {
 
 // --- documents -------------------------------------------------------------
 
-// What `status` emits. `lookup` as in sessionRecord.
-function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = false, lookup = lookupPullRequest } = {}) {
+// What `status` emits. `lookup` as in sessionRecord; `roadmaps` replaces the walk.
+function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = false, lookup = lookupPullRequest, roadmaps = null } = {}) {
   const worktrees = productWorktrees();
   const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-  const items = allRoadmaps(typeFilter, managedHalves(worktrees)).filter((r) => !slugFilter || r.slug === slugFilter);
+  const items = (roadmaps ?? allRoadmaps(typeFilter, managedHalves(worktrees))).filter((r) => !slugFilter || r.slug === slugFilter);
   const bySlug = new Map();
   for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
   const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
@@ -1742,6 +1850,65 @@ function doctorDocument(command = null) {
   const needs = command ? COMMAND_NEEDS[command] : null;
   const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
   return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
+}
+
+// What `dashboard` emits: the session, doctor, status (`deliveries`), and initiative
+// documents from one process. The roadmaps are walked once for deliveries and
+// initiatives; the doctor's probes and (with `pr`) every PR lookup run first, through
+// one bounded pool. A section that throws becomes { status: "error", message }.
+async function dashboardDocument({ pr: withPr = false } = {}) {
+  const started = performance.now();
+  const attempt = (build) => {
+    try {
+      return { value: build() };
+    } catch (error) {
+      return { error };
+    }
+  };
+  const session = attempt(() => sessionContext());
+  const roadmaps = attempt(() => allRoadmaps(null, managedHalves(productWorktrees())));
+
+  const requests = [];
+  if (withPr) {
+    const layout = checkoutLayout();
+    const branches = [session.value?.prBranch, ...(roadmaps.value ?? []).filter((r) => r.status !== "complete").map((r) => r.branch)];
+    for (const branch of branches) {
+      requests.push({ branch, cwd: root, label: "pr" });
+      if (layout.artifacts.external) requests.push({ branch, cwd: layout.artifactsRoot, label: "companionPr" });
+    }
+  }
+  const lookup = prefetchedLookup(await lookupPullRequests(requests, { probes: doctorProbes() }));
+
+  const timings = {};
+  const section = (name, build) => {
+    const sectionStarted = performance.now();
+    try {
+      return build();
+    } catch (error) {
+      return { status: "error", message: error?.message ?? String(error) };
+    } finally {
+      timings[name] = Math.round(performance.now() - sectionStarted);
+    }
+  };
+  const valueOf = (attempted) => {
+    if (attempted.error) throw attempted.error;
+    return attempted.value;
+  };
+  const document = {
+    status: "ok",
+    session: section("session", () => sessionRecord({ pr: withPr, lookup }, valueOf(session))),
+    doctor: section("doctor", () => doctorDocument()),
+    // statusDocument adds fields to its items; the initiatives read the records unchanged.
+    deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
+    initiatives: section("initiatives", () => {
+      const features = valueOf(roadmaps).filter((r) => r.type === "feature");
+      const breakdowns = allBreakdowns();
+      const list = initiativeListDocument(features, breakdowns);
+      return { list, details: Object.fromEntries(list.items.map((item) => [item.slug, initiativeDetailDocument(item.slug, features, breakdowns)])) };
+    }),
+  };
+  timings.total = Math.round(performance.now() - started);
+  return { ...document, timings, root, configSource: source };
 }
 
 switch (command) {
@@ -1940,6 +2107,12 @@ switch (command) {
     const document = doctorDocument(options.for ?? null);
     // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
     emit(document, document.status === "fail" ? 3 : 0);
+    break;
+  }
+
+  case "dashboard": {
+    if (rest.length) usage(`dashboard takes no positional arguments, got ${JSON.stringify(rest[0])}`);
+    emit(await dashboardDocument({ pr: Boolean(options.pr) }));
     break;
   }
 
