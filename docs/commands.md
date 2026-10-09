@@ -20,7 +20,7 @@
 | `/agento finish-freehand` | default | Commit, PR, merge freehand work |
 | `/agento commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
 | `/agento delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
-| `/agento doctor [--for <command>]` | default | Environment readiness: Node, git remote, gh auth, code CLI, python3, worktrees dir — each with status and fallback; fixes nothing |
+| `/agento doctor [--for <command>]` | default | Environment readiness: Node, git remote, gh auth, code CLI, worktrees dir — each with status and fallback; fixes nothing |
 | `/agento models [list \| show <name> \| apply <name> \| clear \| init]` | default | Pin agents and built-in-agent commands to models from a named profile in `~/.config/agento/model-profiles.json`; rewrites the plugin clone's `model:` lines under skip-worktree ([model-profiles.md](model-profiles.md)) |
 | `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
 | `/agento extend-copilot` · `/agento fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
@@ -188,7 +188,7 @@ ship` resumes from),
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
-`code`, `python3`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile` — each `{ id, status, detail, fallback }` with
+`code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
 `<dir>-worktrees` directory exists but is not writable; `--for` runs only the checks
 the named command's `Needs:` line requires and echoes them as `for.needs`;
@@ -363,7 +363,7 @@ the vocabulary in `delivery-policy.instructions.md` §10) and `Fallback:` (what 
 when a soft need is absent). Hard needs (`terminal`; `gh` and `network` for anything
 that pushes or touches GitHub) missing produce a rejection receipt naming the
 fallback instead of a half-started command; soft needs (`ask-questions`, `browser`,
-`code`, `python3`) missing add one `Preflight:` line and the command proceeds with
+`code`) missing add one `Preflight:` line and the command proceeds with
 the standard fallback. Commands that need `gh`, `code`, or `network` run
 `agento.mjs doctor --for <name>` before their first write; `/agento doctor` runs the
 same checks on demand and only reports — installs and logins stay with the user.

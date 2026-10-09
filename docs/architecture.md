@@ -164,8 +164,8 @@ a checkout when *its own* `.github/agento.json` sets `artifacts.repo`; the compa
 path always resolves against the primary checkout, and when the primary's config
 also sets `artifacts.repo` the primary's values win. Own config unset → in-repo,
 regardless of the primary (a worktree on a pre-companion branch keeps reading its own
-roots). The CLI (`resolveArtifacts()`) and the Python `resolve_artifacts()` shared by
-both hooks apply the same rule. On top of it, the slug-targeted readers (`resolve`,
+roots). The CLI (`resolveArtifacts()`) and `resolveArtifacts()` in
+`scripts/hooks/hook-lib.mjs`, shared by both hooks, apply the same rule. On top of it, the slug-targeted readers (`resolve`,
 `find`, `close-decision`, `ship-preflight`, `next <slug>`, `paths <feature|issue>
 <slug>`) fall back to the **delivery branch's** config when an in-repo checkout finds
 no roadmap: they read `origin/<branch>:.github/agento.json` (then `<branch>:…`) and,

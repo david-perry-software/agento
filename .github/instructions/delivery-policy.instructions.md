@@ -295,11 +295,14 @@ a missing capability is never discovered mid-command. `agento.mjs doctor [--for
 - `code` — the VS Code CLI for opening a worktree window (`doctor` check `code`).
 - `network` — the `origin` remote reachable for fetch, push, PR, and package
   installs (`doctor` check `git-remote`).
-- `python3` — the interpreter the hooks run under (`doctor` check `python3`).
+
+No token stands for Node: Node ≥ 20 runs the CLI and both hooks (the delivery guard
+and SessionStart context) and is part of `terminal` (`doctor` check `node`). Without
+it the hooks are silent — no guard, no session context — and `doctor` fails `node`.
 
 **Hard versus soft.** `terminal` is hard for every command that runs anything; `gh`
 and `network` are hard for every command that pushes, opens or merges a PR, or files
-an issue. `ask-questions`, `browser`, `code`, and `python3` are soft: the command
+an issue. `ask-questions`, `browser`, and `code` are soft: the command
 proceeds with the fallback. A hard need unmet → the §9 preflight rejection receipt;
 a soft need unmet → the §9 `Preflight:` line, then proceed.
 
@@ -315,8 +318,6 @@ restate them):
   faithful; otherwise report the step blocked per §2 and pause. Never silently skip.
 - `code` unavailable → keep the worktree and print `code --new-window
   <worktree-path>` for the user to run.
-- `python3` unavailable → hooks do not run (no delivery guard, no SessionStart
-  context); proceed with care and apply this policy by hand.
 - `gh` missing or unauthenticated → reject; the user installs GitHub CLI or runs
   `gh auth login` in their own terminal (§1), then re-sends the command.
 - `network` unreachable → `doctor` reports `warn`; fetch/push/PR steps are retried

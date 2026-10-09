@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Changed.** Both hooks run on Node. The delivery guard and the SessionStart
+  context were Bash wrappers around Python heredocs; each wrapper now `exec`s one
+  Node module under `scripts/hooks/` (`delivery-guard.mjs`, `session-context.mjs`,
+  sharing `hook-lib.mjs`), which reuses the CLI's config loader and occupant check
+  instead of keeping copies. Hook wiring, file names, JSON output, and every
+  fixture verdict are unchanged; a recorded parity run compared both
+  implementations byte for byte before the Python was removed. `python3` is no
+  longer a requirement: `doctor` drops its `python3` check, and policy §10 drops the
+  `python3` capability token. Without `node` on `PATH` the hooks now exit silently
+  (previously the SessionStart hook still printed everything but the `Session:`
+  line). Three guard fixes follow in this delivery: `PROTECTED` covers
+  `hooks/hooks.json` and `.claude-plugin/`, pushes from the default branch are
+  judged by their refspec destinations, and the companion-half roadmap nudge is
+  verified against the half's `HEAD`.
+
 - **Changed.** `/agento close-session` is one `agento.mjs close-session
   <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run]
   [--ignore-occupants]` call whose JSON the prompt formats, like `start-session`.
