@@ -12,6 +12,11 @@
 # artifacts checkout named and walked instead of the companion clone.
 set -u
 
+if [[ "${AGENTO_HOOK_IMPL:-python}" == node ]]; then
+  command -v node >/dev/null 2>&1 || exit 0
+  exec node "$(dirname "${BASH_SOURCE[0]}")/session-context.mjs"
+fi
+
 input="$(cat)"
 export DELIVERY_HOOK_INPUT="$input"
 AGENTO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
