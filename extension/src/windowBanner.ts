@@ -85,13 +85,13 @@ a.banner {
   justify-content: center;
   box-sizing: border-box;
   height: 100%;
-  padding: 10px 14px;
+  padding: 4px 12px;
   color: inherit;
   text-decoration: none;
 }
 a.banner:focus-visible { outline: 2px solid ${cssColor(ROLE_FOREGROUND_COLOR)}; outline-offset: -4px; }
-.title { display: block; font-weight: 800; font-size: 1.6em; line-height: 1.2; letter-spacing: 0.08em; text-transform: uppercase; }
-.detail { display: block; margin-top: 6px; font-size: 0.95em; overflow-wrap: anywhere; }
+.title { display: block; font-weight: 800; font-size: 1.2em; line-height: 1.2; letter-spacing: 0.08em; text-transform: uppercase; }
+.detail { display: block; margin-top: 2px; font-size: 0.95em; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>

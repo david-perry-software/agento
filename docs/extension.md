@@ -106,7 +106,7 @@ Override them in a theme or in your settings:
 
 VS Code gives every webview pane a minimum body height of about 120 px, which an
 extension cannot lower. The banner is designed for that height: the color fills the
-pane and the text is enlarged and centered vertically. New layouts open the pane at
+pane and the text is centered vertically with tight padding. New layouts open the pane at
 that minimum (`initialSize`). VS Code restores a pane size you have already used, so
 if the pane is taller, drag the divider below it up until it stops. You can also
 collapse it from its header or hide it from the view's context menu. The banner
