@@ -4016,6 +4016,107 @@ test("close-session build close (companion pair): removes both halves and the wo
   assert.equal(fs.existsSync(path.join(wt, "feature-done.code-workspace")), false);
 });
 
+test("close-session freehand close (in-repo): requires changes/<slug>, rejects unpushed commits with finish-freehand, offers a resume for unmerged work, deletes a merged branch", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const add = (slug, branch = `changes/${slug}`, ...flags) => {
+    const half = path.join(wt, `freehand-${slug}`);
+    git(repo, "worktree", "add", "-q", ...flags, "-b", branch, half, "origin/main");
+    return half;
+  };
+
+  const none = closeSession(repo, env, "changes/ghost");
+  assert.equal(none.code, 0, JSON.stringify(none.json));
+  assert.equal(none.json.mode, "freehand");
+  assert.equal(none.json.outcome, "nothing-to-close");
+  assert.equal(none.json.branches.product.action, "absent");
+  assert.deepEqual(none.json.next, []);
+
+  const odd = add("odd", "changes/other");
+  const mismatch = closeSession(repo, env, "changes/odd");
+  assert.equal(mismatch.code, 3);
+  assert.equal(mismatch.json.reason, "branch-mismatch");
+  assert.match(mismatch.json.message, /freehand-odd is on changes\/other, expected on changes\/odd; nothing was removed$/);
+  assert.ok(fs.existsSync(odd));
+
+  const tidy = add("tidy");
+  const closed = closeSession(repo, env, "changes/tidy");
+  assert.equal(closed.code, 0, JSON.stringify(closed.json));
+  assert.equal(closed.json.outcome, "closed");
+  assert.deepEqual(closed.json.product, removedHalf(tidy, { branch: "changes/tidy", detached: false }));
+  assert.deepEqual(closed.json.branches.product, { name: "changes/tidy", upstream: "origin/main", remoteExists: false, mergedIntoDefault: true, action: "deleted", reason: "merged into origin/main and gone from origin" });
+  assert.deepEqual(closed.json.next, []);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/changes/tidy"));
+
+  // start-freehand's branch tracks origin/main, so commits past it are unpublished work.
+  const draft = add("draft");
+  git(draft, "commit", "-q", "--allow-empty", "-m", "unpublished");
+  const tracking = closeSession(repo, env, "changes/draft");
+  assert.equal(tracking.code, 3);
+  assert.equal(tracking.json.reason, "unpushed");
+  assert.deepEqual(tracking.json.next, ["/agento finish-freehand"]);
+
+  const pub = add("pub");
+  git(pub, "commit", "-q", "--allow-empty", "-m", "published");
+  git(pub, "push", "-q", "-u", "origin", "changes/pub");
+  git(pub, "commit", "-q", "--allow-empty", "-m", "not yet");
+  const ahead = closeSession(repo, env, "changes/pub");
+  assert.equal(ahead.code, 3);
+  assert.equal(ahead.json.reason, "unpushed");
+  assert.deepEqual(ahead.json.next, ["/agento finish-freehand"]);
+  assert.ok(fs.existsSync(pub));
+  git(pub, "push", "-q");
+  const open = closeSession(repo, env, "changes/pub");
+  assert.equal(open.code, 0, JSON.stringify(open.json));
+  assert.equal(open.json.branches.product.action, "retained");
+  assert.equal(open.json.branches.product.reason, "origin/changes/pub still exists");
+  assert.deepEqual(open.json.next, ["/agento start-freehand pub --resume"]);
+
+  const local = add("local", "changes/local", "--no-track");
+  git(local, "commit", "-q", "--allow-empty", "-m", "never published");
+  const kept = closeSession(repo, env, "changes/local");
+  assert.equal(kept.code, 0, JSON.stringify(kept.json));
+  assert.deepEqual(kept.json.branches.product, { name: "changes/local", upstream: null, remoteExists: false, mergedIntoDefault: false, action: "retained", reason: "not merged into origin/main" });
+  assert.deepEqual(kept.json.next, ["/agento start-freehand local --resume"]);
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/changes/local"));
+  assert.equal(worktreeCount(repo), 3);
+});
+
+test("close-session freehand close (companion pair): removes both halves and the workspace file, deletes the merged branch in each clone, and rejects an unpushed companion half", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const product = path.join(wt, "freehand-tidy");
+  const half = path.join(docsWt, "freehand-tidy");
+  const file = path.join(wt, "freehand-tidy.code-workspace");
+  git(repo, "worktree", "add", "-q", "-b", "changes/tidy", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "-b", "changes/tidy", half, "origin/main");
+  fs.writeFileSync(file, "{}\n");
+
+  const { code, json } = closeSession(repo, env, "changes/tidy");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(product, { branch: "changes/tidy", detached: false }));
+  assert.deepEqual(json.companion, removedHalf(half, { branch: "changes/tidy", detached: false }));
+  assert.deepEqual(json.workspace, { path: file, existed: true, removed: true });
+  assert.equal(json.branches.product.action, "deleted");
+  assert.equal(json.branches.companion.action, "deleted");
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+
+  git(repo, "worktree", "add", "-q", "-b", "changes/wip", path.join(wt, "freehand-wip"), "origin/main");
+  const wipHalf = path.join(docsWt, "freehand-wip");
+  git(docs, "worktree", "add", "-q", "-b", "changes/wip", wipHalf, "origin/main");
+  git(wipHalf, "push", "-q", "-u", "origin", "changes/wip");
+  git(wipHalf, "commit", "-q", "--allow-empty", "-m", "draft");
+  const before = cloneState(repo, docs);
+  const ahead = closeSession(repo, env, "changes/wip");
+  assert.equal(ahead.code, 3);
+  assert.equal(ahead.json.reason, "unpushed");
+  assert.equal(ahead.json.commits.companion.length, 1);
+  assert.deepEqual(ahead.json.next, ["/agento finish-freehand"]);
+  assert.deepEqual(cloneState(repo, docs), before);
+});
+
 // --- dashboard: one process per refresh ---------------------------------------
 
 // A restricted PATH whose `git` appends its arguments to `log` before running the real binary.
