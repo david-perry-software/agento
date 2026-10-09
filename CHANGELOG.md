@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Added.** `agento.mjs dashboard [--pr] [--plugin-root <dir>]` returns the
+  `session`, `doctor`, `status` (as `deliveries`), and `initiative` documents (the
+  list plus every initiative's detail) in one JSON document from one process, each
+  section identical to its standalone subcommand, plus per-section `timings`. The
+  worktree list and roadmaps are read once, `gh --version` runs once, and the
+  doctor's network probes and the `--pr` lookups run concurrently (at most four at a
+  time). A section that fails becomes `{ status: "error", message }` while the
+  others still render. Standalone subcommands now also read the worktree list and
+  probe `gh --version` only once per process.
+
 - **Changed.** Selecting a delivery in the dashboard's Deliveries view, or an
   initiative or member in the Initiatives view, now opens its `roadmap.md` or
   `breakdown.md` as a rendered Markdown preview in the active editor group instead

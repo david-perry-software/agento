@@ -152,6 +152,19 @@ the named command's `Needs:` line requires and echoes them as `for.needs`;
 `model-profile` is informational, never part of a `--for` run: `ok` with no plugin
 clone at `--plugin-root`, nothing pinned, or a named profile applied, `warn` on an
 invalid profiles file or `custom` pins),
+`dashboard [--pr] [--plugin-root <dir>]` (everything the VS Code extension renders
+in one process: `{ status: "ok", session, doctor, deliveries, initiatives: { list,
+details: { <slug>: … } }, timings, root, configSource }`, where `session` is
+`session [--pr]`, `doctor` is `doctor [--plugin-root <dir>]` with every check,
+`deliveries` is `status [--pr]`, `initiatives.list` is `initiative`, and each
+`initiatives.details[<slug>]` is `initiative <slug>` — each byte-for-byte what that
+subcommand prints in the same state; `timings` gives `session`, `doctor`,
+`deliveries`, `initiatives`, and `total` in milliseconds; the worktree list is read
+once per clone, the roadmaps are walked once for `deliveries` and `initiatives`, and
+the doctor's network probes plus — with `--pr` only — one `gh pr view` per distinct
+`(clone, branch)` run concurrently, at most four processes at a time, after a single
+`gh --version`; a section that throws becomes `{ status: "error", message }` while the
+others are unaffected; exit 0 whatever the sections report),
 `next [<slug>]` (the one legal delivery transition derived from the same record as
 `session` plus roadmap ownership, review freshness, and initiative readiness:
 `status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`
@@ -193,6 +206,7 @@ lost output costs nothing: `verdict` ∈ `success | superseded-success | not-tri
 re-polls a `pending` verdict every `--interval` seconds (default 10) and never loops on
 `dispatch-required`; `/agento ship` drives it). Every call prints one JSON
 document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `none`;
+`dashboard`: always, section failures included;
 `release`: `success`, `superseded-success`, `not-triggered`, or `not-configured`),
 2 = `release` still `pending` or `dispatch-required` (rerun, or dispatch once),
 3 = resolution failure
