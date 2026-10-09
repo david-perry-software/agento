@@ -39,6 +39,8 @@ import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createTreeIdScope } from "./treeItemIds.js";
 import { createWatchers } from "./watchers.js";
+import { createWindowBannerModel } from "./windowBanner.js";
+import { WindowBannerProvider } from "./windowBannerProvider.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
 export interface ExtensionApi {
@@ -49,6 +51,7 @@ export interface ExtensionApi {
   sessionDoctor: SessionDoctorProvider;
   sessionDoctorView: vscode.TreeView<unknown>;
   statusBar: vscode.StatusBarItem;
+  windowBanner: WindowBannerProvider;
   output: vscode.OutputChannel;
   dispatchAction: (action: CommandAction, slug?: string, executeCommand?: CommandExecutor) => Promise<unknown>;
   startNewPlan: (
@@ -85,6 +88,11 @@ function applyStatusBar(statusBar: vscode.StatusBarItem, model: SessionDoctorMod
   statusBar.backgroundColor = background ? new vscode.ThemeColor(`statusBarItem.${background}Background`) : undefined;
 }
 
+function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel): void {
+  applyStatusBar(statusBar, model);
+  windowBanner.update(createWindowBannerModel(model));
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
   const output = vscode.window.createOutputChannel("Agento");
   const configuration = vscode.workspace.getConfiguration("agento");
@@ -105,6 +113,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.tooltip = "Open Session & Doctor";
   statusBar.command = "agento.sessionDoctor.focus";
   statusBar.show();
+  const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current));
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
   const latestInitiativeRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
@@ -185,7 +194,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       initiatives.update({ model: createInitiativeTreeError(message), artifactRoot: context.extensionPath });
       const model = createSessionDoctorError(message);
       sessionDoctor.update(model);
-      applyStatusBar(statusBar, model);
+      applySessionIndicators(statusBar, windowBanner, model);
       output.appendLine(message);
       return;
     }
@@ -214,7 +223,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         applyGate(snapshot.gate);
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
-        applyStatusBar(statusBar, snapshot.sessionDoctor);
+        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor);
         for (const warning of snapshot.deliveries.model.warnings) {
           output.appendLine(warning);
         }
@@ -237,7 +246,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         });
         const model = createSessionDoctorError(error);
         sessionDoctor.update(model);
-        applyStatusBar(statusBar, model);
+        applySessionIndicators(statusBar, windowBanner, model);
         output.appendLine(String(error));
       },
     );
@@ -567,6 +576,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
   const initiativesView = vscode.window.createTreeView("agento.initiatives", { treeDataProvider: initiatives });
   const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
+  const windowBannerRegistration = vscode.window.registerWebviewViewProvider("agento.windowBanner", windowBanner);
   let sessionDoctorWasVisible = false;
   const sessionDoctorVisibility = sessionDoctorView.onDidChangeVisibility(({ visible }) => {
     if (visible && !sessionDoctorWasVisible) {
@@ -614,6 +624,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     deliveriesView,
     initiativesView,
     sessionDoctorView,
+    windowBannerRegistration,
     sessionDoctorVisibility,
     windowFocusSubscription,
     workspaceSubscription,
@@ -623,7 +634,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   await consumePending();
   scheduler.refreshNow("activate");
   return {
-    client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, output, dispatchAction,
+    client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
     startNewPlan, setNewPlanRunner, setNewPlanPrompts,
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
     windowGate: () => gate,

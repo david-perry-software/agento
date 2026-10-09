@@ -5,7 +5,7 @@ import test from "node:test";
 test("manifest contributes CLI-backed action surfaces without static lifecycle commands", async () => {
   const manifest = JSON.parse(await readFile("package.json", "utf8")) as {
     contributes: {
-      views: { agento: Array<{ id: string; name: string }> };
+      views: { agento: Array<{ id: string; name: string; type?: string }> };
       commands: Array<{ command: string }>;
       menus: {
         "view/title": Array<{ command: string; when: string; group: string }>;
@@ -15,6 +15,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   };
 
   assert.deepEqual(manifest.contributes.views.agento, [
+    { id: "agento.windowBanner", name: "Window", type: "webview" },
     { id: "agento.deliveries", name: "Deliveries" },
     { id: "agento.initiatives", name: "Initiatives" },
     { id: "agento.sessionDoctor", name: "Session & Doctor" },
@@ -63,6 +64,7 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /createTreeView\("agento\.deliveries", \{ treeDataProvider: deliveries \}\)/);
   assert.match(source, /createTreeView\("agento\.initiatives", \{ treeDataProvider: initiatives \}\)/);
   assert.match(source, /createTreeView\("agento\.sessionDoctor", \{ treeDataProvider: sessionDoctor \}\)/);
+  assert.match(source, /registerWebviewViewProvider\("agento\.windowBanner", windowBanner\)/);
   assert.match(source, /client\.run\(\["session", "--pr"\]/);
   assert.match(source, /client\.run\(root \? \["doctor", "--plugin-root", root\] : \["doctor"\]/);
   assert.match(source, /registerCommand\("agento\.selectModelProfile"/);

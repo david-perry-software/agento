@@ -33,6 +33,11 @@
     "views": {
       "agento": [
         {
+          "id": "agento.windowBanner",
+          "name": "Window",
+          "type": "webview"
+        },
+        {
           "id": "agento.deliveries",
           "name": "Deliveries"
         },

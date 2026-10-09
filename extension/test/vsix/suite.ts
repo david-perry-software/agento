@@ -17,5 +17,5 @@ export async function run(): Promise<void> {
   }
 
   const viewIds = extension.packageJSON.contributes.views.agento.map((view: { id: string }) => view.id);
-  assert.deepEqual(viewIds, ["agento.deliveries", "agento.initiatives", "agento.sessionDoctor"]);
+  assert.deepEqual(viewIds, ["agento.windowBanner", "agento.deliveries", "agento.initiatives", "agento.sessionDoctor"]);
 }
