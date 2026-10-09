@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -98,4 +99,17 @@ test("defaultCodeStatus: code missing is empty text; a nonzero exit keeps its st
   fs.writeFileSync(path.join(bin, "code"), "#!/bin/sh\necho '|    Folder (x): 1 files'\nexit 1\n", { mode: 0o755 });
   process.env.PATH = bin;
   assert.equal(defaultCodeStatus(), "|    Folder (x): 1 files\n");
+});
+
+test("findOccupants: a live child process inside the target appears, then disappears after it exits", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const dir = tmp("agento-live-");
+  const child = spawn("sleep", ["30"], { cwd: path.join(dir), stdio: "ignore" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  const during = findOccupants(dir, { codeStatus: noCode });
+  assert.ok(during.processes.includes(`PID ${child.pid} (sleep)`), during.processes.join(", "));
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill();
+  await exited;
+  const after = findOccupants(dir, { codeStatus: noCode });
+  assert.ok(!after.processes.some((p) => p.startsWith(`PID ${child.pid} `)), after.processes.join(", "));
 });
