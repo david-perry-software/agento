@@ -14,6 +14,7 @@
 //   node scripts/agento.mjs paths <feature|issue|plan|freehand> <slug|session-id>   (+ worktreeState { onDisk, registeredIn, origin, expectedOrigin, ok }; + companion half and .code-workspace in companion mode, with companion.state likewise)
 //   node scripts/agento.mjs workspace <feature|issue|plan|freehand> <slug|session-id> [--write]   (pair workspace file status; write the canonical document with --write)
 //   node scripts/agento.mjs start-session [<feature|issue>/<slug> | <session-id>] [--resume] [--no-open]   (window check, doctor, fetch, worktree pair, post-add check, workspace file, code --new-window)
+//   node scripts/agento.mjs close-session <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]   (window check, fetch --prune, close decision, clean/pushed checks, occupant gate, remove pair + workspace file, delete merged local branches)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
@@ -41,11 +42,12 @@ import {
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
+import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 27);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 28);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -82,6 +84,8 @@ function parseArgs(argv) {
     else if (arg === "--apply") options.apply = true;
     else if (arg === "--resume") options.resume = true;
     else if (arg === "--no-open") options.noOpen = true;
+    else if (arg === "--dry-run") options.dryRun = true;
+    else if (arg === "--ignore-occupants") options.ignoreOccupants = true;
     else if (arg === "--plugin-root") {
       options.pluginRoot = argv[++i];
       if (!options.pluginRoot) usage("--plugin-root takes a directory");
@@ -417,6 +421,15 @@ function companionOfOwner(owner, layout) {
 function companionGaps(companion) {
   if (!companion?.registered) return [];
   return [...(companion.dirty ? ["dirty"] : []), ...(companion.ahead > 0 ? ["unpushed"] : []), ...(companion.behind > 0 ? ["behind"] : [])];
+}
+
+function companionGapMessage(companion, gaps, type, slug) {
+  const behindOnly = gaps.length === 1 && gaps[0] === "behind";
+  const fix = behindOnly
+    ? `run git -C ${companion.path} merge origin/${companion.branch} (a fast-forward) before closing ${type}/${slug}`
+    : `commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost`;
+  const state = gaps.map((g) => (g === "behind" ? "behind its upstream" : g)).join(" and ");
+  return `The companion half at ${companion.path} is ${state}; ${fix}.`;
 }
 
 // ship-preflight: a checkout's dirt split into tracked and untracked (non-ignored)
@@ -1553,6 +1566,279 @@ function startSession() {
   finish();
 }
 
+// --- close-session ---------------------------------------------------------
+
+function closeSessionArgs() {
+  const freehand = config.branches.freehand;
+  if (rest.length !== 1) usage(`close-session takes exactly one argument (<feature|issue>/<slug>, ${freehand}<slug>, or a session id), got ${JSON.stringify(rest.join(" "))}`);
+  const arg = rest[0];
+  const build = arg.match(/^(feature|issue)\/(.*)$/);
+  if (build) return { mode: "build", type: build[1], slug: requireSlug(build[2]), subject: arg };
+  if (arg.startsWith(freehand)) return { mode: "freehand", slug: requireSlug(arg.slice(freehand.length)), subject: arg };
+  if (!SESSION_ID.test(arg)) usage(`close-session takes <feature|issue>/<slug>, ${freehand}<slug>, or a session id matching [a-z0-9][a-z0-9-]{1,63}, got ${JSON.stringify(arg)}`);
+  return { mode: "plan", id: arg, subject: arg };
+}
+
+const isAncestor = (dir, a, b) => gitRun(dir, ["merge-base", "--is-ancestor", a, b]).ok;
+const logLines = (dir, ...range) => git(dir, "log", "--format=%h %s", ...range).split("\n").filter(Boolean);
+
+// Commits in a half that exist nowhere safe. Plan halves must sit inside the
+// default branch. Otherwise none when HEAD is in the default branch; else those past
+// a live upstream; else (upstream gone, never set, or detached) those on no remote
+// ref — except a freehand branch that never had an upstream, whose commits survive
+// on the retained local branch.
+function unpushedCommits(dir, defaultRef, mode) {
+  if (isAncestor(dir, "HEAD", defaultRef)) return [];
+  if (mode === "plan") return logLines(dir, `${defaultRef}..HEAD`);
+  if (git(dir, "rev-parse", "--verify", "--quiet", "@{upstream}")) return logLines(dir, "@{upstream}..HEAD");
+  const current = git(dir, "branch", "--show-current");
+  if (mode === "freehand" && current && !git(dir, "for-each-ref", "--format=%(upstream)", `refs/heads/${current}`)) return [];
+  return logLines(dir, "HEAD", "--not", "--remotes");
+}
+
+function closeSession() {
+  let args = closeSessionArgs();
+  const dryRun = Boolean(options.dryRun);
+  const record = sessionRecord();
+  const primary = record.worktrees[0]?.path ?? root;
+  const out = {
+    status: "ok",
+    mode: args.mode,
+    subject: args.subject,
+    outcome: null,
+    applied: false,
+    product: null,
+    companion: null,
+    workspace: null,
+    branches: { product: null, companion: null },
+    occupants: { product: [], companion: [] },
+    dirty: { product: [], companion: [] },
+    next: [],
+    reason: null,
+    message: null,
+    fix: null,
+    reauth: null,
+    allowed: record.allowed,
+    elsewhere: record.elsewhere,
+    warnings: [...record.warnings],
+    root,
+    configSource: source,
+  };
+  const finish = (fields = {}) => {
+    const result = { ...out, ...fields };
+    emit(result, result.status === "ok" ? 0 : 3);
+  };
+  const reject = (reason, fields = {}) => finish({ status: "rejected", reason, ...fields });
+  const fail = (reason, message, fields = {}) => finish({ status: "failed", reason, message, ...fields });
+
+  // Window check (§11): the primary checkout; its branch and cleanliness do not matter here.
+  const { worktree } = record;
+  const where = `${worktree.path}, branch ${worktree.detached || !worktree.branch ? "detached" : worktree.branch}`;
+  if (record.role !== "primary") reject(`wrong window: role=${record.role} (${where})`);
+
+  // --prune, so a remote branch deleted after its merge reads as gone.
+  const fetched = new Set();
+  const fetch = (dir, label) => {
+    if (fetched.has(path.resolve(dir))) return;
+    fetched.add(path.resolve(dir));
+    const result = gitRun(dir, ["fetch", "--prune", "origin"]);
+    if (result.ok) return;
+    const url = originOf(dir);
+    if (!result.timedOut && classifyFetchFailure(result.stderr) === "auth") {
+      fail("fetch-auth", `git -C ${dir} fetch --prune origin: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(url) });
+    }
+    out.warnings.push(`fetch: ${label} ${url ?? "origin"} not fetched (${result.stderr.split("\n")[0]}); continuing from local refs`);
+  };
+  fetch(primary, "product");
+  if (artifacts.external) fetch(artifactsRoot, "companion");
+
+  // A plan-<id> worktree on a delivery branch was promoted: close it as that build.
+  if (args.mode === "plan") {
+    const entry = registeredAt(productWorktrees(), resolveSessionPaths("plan", args.id, checkoutLayout()).worktree);
+    const type = !entry || entry.detached ? null : ["feature", "issue"].find((t) => entry.branch?.startsWith(config.branches[t]));
+    const slug = type ? entry.branch.slice(config.branches[type].length) : null;
+    if (type && SESSION_ID.test(slug)) {
+      args = { mode: "build", type, slug, subject: `${type}/${slug}` };
+      out.mode = "build";
+      out.subject = args.subject;
+    }
+  }
+
+  // Which halves, which branch, which clones — every check below precedes the first write.
+  let layout = checkoutLayout();
+  let paths;
+  let branch = null;
+  let outcome = null;
+  if (args.mode === "build") {
+    const { type, slug } = args;
+    const decided = decideWithLayout(type, slug, (l) =>
+      closeBuildSessionDecision({ type, slug, currentBranch, worktreeList: productWorktreeText(), git: l.artifactsGit, rootDir: root, artifactsRoot: l.artifactsRoot, config: l.config }),
+    );
+    const { decision } = decided;
+    layout = decided.layout;
+    if (decision.status !== "ok") reject(decision.reason, { message: decision.message });
+    if (decision.reason === "primary-owns-branch") reject("primary-owns-branch", { message: decision.message, fix: `git switch ${config.branches.default}` });
+    if (layout.artifacts.external) fetch(layout.artifactsRoot, "companion");
+    branch = deliveryBranch(type, slug);
+    if (decision.reason === "managed-worktree-present") {
+      const { owner } = decision;
+      const companion = companionOfOwner(owner, layout);
+      const gaps = companionGaps(companion);
+      if (gaps.length) reject("companion-unpushed", { message: companionGapMessage(companion, gaps, type, slug) });
+      const resolved = resolveSessionPaths(owner.dirPrefix, owner.id, layout);
+      paths = { product: owner.path, companion: resolved.companion?.worktree ?? null, workspace: resolved.workspace };
+      outcome = "closed";
+    } else {
+      const resolved = resolveSessionPaths(type, slug, layout);
+      paths = { product: resolved.worktree, companion: resolved.companion?.worktree ?? null, workspace: resolved.workspace };
+      outcome = "already-closed";
+    }
+    let roadmapStatus = null;
+    try {
+      const { result, layout: found } = resolveWithLayout(type, slug);
+      if (result.status === "ok") roadmapStatus = header(result.source === "local" ? fs.readFileSync(result.path, "utf8") : found.agit("show", `origin/${result.branch}:${result.path}`), "status");
+    } catch {
+      roadmapStatus = null;
+    }
+    if (roadmapStatus !== "complete") out.next = [`/agento ship ${slug}`];
+  } else {
+    const kind = args.mode;
+    const id = kind === "plan" ? args.id : args.slug;
+    if (kind === "freehand") branch = `${config.branches.freehand}${args.slug}`;
+    const resolved = resolveSessionPaths(kind, id, layout);
+    paths = { product: resolved.worktree, companion: resolved.companion?.worktree ?? null, workspace: resolved.workspace };
+  }
+
+  const companionClone = layout.artifacts.external ? layout.artifactsRoot : null;
+  const productList = productWorktrees({ fresh: true });
+  const companionList = companionClone ? parseWorktreeList(git(companionClone, "worktree", "list", "--porcelain")) : [];
+  const inspect = (halfPath, list) => {
+    const entry = registeredAt(list, halfPath);
+    return { path: entry?.path ?? halfPath, branch: entry?.branch ?? null, detached: entry ? Boolean(entry.detached) : false, registered: Boolean(entry), onDisk: fs.existsSync(halfPath), removed: false };
+  };
+  out.product = inspect(paths.product, productList);
+  out.companion = paths.companion ? inspect(paths.companion, companionList) : null;
+  out.workspace = paths.workspace ? { path: paths.workspace, existed: fs.existsSync(paths.workspace), removed: false } : null;
+  const halves = [
+    ["product", out.product, primary, productList, `origin/${config.branches.default}`],
+    ...(out.companion ? [["companion", out.companion, companionClone, companionList, `origin/${layout.config.branches.default}`]] : []),
+  ];
+
+  for (const [label, half, clone] of halves) {
+    if ([primary, companionClone].some((protectedPath) => protectedPath && samePath(half.path, protectedPath))) {
+      reject("protected-path", { message: `${label} half ${half.path} is the clone itself (${clone}); close-session never removes a primary checkout` });
+    }
+    if (half.onDisk && !half.registered) {
+      reject("unregistered", { message: `${label} half ${half.path} exists but is not a registered worktree of ${clone}; nothing was removed` });
+    }
+    if (!half.registered) continue;
+    const expected = args.mode === "plan" ? half.detached : half.branch === branch || (label === "companion" && half.detached);
+    if (!expected) {
+      const want = args.mode === "plan" ? "detached (a planning session)" : `on ${branch}`;
+      reject("branch-mismatch", { message: `${label} half ${half.path} is ${half.detached ? "detached" : `on ${half.branch}`}, expected ${want}; nothing was removed` });
+    }
+  }
+
+  for (const [label, half] of halves) {
+    if (!half.registered || !half.onDisk) continue;
+    const tree = treeState(half.path);
+    out.dirty[label] = tree ? [...tree.tracked, ...tree.untracked] : [];
+  }
+  const dirtyHalves = halves.filter(([label]) => out.dirty[label].length);
+  if (dirtyHalves.length) {
+    reject("dirty", { message: dirtyHalves.map(([label, half]) => `${label} half ${half.path} has uncommitted changes: ${out.dirty[label].join(", ")}`).join("; ") });
+  }
+
+  const commits = { product: [], companion: [] };
+  for (const [label, half, , , defaultRef] of halves) {
+    if (half.registered && half.onDisk) commits[label] = unpushedCommits(half.path, defaultRef, args.mode);
+  }
+  const unpushed = halves.filter(([label]) => commits[label].length);
+  if (unpushed.length) {
+    const message = unpushed.map(([label, half, , , defaultRef]) => `${label} half ${half.path} has ${commits[label].length} commit(s) on neither its upstream nor ${defaultRef}: ${commits[label].join("; ")}`).join("; ");
+    reject("unpushed", { message, commits, next: args.mode === "freehand" ? ["/agento finish-freehand"] : out.next });
+  }
+
+  const anyHalf = halves.some(([, half]) => half.registered);
+  out.outcome = outcome ?? (anyHalf || out.workspace?.existed ? "closed" : "nothing-to-close");
+
+  // A local branch goes only when it is gone from origin, merged into that clone's
+  // origin/<default>, checked out nowhere else, and `git branch -d` would accept it.
+  if (branch) {
+    for (const [label, clone, list, defaultRef] of [
+      ["product", primary, productList, `origin/${config.branches.default}`],
+      ...(companionClone ? [["companion", companionClone, companionList, `origin/${layout.config.branches.default}`]] : []),
+    ]) {
+      const local = git(clone, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
+      const verdict = {
+        name: branch,
+        upstream: local ? git(clone, "for-each-ref", "--format=%(upstream:short)", `refs/heads/${branch}`) || null : null,
+        remoteExists: Boolean(git(clone, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)),
+        mergedIntoDefault: Boolean(local) && isAncestor(clone, `refs/heads/${branch}`, defaultRef),
+        action: "retained",
+        reason: null,
+      };
+      const ownHalf = out[label];
+      const holder = list.find((w) => w.branch === branch && !(ownHalf?.registered && samePath(w.path, ownHalf.path)));
+      const head = git(clone, "symbolic-ref", "--short", "-q", "HEAD") || "HEAD";
+      if (!local) Object.assign(verdict, { action: "absent", reason: `no local ${branch} in ${clone}` });
+      else if (verdict.remoteExists) verdict.reason = `origin/${branch} still exists`;
+      else if (!verdict.mergedIntoDefault) verdict.reason = `not merged into ${defaultRef}`;
+      else if (holder) verdict.reason = `checked out at ${holder.path}`;
+      else if (!isAncestor(clone, `refs/heads/${branch}`, "HEAD")) verdict.reason = `merged into ${defaultRef} but not into ${head} at ${clone}, so git branch -d would refuse; run git -C ${clone} pull --ff-only, then re-send`;
+      else Object.assign(verdict, { action: "deleted", reason: `merged into ${defaultRef} and gone from origin` });
+      out.branches[label] = verdict;
+    }
+    const unmerged = Object.values(out.branches).some((v) => v?.action === "retained" && !v.mergedIntoDefault);
+    if (args.mode === "freehand" && unmerged) out.next = [`/agento start-freehand ${args.slug} --resume`];
+  }
+
+  // Occupant gate: the guard cannot see a removal made from inside this process.
+  const codeStatus = once(defaultCodeStatus);
+  for (const [label, half] of halves) {
+    if (half.registered && half.onDisk) out.occupants[label] = findOccupants(half.path, { codeStatus }).details;
+  }
+  const occupied = halves.filter(([label]) => out.occupants[label].length);
+  if (occupied.length) {
+    const summary = occupied.map(([label, half]) => `${label} half ${half.path}: ${out.occupants[label].join(", ")}`).join("; ");
+    if (!options.ignoreOccupants) {
+      finish({ status: "blocked", reason: "occupied", message: `Active worktree occupants detected - ${summary}. Close their terminals or VS Code window before removal, or re-send with --ignore-occupants.` });
+    }
+    out.warnings.push(`occupants: ignored (--ignore-occupants) - ${summary}`);
+  }
+
+  for (const [, half] of halves) half.removed = half.registered;
+  if (out.workspace) out.workspace.removed = out.workspace.existed;
+  if (dryRun) finish();
+
+  // Apply: companion half, prune, product half, prune, workspace file, merged branches.
+  out.applied = true;
+  for (const [label, half, clone] of [...halves].reverse()) {
+    if (half.registered) {
+      const removal = gitRun(clone, ["worktree", "remove", half.path], 120000);
+      if (!removal.ok) {
+        half.removed = false;
+        if (label === "companion") out.product.removed = false;
+        if (out.workspace) out.workspace.removed = false;
+        for (const verdict of Object.values(out.branches)) if (verdict?.action === "deleted") Object.assign(verdict, { action: "retained", reason: "not attempted: a worktree removal failed" });
+        fail("worktree-remove", `git -C ${clone} worktree remove ${half.path}: ${removal.stderr}`, { half: label });
+      }
+    }
+    gitRun(clone, ["worktree", "prune"]);
+  }
+  if (out.workspace?.existed) fs.rmSync(out.workspace.path, { force: true });
+  for (const [label, clone] of [["product", primary], ["companion", companionClone]]) {
+    const verdict = out.branches[label];
+    if (verdict?.action !== "deleted") continue;
+    const deletion = gitRun(clone, ["branch", "-d", verdict.name]);
+    if (!deletion.ok) {
+      Object.assign(verdict, { action: "retained", reason: `git branch -d failed: ${deletion.stderr.split("\n")[0]}` });
+      fail("branch-delete", `git -C ${clone} branch -d ${verdict.name}: ${deletion.stderr}`, { half: label });
+    }
+  }
+  finish();
+}
+
 // --- model profiles --------------------------------------------------------
 
 const MODELS_HINT =
@@ -2004,11 +2290,6 @@ switch (command) {
     const companion = companionOfOwner(decision.owner, layout);
     const gaps = companionGaps(companion);
     if (gaps.length) {
-      const behindOnly = gaps.length === 1 && gaps[0] === "behind";
-      const fix = behindOnly
-        ? `run git -C ${companion.path} merge origin/${companion.branch} (a fast-forward) before closing ${type}/${slug}`
-        : `commit and push it (or discard the changes) before closing ${type}/${slug}, or its artifact work is lost`;
-      const state = gaps.map((g) => (g === "behind" ? "behind its upstream" : g)).join(" and ");
       withExit(
         withLayout(
           {
@@ -2016,7 +2297,7 @@ switch (command) {
             reason: "companion-unpushed",
             owner: decision.owner,
             companion,
-            message: `The companion half at ${companion.path} is ${state}; ${fix}.`,
+            message: companionGapMessage(companion, gaps, type, slug),
           },
           layout,
         ),
@@ -2138,6 +2419,11 @@ switch (command) {
 
   case "start-session": {
     startSession();
+    break;
+  }
+
+  case "close-session": {
+    closeSession();
     break;
   }
 
