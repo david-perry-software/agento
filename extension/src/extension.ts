@@ -9,14 +9,15 @@ import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget,
 import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
-import { DeliveryTreeProvider, openRoadmap, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
+import { DeliveryTreeProvider, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { initiativeMemberActionSource } from "./initiativeMemberActions.js";
 import { createInitiativeTreeError, createInitiativeTreeModel, initiativeSlugs } from "./initiativeTreeModel.js";
-import { InitiativeTreeProvider, openBreakdown, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
+import { InitiativeTreeProvider, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import { missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
+import { openArtifactPreview } from "./openArtifact.js";
 import {
   primaryInitiativeTarget,
   runNewInitiativeFlow,
@@ -290,8 +291,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
 
   const refreshCommand = vscode.commands.registerCommand("agento.refresh", () => scheduler.refreshNow("command"));
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
-  const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openRoadmap);
-  const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openBreakdown);
+  const openArtifact = (uri: vscode.Uri) => openArtifactPreview(uri, {
+    openWith: (target, viewType) => vscode.commands.executeCommand(
+      "vscode.openWith",
+      target,
+      viewType,
+      { viewColumn: vscode.ViewColumn.Active, preview: false },
+    ),
+    openSource: (target) => vscode.window.showTextDocument(target, { viewColumn: vscode.ViewColumn.Active, preview: false }),
+    log: (message) => output.appendLine(message),
+  });
+  const openRoadmapCommand = vscode.commands.registerCommand("agento.openRoadmap", openArtifact);
+  const openBreakdownCommand = vscode.commands.registerCommand("agento.openBreakdown", openArtifact);
   const openTarget = (target: { kind: "folder" | "workspace"; path: string }) => vscode.commands.executeCommand(
     "vscode.openFolder",
     vscode.Uri.file(target.path),

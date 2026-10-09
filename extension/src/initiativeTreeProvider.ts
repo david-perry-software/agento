@@ -68,8 +68,3 @@ export class InitiativeTreeProvider implements vscode.TreeDataProvider<Initiativ
     this.didChangeTreeData.dispose();
   }
 }
-
-export async function openBreakdown(uri: vscode.Uri): Promise<void> {
-  const document = await vscode.workspace.openTextDocument(uri);
-  await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.Beside });
-}

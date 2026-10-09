@@ -106,8 +106,3 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
     this.didChangeTreeData.dispose();
   }
 }
-
-export async function openRoadmap(uri: vscode.Uri): Promise<void> {
-  const document = await vscode.workspace.openTextDocument(uri);
-  await vscode.window.showTextDocument(document, { viewColumn: vscode.ViewColumn.Beside });
-}
