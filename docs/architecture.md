@@ -20,7 +20,7 @@ flowchart TD
     AP -->|"approve: stop, no handoffs"| SHIP
     SHIP -->|"reject: back to the open build window"| B
     SHIP -->|"merge PR, sync main, teardown, epilogue"| DONE([shipped])
-    U -->|"/agento close-session (plan/freehand/abandon)"| CLOSE[remove worktree]
+    U -->|"/agento close-session (plan/freehand/abandon)"| CLOSE[agento.mjs close-session: occupant check, remove pair]
     U -->|"/agento continue"| CONT[agento.mjs next: one legal transition]
     CONT -->|"here: follow the command's own files"| B
     CONT -->|"here"| R
@@ -80,7 +80,10 @@ flowchart TD
   branch-header validation), the status lister, the initiative deriver (per-member
   state, `blockedBy`, waves, and `next` computed from member roadmaps — the
   breakdown itself holds no progress), worktree path and per-slug port
-  derivation, the bounded CI poller, and the guard replay harness. Prompts call the
+  derivation, the session start and close (`start-session`, and `close-session`
+  with its own worktree-occupant check in `scripts/worktree-occupants.mjs` — the
+  guard cannot see a removal made inside the CLI), the bounded CI poller, and the
+  guard replay harness. Prompts call the
   CLI rather than re-deriving these algorithms in prose, so the configured branch
   names and artifact roots are honoured everywhere the hooks honour them.
 - **Extension** (`extension/`) renders CLI state and dispatches only the command

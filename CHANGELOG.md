@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Changed.** `/agento close-session` is one `agento.mjs close-session
+  <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run]
+  [--ignore-occupants]` call whose JSON the prompt formats, like `start-session`.
+  The CLI does the window check, a `git fetch --prune`, the build/plan/freehand
+  decision (reusing `close-decision`), the clean and pushed checks, the removal of
+  both halves and the workspace file, and the merged-branch cleanup in each
+  repository. A re-send is safe, and `--dry-run` previews the whole decision. The
+  guard cannot see a removal made inside the CLI, so the CLI runs its own occupant
+  check, a Node port of the guard's (`scripts/worktree-occupants.mjs`). An open VS
+  Code window or a process inside a half returns `status: "blocked"` and nothing is
+  removed, unless `--ignore-occupants` is given. `/agento ship`'s teardown is
+  unchanged.
+
 - **Fixed.** `agento.mjs paths`, `workspace`, and `config` run from a managed
   worktree now report the primary checkout's `worktrees.dir` (and the `worktree` and
   `workspace` paths under it), as `session` already did, instead of a
