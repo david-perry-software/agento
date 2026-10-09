@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -4115,6 +4115,87 @@ test("close-session freehand close (companion pair): removes both halves and the
   assert.equal(ahead.json.commits.companion.length, 1);
   assert.deepEqual(ahead.json.next, ["/agento finish-freehand"]);
   assert.deepEqual(cloneState(repo, docs), before);
+});
+
+// A detached plan pair <id> with its workspace file, for the occupant and dry-run tests.
+function planPair({ repo, docs, wt, docsWt }, id) {
+  const product = path.join(wt, `plan-${id}`);
+  const half = path.join(docsWt, `plan-${id}`);
+  const file = path.join(wt, `plan-${id}.code-workspace`);
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", half, "origin/main");
+  fs.writeFileSync(file, "{}\n");
+  return { product, half, file };
+}
+
+test("close-session occupant gate: a live process inside a half blocks with the guard's wording and changes nothing; --ignore-occupants proceeds with a warning", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const env = closeSessionEnv();
+  const { half, file } = planPair(pair, "20261009-1");
+  const child = spawn("sleep", ["30"], { cwd: half, stdio: "ignore" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const before = [cloneState(repo, docs), fs.readFileSync(file, "utf8")];
+    for (const extra of [[], ["--dry-run"]]) {
+      const { code, json } = closeSession(repo, env, "20261009-1", ...extra);
+      assert.equal(code, 3, JSON.stringify(json));
+      assert.equal(json.status, "blocked");
+      assert.equal(json.reason, "occupied");
+      assert.deepEqual(json.occupants, { product: [], companion: [`PID ${child.pid} (sleep)`] });
+      assert.equal(json.applied, false);
+      assert.match(json.message, /^Active worktree occupants detected - companion half .*plan-20261009-1: PID \d+ \(sleep\)\. Close their terminals or VS Code window before removal/);
+      assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+    }
+
+    const forced = closeSession(repo, env, "20261009-1", "--ignore-occupants");
+    assert.equal(forced.code, 0, JSON.stringify(forced.json));
+    assert.equal(forced.json.applied, true);
+    assert.ok(forced.json.warnings.some((w) => /^occupants: ignored \(--ignore-occupants\) - companion half .*: PID \d+ \(sleep\)$/.test(w)), forced.json.warnings.join("\n"));
+    assert.equal(worktreeCount(repo), 1);
+    assert.equal(worktreeCount(docs), 1);
+  } finally {
+    child.kill();
+  }
+});
+
+test("close-session occupant gate: code --status naming the half as a Folder, Workspace, or Window (… (Workspace)) blocks; --dry-run reports the full decision and changes nothing", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { file } = planPair(pair, "20261009-1");
+  const before = [cloneState(repo, docs), fs.readFileSync(file, "utf8")];
+  for (const [status, detail] of [
+    ["|    Folder (plan-20261009-1): 12 files", "a matching VS Code folder"],
+    ["|  Workspace (plan-20261009-1)", "a matching VS Code workspace window"],
+    ["|  Window (roadmap.md - plan-20261009-1 (Workspace) - Visual Studio Code)", "a matching VS Code workspace window"],
+  ]) {
+    const env = closeSessionEnv(status);
+    for (const extra of [[], ["--dry-run"]]) {
+      const { code, json } = closeSession(repo, env, "20261009-1", ...extra);
+      assert.equal(code, 3, `${status} ${extra}`);
+      assert.equal(json.status, "blocked");
+      assert.deepEqual(json.occupants, { product: [detail], companion: [detail] });
+      assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+    }
+  }
+
+  const env = closeSessionEnv("|    Folder (other): 1 files");
+  const dry = closeSession(repo, env, "20261009-1", "--dry-run");
+  assert.equal(dry.code, 0, JSON.stringify(dry.json));
+  assert.equal(dry.json.status, "ok");
+  assert.equal(dry.json.applied, false);
+  assert.equal(dry.json.outcome, "closed");
+  assert.equal(dry.json.product.removed, true);
+  assert.equal(dry.json.companion.removed, true);
+  assert.deepEqual(dry.json.workspace, { path: file, existed: true, removed: true });
+  assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+
+  const real = closeSession(repo, env, "20261009-1");
+  assert.equal(real.code, 0, JSON.stringify(real.json));
+  assert.equal(real.json.applied, true);
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+  assert.equal(fs.existsSync(file), false);
 });
 
 // --- dashboard: one process per refresh ---------------------------------------
