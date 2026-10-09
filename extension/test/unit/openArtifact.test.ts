@@ -10,6 +10,7 @@ test("openArtifactPreview opens the Markdown preview custom editor", async () =>
   const openSource: string[] = [];
   const logs: string[] = [];
   const result = await openArtifactPreview(URI, {
+    previewAvailable: () => true,
     openWith: async (uri, viewType) => { openWith.push([uri, viewType]); },
     openSource: async (uri) => { openSource.push(uri); },
     log: (message) => { logs.push(message); },
@@ -25,6 +26,7 @@ test("openArtifactPreview falls back to source text and logs once when the previ
   const openSource: string[] = [];
   const logs: string[] = [];
   const result = await openArtifactPreview(URI, {
+    previewAvailable: () => true,
     openWith: async () => { throw new Error("markdown extension disabled"); },
     openSource: async (uri) => { openSource.push(uri); },
     log: (message) => { logs.push(message); },
@@ -33,4 +35,21 @@ test("openArtifactPreview falls back to source text and logs once when the previ
   assert.deepEqual(openSource, [URI]);
   assert.equal(logs.length, 1);
   assert.match(logs[0]!, /markdown extension disabled/);
+});
+
+test("openArtifactPreview opens source text without openWith when the Markdown preview is unavailable", async () => {
+  const openWith: string[] = [];
+  const openSource: string[] = [];
+  const logs: string[] = [];
+  const result = await openArtifactPreview(URI, {
+    previewAvailable: () => false,
+    openWith: async (uri) => { openWith.push(uri); },
+    openSource: async (uri) => { openSource.push(uri); },
+    log: (message) => { logs.push(message); },
+  });
+  assert.equal(result, "source");
+  assert.deepEqual(openWith, []);
+  assert.deepEqual(openSource, [URI]);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0]!, /Markdown preview unavailable/);
 });

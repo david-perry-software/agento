@@ -292,6 +292,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const refreshCommand = vscode.commands.registerCommand("agento.refresh", () => scheduler.refreshNow("command"));
   const showOutputCommand = vscode.commands.registerCommand("agento.showOutput", () => output.show());
   const openArtifact = (uri: vscode.Uri) => openArtifactPreview(uri, {
+    previewAvailable: () => vscode.extensions.getExtension("vscode.markdown-language-features") !== undefined,
     openWith: (target, viewType) => vscode.commands.executeCommand(
       "vscode.openWith",
       target,

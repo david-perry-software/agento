@@ -6,7 +6,7 @@ import path from "node:path";
 import { runTests } from "@vscode/test-electron";
 
 interface Scenario {
-  name: "in-repo" | "companion" | "workspace";
+  name: "in-repo" | "companion" | "workspace" | "no-markdown";
   workspace: string;
   cleanup: string;
   bin: string;
@@ -180,7 +180,7 @@ async function createScenario(sourceFixture: string, extensionDevelopmentPath: s
   await cp(sourceFixture, workspace, { recursive: true });
   const bin = await createGhStub(cleanup);
 
-  if (name !== "in-repo") {
+  if (name !== "in-repo" && name !== "no-markdown") {
     const artifacts = path.join(cleanup, "artifacts");
     await mkdir(artifacts, { recursive: true });
     await writeDeliveries(artifacts);
@@ -227,6 +227,17 @@ async function createScenario(sourceFixture: string, extensionDevelopmentPath: s
     };
   }
 
+  if (name === "no-markdown") {
+    // --disable-extension is ignored alongside --disable-extensions, so this host keeps other built-ins enabled.
+    return {
+      name,
+      workspace,
+      cleanup,
+      bin,
+      launchArgs: [workspace, "--disable-extension", "vscode.markdown-language-features"],
+    };
+  }
+
   return {
     name,
     workspace,
@@ -250,7 +261,7 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(import.meta.dirname, "../../..");
   const extensionTestsPath = path.join(import.meta.dirname, "suite.js");
   const sourceFixture = path.join(extensionDevelopmentPath, "test", "fixtures", "workspace");
-  for (const name of ["in-repo", "companion", "workspace"] as const) {
+  for (const name of ["in-repo", "companion", "workspace", "no-markdown"] as const) {
     const scenario = await createScenario(sourceFixture, extensionDevelopmentPath, name);
     try {
       await runTests({

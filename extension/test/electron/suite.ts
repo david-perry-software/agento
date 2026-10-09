@@ -567,6 +567,29 @@ export async function run(): Promise<void> {
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
+  if (process.env.AGENTO_ELECTRON_SCENARIO === "no-markdown") {
+    assert.equal(vscode.extensions.getExtension("vscode.markdown-language-features"), undefined, "the built-in Markdown extension is disabled");
+    await waitForReadyTree(api);
+    const leaf = api.deliveries.getChildren().flatMap((group) => deliveryElements(api, group))[0];
+    assert.ok(leaf);
+    const command = api.deliveries.getTreeItem(leaf).command;
+    assert.ok(command);
+    const uri = command.arguments?.[0];
+    assert.ok(uri instanceof vscode.Uri);
+    const activeDocument = await vscode.workspace.openTextDocument(vscode.Uri.file(path.join(fixture, ".github", "agento.json")));
+    await vscode.window.showTextDocument(activeDocument, vscode.ViewColumn.One);
+    const result = await vscode.commands.executeCommand(command.command, ...(command.arguments ?? []));
+    assert.equal(result, "source", "the delivery roadmap falls back to source text");
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    assert.ok(tab?.input instanceof vscode.TabInputText, "the fallback opens a text editor tab");
+    assert.equal(tab.input.uri.fsPath, uri.fsPath);
+    assert.equal(tab.isPreview, false, "the fallback tab is pinned");
+    assert.equal(tab.group.viewColumn, vscode.ViewColumn.One);
+    assert.equal(vscode.window.tabGroups.all.length, 1, "the fallback opens in the active group without a split");
+    assert.equal(previewTabsFor(uri).length, 0);
+    console.log("Electron no-markdown scenario passed: source fallback in the active group");
+    return;
+  }
   if (process.env.AGENTO_ELECTRON_SCENARIO === "workspace") {
     assert.equal(vscode.workspace.workspaceFile?.fsPath, path.join(path.dirname(fixture), "plan-e2e.code-workspace"));
     for (const [key, value] of Object.entries(SESSION_WORKSPACE_SETTINGS)) {
