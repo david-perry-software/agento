@@ -607,11 +607,7 @@ function withExit(result) {
 function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
   if (!branch) return { pr: null, warnings: [`${label}: no branch to look up (detached HEAD)`] };
   const opts = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
-  try {
-    execFileSync("gh", ["--version"], opts);
-  } catch {
-    return { pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] };
-  }
+  if (!ghVersion().ok) return { pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] };
   try {
     const out = execFileSync("gh", ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"], opts);
     return { pr: JSON.parse(out), warnings: [] };
@@ -696,6 +692,9 @@ function probe(cmd, args) {
   }
 }
 
+// The one `gh --version` probe per process, shared by PR lookups, the doctor, and release.
+const ghVersion = once(() => probe("gh", ["--version"]));
+
 const DOCTOR_CHECKS = {
   node() {
     const version = process.versions.node;
@@ -713,7 +712,7 @@ const DOCTOR_CHECKS = {
       : { status: "warn", detail: `origin ${url} unreachable: ${reach.detail}`, fallback: "work offline; fetch, push, and PR steps will fail until the network is back — retry them before ending the turn" };
   },
   gh() {
-    const version = probe("gh", ["--version"]);
+    const version = ghVersion();
     if (!version.ok) return { status: "fail", detail: version.missing ? "gh CLI not found on PATH" : `gh --version failed: ${version.detail}`, fallback: "install GitHub CLI (https://cli.github.com) — the user installs it; the agent does not" };
     const auth = probe("gh", ["auth", "status"]);
     return auth.ok
@@ -2221,11 +2220,7 @@ switch (command) {
     const report = (fields, code) => emit({ status: "ok", verdict: null, sha: shaArg, workflow, run: null, supersededBy: null, reason: null, mergeDate: null, graceSeconds: GRACE_SECONDS, polls: 0, waitedSeconds: 0, ...fields, root, configSource: source }, code);
     if (!workflow) report({ verdict: "not-configured", reason: "checks.releaseWorkflow is not set; there is no release to wait for" }, 0);
     try {
-      try {
-        execFileSync("gh", ["--version"], { cwd: root, stdio: "ignore", timeout: 15000 });
-      } catch {
-        throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
-      }
+      if (!ghVersion().ok) throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
       const ctx = releaseContext(workflow, shaArg);
       const wait = options.wait ?? 0;
       const interval = options.interval ?? 10;

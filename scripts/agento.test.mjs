@@ -1841,9 +1841,11 @@ test("session --pr: companionPr is null with no extra gh call in-repo, and the c
 });
 
 // A stub gh answering `pr view` with a per-repo state: `product` for the product
-// checkout, `companion` for anything under project-docs. Logs `$PWD $*` to marker.
-function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN" } = {}) {
-  return `#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge};; *) n=15; s=${product}; m=CLEAN;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
+// checkout, `companion` for anything under project-docs. Logs `$PWD $*` to marker;
+// `logVersion` logs the `--version` probe too.
+function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN", logVersion = false } = {}) {
+  const versionLog = logVersion ? `echo "$PWD $*" >> ${JSON.stringify(marker)}; ` : "";
+  return `#!/bin/sh\nif [ "$1" = "--version" ]; then ${versionLog}exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge};; *) n=15; s=${product}; m=CLEAN;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
 }
 
 test("ship-preflight --pr: in-repo one gh call with companionPr null; companion mode both PRs and PR gaps; no --pr means no pr key", () => {
@@ -3647,4 +3649,38 @@ test("session, status --pr, and initiative read each clone's worktree list once 
     assert.equal(runWith({ cwd: pair.repo, env }, ...args).code, 0);
     assert.deepEqual(worktreeListCalls(log), { [fs.realpathSync(pair.repo)]: 1, [fs.realpathSync(pair.docs)]: 1 }, `companion ${args.join(" ")}`);
   }
+});
+
+test("status --pr probes gh --version once and runs pr view once per non-complete item per clone", () => {
+  const items = [["alpha", "in-progress"], ["beta", "planned"], ["gamma", "paused"], ["omega", "complete"]];
+  const readCalls = (marker) => {
+    const lines = fs.readFileSync(marker, "utf8").trim().split("\n");
+    fs.rmSync(marker);
+    return { versions: lines.filter((l) => l.endsWith(" --version")), views: lines.filter((l) => / pr view /.test(l)) };
+  };
+  const branchesOf = (views, cwd) => views.filter((l) => l.startsWith(`${cwd} pr view `)).map((l) => l.split(" ")[3]).sort();
+  const open = ["feature/alpha", "feature/beta", "feature/gamma"];
+
+  const { repo } = makeWorktreeRepo();
+  for (const [slug, status] of items) writeRoadmap(repo, `features/2026/10/${slug}`, `status: ${status}\nbranch: feature/${slug}\nnext-step: "1.2"`);
+  const marker = path.join(path.dirname(repo), "gh-calls");
+  const inRepo = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(marker, { logVersion: true }) }).env }, "status", "--pr");
+  assert.equal(inRepo.code, 0);
+  assert.deepEqual(inRepo.json.items.filter((i) => i.pr?.number === 15).map((i) => i.branch).sort(), open);
+  const inRepoCalls = readCalls(marker);
+  assert.equal(inRepoCalls.versions.length, 1);
+  assert.equal(inRepoCalls.views.length, 3);
+  assert.deepEqual(branchesOf(inRepoCalls.views, repo), open);
+
+  const pair = makePairRepo();
+  for (const [slug, status] of items) writeRoadmap(pair.docs, `features/2026/10/${slug}`, `status: ${status}\nbranch: feature/${slug}\nnext-step: "1.2"`);
+  const pairMarker = path.join(pair.wt, "gh-calls");
+  const companion = runWith({ cwd: pair.repo, env: restrictedPath({ gh: prStub(pairMarker, { logVersion: true }) }).env }, "status", "--pr");
+  assert.equal(companion.code, 0);
+  assert.deepEqual(companion.json.items.filter((i) => i.companionPr?.number === 7).map((i) => i.branch).sort(), open);
+  const pairCalls = readCalls(pairMarker);
+  assert.equal(pairCalls.versions.length, 1);
+  assert.equal(pairCalls.views.length, 6);
+  assert.deepEqual(branchesOf(pairCalls.views, pair.repo), open);
+  assert.deepEqual(branchesOf(pairCalls.views, pair.docs), open);
 });
