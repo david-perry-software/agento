@@ -619,9 +619,9 @@ function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
 
 // The mirrored artifact PR: the same branch name looked up in the companion clone
 // the layout names. In-repo layout → null with no gh call, so today's output is unchanged.
-function lookupCompanionPullRequest(branch, layout = checkoutLayout()) {
+function lookupCompanionPullRequest(branch, layout = checkoutLayout(), lookup = lookupPullRequest) {
   if (!layout.artifacts.external) return { pr: null, warnings: [] };
-  return lookupPullRequest(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
+  return lookup(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
 }
 
 // worktrees.dir is relative to the primary checkout; resolving it against a
@@ -636,8 +636,9 @@ function primaryWorktreesDir(worktrees = productWorktrees()) {
 }
 
 // The `session` record: role, worktree, worktrees, companion, workspace, delivery,
-// lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups.
-function sessionRecord({ pr: withPr = false } = {}) {
+// lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups (`lookup`: a
+// lookupPullRequest-compatible function, e.g. one answering from prefetched results).
+function sessionRecord({ pr: withPr = false, lookup = lookupPullRequest } = {}) {
   // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
   const worktrees = productWorktrees();
   const sessionWorktreesDir = primaryWorktreesDir(worktrees);
@@ -646,8 +647,8 @@ function sessionRecord({ pr: withPr = false } = {}) {
   const companion = describeCompanion(worktree);
   const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
   const prBranch = delivery?.branch ?? worktree.branch;
-  const { pr, warnings: prWarnings } = withPr ? lookupPullRequest(prBranch) : { pr: null, warnings: [] };
-  const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch) : { pr: null, warnings: [] };
+  const { pr, warnings: prWarnings } = withPr ? lookup(prBranch) : { pr: null, warnings: [] };
+  const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch, undefined, lookup) : { pr: null, warnings: [] };
   const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
   const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
   const unregistered = companionWarning({ pair: companion, onDisk: Boolean(companion) && fs.existsSync(companion.path), productWorktrees: worktrees, companionClone: artifacts.dir, productRoot: worktrees[0]?.path ?? root });
@@ -1649,6 +1650,100 @@ function releaseSnapshot(ctx) {
   });
 }
 
+// --- documents -------------------------------------------------------------
+
+// What `status` emits. `lookup` as in sessionRecord.
+function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = false, lookup = lookupPullRequest } = {}) {
+  const worktrees = productWorktrees();
+  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
+  const items = allRoadmaps(typeFilter, managedHalves(worktrees)).filter((r) => !slugFilter || r.slug === slugFilter);
+  const bySlug = new Map();
+  for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
+  const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
+  const order = ["in-progress", "paused", "in-review", "planned", "complete"];
+  items.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.slug.localeCompare(b.slug));
+  // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
+  const warnings = [];
+  const layout = checkoutLayout();
+  for (const item of items) {
+    // Complete roadmaps skip the lookup: their PRs are merged history, not dashboard state.
+    const looked = withPr && item.status !== "complete";
+    const { pr, warnings: prWarnings } = looked ? lookup(item.branch) : { pr: null, warnings: [] };
+    const { pr: companionPr, warnings: companionPrWarnings } = looked ? lookupCompanionPullRequest(item.branch, layout, lookup) : { pr: null, warnings: [] };
+    const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr, companionPr });
+    const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
+    const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
+    item.lifecycle = lifecycle;
+    item.owner = owner;
+    item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
+    item.companion = companionOfOwner(owner, layout);
+    const actions = deriveAllowed({ role: owner?.role ?? "primary", lifecycle, delivery: item, worktree: owner });
+    item.allowed = actions.allowed;
+    item.elsewhere = actions.elsewhere;
+    item.pr = pr;
+    item.companionPr = companionPr;
+    warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));
+  }
+  return {
+    status: "ok",
+    root,
+    currentBranch,
+    defaultBranch: config.branches.default,
+    items,
+    duplicates,
+    resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug),
+    lifecycles: LIFECYCLES,
+    warnings,
+  };
+}
+
+// The roadmaps `initiative` derives from. Same bases as `status`: a member planned on
+// an unmerged delivery branch lives only in its managed half and must not stay
+// "unplanned"/ready here (the Initiatives view would otherwise keep its plan play
+// button, which starts a second session instead of offering build/ap).
+const initiativeRoadmaps = () => allRoadmaps("feature", managedHalves(productWorktrees()));
+
+// What `initiative` emits.
+function initiativeListDocument(roadmaps, breakdowns = allBreakdowns()) {
+  const items = breakdowns.map((b) => {
+    const d = deriveInitiative(b, roadmaps);
+    return {
+      slug: b.slug,
+      dir: b.dir,
+      created: b.created,
+      lastUpdated: b.lastUpdated,
+      total: d.features.length,
+      complete: d.features.filter((f) => f.state === "complete").length,
+      inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
+      ready: d.features.filter((f) => f.ready).length,
+      done: d.done,
+      valid: d.status === "ok",
+    };
+  });
+  return { status: "ok", initiativesRoot: config.artifacts.initiatives, items, root, configSource: source };
+}
+
+// What `initiative <slug>` emits.
+function initiativeDetailDocument(slug, roadmaps, breakdowns = allBreakdowns()) {
+  const breakdown = breakdowns.find((b) => b.slug === slug);
+  if (!breakdown) return { status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.`, root, configSource: source };
+  const derived = deriveInitiative(breakdown, roadmaps);
+  return {
+    ...derived,
+    initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
+    anomalies: mergedAnomalies(derived.features),
+    root,
+    configSource: source,
+  };
+}
+
+// What `doctor [--for <command>]` emits; `command` must name a COMMAND_NEEDS entry.
+function doctorDocument(command = null) {
+  const needs = command ? COMMAND_NEEDS[command] : null;
+  const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
+  return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
+}
+
 switch (command) {
   case "config":
     emit({
@@ -1687,47 +1782,7 @@ switch (command) {
   case "status": {
     const typeFilter = rest[0] ? requireType(rest[0]) : null;
     const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
-    const worktrees = productWorktrees();
-    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const items = allRoadmaps(typeFilter, managedHalves(worktrees)).filter((r) => !slugFilter || r.slug === slugFilter);
-    const bySlug = new Map();
-    for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
-    const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
-    const order = ["in-progress", "paused", "in-review", "planned", "complete"];
-    items.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.slug.localeCompare(b.slug));
-    // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
-    const warnings = [];
-    const layout = checkoutLayout();
-    for (const item of items) {
-      // Complete roadmaps skip the lookup: their PRs are merged history, not dashboard state.
-      const lookup = options.pr && item.status !== "complete";
-      const { pr, warnings: prWarnings } = lookup ? lookupPullRequest(item.branch) : { pr: null, warnings: [] };
-      const { pr: companionPr, warnings: companionPrWarnings } = lookup ? lookupCompanionPullRequest(item.branch, layout) : { pr: null, warnings: [] };
-      const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr, companionPr });
-      const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
-      const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
-      item.lifecycle = lifecycle;
-      item.owner = owner;
-      item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
-      item.companion = companionOfOwner(owner, layout);
-      const actions = deriveAllowed({ role: owner?.role ?? "primary", lifecycle, delivery: item, worktree: owner });
-      item.allowed = actions.allowed;
-      item.elsewhere = actions.elsewhere;
-      item.pr = pr;
-      item.companionPr = companionPr;
-      warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));
-    }
-    emit({
-      status: "ok",
-      root,
-      currentBranch,
-      defaultBranch: config.branches.default,
-      items,
-      duplicates,
-      resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug),
-      lifecycles: LIFECYCLES,
-      warnings,
-    });
+    emit(statusDocument({ typeFilter, slugFilter, pr: Boolean(options.pr) }));
     break;
   }
 
@@ -1862,38 +1917,9 @@ switch (command) {
 
   case "initiative": {
     const slug = rest[0] ? requireSlug(rest[0]) : null;
-    const breakdowns = allBreakdowns();
-    // Same bases as `status`: a member planned on an unmerged delivery branch lives
-    // only in its managed half and must not stay "unplanned"/ready here (the
-    // Initiatives view would otherwise keep its plan play button, which starts a
-    // second session instead of offering build/ap).
-    const roadmaps = allRoadmaps("feature", managedHalves(productWorktrees()));
-    if (!slug) {
-      const items = breakdowns.map((b) => {
-        const d = deriveInitiative(b, roadmaps);
-        return {
-          slug: b.slug,
-          dir: b.dir,
-          created: b.created,
-          lastUpdated: b.lastUpdated,
-          total: d.features.length,
-          complete: d.features.filter((f) => f.state === "complete").length,
-          inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
-          ready: d.features.filter((f) => f.ready).length,
-          done: d.done,
-          valid: d.status === "ok",
-        };
-      });
-      withExit({ status: "ok", initiativesRoot: config.artifacts.initiatives, items });
-    }
-    const breakdown = breakdowns.find((b) => b.slug === slug);
-    if (!breakdown) withExit({ status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.` });
-    const derived = deriveInitiative(breakdown, roadmaps);
-    withExit({
-      ...derived,
-      initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
-      anomalies: mergedAnomalies(derived.features),
-    });
+    const roadmaps = initiativeRoadmaps();
+    const document = slug ? initiativeDetailDocument(slug, roadmaps) : initiativeListDocument(roadmaps);
+    emit(document, document.status === "ok" ? 0 : 3);
     break;
   }
 
@@ -1910,11 +1936,10 @@ switch (command) {
 
   case "doctor": {
     if (rest.length) usage(`doctor takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    const needs = options.for ? COMMAND_NEEDS[options.for] : null;
-    if (options.for && !needs) usage(`--for: unknown command ${options.for}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
-    const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
+    if (options.for && !COMMAND_NEEDS[options.for]) usage(`--for: unknown command ${options.for}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+    const document = doctorDocument(options.for ?? null);
     // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
-    emit({ status, for: needs ? { command: options.for, needs } : null, checks, root, configSource: source }, status === "fail" ? 3 : 0);
+    emit(document, document.status === "fail" ? 3 : 0);
     break;
   }
 
