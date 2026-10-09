@@ -3015,12 +3015,12 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
 
   assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}`, fallback: null });
 
-  writeProfiles({ mixed: { default: "Cheap", agents: { planner: "Strong" } } });
+  writeProfiles({ mixed: { default: "Cheap (copilot)", agents: { planner: "Strong (copilot)" } } });
   assert.equal(models("apply", "mixed").code, 0);
   assert.equal(check().detail, `mixed applied to ${plugin}`);
 
   const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
-  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap"', 'model: "Edited"'));
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap (copilot)"', 'model: "Edited"'));
   const custom = check();
   assert.equal(custom.status, "warn");
   assert.match(custom.detail, /match no profile/);
@@ -3041,6 +3041,41 @@ test("doctor model-profile warns when autopilot is BYOK and delegates to a Copil
   assert.equal(tier.status, "warn");
   assert.match(tier.detail, /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)".*reviewer "Claude Fable 5.1 \(copilot\)"/);
   assert.match(tier.fallback, /pin autopilot at least as high as the highest-tier model it delegates to/);
+});
+
+test("models show, apply, and pins warn once about model values without a (vendor) suffix; apply still exits 0", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Bare", agents: { planner: "P (copilot)", reviewer: ["R (copilot)", "Bare"] }, prompts: { doctor: "Tiny" } } });
+  const show = models("show", "mixed");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  assert.equal(show.json.warnings.length, 1);
+  assert.match(show.json.warnings[0], /^model values without a \(vendor\) suffix: "Bare" \(default, reviewer\); "Tiny" \(prompts\.doctor\); /);
+
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.active, "mixed");
+  assert.deepEqual(apply.json.warnings, show.json.warnings);
+
+  const pins = models("pins");
+  assert.equal(pins.code, 0);
+  assert.equal(pins.json.warnings.length, 1);
+  assert.match(pins.json.warnings[0], /^model values without a \(vendor\) suffix: "Bare" \(builder, reviewer, autopilot, mechanic, architect\); /);
+
+  assert.deepEqual(models("clear").json.warnings, []);
+});
+
+test("doctor model-profile warns on an applied profile with unqualified pins and is ok when every pin is qualified", () => {
+  const { plugin, home, env, models, writeProfiles } = modelsFixture();
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+  writeProfiles({ bare: { agents: { planner: "Bare", builder: "B (copilot)" } }, qualified: { agents: { planner: "P (copilot)", builder: "B (copilot)" } } });
+  assert.equal(models("apply", "bare").code, 0);
+  const bare = check();
+  assert.equal(bare.status, "warn");
+  assert.match(bare.detail, /^model values without a \(vendor\) suffix: "Bare" \(planner\); /);
+  assert.equal(bare.fallback, `qualify each named value as "<picker name> (<vendor>)" in ${path.join(home, "model-profiles.json")}, then \`agento.mjs models apply bare --plugin-root ${plugin}\``);
+
+  assert.equal(models("apply", "qualified").code, 0);
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `qualified applied to ${plugin}`, fallback: null });
 });
 
 test("doctor --for models needs only the terminal checks", () => {

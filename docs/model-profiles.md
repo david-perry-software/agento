@@ -44,7 +44,9 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
   `models "<name>" not found. Use format "<name> (<vendor>)"`. The vendor is the
   part before `/` in the model id (`deepseek/deepseek-v4-pro` → `deepseek`). Names
   are otherwise passed through verbatim; a name containing `<` or `>` (an unfilled
-  template placeholder) or a control character is rejected.
+  template placeholder) or a control character is rejected. A name without a
+  `(vendor)` suffix is accepted but warned about (see the vendor-suffix warning
+  below).
 - `agents` keys are aliases: `planner`, `builder`, `reviewer`, `autopilot`,
   `mechanic`, `architect`.
 - `prompts` keys are command names (`doctor`, `ship`, …) of commands that run on the
@@ -115,8 +117,17 @@ key) model while `builder` or `reviewer` pins a `copilot` model, `models
 show`/`apply`/`pins` report a `warnings[]` entry naming the pins and the fix — pin
 `autopilot` at least as high as the highest-tier model it delegates to. `apply` still
 succeeds. `agento.mjs doctor`'s `model-profile` check returns `warn` with the same
-detail when the applied pins trigger it. Unqualified names give no warning because
-the vendor is unknown.
+detail when the applied pins trigger it. Unqualified names give no tier warning
+because the vendor is unknown.
+
+The vendor-suffix warning: a value without a `(vendor)` suffix gets one
+`warnings[]` entry, `model values without a (vendor) suffix: …`, naming each
+distinct unqualified value once with every place it is used (`default`, an agent
+alias, `prompts.<name>`; list entries included). `models show`/`apply` check the
+profile's own entries, `models pins` the agents' current pins. `apply` still
+succeeds (exit 0) and writes the pins. `agento.mjs doctor`'s `model-profile` check
+returns `warn` when an applied, named profile pins an unqualified value; when the
+BYOK tier warning applies too, the detail joins both with `; `.
 
 Run *Developer: Reload Window* if the model picker does not reflect a change.
 
@@ -134,8 +145,8 @@ node scripts/agento.mjs models apply <name>
 
 Every `models` output repeats this as `hint`, and `agento.mjs doctor` reports the
 state as its `model-profile` check: `ok` with nothing pinned or a named profile
-applied, `warn` for an invalid profiles file, `custom` pins, or the BYOK tier
-conflict described above.
+applied, `warn` for an invalid profiles file, `custom` pins, the BYOK tier
+conflict, or unqualified pins described above.
 
 ## Developing Agento
 
