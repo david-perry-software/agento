@@ -4198,6 +4198,53 @@ test("close-session occupant gate: code --status naming the half as a Folder, Wo
   assert.equal(fs.existsSync(file), false);
 });
 
+test("close-session is idempotent: a re-send is nothing-to-close or already-closed, a half removed earlier is skipped, a merged branch left behind is still deleted", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt, docsWt } = pair;
+  const env = closeSessionEnv();
+  planPair(pair, "20261009-1");
+  assert.equal(closeSession(repo, env, "20261009-1").code, 0);
+  const again = closeSession(repo, env, "20261009-1");
+  assert.equal(again.code, 0, JSON.stringify(again.json));
+  assert.equal(again.json.outcome, "nothing-to-close");
+  assert.equal(again.json.product.registered, false);
+  assert.equal(again.json.companion.registered, false);
+  assert.deepEqual(again.json.workspace, { path: path.join(wt, "plan-20261009-1.code-workspace"), existed: false, removed: false });
+
+  publishBranch(repo, "feature/half", null, { keepLocal: true });
+  publishBranch(docs, "feature/half", roadmapFor("feature", "half"), { keepLocal: true });
+  const product = path.join(wt, "feature-half");
+  const half = path.join(docsWt, "feature-half");
+  git(repo, "worktree", "add", "-q", product, "feature/half");
+  git(docs, "worktree", "add", "-q", half, "feature/half");
+  fs.writeFileSync(path.join(wt, "feature-half.code-workspace"), "{}\n");
+  git(docs, "worktree", "remove", half);
+
+  const partial = closeSession(repo, env, "feature/half");
+  assert.equal(partial.code, 0, JSON.stringify(partial.json));
+  assert.equal(partial.json.outcome, "closed");
+  assert.equal(partial.json.product.removed, true);
+  assert.deepEqual(partial.json.companion, { path: half, branch: null, detached: false, registered: false, onDisk: false, removed: false });
+  assert.equal(partial.json.workspace.removed, true);
+  assert.equal(worktreeCount(repo), 1);
+
+  const resent = closeSession(repo, env, "feature/half");
+  assert.equal(resent.code, 0, JSON.stringify(resent.json));
+  assert.equal(resent.json.outcome, "already-closed");
+  assert.equal(resent.json.product.registered, false);
+  assert.equal(resent.json.branches.product.action, "retained");
+
+  landBranch(repo, "feature/half");
+  landBranch(docs, "feature/half");
+  const cleanup = closeSession(repo, env, "feature/half");
+  assert.equal(cleanup.code, 0, JSON.stringify(cleanup.json));
+  assert.equal(cleanup.json.outcome, "already-closed");
+  assert.equal(cleanup.json.branches.product.action, "deleted");
+  assert.equal(cleanup.json.branches.companion.action, "deleted");
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/half"));
+  assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/feature/half"));
+});
+
 // --- dashboard: one process per refresh ---------------------------------------
 
 // A restricted PATH whose `git` appends its arguments to `log` before running the real binary.
