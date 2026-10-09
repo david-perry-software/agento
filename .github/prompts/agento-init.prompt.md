@@ -83,6 +83,11 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
      configured roots when they differ from the defaults) followed by the verbatim
      body of `<agento-root>/.github/instructions/delivery-artifacts.instructions.md`
      (everything after its frontmatter).
+   - `.github/instructions/agento-concurrency.instructions.md`: a copy of
+     `<agento-root>/templates/companion-concurrency.instructions.md` (rewrite its
+     `applyTo` to the configured feature and issue roots when they differ from the
+     defaults) — a pointer to the plugin's concurrent-delivery policy, which never
+     auto-loads for artifacts in a companion otherwise.
    Nothing else — no LICENSE, no `.github/agento.json`, no workflows.
    Then publish:
    - No `origin/<default>` yet (created this run, or adopted empty) → bootstrap the

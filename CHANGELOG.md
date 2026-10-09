@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Fixed.** `agento.mjs paths`, `workspace`, and `config` run from a managed
+  worktree now report the primary checkout's `worktrees.dir` (and the `worktree` and
+  `workspace` paths under it), as `session` already did, instead of a
+  `<worktree>-worktrees` directory beside the worktree itself. The `gh pr edit
+  --body` follow-up needed no change: #62 already replaced it with the REST PATCH.
+
+- **Added.** `/agento agento-init` scaffolds
+  `.github/instructions/agento-concurrency.instructions.md` into the companion, a
+  pointer to the plugin's `concurrent-delivery.instructions.md` so that policy loads
+  for artifact edits in the companion too; existing companions get it by re-running
+  `/agento agento-init`. `models show`/`apply`/`pins` warn once about model values
+  without a `(vendor)` suffix, naming each value and where it is used, and `doctor`'s
+  `model-profile` check turns `warn` for such pins; `apply` still succeeds. The
+  handoff-button `model:` pin check is recorded in `docs/model-profiles.md`: the
+  pin was honoured on VS Code 1.136.0 (Local harness).
+
 - **Changed.** The VS Code dashboard refreshes with one CLI spawn,
   `agento.mjs dashboard --pr`, instead of five or more (`session`, `doctor`,
   `status`, `initiative`, and one `initiative <slug>` per initiative). Deliveries,

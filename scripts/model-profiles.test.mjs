@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, renderFileModel, renderModel, resolveTargets, setHandoffModels, setModel, vendorOf } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, renderFileModel, renderModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -288,4 +288,26 @@ test("vendorOf and byokTierWarning classify the BYOK tier conflict", () => {
   assert.equal(byokTierWarning({ autopilot: "A (copilot)", builder: "B (copilot)", reviewer: "R (copilot)" }), null);
   assert.equal(byokTierWarning({ autopilot: "DeepSeek (deepseek)", builder: null, reviewer: null }), null);
   assert.equal(byokTierWarning({ autopilot: "Unqualified", builder: "B (copilot)", reviewer: null }), null);
+});
+
+test("unqualifiedWarning: all qualified values give null", () => {
+  assert.equal(unqualifiedWarning([]), null);
+  assert.equal(unqualifiedWarning([{ where: "planner", value: "P (copilot)" }, { where: "builder", value: ["B (copilot)", "B2 (deepseek)"] }, { where: "reviewer", value: null }]), null);
+});
+
+test("unqualifiedWarning: one bare string is named with its place", () => {
+  const warning = unqualifiedWarning([{ where: "planner", value: "GPT-5" }, { where: "builder", value: "B (copilot)" }]);
+  assert.equal(warning, 'model values without a (vendor) suffix: "GPT-5" (planner); VS Code resolves an unqualified name only for some Copilot models and silently ignores it otherwise — use "<picker name> (<vendor>)", then re-apply');
+});
+
+test("unqualifiedWarning: a list with one bare entry names only that entry", () => {
+  const warning = unqualifiedWarning([{ where: "reviewer", value: ["R (copilot)", "Bare"] }]);
+  assert.match(warning, /^model values without a \(vendor\) suffix: "Bare" \(reviewer\); /);
+  assert.doesNotMatch(warning, /R \(copilot\)/);
+});
+
+test("unqualifiedWarning: the same bare value in two places is named once with both", () => {
+  const warning = unqualifiedWarning([{ where: "default", value: "Bare" }, { where: "planner", value: "P (copilot)" }, { where: "prompts.doctor", value: ["Bare"] }, { where: "other", value: "Other" }]);
+  assert.match(warning, /^model values without a \(vendor\) suffix: "Bare" \(default, prompts\.doctor\); "Other" \(other\); /);
+  assert.equal(warning.match(/"Bare"/g).length, 1);
 });

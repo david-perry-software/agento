@@ -393,6 +393,26 @@ test("prompts and agents never direct users to gh pr edit --body", () => {
   assert.deepEqual(offenders, [], `customization files still instructing gh pr edit --body:\n${offenders.join("\n")}`);
 });
 
+test("the companion concurrency pointer template matches concurrent-delivery's applyTo and names it by plugin path", () => {
+  const template = rel("templates", "companion-concurrency.instructions.md");
+  assert.ok(fs.existsSync(template), "templates/companion-concurrency.instructions.md is missing");
+  const { frontmatter, body } = splitFrontmatter(template);
+  const fields = parseFrontmatter(frontmatter, "templates/companion-concurrency.instructions.md");
+  assert.equal(typeof fields.description, "string");
+  assert.ok(fields.description.length > 0, "pointer template needs a description");
+  const policy = parseFrontmatter(splitFrontmatter(rel(".github", "instructions", "concurrent-delivery.instructions.md")).frontmatter, "concurrent-delivery.instructions.md");
+  assert.equal(fields.applyTo, policy.applyTo);
+  assert.match(body, /`<agento-root>\/\.github\/instructions\/concurrent-delivery\.instructions\.md`/);
+  assert.match(body, /Agento CLI: node <agento-root>\/scripts\/agento\.mjs/);
+  assert.doesNotMatch(body, /\]\([^)]*concurrent-delivery/, "the pointer must not use a relative link");
+});
+
+test("/agento agento-init scaffolds the concurrency pointer into the companion", () => {
+  const init = fs.readFileSync(rel(".github", "prompts", "agento-init.prompt.md"), "utf8");
+  assert.match(init, /`\.github\/instructions\/agento-concurrency\.instructions\.md`: a copy of\s+`<agento-root>\/templates\/companion-concurrency\.instructions\.md`/);
+  assert.ok(init.indexOf("agento-concurrency.instructions.md") > init.indexOf("`.github/instructions/agento.instructions.md`"), "the pointer is published after agento.instructions.md");
+});
+
 test("every git clean in prompts, agents, and command mirrors uses --literal-pathspecs (#88 ship-untracked-byproducts)", () => {
   const offenders = [];
   let cleans = 0;

@@ -38,7 +38,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 
@@ -189,7 +189,6 @@ const worktreesDirByPrimary = new Map();
 const roleCwd = anchor.fromClone ? root : startDir;
 const { config, source } = loadAgentoConfig(root);
 const repoName = path.basename(root);
-const worktreesDir = path.resolve(root, config.worktrees.dir);
 const currentBranch = git(root, "branch", "--show-current");
 const gitAdapter = {
   lsTree: (ref) => git(root, "ls-tree", "-r", "--name-only", ref),
@@ -364,7 +363,7 @@ function resolveSessionPaths(kind, id, layoutOverride = null) {
   const branchLayout = !layoutOverride && artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
   const layout = layoutOverride ?? (branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout());
   const productList = productWorktrees();
-  const worktree = managedWorktreePath(productList, kind, id, worktreesDir);
+  const worktree = managedWorktreePath(productList, kind, id, primaryWorktreesDir(productList));
   const companion = layout.artifacts.external
     ? {
         worktreesDir: layout.companionWorktreesDir,
@@ -910,8 +909,14 @@ const DOCTOR_CHECKS = {
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
     if (active !== "custom") {
       const pins = modelsPins(pluginRoot);
-      const warn = byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model });
-      if (warn) return { status: "warn", detail: warn, fallback: `pin autopilot at least as high as the highest-tier model it delegates to, then \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\`` };
+      const warns = pinWarnings(pins);
+      if (warns.byok || warns.unqualified) {
+        const fallbacks = [
+          warns.byok && `pin autopilot at least as high as the highest-tier model it delegates to, then \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``,
+          warns.unqualified && `qualify each named value as "<picker name> (<vendor>)" in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
+        ];
+        return { status: "warn", detail: [warns.byok, warns.unqualified].filter(Boolean).join("; "), fallback: fallbacks.filter(Boolean).join("; ") };
+      }
       return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
     }
     return {
@@ -1446,7 +1451,7 @@ function startSession() {
   let productBranch = null;
   if (args.mode === "plan") {
     const productList = productWorktrees();
-    const id = args.id ?? nextSessionId({ now: new Date(), taken: takenPlanIds([worktreesDir, companionWorktreesDir], [productList, companionWorktrees()]) });
+    const id = args.id ?? nextSessionId({ now: new Date(), taken: takenPlanIds([primaryWorktreesDir(productList), companionWorktreesDir], [productList, companionWorktrees()]) });
     out.subject = id;
     resolved = resolveSessionPaths("plan", id, checkoutLayout());
     out.next = ["/agento new-feature <description>", "/agento new-issue <description>"];
@@ -1664,10 +1669,26 @@ function agentTargetValue(targets, alias) {
   return targets.find((t) => t.file === `.github/agents/${AGENT_ALIASES[alias]}`)?.value ?? null;
 }
 
-// Decision 2 tier warnings for a resolved target set: [warning] or [].
-function tierWarnings(targets) {
-  const warn = byokTierWarning({ autopilot: agentTargetValue(targets, "autopilot"), builder: agentTargetValue(targets, "builder"), reviewer: agentTargetValue(targets, "reviewer") });
-  return warn ? [warn] : [];
+// Model warnings for a resolved target set: the Decision 2 BYOK tier warning, then
+// the unqualified-value warning over the profile's own entries (none for clear).
+function tierWarnings(targets, profile = null) {
+  const byok = byokTierWarning({ autopilot: agentTargetValue(targets, "autopilot"), builder: agentTargetValue(targets, "builder"), reviewer: agentTargetValue(targets, "reviewer") });
+  const entries = profile
+    ? [
+        ...(profile.default !== undefined ? [{ where: "default", value: profile.default }] : []),
+        ...Object.entries(profile.agents ?? {}).map(([alias, value]) => ({ where: alias, value })),
+        ...Object.entries(profile.prompts ?? {}).map(([prompt, value]) => ({ where: `prompts.${prompt}`, value })),
+      ]
+    : [];
+  return [byok, unqualifiedWarning(entries)].filter(Boolean);
+}
+
+// The same two warnings over the agents' current pins (`models pins`, doctor).
+function pinWarnings(pins) {
+  return {
+    byok: byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model }),
+    unqualified: unqualifiedWarning(Object.entries(pins).map(([alias, pin]) => ({ where: alias, value: pin.model }))),
+  };
 }
 
 // --- release ---------------------------------------------------------------
@@ -1940,7 +1961,7 @@ switch (command) {
       pluginRoot: PLUGIN_ROOT,
       currentBranch,
       artifactsRoot,
-      config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: worktreesDir } },
+      config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: primaryWorktreesDir() } },
     });
     break;
 
@@ -2054,7 +2075,7 @@ switch (command) {
     };
     emit({
       status: "ok",
-      worktreesDir,
+      worktreesDir: primaryWorktreesDir(resolved.productWorktrees),
       worktree: resolved.worktree,
       // Post-`git worktree add` check: on disk, registered in the right clone, right origin.
       worktreeState: stateOf(resolved.worktree, "product", originOf(root)),
@@ -2367,15 +2388,14 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
-      const warnings = tierWarnings(targets);
+      const warnings = tierWarnings(targets, loaded.profiles[name]);
       emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
     }
 
     if (verb === "pins") {
       const pins = modelsPins(pluginRoot);
-      const warnings = [];
-      const warn = byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model });
-      if (warn) warnings.push(warn);
+      const { byok, unqualified } = pinWarnings(pins);
+      const warnings = [byok, unqualified].filter(Boolean);
       emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
     }
 
@@ -2425,7 +2445,7 @@ switch (command) {
         }
       }
     }
-    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, verb === "apply" ? loaded.profiles[name] : null), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
     break;
   }
 

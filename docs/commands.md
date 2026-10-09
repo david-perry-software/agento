@@ -151,7 +151,7 @@ initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`,
 the named command's `Needs:` line requires and echoes them as `for.needs`;
 `model-profile` is informational, never part of a `--for` run: `ok` with no plugin
 clone at `--plugin-root`, nothing pinned, or a named profile applied, `warn` on an
-invalid profiles file or `custom` pins),
+invalid profiles file, `custom` pins, the BYOK tier conflict, or unqualified pins),
 `dashboard [--pr] [--plugin-root <dir>]` (everything the VS Code extension renders
 in one process: `{ status: "ok", session, doctor, deliveries, initiatives: { list,
 details: { <slug>: … } }, timings, root, configSource }`, where `session` is
@@ -195,7 +195,8 @@ default the clone the CLI runs from: every verb reports `profilesFile { path, ex
 `pluginRoot`, `active` (`null`, a profile name, or `custom`), `skipWorktree`, `dirty`,
 and `hint`; `apply` and `clear` rewrite the agents, prompts, handoff pins, and
 `commands/` mirrors and report `changed[]`; `models pins` reports each agent's current pin
-and any BYOK tier warning; `init` copies `templates/model-profiles.json` only when the
+and any BYOK tier warning; `show`, `apply`, and `pins` also warn once about model values
+without a `(vendor)` suffix, and `apply` still exits 0; `init` copies `templates/model-profiles.json` only when the
 file is absent),
 `release <merge-sha> [--wait N] [--interval N]` (the deploy-wait verdict for
 `checks.releaseWorkflow`, derived afresh from the GitHub REST API on every call so a

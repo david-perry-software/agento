@@ -377,3 +377,20 @@ export function byokTierWarning({ autopilot, builder, reviewer }) {
   const named = delegates.map((d) => `${d.alias} ${JSON.stringify(d.pin)}`).join(" and ");
   return `autopilot is pinned to ${JSON.stringify(autopilotPin)} (a bring-your-own-key model) but delegates to ${named} on a Copilot model; VS Code may refuse the higher-tier Copilot model — pin autopilot at least as high as the highest-tier model it delegates to, then re-apply`;
 }
+
+// Model values without a `(vendor)` suffix: `entries` is `[{ where, value }]` with a
+// string or list value; each distinct bare value is named once with every place it
+// is used. Returns the warning string, or null when every value is qualified.
+export function unqualifiedWarning(entries) {
+  const places = new Map();
+  for (const { where, value } of entries) {
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (typeof item !== "string" || item === "" || vendorOf(item)) continue;
+      if (!places.has(item)) places.set(item, []);
+      if (!places.get(item).includes(where)) places.get(item).push(where);
+    }
+  }
+  if (!places.size) return null;
+  const named = [...places].map(([value, where]) => `${JSON.stringify(value)} (${where.join(", ")})`).join("; ");
+  return `model values without a (vendor) suffix: ${named}; VS Code resolves an unqualified name only for some Copilot models and silently ignores it otherwise — use "<picker name> (<vendor>)", then re-apply`;
+}

@@ -1372,6 +1372,44 @@ test("paths places artifactRoot under the companion checkout when artifacts.repo
   assert.equal(plan.artifactRoot, null);
 });
 
+test("paths and config from a managed worktree report the primary's worktrees.dir (in-repo)", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const plan = path.join(wt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+
+  const paths = run(plan, "paths", "feature", "xy");
+  assert.equal(paths.code, 0);
+  assert.equal(paths.json.worktreesDir, wt);
+  assert.equal(paths.json.worktree, path.join(wt, "feature-xy"));
+  assert.equal(paths.json.workspace, null);
+
+  const config = run(plan, "config");
+  assert.equal(config.code, 0);
+  assert.equal(config.json.config.worktrees.dir, wt);
+  assert.equal(config.json.config.worktrees.dir, run(repo, "config").json.config.worktrees.dir);
+});
+
+test("paths, workspace, and config from a managed worktree report the primary's worktrees.dir (companion mode)", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const plan = path.join(wt, "plan-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", path.join(docsWt, "plan-1"), "origin/main");
+
+  const paths = run(plan, "paths", "feature", "xy");
+  assert.equal(paths.code, 0);
+  assert.equal(paths.json.worktreesDir, wt);
+  assert.equal(paths.json.worktree, path.join(wt, "feature-xy"));
+  assert.equal(paths.json.workspace, path.join(wt, "feature-xy.code-workspace"));
+  assert.equal(paths.json.companion.worktree, path.join(docsWt, "feature-xy"));
+
+  const workspace = run(plan, "workspace", "feature", "xy");
+  assert.equal(workspace.code, 0);
+  assert.equal(workspace.json.path, path.join(wt, "feature-xy.code-workspace"));
+  assert.equal(workspace.json.folders[0].path, path.join(wt, "feature-xy"));
+
+  assert.equal(run(plan, "config").json.config.worktrees.dir, wt);
+});
+
 test("usage errors exit 1 and never throw", () => {
   const repo = makeRepo();
   assert.equal(run(repo, "resolve", "thing", "x").code, 1);
@@ -2977,12 +3015,12 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
 
   assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}`, fallback: null });
 
-  writeProfiles({ mixed: { default: "Cheap", agents: { planner: "Strong" } } });
+  writeProfiles({ mixed: { default: "Cheap (copilot)", agents: { planner: "Strong (copilot)" } } });
   assert.equal(models("apply", "mixed").code, 0);
   assert.equal(check().detail, `mixed applied to ${plugin}`);
 
   const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
-  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap"', 'model: "Edited"'));
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap (copilot)"', 'model: "Edited"'));
   const custom = check();
   assert.equal(custom.status, "warn");
   assert.match(custom.detail, /match no profile/);
@@ -3003,6 +3041,41 @@ test("doctor model-profile warns when autopilot is BYOK and delegates to a Copil
   assert.equal(tier.status, "warn");
   assert.match(tier.detail, /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)".*reviewer "Claude Fable 5.1 \(copilot\)"/);
   assert.match(tier.fallback, /pin autopilot at least as high as the highest-tier model it delegates to/);
+});
+
+test("models show, apply, and pins warn once about model values without a (vendor) suffix; apply still exits 0", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Bare", agents: { planner: "P (copilot)", reviewer: ["R (copilot)", "Bare"] }, prompts: { doctor: "Tiny" } } });
+  const show = models("show", "mixed");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  assert.equal(show.json.warnings.length, 1);
+  assert.match(show.json.warnings[0], /^model values without a \(vendor\) suffix: "Bare" \(default, reviewer\); "Tiny" \(prompts\.doctor\); /);
+
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.equal(apply.json.active, "mixed");
+  assert.deepEqual(apply.json.warnings, show.json.warnings);
+
+  const pins = models("pins");
+  assert.equal(pins.code, 0);
+  assert.equal(pins.json.warnings.length, 1);
+  assert.match(pins.json.warnings[0], /^model values without a \(vendor\) suffix: "Bare" \(builder, reviewer, autopilot, mechanic, architect\); /);
+
+  assert.deepEqual(models("clear").json.warnings, []);
+});
+
+test("doctor model-profile warns on an applied profile with unqualified pins and is ok when every pin is qualified", () => {
+  const { plugin, home, env, models, writeProfiles } = modelsFixture();
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+  writeProfiles({ bare: { agents: { planner: "Bare", builder: "B (copilot)" } }, qualified: { agents: { planner: "P (copilot)", builder: "B (copilot)" } } });
+  assert.equal(models("apply", "bare").code, 0);
+  const bare = check();
+  assert.equal(bare.status, "warn");
+  assert.match(bare.detail, /^model values without a \(vendor\) suffix: "Bare" \(planner\); /);
+  assert.equal(bare.fallback, `qualify each named value as "<picker name> (<vendor>)" in ${path.join(home, "model-profiles.json")}, then \`agento.mjs models apply bare --plugin-root ${plugin}\``);
+
+  assert.equal(models("apply", "qualified").code, 0);
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `qualified applied to ${plugin}`, fallback: null });
 });
 
 test("doctor --for models needs only the terminal checks", () => {
