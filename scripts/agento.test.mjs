@@ -1428,19 +1428,18 @@ test("usage errors exit 1 and never throw", () => {
 const okStubs = {
   gh: "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\nif [ \"$1\" = \"auth\" ]; then echo 'Logged in' >&2; exit 0; fi\nexit 1\n",
   code: "#!/bin/sh\necho 1.99.0\n",
-  python3: "#!/bin/sh\necho 'Python 3.12.0'\n",
 };
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports nine checks and includes session-workspace and model-profile", () => {
+test("doctor reports eight checks and includes session-workspace and model-profile", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "python3", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1543,7 +1542,7 @@ test("doctor artifact-repo passes a valid companion, fails a missing or broken o
 
 test("doctor fails with exit 3 and the install or reauth fallback when gh is missing or unauthenticated", () => {
   const repo = makeRepo();
-  const { env, bin } = restrictedPath({ code: okStubs.code, python3: okStubs.python3 });
+  const { env, bin } = restrictedPath({ code: okStubs.code });
 
   const missing = runWith({ cwd: repo, env }, "doctor");
   assert.equal(missing.code, 3);
@@ -1553,7 +1552,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -1564,7 +1563,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(auth.fallback, /`gh auth login`/);
 });
 
-test("doctor warns (exit 0) when code or python3 is missing and reports their fallbacks", () => {
+test("doctor warns (exit 0) when code is missing and reports its fallback; no Python check remains", () => {
   const repo = makeRepo();
   const { env } = restrictedPath({ gh: okStubs.gh });
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
@@ -1574,9 +1573,7 @@ test("doctor warns (exit 0) when code or python3 is missing and reports their fa
   assert.equal(checks.code.status, "warn");
   assert.match(checks.code.detail, /code CLI not found/);
   assert.match(checks.code.fallback, /code --new-window <worktree-path>/);
-  assert.equal(checks.python3.status, "warn");
-  assert.match(checks.python3.detail, /python3 not found/);
-  assert.match(checks.python3.fallback, /hooks do not run/);
+  assert.deepEqual(Object.keys(checks).filter((id) => id.startsWith("python")), []);
   assert.equal(checks.gh.status, "ok");
 });
 
@@ -1614,13 +1611,13 @@ test("doctor --for runs only the command's declared checks and reports its needs
   const local = runWith({ cwd: repo, env }, "doctor", "--for", "close-session");
   assert.equal(local.code, 0);
   assert.deepEqual(local.json.for, { command: "close-session", needs: ["terminal"] });
-  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
+  assert.deepEqual(local.json.checks.map((c) => c.id), ["node", "worktrees-dir", "session-workspace", "artifact-repo"]);
   assert.ok(!fs.existsSync(marker), "gh was invoked for a terminal-only command");
 
   const ship = runWith({ cwd: repo, env }, "doctor", "--for", "ship");
   assert.equal(ship.code, 0);
   assert.deepEqual(ship.json.for, { command: "ship", needs: ["terminal", "gh", "network"] });
-  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
+  assert.deepEqual(ship.json.checks.map((c) => c.id), ["node", "git-remote", "gh", "worktrees-dir", "session-workspace", "artifact-repo"]);
   assert.match(fs.readFileSync(marker, "utf8"), /auth status/);
 
   const unknown = runWith({ cwd: repo, env }, "doctor", "--for", "nope");
@@ -3084,7 +3081,7 @@ test("doctor --for models needs only the terminal checks", () => {
   const { code, json } = runWith({ cwd: repo, env }, "doctor", "--for", "models");
   assert.equal(code, 0);
   assert.deepEqual(json.for, { command: "models", needs: ["terminal"] });
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "python3", "worktrees-dir", "session-workspace", "artifact-repo"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "worktrees-dir", "session-workspace", "artifact-repo"]);
 });
 
 // --- release ---------------------------------------------------------------------
@@ -3298,11 +3295,11 @@ test("release --wait never loops on dispatch-required", () => {
 
 // --- start-session -------------------------------------------------------------
 
-// A PATH with node, git, python3, and (unless `code: false`) a `code` stub that logs
+// A PATH with node, git, and (unless `code: false`) a `code` stub that logs
 // every call other than `--version`, so no test ever opens a real window.
 function startSessionEnv({ code = true } = {}) {
   const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-code-log-")), "code.log");
-  const stubs = { python3: okStubs.python3 };
+  const stubs = {};
   if (code) stubs.code = `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.99.0; exit 0; fi\nprintf '%s\\n' "$*" >> '${log}'\n`;
   const { env } = restrictedPath(stubs);
   const opened = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : []);

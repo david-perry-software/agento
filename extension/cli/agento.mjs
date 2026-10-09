@@ -815,7 +815,7 @@ const ghVersion = () => probe("gh", ["--version"]);
 const lsRemoteArgs = () => ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default];
 
 // The external commands DOCTOR_CHECKS probe, so `dashboard` can run them concurrently first.
-const doctorProbes = () => [["gh", ["--version"]], ["gh", ["auth", "status"]], ["git", lsRemoteArgs()], ["code", ["--version"]], ["python3", ["--version"]]];
+const doctorProbes = () => [["gh", ["--version"]], ["gh", ["auth", "status"]], ["git", lsRemoteArgs()], ["code", ["--version"]]];
 
 const DOCTOR_CHECKS = {
   node() {
@@ -823,7 +823,7 @@ const DOCTOR_CHECKS = {
     const major = Number.parseInt(version.split(".")[0], 10);
     return major >= 20
       ? { status: "ok", detail: `node v${version}`, fallback: null }
-      : { status: "fail", detail: `node v${version} is below the required 20`, fallback: "install Node >= 20 (AGENTS.md); the Agento CLI and its tests need it" };
+      : { status: "fail", detail: `node v${version} is below the required 20`, fallback: "install Node >= 20 (AGENTS.md); the Agento CLI, both hooks (delivery guard and SessionStart context), and the tests need it" };
   },
   "git-remote"() {
     const url = git(root, "remote", "get-url", "origin");
@@ -846,12 +846,6 @@ const DOCTOR_CHECKS = {
     return version.ok
       ? { status: "ok", detail: `code ${version.out}`, fallback: null }
       : { status: "warn", detail: version.missing ? "code CLI not found on PATH" : `code --version failed: ${version.detail}`, fallback: "keep the worktree and print `code --new-window <worktree-path>` for the user to run" };
-  },
-  python3() {
-    const version = probe("python3", ["--version"]);
-    return version.ok
-      ? { status: "ok", detail: version.out, fallback: null }
-      : { status: "warn", detail: version.missing ? "python3 not found on PATH" : `python3 --version failed: ${version.detail}`, fallback: "hooks do not run: the delivery guard and SessionStart context are unavailable — proceed with care and apply the policy by hand" };
   },
   "worktrees-dir"() {
     const dir = primaryWorktreesDir();
@@ -965,13 +959,12 @@ const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
 // Capability vocabulary (delivery-policy §10) in canonical order, each mapped to the
 // doctor checks that prove it. Chat-tool capabilities have no CLI-side check.
 const CAPABILITY_CHECKS = {
-  terminal: ["node", "python3", "worktrees-dir", "artifact-repo", "session-workspace"],
+  terminal: ["node", "worktrees-dir", "artifact-repo", "session-workspace"],
   "ask-questions": [],
   browser: [],
   gh: ["gh"],
   code: ["code"],
   network: ["git-remote"],
-  python3: ["python3"],
 };
 
 // What each slash command declares on its `Needs:` line; the customizations test
