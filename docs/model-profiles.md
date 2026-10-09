@@ -177,6 +177,12 @@ apply` writes a nested `model:` line into every `handoffs:` item (the target's
 resolved pin, first entry of a list), and the Autopilot passes the target's pin
 as the `runSubagent` `model` when it invokes the Builder or Reviewer.
 
+The handoff button honours that nested pin. Observed on VS Code 1.136.0 with the
+Local harness, in a non-Agento workspace: after a 📋 Agento Planner reply,
+**Build in this worktree** prefilled the prompt with 🔨 Agento Builder selected
+and the model picker on the builder pin, `DeepSeek V4 Pro (deepseek)`, not the
+Planner's `Claude Opus 5.5 (copilot)`.
+
 ## Limits
 
 - One profile is active per clone (machine-wide, last apply wins); there are no

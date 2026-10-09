@@ -15,7 +15,8 @@
   `/agento agento-init`. `models show`/`apply`/`pins` warn once about model values
   without a `(vendor)` suffix, naming each value and where it is used, and `doctor`'s
   `model-profile` check turns `warn` for such pins; `apply` still succeeds. The
-  handoff-button `model:` pin check is recorded in `docs/model-profiles.md`.
+  handoff-button `model:` pin check is recorded in `docs/model-profiles.md`: the
+  pin was honoured on VS Code 1.136.0 (Local harness).
 
 - **Changed.** The VS Code dashboard refreshes with one CLI spawn,
   `agento.mjs dashboard --pr`, instead of five or more (`session`, `doctor`,
