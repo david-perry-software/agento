@@ -110,7 +110,7 @@ test("(d) extension.ts sets the context keys fail-closed and guards each handler
   assert.ok(closedAtActivation >= 0, "applyGate(CLOSED_GATE) is called");
   assert.ok(firstRefresh > closedAtActivation, "the closed gate is applied before the first refresh");
 
-  assert.match(source, /gate: windowGate\(sessionResult\.json\)/);
+  assert.match(source, /gate: session instanceof Error \? CLOSED_GATE : windowGate\(session\)/, "a failed session section closes the gate");
   assert.match(source, /applyGate\(snapshot\.gate\)/);
   assert.match(source, /\(error\) => \{\s*applyGate\(CLOSED_GATE\);/, "the refresh error path closes the gate");
 
