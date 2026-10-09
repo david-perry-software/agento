@@ -13,6 +13,11 @@
 # are the real enforcement layer; keep both.
 set -u
 
+if [[ "${AGENTO_HOOK_IMPL:-python}" == node ]]; then
+  command -v node >/dev/null 2>&1 || exit 0
+  exec node "$(dirname "${BASH_SOURCE[0]}")/delivery-guard.mjs"
+fi
+
 input="$(cat)"
 export DELIVERY_HOOK_INPUT="$input"
 
