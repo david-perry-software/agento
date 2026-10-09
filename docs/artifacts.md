@@ -58,7 +58,12 @@ The exact contract — section order, YAML fields, checkbox syntax — is enforc
 file under the artifact roots. `/agento agento-init` copies it into the companion
 repository as `.github/instructions/agento.instructions.md` (frontmatter from
 `templates/project.instructions.md`, `applyTo` matching your roots) so the contract
-keeps applying when the companion folder is in the workspace.
+keeps applying when the companion folder is in the workspace. It also writes
+`.github/instructions/agento-concurrency.instructions.md` there (from
+`templates/companion-concurrency.instructions.md`, `applyTo` matching the feature and
+issue roots): a pointer to the plugin's `concurrent-delivery.instructions.md`, so
+that policy loads for artifact edits in the companion too. Companions created
+before the pointer existed get it by re-running `/agento agento-init`.
 
 ## Freehand work
 

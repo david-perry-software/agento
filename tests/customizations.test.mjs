@@ -407,6 +407,12 @@ test("the companion concurrency pointer template matches concurrent-delivery's a
   assert.doesNotMatch(body, /\]\([^)]*concurrent-delivery/, "the pointer must not use a relative link");
 });
 
+test("/agento agento-init scaffolds the concurrency pointer into the companion", () => {
+  const init = fs.readFileSync(rel(".github", "prompts", "agento-init.prompt.md"), "utf8");
+  assert.match(init, /`\.github\/instructions\/agento-concurrency\.instructions\.md`: a copy of\s+`<agento-root>\/templates\/companion-concurrency\.instructions\.md`/);
+  assert.ok(init.indexOf("agento-concurrency.instructions.md") > init.indexOf("`.github/instructions/agento.instructions.md`"), "the pointer is published after agento.instructions.md");
+});
+
 test("every git clean in prompts, agents, and command mirrors uses --literal-pathspecs (#88 ship-untracked-byproducts)", () => {
   const offenders = [];
   let cleans = 0;
