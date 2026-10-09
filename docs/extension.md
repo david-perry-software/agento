@@ -104,10 +104,12 @@ Override them in a theme or in your settings:
 }
 ```
 
-VS Code sets the height of sidebar views, so the Window pane can be taller than
-the banner text. The color fills the whole pane, so extra height stays colored
-instead of showing a blank gap. Drag the divider below it to make it compact,
-collapse it from its header, or hide it from the view's context menu. The banner
+VS Code gives every webview pane a minimum body height of about 120 px, which an
+extension cannot lower. The banner is designed for that height: the color fills the
+pane and the text is enlarged and centered vertically. New layouts open the pane at
+that minimum (`initialSize`). VS Code restores a pane size you have already used, so
+if the pane is taller, drag the divider below it up until it stops. You can also
+collapse it from its header or hide it from the view's context menu. The banner
 runs no scripts, and its only link is the Session & Doctor focus command.
 
 ## Session & Doctor

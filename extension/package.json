@@ -35,7 +35,8 @@
         {
           "id": "agento.windowBanner",
           "name": "Window",
-          "type": "webview"
+          "type": "webview",
+          "initialSize": 1
         },
         {
           "id": "agento.deliveries",

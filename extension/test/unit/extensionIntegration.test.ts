@@ -15,7 +15,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   };
 
   assert.deepEqual(manifest.contributes.views.agento, [
-    { id: "agento.windowBanner", name: "Window", type: "webview" },
+    { id: "agento.windowBanner", name: "Window", type: "webview", initialSize: 1 },
     { id: "agento.deliveries", name: "Deliveries" },
     { id: "agento.initiatives", name: "Initiatives" },
     { id: "agento.sessionDoctor", name: "Session & Doctor" },
