@@ -662,9 +662,10 @@ async function runPool(tasks, limit = 4) {
 
 const lookupKey = (cwd, branch) => `${cwd}\0${branch}`;
 
-// Prefetch: the doctor's external probes (into the probe cache) and the deduplicated
-// `{ cwd, branch, label }` PR lookups, through one pool; `gh --version` goes first so
-// the lookups waiting on it never hold the pool's slots. Returns the lookups keyed by
+// Prefetch: the deduplicated `{ cwd, branch, label }` PR lookups and the doctor's
+// external probes (into the probe cache), through one pool. `gh --version` goes first
+// so the lookups waiting on it never hold the pool's slots, then the lookups (network
+// round-trips of up to a second each), then the probes. Returns the lookups keyed by
 // cwd + branch.
 async function lookupPullRequests(requests, { probes = [] } = {}) {
   const unique = new Map();
@@ -674,9 +675,9 @@ async function lookupPullRequests(requests, { probes = [] } = {}) {
   }
   const results = new Map();
   const ghFirst = unique.size ? [["gh", ["--version"]]] : [];
-  const probeTasks = [...ghFirst, ...probes].map(([cmd, args]) => () => probeAsync(cmd, args));
+  const probeTask = ([cmd, args]) => () => probeAsync(cmd, args);
   const lookupTasks = [...unique].map(([key, { branch, cwd, label }]) => async () => results.set(key, await lookupPullRequestAsync(branch, { cwd, label })));
-  await runPool([...probeTasks, ...lookupTasks]);
+  await runPool([...ghFirst.map(probeTask), ...lookupTasks, ...probes.map(probeTask)]);
   return results;
 }
 
@@ -990,17 +991,26 @@ function checksFor(needs) {
   return Object.keys(DOCTOR_CHECKS).filter((id) => ids.has(id));
 }
 
+// Each check runs at most once per process, so `dashboard` can run the local ones early.
+const doctorResults = new Map();
+
 function runDoctor(ids) {
   const checks = ids.map((id) => {
-    try {
-      return { id, ...DOCTOR_CHECKS[id]() };
-    } catch (error) {
-      return { id, status: "fail", detail: `check threw: ${error?.message ?? error}`, fallback: "report this as an Agento bug; run the probe by hand" };
+    if (!doctorResults.has(id)) {
+      try {
+        doctorResults.set(id, { id, ...DOCTOR_CHECKS[id]() });
+      } catch (error) {
+        doctorResults.set(id, { id, status: "fail", detail: `check threw: ${error?.message ?? error}`, fallback: "report this as an Agento bug; run the probe by hand" });
+      }
     }
+    return doctorResults.get(id);
   });
   const status = checks.reduce((worst, c) => (STATUS_RANK[c.status] > STATUS_RANK[worst] ? c.status : worst), "ok");
   return { status, checks };
 }
+
+// The checks that run no external probe (doctorProbes) and so need no network.
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"];
 
 // --- initiatives -----------------------------------------------------------
 
@@ -1854,8 +1864,9 @@ function doctorDocument(command = null) {
 
 // What `dashboard` emits: the session, doctor, status (`deliveries`), and initiative
 // documents from one process. The roadmaps are walked once for deliveries and
-// initiatives; the doctor's probes and (with `pr`) every PR lookup run first, through
-// one bounded pool. A section that throws becomes { status: "error", message }.
+// initiatives; every PR lookup (with `pr`) and the doctor's probes run through one
+// bounded pool while the local doctor checks and the initiatives are computed. A
+// section that throws becomes { status: "error", message }.
 async function dashboardDocument({ pr: withPr = false } = {}) {
   const started = performance.now();
   const attempt = (build) => {
@@ -1877,8 +1888,6 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
       if (layout.artifacts.external) requests.push({ branch, cwd: layout.artifactsRoot, label: "companionPr" });
     }
   }
-  const lookup = prefetchedLookup(await lookupPullRequests(requests, { probes: doctorProbes() }));
-
   const timings = {};
   const section = (name, build) => {
     const sectionStarted = performance.now();
@@ -1894,18 +1903,28 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
     if (attempted.error) throw attempted.error;
     return attempted.value;
   };
+
+  // The lookups wait on `gh --version`; with it cached they spawn on the next turn,
+  // before the synchronous work below blocks the event loop.
+  if (requests.length) await probeAsync("gh", ["--version"]);
+  const prefetch = lookupPullRequests(requests, { probes: doctorProbes() });
+  await new Promise((resolve) => setImmediate(resolve));
+  const initiatives = section("initiatives", () => {
+    const features = valueOf(roadmaps).filter((r) => r.type === "feature");
+    const breakdowns = allBreakdowns();
+    const list = initiativeListDocument(features, breakdowns);
+    return { list, details: Object.fromEntries(list.items.map((item) => [item.slug, initiativeDetailDocument(item.slug, features, breakdowns)])) };
+  });
+  runDoctor(LOCAL_DOCTOR_CHECKS);
+  const lookup = prefetchedLookup(await prefetch);
+
   const document = {
     status: "ok",
     session: section("session", () => sessionRecord({ pr: withPr, lookup }, valueOf(session))),
     doctor: section("doctor", () => doctorDocument()),
     // statusDocument adds fields to its items; the initiatives read the records unchanged.
     deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
-    initiatives: section("initiatives", () => {
-      const features = valueOf(roadmaps).filter((r) => r.type === "feature");
-      const breakdowns = allBreakdowns();
-      const list = initiativeListDocument(features, breakdowns);
-      return { list, details: Object.fromEntries(list.items.map((item) => [item.slug, initiativeDetailDocument(item.slug, features, breakdowns)])) };
-    }),
+    initiatives,
   };
   timings.total = Math.round(performance.now() - started);
   return { ...document, timings, root, configSource: source };
