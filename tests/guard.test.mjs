@@ -403,6 +403,17 @@ test("companion: a worktree whose branch sets artifacts.repo consults the compan
   assert.equal(decide("git commit -m x", { cwd: worktree }).decision, "allow");
 });
 
+test("without node on PATH the hook exits 0 and prints nothing", () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-nonode-"));
+  for (const tool of ["bash", "git", "cat", "dirname"]) {
+    fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), path.join(bin, tool));
+  }
+  const payload = { tool_name: "run_in_terminal", tool_input: { command: "git push origin main" }, cwd: os.tmpdir() };
+  const result = spawnSync(path.join(bin, "bash"), [guardScript], { input: JSON.stringify(payload), encoding: "utf8", timeout: 20000, env: { ...process.env, PATH: bin } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+});
+
 test("allows worktree removal with no occupants", () => {
   const missing = path.join(os.tmpdir(), `agento-no-such-worktree-${process.pid}`);
   assert.equal(decide(`git worktree remove ${missing}`).decision, "allow");

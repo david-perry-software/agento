@@ -54,9 +54,9 @@ while IFS= read -r line; do
   if [[ -n "$companion" ]]; then
     cmd="${cmd//\{companion\}/$companion}"
   fi
-  json=$(python3 -c 'import json,sys;print(json.dumps({"tool_name":"run_in_terminal","tool_input":{"command":sys.argv[1]},"cwd":sys.argv[2]}))' "$cmd" "$cwd")
+  json=$(REPLAY_CMD="$cmd" REPLAY_DIR="$cwd" node -e 'console.log(JSON.stringify({tool_name:"run_in_terminal",tool_input:{command:process.env.REPLAY_CMD},cwd:process.env.REPLAY_DIR}))')
   out=$(printf '%s' "$json" | "$guard")
-  verdict=$(python3 -c 'import sys,json;d=sys.stdin.read().strip();print(json.loads(d)["hookSpecificOutput"]["permissionDecision"] if d else "allow")' <<<"$out")
+  verdict=$(printf '%s' "$out" | node -e 'const d=require("fs").readFileSync(0,"utf8").trim();console.log(d?JSON.parse(d).hookSpecificOutput.permissionDecision:"allow")')
   if [[ -n "$expected" && "$verdict" != "$expected" ]]; then
     printf '%-75s -> %s  (expected %s) MISMATCH\n' "$cmd" "$verdict" "$expected"
     failures=$((failures + 1))
