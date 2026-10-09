@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -3674,6 +3674,575 @@ test("start-session opens the target with code --new-window unless --no-open, re
   assert.equal(codeCheck.capability, "code");
   assert.match(codeCheck.fallback, /code --new-window/);
   assert.ok(missing.json.warnings.some((w) => /^open: code CLI not found on PATH; run code --new-window /.test(w)), missing.json.warnings.join("\n"));
+});
+
+// --- close-session -------------------------------------------------------------
+
+// A PATH with node and git plus, when `status` is given, a `code` stub printing it
+// for `code --status`; never the real VS Code.
+function closeSessionEnv(status = null) {
+  const stubs = status === null ? {} : { code: `#!/bin/sh\nprintf '%s\\n' '${status.replaceAll("'", "")}'\n` };
+  return restrictedPath(stubs).env;
+}
+
+const closeSession = (cwd, env, ...args) => runWith({ cwd, env }, "close-session", ...args);
+
+// Worktree registrations and local branches of each clone, for "nothing changed" checks.
+const cloneState = (...clones) => clones.map((c) => [git(c, "worktree", "list", "--porcelain"), git(c, "branch", "--list")]);
+
+test("close-session validates its arguments and is listed in the usage header", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  for (const args of [[], ["a", "b"], ["Bad_Id"], ["feature/Bad_Slug"], ["changes/"], ["changes/Bad_Slug"], ["chore/x"], ["x", "--bogus"]]) {
+    const { code, json } = closeSession(repo, env, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+  const usage = run(repo).json.usage.join("\n");
+  assert.match(usage, /close-session <feature\|issue>\/<slug> \| changes\/<slug> \| <session-id> \[--dry-run\] \[--ignore-occupants\]/);
+  assert.match(usage, /Options: --root <dir>/);
+  assert.deepEqual(fs.readdirSync(wt), []);
+});
+
+test("close-session rejects from a non-primary window with the session record's alternatives, removing nothing", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const plan = path.join(wt, "plan-20261009-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+  const before = cloneState(repo);
+
+  const { code, json } = closeSession(plan, env, "20261009-1");
+  assert.equal(code, 3);
+  assert.equal(json.status, "rejected");
+  assert.match(json.reason, /^wrong window: role=plan \(.*plan-20261009-1, branch detached\)$/);
+  const record = run(plan, "session").json;
+  assert.deepEqual(json.allowed, record.allowed);
+  assert.deepEqual(json.elsewhere, record.elsewhere);
+  assert.equal(json.applied, false);
+  assert.deepEqual(cloneState(repo), before);
+  assert.ok(fs.existsSync(plan));
+});
+
+test("close-session warns and continues when origin is unreachable, and fails with a re-login command on an authentication failure before any write", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const first = path.join(wt, "plan-20261009-1");
+  const second = path.join(wt, "plan-20261009-2");
+  git(repo, "worktree", "add", "-q", "--detach", first, "origin/main");
+  git(repo, "worktree", "add", "-q", "--detach", second, "origin/main");
+
+  git(repo, "remote", "set-url", "origin", path.join(path.dirname(repo), "missing.git"));
+  const offline = closeSession(repo, env, "20261009-1");
+  assert.equal(offline.code, 0, JSON.stringify(offline.json));
+  assert.equal(offline.json.status, "ok");
+  assert.equal(offline.json.outcome, "closed");
+  assert.ok(offline.json.warnings.some((w) => /^fetch: product .*missing\.git not fetched \(.*\); continuing from local refs$/.test(w)), offline.json.warnings.join("\n"));
+  assert.equal(fs.existsSync(first), false);
+
+  const ssh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-ssh-")), "ssh");
+  fs.writeFileSync(ssh, "#!/bin/sh\necho 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n", { mode: 0o755 });
+  git(repo, "remote", "set-url", "origin", "git@example.invalid:o/r.git");
+  const before = cloneState(repo);
+  const auth = closeSession(repo, { ...env, GIT_SSH_COMMAND: ssh }, "20261009-2");
+  assert.equal(auth.code, 3);
+  assert.equal(auth.json.status, "failed");
+  assert.equal(auth.json.reason, "fetch-auth");
+  assert.match(auth.json.message, /Permission denied \(publickey\)/);
+  assert.match(auth.json.reauth, /git@example\.invalid:o\/r\.git/);
+  assert.equal(auth.json.applied, false);
+  assert.deepEqual(cloneState(repo), before);
+  assert.ok(fs.existsSync(second));
+});
+
+const removedHalf = (halfPath, extra = {}) => ({ path: halfPath, branch: null, detached: true, registered: true, onDisk: true, removed: true, ...extra });
+
+test("close-session plan close (in-repo): removes a pushed detached session, reports nothing-to-close for an unknown id, rejects unpushed commits", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const plan = path.join(wt, "plan-20261009-1");
+  git(repo, "worktree", "add", "-q", "--detach", plan, "origin/main");
+
+  const { code, json } = closeSession(repo, env, "20261009-1");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.mode, "plan");
+  assert.equal(json.subject, "20261009-1");
+  assert.equal(json.outcome, "closed");
+  assert.equal(json.applied, true);
+  assert.deepEqual(json.product, removedHalf(plan));
+  assert.equal(json.companion, null);
+  assert.equal(json.workspace, null);
+  assert.deepEqual(json.branches, { product: null, companion: null });
+  assert.deepEqual(json.next, []);
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(fs.existsSync(plan), false);
+
+  const none = closeSession(repo, env, "20261009-9");
+  assert.equal(none.code, 0);
+  assert.equal(none.json.outcome, "nothing-to-close");
+  assert.deepEqual(none.json.product, { path: path.join(wt, "plan-20261009-9"), branch: null, detached: false, registered: false, onDisk: false, removed: false });
+
+  const ahead = path.join(wt, "plan-20261009-2");
+  git(repo, "worktree", "add", "-q", "--detach", ahead, "origin/main");
+  git(ahead, "commit", "-q", "--allow-empty", "-m", "local idea");
+  const rejected = closeSession(repo, env, "20261009-2");
+  assert.equal(rejected.code, 3);
+  assert.equal(rejected.json.status, "rejected");
+  assert.equal(rejected.json.reason, "unpushed");
+  assert.equal(rejected.json.commits.product.length, 1);
+  assert.match(rejected.json.message, /plan-20261009-2 has 1 commit\(s\) on neither its upstream nor origin\/main: \w+ local idea/);
+  assert.equal(rejected.json.outcome, null);
+  assert.ok(fs.existsSync(ahead));
+  assert.equal(worktreeCount(repo), 2);
+});
+
+test("close-session plan close (companion pair): removes the companion half, the product half, and the workspace file; an unpushed companion half rejects", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const product = path.join(wt, "plan-20261009-1");
+  const half = path.join(docsWt, "plan-20261009-1");
+  const file = path.join(wt, "plan-20261009-1.code-workspace");
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", half, "origin/main");
+  fs.writeFileSync(file, "{}\n");
+
+  const { code, json } = closeSession(repo, env, "20261009-1");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(product));
+  assert.deepEqual(json.companion, removedHalf(half));
+  assert.deepEqual(json.workspace, { path: file, existed: true, removed: true });
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+  assert.equal(fs.existsSync(file), false);
+
+  const product2 = path.join(wt, "plan-20261009-2");
+  const half2 = path.join(docsWt, "plan-20261009-2");
+  git(repo, "worktree", "add", "-q", "--detach", product2, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", half2, "origin/main");
+  git(half2, "commit", "-q", "--allow-empty", "-m", "draft plan");
+  const before = cloneState(repo, docs);
+  const rejected = closeSession(repo, env, "20261009-2");
+  assert.equal(rejected.code, 3);
+  assert.equal(rejected.json.reason, "unpushed");
+  assert.deepEqual(rejected.json.commits.product, []);
+  assert.equal(rejected.json.commits.companion.length, 1);
+  assert.deepEqual(cloneState(repo, docs), before);
+});
+
+test("close-session closes a promoted plan-<id> worktree as the build it became", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  publishBranch(repo, "feature/promo", roadmapFor("feature", "promo"), { keepLocal: true });
+  const promoted = path.join(wt, "plan-20261009-3");
+  git(repo, "worktree", "add", "-q", promoted, "feature/promo");
+
+  const { code, json } = closeSession(repo, env, "20261009-3");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "build");
+  assert.equal(json.subject, "feature/promo");
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(promoted, { branch: "feature/promo", detached: false }));
+  assert.equal(json.branches.product.action, "retained");
+  assert.equal(json.branches.product.reason, "origin/feature/promo still exists");
+  assert.deepEqual(json.next, ["/agento ship promo"]);
+  assert.equal(worktreeCount(repo), 1);
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/feature/promo"));
+});
+
+// Land <branch> on origin/main (fast-forward push) and delete it from origin;
+// `syncMain` also fast-forwards the clone's local main.
+function landBranch(work, branch, { syncMain = true } = {}) {
+  git(work, "push", "-q", "origin", `${branch}:main`);
+  git(work, "push", "-q", "origin", "--delete", branch);
+  git(work, "fetch", "-q", "--prune", "origin");
+  if (syncMain) git(work, "merge", "-q", "--ff-only", "origin/main");
+}
+
+test("close-session build close passes every close-decision error through as rejected and rejects a primary on the branch with the fix", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const inRepo = makeWorktreeRepo();
+  writeRoadmap(inRepo.repo, "features/2026/09/dup", "status: planned\nbranch: feature/dup\nnext-step: \"1.1\"");
+  writeRoadmap(inRepo.repo, "features/2026/10/dup", "status: planned\nbranch: feature/dup\nnext-step: \"1.1\"");
+  roadmapFor("feature", "odd", "planned", "feature/other")(inRepo.repo);
+  git(inRepo.repo, "add", "-A");
+  git(inRepo.repo, "commit", "-q", "-m", "roadmaps");
+  git(inRepo.repo, "push", "-q", "origin", "main");
+  for (const [subject, reason] of [["feature/dup", "multiple-roadmaps"], ["feature/odd", "branch-mismatch"], ["feature/nope", "no-resolvable-roadmap"]]) {
+    const { code, json } = closeSession(inRepo.repo, env, subject);
+    assert.equal(code, 3, subject);
+    assert.equal(json.status, "rejected", subject);
+    assert.equal(json.reason, reason, subject);
+    assert.ok(json.message, subject);
+  }
+
+  publishBranch(repo, "feature/side", null, { keepLocal: true });
+  publishBranch(docs, "feature/side", roadmapFor("feature", "side"), { keepLocal: true });
+  git(repo, "worktree", "add", "-q", path.join(wt, "feature-side"), "feature/side");
+  git(docs, "worktree", "add", "-q", path.join(docsWt, "feature-side"), "feature/side");
+  fs.writeFileSync(path.join(docsWt, "feature-side", "notes.md"), "draft");
+  const before = cloneState(repo, docs);
+  const gap = closeSession(repo, env, "feature/side");
+  assert.equal(gap.code, 3);
+  assert.equal(gap.json.reason, "companion-unpushed");
+  assert.match(gap.json.message, /^The companion half at .*feature-side is dirty; commit and push it/);
+  assert.deepEqual(cloneState(repo, docs), before);
+
+  publishBranch(inRepo.repo, "feature/here", roadmapFor("feature", "here"), { keepLocal: true });
+  git(inRepo.repo, "switch", "-q", "feature/here");
+  const primaryOwns = closeSession(inRepo.repo, env, "feature/here");
+  assert.equal(primaryOwns.code, 3);
+  assert.equal(primaryOwns.json.reason, "primary-owns-branch");
+  assert.equal(primaryOwns.json.fix, "git switch main");
+  assert.equal(git(inRepo.repo, "branch", "--show-current"), "feature/here");
+});
+
+test("close-session build close (in-repo): dirty and unpushed halves reject; a clean pushed half is removed with its branch retained while on origin", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  publishBranch(repo, "feature/widget", roadmapFor("feature", "widget"), { keepLocal: true });
+  const half = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", half, "feature/widget");
+
+  fs.writeFileSync(path.join(half, "scratch.txt"), "x");
+  const dirty = closeSession(repo, env, "feature/widget");
+  assert.equal(dirty.code, 3);
+  assert.equal(dirty.json.reason, "dirty");
+  assert.deepEqual(dirty.json.dirty.product, ["scratch.txt"]);
+  assert.match(dirty.json.message, /feature-widget has uncommitted changes: scratch\.txt/);
+  fs.rmSync(path.join(half, "scratch.txt"));
+
+  git(half, "commit", "-q", "--allow-empty", "-m", "unpushed step");
+  const ahead = closeSession(repo, env, "feature/widget");
+  assert.equal(ahead.code, 3);
+  assert.equal(ahead.json.reason, "unpushed");
+  assert.match(ahead.json.message, /1 commit\(s\) .*unpushed step/);
+  assert.deepEqual(ahead.json.next, ["/agento ship widget"]);
+  assert.equal(worktreeCount(repo), 2);
+  git(half, "push", "-q");
+
+  const { code, json } = closeSession(repo, env, "feature/widget");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "build");
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(half, { branch: "feature/widget", detached: false }));
+  assert.deepEqual(json.branches.product, { name: "feature/widget", upstream: "origin/feature/widget", remoteExists: true, mergedIntoDefault: false, action: "retained", reason: "origin/feature/widget still exists" });
+  assert.equal(json.branches.companion, null);
+  assert.deepEqual(json.next, ["/agento ship widget"]);
+  assert.equal(worktreeCount(repo), 1);
+});
+
+test("close-session build close (in-repo): remote-roadmap-only is already-closed and still deletes a merged local branch, retaining unmerged or stale-main ones with the reason", () => {
+  const { repo } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  publishBranch(repo, "feature/gone", roadmapFor("feature", "gone"));
+  const gone = closeSession(repo, env, "feature/gone");
+  assert.equal(gone.code, 0, JSON.stringify(gone.json));
+  assert.equal(gone.json.outcome, "already-closed");
+  assert.equal(gone.json.product.registered, false);
+  assert.equal(gone.json.branches.product.action, "absent");
+
+  publishBranch(repo, "feature/unmerged", roadmapFor("feature", "unmerged"), { keepLocal: true });
+  git(repo, "push", "-q", "origin", "--delete", "feature/unmerged");
+  roadmapFor("feature", "unmerged")(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "roadmap on main");
+  git(repo, "push", "-q", "origin", "main");
+  const unmerged = closeSession(repo, env, "feature/unmerged");
+  assert.equal(unmerged.code, 0, JSON.stringify(unmerged.json));
+  assert.equal(unmerged.json.outcome, "already-closed");
+  assert.deepEqual(unmerged.json.branches.product, { name: "feature/unmerged", upstream: "origin/feature/unmerged", remoteExists: false, mergedIntoDefault: false, action: "retained", reason: "not merged into origin/main" });
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/feature/unmerged"));
+
+  roadmapFor("feature", "stale", "complete")(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "stale roadmap on main");
+  git(repo, "push", "-q", "origin", "main");
+  publishBranch(repo, "feature/stale", null, { keepLocal: true });
+  landBranch(repo, "feature/stale", { syncMain: false });
+  const stale = closeSession(repo, env, "feature/stale");
+  assert.equal(stale.code, 0, JSON.stringify(stale.json));
+  assert.equal(stale.json.branches.product.action, "retained");
+  assert.equal(stale.json.branches.product.mergedIntoDefault, true);
+  assert.match(stale.json.branches.product.reason, /^merged into origin\/main but not into main at .*; run git -C .* pull --ff-only, then re-send$/);
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/feature/stale"));
+
+  git(repo, "merge", "-q", "--ff-only", "origin/main");
+  const merged = closeSession(repo, env, "feature/stale");
+  assert.equal(merged.code, 0, JSON.stringify(merged.json));
+  assert.equal(merged.json.outcome, "already-closed");
+  assert.deepEqual(merged.json.branches.product, { name: "feature/stale", upstream: "origin/feature/stale", remoteExists: false, mergedIntoDefault: true, action: "deleted", reason: "merged into origin/main and gone from origin" });
+  assert.deepEqual(merged.json.next, []);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/stale"));
+});
+
+test("close-session build close (companion pair): removes both halves and the workspace file, retaining branches on origin; once landed, deletes the merged branch in each clone", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const open = (slug, status = "in-review") => {
+    publishBranch(repo, `feature/${slug}`, null, { keepLocal: true });
+    publishBranch(docs, `feature/${slug}`, roadmapFor("feature", slug, status), { keepLocal: true });
+    git(repo, "worktree", "add", "-q", path.join(wt, `feature-${slug}`), `feature/${slug}`);
+    git(docs, "worktree", "add", "-q", path.join(docsWt, `feature-${slug}`), `feature/${slug}`);
+    fs.writeFileSync(path.join(wt, `feature-${slug}.code-workspace`), "{}\n");
+  };
+
+  open("pw");
+  const { code, json } = closeSession(repo, env, "feature/pw");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(path.join(wt, "feature-pw"), { branch: "feature/pw", detached: false }));
+  assert.deepEqual(json.companion, removedHalf(path.join(docsWt, "feature-pw"), { branch: "feature/pw", detached: false }));
+  assert.deepEqual(json.workspace, { path: path.join(wt, "feature-pw.code-workspace"), existed: true, removed: true });
+  assert.equal(json.branches.product.action, "retained");
+  assert.equal(json.branches.companion.action, "retained");
+  assert.equal(json.branches.companion.reason, "origin/feature/pw still exists");
+  assert.deepEqual(json.next, ["/agento ship pw"]);
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+
+  open("done", "complete");
+  landBranch(repo, "feature/done");
+  landBranch(docs, "feature/done");
+  const landed = closeSession(repo, env, "feature/done");
+  assert.equal(landed.code, 0, JSON.stringify(landed.json));
+  assert.equal(landed.json.outcome, "closed");
+  assert.equal(landed.json.branches.product.action, "deleted");
+  assert.equal(landed.json.branches.companion.action, "deleted");
+  assert.deepEqual(landed.json.next, []);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/done"));
+  assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/feature/done"));
+  assert.equal(fs.existsSync(path.join(wt, "feature-done.code-workspace")), false);
+});
+
+test("close-session freehand close (in-repo): requires changes/<slug>, rejects unpushed commits with finish-freehand, offers a resume for unmerged work, deletes a merged branch", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const env = closeSessionEnv();
+  const add = (slug, branch = `changes/${slug}`, ...flags) => {
+    const half = path.join(wt, `freehand-${slug}`);
+    git(repo, "worktree", "add", "-q", ...flags, "-b", branch, half, "origin/main");
+    return half;
+  };
+
+  const none = closeSession(repo, env, "changes/ghost");
+  assert.equal(none.code, 0, JSON.stringify(none.json));
+  assert.equal(none.json.mode, "freehand");
+  assert.equal(none.json.outcome, "nothing-to-close");
+  assert.equal(none.json.branches.product.action, "absent");
+  assert.deepEqual(none.json.next, []);
+
+  const odd = add("odd", "changes/other");
+  const mismatch = closeSession(repo, env, "changes/odd");
+  assert.equal(mismatch.code, 3);
+  assert.equal(mismatch.json.reason, "branch-mismatch");
+  assert.match(mismatch.json.message, /freehand-odd is on changes\/other, expected on changes\/odd; nothing was removed$/);
+  assert.ok(fs.existsSync(odd));
+
+  const tidy = add("tidy");
+  const closed = closeSession(repo, env, "changes/tidy");
+  assert.equal(closed.code, 0, JSON.stringify(closed.json));
+  assert.equal(closed.json.outcome, "closed");
+  assert.deepEqual(closed.json.product, removedHalf(tidy, { branch: "changes/tidy", detached: false }));
+  assert.deepEqual(closed.json.branches.product, { name: "changes/tidy", upstream: "origin/main", remoteExists: false, mergedIntoDefault: true, action: "deleted", reason: "merged into origin/main and gone from origin" });
+  assert.deepEqual(closed.json.next, []);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/changes/tidy"));
+
+  // start-freehand's branch tracks origin/main, so commits past it are unpublished work.
+  const draft = add("draft");
+  git(draft, "commit", "-q", "--allow-empty", "-m", "unpublished");
+  const tracking = closeSession(repo, env, "changes/draft");
+  assert.equal(tracking.code, 3);
+  assert.equal(tracking.json.reason, "unpushed");
+  assert.deepEqual(tracking.json.next, ["/agento finish-freehand"]);
+
+  const pub = add("pub");
+  git(pub, "commit", "-q", "--allow-empty", "-m", "published");
+  git(pub, "push", "-q", "-u", "origin", "changes/pub");
+  git(pub, "commit", "-q", "--allow-empty", "-m", "not yet");
+  const ahead = closeSession(repo, env, "changes/pub");
+  assert.equal(ahead.code, 3);
+  assert.equal(ahead.json.reason, "unpushed");
+  assert.deepEqual(ahead.json.next, ["/agento finish-freehand"]);
+  assert.ok(fs.existsSync(pub));
+  git(pub, "push", "-q");
+  const open = closeSession(repo, env, "changes/pub");
+  assert.equal(open.code, 0, JSON.stringify(open.json));
+  assert.equal(open.json.branches.product.action, "retained");
+  assert.equal(open.json.branches.product.reason, "origin/changes/pub still exists");
+  assert.deepEqual(open.json.next, ["/agento start-freehand pub --resume"]);
+
+  const local = add("local", "changes/local", "--no-track");
+  git(local, "commit", "-q", "--allow-empty", "-m", "never published");
+  const kept = closeSession(repo, env, "changes/local");
+  assert.equal(kept.code, 0, JSON.stringify(kept.json));
+  assert.deepEqual(kept.json.branches.product, { name: "changes/local", upstream: null, remoteExists: false, mergedIntoDefault: false, action: "retained", reason: "not merged into origin/main" });
+  assert.deepEqual(kept.json.next, ["/agento start-freehand local --resume"]);
+  assert.ok(git(repo, "rev-parse", "--verify", "refs/heads/changes/local"));
+  assert.equal(worktreeCount(repo), 3);
+});
+
+test("close-session freehand close (companion pair): removes both halves and the workspace file, deletes the merged branch in each clone, and rejects an unpushed companion half", () => {
+  const { repo, docs, wt, docsWt } = makePairRepo();
+  const env = closeSessionEnv();
+  const product = path.join(wt, "freehand-tidy");
+  const half = path.join(docsWt, "freehand-tidy");
+  const file = path.join(wt, "freehand-tidy.code-workspace");
+  git(repo, "worktree", "add", "-q", "-b", "changes/tidy", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "-b", "changes/tidy", half, "origin/main");
+  fs.writeFileSync(file, "{}\n");
+
+  const { code, json } = closeSession(repo, env, "changes/tidy");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "closed");
+  assert.deepEqual(json.product, removedHalf(product, { branch: "changes/tidy", detached: false }));
+  assert.deepEqual(json.companion, removedHalf(half, { branch: "changes/tidy", detached: false }));
+  assert.deepEqual(json.workspace, { path: file, existed: true, removed: true });
+  assert.equal(json.branches.product.action, "deleted");
+  assert.equal(json.branches.companion.action, "deleted");
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+
+  git(repo, "worktree", "add", "-q", "-b", "changes/wip", path.join(wt, "freehand-wip"), "origin/main");
+  const wipHalf = path.join(docsWt, "freehand-wip");
+  git(docs, "worktree", "add", "-q", "-b", "changes/wip", wipHalf, "origin/main");
+  git(wipHalf, "push", "-q", "-u", "origin", "changes/wip");
+  git(wipHalf, "commit", "-q", "--allow-empty", "-m", "draft");
+  const before = cloneState(repo, docs);
+  const ahead = closeSession(repo, env, "changes/wip");
+  assert.equal(ahead.code, 3);
+  assert.equal(ahead.json.reason, "unpushed");
+  assert.equal(ahead.json.commits.companion.length, 1);
+  assert.deepEqual(ahead.json.next, ["/agento finish-freehand"]);
+  assert.deepEqual(cloneState(repo, docs), before);
+});
+
+// A detached plan pair <id> with its workspace file, for the occupant and dry-run tests.
+function planPair({ repo, docs, wt, docsWt }, id) {
+  const product = path.join(wt, `plan-${id}`);
+  const half = path.join(docsWt, `plan-${id}`);
+  const file = path.join(wt, `plan-${id}.code-workspace`);
+  git(repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(docs, "worktree", "add", "-q", "--detach", half, "origin/main");
+  fs.writeFileSync(file, "{}\n");
+  return { product, half, file };
+}
+
+test("close-session occupant gate: a live process inside a half blocks with the guard's wording and changes nothing; --ignore-occupants proceeds with a warning", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const env = closeSessionEnv();
+  const { half, file } = planPair(pair, "20261009-1");
+  const child = spawn("sleep", ["30"], { cwd: half, stdio: "ignore" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const before = [cloneState(repo, docs), fs.readFileSync(file, "utf8")];
+    for (const extra of [[], ["--dry-run"]]) {
+      const { code, json } = closeSession(repo, env, "20261009-1", ...extra);
+      assert.equal(code, 3, JSON.stringify(json));
+      assert.equal(json.status, "blocked");
+      assert.equal(json.reason, "occupied");
+      assert.deepEqual(json.occupants, { product: [], companion: [`PID ${child.pid} (sleep)`] });
+      assert.equal(json.applied, false);
+      assert.match(json.message, /^Active worktree occupants detected - companion half .*plan-20261009-1: PID \d+ \(sleep\)\. Close their terminals or VS Code window before removal/);
+      assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+    }
+
+    const forced = closeSession(repo, env, "20261009-1", "--ignore-occupants");
+    assert.equal(forced.code, 0, JSON.stringify(forced.json));
+    assert.equal(forced.json.applied, true);
+    assert.ok(forced.json.warnings.some((w) => /^occupants: ignored \(--ignore-occupants\) - companion half .*: PID \d+ \(sleep\)$/.test(w)), forced.json.warnings.join("\n"));
+    assert.equal(worktreeCount(repo), 1);
+    assert.equal(worktreeCount(docs), 1);
+  } finally {
+    child.kill();
+  }
+});
+
+test("close-session occupant gate: code --status naming the half as a Folder, Workspace, or Window (… (Workspace)) blocks; --dry-run reports the full decision and changes nothing", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { file } = planPair(pair, "20261009-1");
+  const before = [cloneState(repo, docs), fs.readFileSync(file, "utf8")];
+  for (const [status, detail] of [
+    ["|    Folder (plan-20261009-1): 12 files", "a matching VS Code folder"],
+    ["|  Workspace (plan-20261009-1)", "a matching VS Code workspace window"],
+    ["|  Window (roadmap.md - plan-20261009-1 (Workspace) - Visual Studio Code)", "a matching VS Code workspace window"],
+  ]) {
+    const env = closeSessionEnv(status);
+    for (const extra of [[], ["--dry-run"]]) {
+      const { code, json } = closeSession(repo, env, "20261009-1", ...extra);
+      assert.equal(code, 3, `${status} ${extra}`);
+      assert.equal(json.status, "blocked");
+      assert.deepEqual(json.occupants, { product: [detail], companion: [detail] });
+      assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+    }
+  }
+
+  const env = closeSessionEnv("|    Folder (other): 1 files");
+  const dry = closeSession(repo, env, "20261009-1", "--dry-run");
+  assert.equal(dry.code, 0, JSON.stringify(dry.json));
+  assert.equal(dry.json.status, "ok");
+  assert.equal(dry.json.applied, false);
+  assert.equal(dry.json.outcome, "closed");
+  assert.equal(dry.json.product.removed, true);
+  assert.equal(dry.json.companion.removed, true);
+  assert.deepEqual(dry.json.workspace, { path: file, existed: true, removed: true });
+  assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+
+  const real = closeSession(repo, env, "20261009-1");
+  assert.equal(real.code, 0, JSON.stringify(real.json));
+  assert.equal(real.json.applied, true);
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(worktreeCount(docs), 1);
+  assert.equal(fs.existsSync(file), false);
+});
+
+test("close-session is idempotent: a re-send is nothing-to-close or already-closed, a half removed earlier is skipped, a merged branch left behind is still deleted", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt, docsWt } = pair;
+  const env = closeSessionEnv();
+  planPair(pair, "20261009-1");
+  assert.equal(closeSession(repo, env, "20261009-1").code, 0);
+  const again = closeSession(repo, env, "20261009-1");
+  assert.equal(again.code, 0, JSON.stringify(again.json));
+  assert.equal(again.json.outcome, "nothing-to-close");
+  assert.equal(again.json.product.registered, false);
+  assert.equal(again.json.companion.registered, false);
+  assert.deepEqual(again.json.workspace, { path: path.join(wt, "plan-20261009-1.code-workspace"), existed: false, removed: false });
+
+  publishBranch(repo, "feature/half", null, { keepLocal: true });
+  publishBranch(docs, "feature/half", roadmapFor("feature", "half"), { keepLocal: true });
+  const product = path.join(wt, "feature-half");
+  const half = path.join(docsWt, "feature-half");
+  git(repo, "worktree", "add", "-q", product, "feature/half");
+  git(docs, "worktree", "add", "-q", half, "feature/half");
+  fs.writeFileSync(path.join(wt, "feature-half.code-workspace"), "{}\n");
+  git(docs, "worktree", "remove", half);
+
+  const partial = closeSession(repo, env, "feature/half");
+  assert.equal(partial.code, 0, JSON.stringify(partial.json));
+  assert.equal(partial.json.outcome, "closed");
+  assert.equal(partial.json.product.removed, true);
+  assert.deepEqual(partial.json.companion, { path: half, branch: null, detached: false, registered: false, onDisk: false, removed: false });
+  assert.equal(partial.json.workspace.removed, true);
+  assert.equal(worktreeCount(repo), 1);
+
+  const resent = closeSession(repo, env, "feature/half");
+  assert.equal(resent.code, 0, JSON.stringify(resent.json));
+  assert.equal(resent.json.outcome, "already-closed");
+  assert.equal(resent.json.product.registered, false);
+  assert.equal(resent.json.branches.product.action, "retained");
+
+  landBranch(repo, "feature/half");
+  landBranch(docs, "feature/half");
+  const cleanup = closeSession(repo, env, "feature/half");
+  assert.equal(cleanup.code, 0, JSON.stringify(cleanup.json));
+  assert.equal(cleanup.json.outcome, "already-closed");
+  assert.equal(cleanup.json.branches.product.action, "deleted");
+  assert.equal(cleanup.json.branches.companion.action, "deleted");
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/half"));
+  assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/feature/half"));
 });
 
 // --- dashboard: one process per refresh ---------------------------------------

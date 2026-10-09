@@ -296,8 +296,21 @@ test("start-session is one agento.mjs start-session call with no hand-run fallba
   assert.doesNotMatch(body, /date -u \+%Y/, "the CLI generates the session id; the prompt must not");
 });
 
+test("close-session is one agento.mjs close-session call with no hand-run fallback procedure", () => {
+  const prompt = rel(".github", "prompts", "close-session.prompt.md");
+  const body = splitFrontmatter(prompt).body;
+  assert.equal(fs.readFileSync(rel("commands", "close-session.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/close-session.md must mirror the prompt byte for byte");
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs close-session /);
+  assert.doesNotMatch(body, /git (?:-C \S+ )?worktree remove/, "the CLI removes the halves; the prompt must not");
+  assert.doesNotMatch(body, /git (?:-C \S+ )?branch -d/, "the CLI deletes merged branches; the prompt must not");
+  assert.doesNotMatch(body, /agento\.mjs paths/, "the CLI resolves the paths; the prompt must not");
+  assert.doesNotMatch(body, /agento\.mjs close-decision/, "the CLI makes the close decision; the prompt must not");
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
-  // Everyone else reads the session record (policy §11). `ship` stays here until
+  // Everyone else reads the session record (policy §11). start-session and
+  // close-session now delegate to agento.mjs but stay listed: §11 lets the commands
+  // that create or remove worktrees read the list. `ship` stays here until
   // `ship-audit-first` removes its worktree precondition, then the list shrinks to three.
   const allowlist = new Set(["start-session", "start-freehand", "close-session", "ship"]);
   const offenders = [];

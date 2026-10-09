@@ -13,6 +13,7 @@ const cliFiles = [
   "model-profiles.mjs",
   "release-state.mjs",
   "session-state.mjs",
+  "worktree-occupants.mjs",
 ];
 
 test("extension CLI bundle contains exactly the source modules", () => {

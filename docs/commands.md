@@ -14,7 +14,7 @@
 | `/agento ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
 | `/agento ship <slug>` | default | Acceptance gate: audit in place while the build worktree is open, reject back to that window on a real gap, else required checks green, merge PR, sync main, optional release workflow, tear the worktree down, post-ship epilogue |
 | `/agento continue [<slug>]` | default | Derive the one legal next transition from the session record (`agento.mjs next`) and perform it: build, review, or ship here by following that command's own prompt and agent files, or open the worktree window that owns the next step and name the command for it; rejects with the choices when several deliveries are in flight |
-| `/agento close-session <session-id \| type/slug \| changes/slug>` | default | Remove a plan/freehand worktree or abandon a build (ship tears down finished builds) |
+| `/agento close-session <session-id \| type/slug \| changes/slug> [--dry-run] [--ignore-occupants]` | default | Remove a plan/freehand worktree or abandon a build (ship tears down finished builds); one `agento.mjs close-session` call whose JSON the prompt formats |
 | `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
 | `/agento start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
 | `/agento finish-freehand` | default | Commit, PR, merge freehand work |
@@ -119,7 +119,50 @@ capability check with `capability`/`fallback`, a roadmap `conflict` /
 `registeredIn`, `origin`, `expectedOrigin`, and the `git -C <clone> worktree remove
 <path>` `fix` (nothing is removed, no workspace file written, no window opened), or
 `"worktree-add"` with the git error; an unreachable origin only adds a `warnings[]`
-entry; exit 0 for `ok`, 3 for `rejected`/`failed`, 1 for a usage error), `ports <slug>`,
+entry; exit 0 for `ok`, 3 for `rejected`/`failed`, 1 for a usage error),
+`close-session <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run]
+[--ignore-occupants]` (the whole close-session slash command in one deterministic call:
+the §11 window check — role `primary`, any branch — a bounded `git fetch
+--prune origin` in the product clone and the companion clone; the mode from the
+argument — `<type>/<slug>` is a build close through the same decision as
+`close-decision` (its `status: error` reasons, `companion-unpushed`, and
+`primary-owns-branch` with `fix: "git switch <default>"` all reject;
+`remote-roadmap-only` is `outcome: "already-closed"`), `changes/<slug>` a freehand
+close (the half must be on that branch), a bare session id a plan close (detached
+halves whose HEAD is in that clone's `origin/<default>`) or, for a promoted
+`plan-<id>` on a delivery branch, the build close of that branch; every registered
+half must be clean and pushed (its HEAD in `origin/<default>`, else nothing past a
+live upstream, else nothing outside the remote refs; a freehand branch that never
+had an upstream keeps its commits on the retained branch); its own occupant
+check, the Node port of the guard's (`scripts/worktree-occupants.mjs`: processes
+whose cwd is inside the half — a Linux-only `/proc` scan, skipped elsewhere — and
+`code --status` naming the half as a `Folder`, `Workspace`, or `Window (…
+(Workspace))`, with the guard's wording), because the guard never sees a removal
+made inside the CLI: any occupant is `status: "blocked"`, `reason: "occupied"`,
+nothing removed, unless `--ignore-occupants`, which proceeds and records the
+occupants in `warnings[]`; the removal — companion half, prune, product half,
+prune, workspace file, never forced — and, in each repository, the local branch
+deleted only when `origin/<branch>` is gone after the prune, it is an ancestor of
+that repository's `origin/<default>`, no other worktree has it checked out, and the
+clone's `HEAD` contains it (so a non-forced delete accepts it; otherwise `retained`
+with the reason, e.g. a stale local default to pull); `--dry-run` runs every check,
+the occupant verdict included, and returns the same document with `applied: false`;
+output `{ status: ok | rejected | failed | blocked, mode: plan | build | freehand,
+subject, outcome: closed | already-closed | nothing-to-close | null, applied,
+product, companion: { path, branch, detached, registered, onDisk, removed } | null,
+workspace: { path, existed, removed } | null, branches: { product, companion: { name,
+upstream, remoteExists, mergedIntoDefault, action: deleted | retained | absent,
+reason } | null }, occupants, dirty, next[], reason, message, fix, reauth, allowed,
+elsewhere, warnings }` — `rejected` removes nothing (wrong window, a decision error,
+`dirty` with the files, `unpushed` with `commits`, `branch-mismatch`,
+`unregistered`, `protected-path`), `failed` names `fetch-auth` with `reauth` before
+any write or `worktree-remove` / `branch-delete` with the git error and what was
+already removed; `next` is `/agento ship <slug>` for an incomplete build,
+`/agento finish-freehand` for unpushed freehand commits, and `/agento
+start-freehand <slug> --resume` for unmerged freehand work; a re-send is safe — a
+half already gone is `registered: false` and skipped, a merged branch left behind is
+still deleted; exit 0 for `ok`, 3 for `rejected`/`failed`/`blocked`, 1 for a usage
+error), `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and

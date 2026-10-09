@@ -12,6 +12,7 @@ const cliFiles = [
   "delivery-roadmap-resolver.mjs",
   "model-profiles.mjs",
   "release-state.mjs",
+  "worktree-occupants.mjs",
 ];
 
 await mkdir(cliDirectory, { recursive: true });
