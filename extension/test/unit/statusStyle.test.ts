@@ -4,7 +4,39 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { healthStyle, initiativeGroupStyle, lifecycleStyle, STATUS_COLOR_IDS } from "../../src/statusStyle.js";
+import {
+  healthStyle,
+  initiativeGroupStyle,
+  lifecycleStyle,
+  ROLE_FOREGROUND_COLOR,
+  roleBannerColor,
+  STATUS_COLOR_IDS,
+} from "../../src/statusStyle.js";
+
+const ROLE_DEFAULTS: Record<string, string> = {
+  "agento.role.primary": "#0063B1",
+  "agento.role.plan": "#7B2CBF",
+  "agento.role.build": "#1E7B34",
+  "agento.role.freehand": "#00796B",
+  "agento.role.unmanaged": "#C62828",
+  "agento.role.unavailable": "#5F6368",
+  "agento.role.foreground": "#FFFFFF",
+};
+
+function relativeLuminance(hex: string): number {
+  const channels = [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255);
+  const [r, g, b] = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)) as [
+    number,
+    number,
+    number,
+  ];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrastRatio(a: string, b: string): number {
+  const [light, dark] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x) as [number, number];
+  return (light + 0.05) / (dark + 0.05);
+}
 
 test("lifecycleStyle maps every delivery lifecycle to a status glyph and color", () => {
   assert.deepEqual(
@@ -47,6 +79,17 @@ test("healthStyle maps ok and warn and treats anything else as a failure", () =>
   }
 });
 
+test("roleBannerColor maps every session role and falls back to unavailable", () => {
+  assert.deepEqual(
+    ["primary", "plan", "build", "freehand", "unmanaged"].map(roleBannerColor),
+    ["agento.role.primary", "agento.role.plan", "agento.role.build", "agento.role.freehand", "agento.role.unmanaged"],
+  );
+  for (const role of ["unknown", "", "constructor", "toString"]) {
+    assert.equal(roleBannerColor(role), "agento.role.unavailable");
+  }
+  assert.equal(ROLE_FOREGROUND_COLOR, "agento.role.foreground");
+});
+
 test("returned styles are copies callers cannot use to mutate the mapping", () => {
   lifecycleStyle("planned").color = "mutated";
   initiativeGroupStyle("ready").icon = "mutated";
@@ -73,6 +116,13 @@ test("STATUS_COLOR_IDS lists every emitted color id exactly once", () => {
     "agento.health.fail",
     "agento.health.ok",
     "agento.health.warn",
+    "agento.role.build",
+    "agento.role.foreground",
+    "agento.role.freehand",
+    "agento.role.plan",
+    "agento.role.primary",
+    "agento.role.unavailable",
+    "agento.role.unmanaged",
     "agento.status.approved",
     "agento.status.blocked",
     "agento.status.building",
@@ -107,6 +157,7 @@ test("the manifest declares exactly the emitted agento colors, each with all fou
     "agento.health.ok": "charts.green",
     "agento.status.blocked": "charts.red",
     "agento.health.fail": "charts.red",
+    ...ROLE_DEFAULTS,
   };
 
   assert.deepEqual(declared.map((color) => color.id).sort(), [...STATUS_COLOR_IDS].sort());
@@ -115,5 +166,15 @@ test("the manifest declares exactly the emitted agento colors, each with all fou
     for (const theme of ["dark", "light", "highContrast", "highContrastLight"]) {
       assert.equal(color.defaults?.[theme], expectedDefaults[color.id], `${color.id} ${theme}`);
     }
+  }
+});
+
+test("every default role banner background meets WCAG AA contrast against the default foreground", () => {
+  const foreground = ROLE_DEFAULTS[ROLE_FOREGROUND_COLOR]!;
+  const backgrounds = Object.entries(ROLE_DEFAULTS).filter(([id]) => id !== ROLE_FOREGROUND_COLOR);
+  assert.equal(backgrounds.length, 6);
+  for (const [id, background] of backgrounds) {
+    const ratio = contrastRatio(background, foreground);
+    assert.ok(ratio >= 4.5, `${id} ${background} contrast ${ratio.toFixed(2)} < 4.5`);
   }
 });
