@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Added.** A window banner at the top of the Agento sidebar. The new **Window**
+  view shows a bright, colored banner naming the window type (`PRIMARY WINDOW`,
+  `PLAN WINDOW`, `BUILD WINDOW`, `FREEHAND WINDOW`, `UNMANAGED WINDOW`, or a grey
+  `AGENTO UNAVAILABLE`), with the delivery slug, branch, and lifecycle below it.
+  The tooltip shows the worktree path; a click focuses Session & Doctor. Colors are
+  contributed `agento.role.*` ids that themes and `workbench.colorCustomizations`
+  can override.
+
 - **Added.** Status colors in the dashboard. Deliveries lifecycle groups, initiative
   groups and members, the Completed folder, diagnostics, Session & Doctor rows, and
   error rows show tinted status icons (planned blue, building yellow, paused orange,

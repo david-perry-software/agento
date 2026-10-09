@@ -17,8 +17,9 @@ code --install-extension agento-dashboard-0.6.1.vsix
 ```
 
 Open an initialized Agento project. The activity bar contains an **Agento** view
-container with Deliveries, Initiatives, and Session & Doctor views. Every group in
-the three views starts collapsed in each new or reloaded window; groups you expand
+container with a colored Window banner at the top, followed by the Deliveries,
+Initiatives, and Session & Doctor views. Every group in
+the three tree views starts collapsed in each new or reloaded window; groups you expand
 stay expanded across refreshes while that window stays open. The extension
 uses its bundled CLI, so the project does not need a separate Agento clone on
 `PATH`; the plugin must still be installed for Copilot Chat to run the submitted
@@ -55,6 +56,61 @@ every new or reloaded window. The folder is hidden when no initiative is complet
 A finished initiative with breakdown errors stays at the top level so its
 diagnostics remain visible. Initiatives inside the folder keep their groups,
 members, and actions.
+
+## Window banner
+
+Agento often runs one repository in several windows at once, and each window type
+allows different commands. The **Window** view at the top of the Agento sidebar is a
+bright banner that names the type of the current window, so you can tell at a
+glance where a command will run.
+
+| Window | Title | Detail line |
+| --- | --- | --- |
+| Primary checkout | `PRIMARY WINDOW` | delivery slug, branch, lifecycle |
+| Plan worktree | `PLAN WINDOW` | delivery slug, branch (`detached` before promotion), lifecycle |
+| Build worktree | `BUILD WINDOW` | delivery slug, branch, lifecycle |
+| Freehand worktree | `FREEHAND WINDOW` | delivery slug, branch, lifecycle |
+| Unmanaged checkout | `UNMANAGED WINDOW` | `Agento commands are disabled here — open the primary checkout` |
+| Session cannot load | `AGENTO UNAVAILABLE` | the error message |
+
+Parts that do not exist are left out: a window with no delivery shows only its
+branch, and the `no-delivery` lifecycle is never shown. Hosted sessions (Codespaces,
+Actions, the coding agent) add ` · hosted` to the detail line. For example, a build
+window shows `BUILD WINDOW` over `window-type-banner · feature/window-type-banner ·
+building`.
+
+Hover the banner to see the worktree path (or the error message). Click it to focus
+Session & Doctor. The banner follows every refresh, the same as the status bar.
+
+Each background is a contributed color, and the text uses `agento.role.foreground`.
+Every default background has a contrast ratio of at least 4.5:1 against white text.
+
+| Window | Color id | Default |
+| --- | --- | --- |
+| Primary | `agento.role.primary` | `#0063B1` (blue) |
+| Plan | `agento.role.plan` | `#7B2CBF` (purple) |
+| Build | `agento.role.build` | `#1E7B34` (green) |
+| Freehand | `agento.role.freehand` | `#00796B` (teal) |
+| Unmanaged | `agento.role.unmanaged` | `#C62828` (red) |
+| Unavailable or unknown role | `agento.role.unavailable` | `#5F6368` (grey) |
+| Banner text | `agento.role.foreground` | `#FFFFFF` |
+
+Override them in a theme or in your settings:
+
+```jsonc
+"workbench.colorCustomizations": {
+  "agento.role.build": "#b35900",
+  "agento.role.primary": "#004a80"
+}
+```
+
+VS Code gives every webview pane a minimum body height of about 120 px, which an
+extension cannot lower. The banner is designed for that height: the color fills the
+pane and the text is centered vertically with tight padding. New layouts open the pane at
+that minimum (`initialSize`). VS Code restores a pane size you have already used, so
+if the pane is taller, drag the divider below it up until it stops. You can also
+collapse it from its header or hide it from the view's context menu. The banner
+runs no scripts, and its only link is the Session & Doctor focus command.
 
 ## Session & Doctor
 

@@ -113,6 +113,18 @@ async function focusSessionDoctor(api: ExtensionApi): Promise<void> {
   });
 }
 
+async function focusWindowBanner(api: ExtensionApi): Promise<string> {
+  await vscode.commands.executeCommand("agento.windowBanner.focus");
+  const deadline = Date.now() + 15_000;
+  while (api.windowBanner.html === undefined) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for the window banner webview to resolve");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return api.windowBanner.html;
+}
+
 function sessionDoctorRows(api: ExtensionApi, label: string): SessionDoctorElement[] {
   const group = api.sessionDoctor.getChildren().find((element) => api.sessionDoctor.getTreeItem(element).label === label);
   assert.ok(group, `${label} group is present`);
@@ -536,6 +548,9 @@ export async function run(): Promise<void> {
   assert.equal(api.sessionDoctor.current.kind, "ready");
   if (api.sessionDoctor.current.kind !== "ready") return;
   assert.equal(statusBarColors(api)[0], lifecycleStyle(api.sessionDoctor.current.session.lifecycle).color);
+  assert.equal(api.windowBanner.current.title, "PRIMARY WINDOW");
+  assert.equal(api.windowBanner.current.tone, "primary");
+  assert.equal(api.windowBanner.current.colorId, "agento.role.primary");
   await focusSessionDoctor(api);
   assert.equal(api.sessionDoctorView.visible, true);
 
@@ -906,6 +921,13 @@ export async function run(): Promise<void> {
     await newerApplied;
     assert.equal(api.statusBar.text, "Agento: build · 1 active");
     assert.deepEqual(statusBarColors(api), ["agento.status.building", "statusBarItem.warningBackground"]);
+    assert.deepEqual(api.windowBanner.current, {
+      tone: "build",
+      title: "BUILD WINDOW",
+      detail: "session-doctor-panel · feature/session-doctor-panel · building",
+      tooltip: "/fixture/product\nClick to open Session & Doctor",
+      colorId: "agento.role.build",
+    });
     assert.deepEqual(api.windowGate(), CLOSED_GATE, "a build window closes the gate");
     await assertGatedCommandsRejected(api, [
       ["agento.newPlan"],
@@ -1017,10 +1039,13 @@ export async function run(): Promise<void> {
     };
     const detachedPlan = sessionResponse("plan");
     await refreshWithSession(
-      { ...detachedPlan, worktree: { ...detachedPlan.worktree, detached: true } },
+      { ...detachedPlan, worktree: { ...detachedPlan.worktree, branch: null, detached: true } },
       () => api.sessionDoctor.current.kind === "ready" && api.sessionDoctor.current.session.role === "plan",
       "detached plan refresh",
     );
+    assert.equal(api.windowBanner.current.title, "PLAN WINDOW");
+    assert.equal(api.windowBanner.current.tone, "plan");
+    assert.match(api.windowBanner.current.detail, /^detached\b/);
     assert.deepEqual(api.windowGate(), { primary: false, canPlan: true }, "a detached plan window opens canPlan only");
     await assertGatedCommandsRejected(api, [["agento.newInitiative"]]);
     await refreshWithSession(
@@ -1031,6 +1056,14 @@ export async function run(): Promise<void> {
     assert.deepEqual(api.windowGate(), CLOSED_GATE, "an invalid session record closes the gate");
     assert.equal(api.statusBar.text, "Agento: unavailable");
     assert.deepEqual(statusBarColors(api), [undefined, "statusBarItem.errorBackground"]);
+    assert.equal(api.windowBanner.current.title, "AGENTO UNAVAILABLE");
+    assert.equal(api.windowBanner.current.tone, "unavailable");
+    assert.match(api.windowBanner.current.detail, /^Invalid Session & Doctor response:/);
+    const bannerHtml = await focusWindowBanner(api);
+    assert.ok(bannerHtml.includes("AGENTO UNAVAILABLE"), "the banner resolves with the latest state");
+    assert.ok(bannerHtml.includes("--vscode-agento-role-unavailable"));
+    assert.ok(bannerHtml.includes("command:agento.sessionDoctor.focus"));
+    assert.doesNotMatch(bannerHtml, /<script/i);
   } finally {
     api.client.run = originalRun;
   }
@@ -1048,6 +1081,9 @@ export async function run(): Promise<void> {
     () => vscode.commands.executeCommand(retryItem.command!.command),
   );
   assert.deepEqual(api.windowGate(), { primary: true, canPlan: true }, "the live primary session reopens the gate");
+  assert.equal(api.windowBanner.current.title, "PRIMARY WINDOW");
+  assert.ok(api.windowBanner.html?.includes("PRIMARY WINDOW"), "an attached banner re-renders on refresh");
+  assert.ok(api.windowBanner.html?.includes("--vscode-agento-role-primary"));
 
-  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, roadmap refresh, diagnostics, stale/error handling`);
+  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, window banner, roadmap refresh, diagnostics, stale/error handling`);
 }

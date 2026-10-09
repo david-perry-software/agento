@@ -33,6 +33,12 @@
     "views": {
       "agento": [
         {
+          "id": "agento.windowBanner",
+          "name": "Window",
+          "type": "webview",
+          "initialSize": 1
+        },
+        {
           "id": "agento.deliveries",
           "name": "Deliveries"
         },
@@ -258,6 +264,41 @@
         "id": "agento.health.fail",
         "description": "Agento dashboard icon color for failing checks, errors, and invalid initiatives.",
         "defaults": { "dark": "charts.red", "light": "charts.red", "highContrast": "charts.red", "highContrastLight": "charts.red" }
+      },
+      {
+        "id": "agento.role.primary",
+        "description": "Agento window banner background in the primary checkout.",
+        "defaults": { "dark": "#0063B1", "light": "#0063B1", "highContrast": "#0063B1", "highContrastLight": "#0063B1" }
+      },
+      {
+        "id": "agento.role.plan",
+        "description": "Agento window banner background in plan worktrees.",
+        "defaults": { "dark": "#7B2CBF", "light": "#7B2CBF", "highContrast": "#7B2CBF", "highContrastLight": "#7B2CBF" }
+      },
+      {
+        "id": "agento.role.build",
+        "description": "Agento window banner background in build worktrees.",
+        "defaults": { "dark": "#1E7B34", "light": "#1E7B34", "highContrast": "#1E7B34", "highContrastLight": "#1E7B34" }
+      },
+      {
+        "id": "agento.role.freehand",
+        "description": "Agento window banner background in freehand worktrees.",
+        "defaults": { "dark": "#00796B", "light": "#00796B", "highContrast": "#00796B", "highContrastLight": "#00796B" }
+      },
+      {
+        "id": "agento.role.unmanaged",
+        "description": "Agento window banner background in unmanaged checkouts, where delivery commands are disabled.",
+        "defaults": { "dark": "#C62828", "light": "#C62828", "highContrast": "#C62828", "highContrastLight": "#C62828" }
+      },
+      {
+        "id": "agento.role.unavailable",
+        "description": "Agento window banner background when the session cannot be loaded.",
+        "defaults": { "dark": "#5F6368", "light": "#5F6368", "highContrast": "#5F6368", "highContrastLight": "#5F6368" }
+      },
+      {
+        "id": "agento.role.foreground",
+        "description": "Agento window banner text color.",
+        "defaults": { "dark": "#FFFFFF", "light": "#FFFFFF", "highContrast": "#FFFFFF", "highContrastLight": "#FFFFFF" }
       }
     ]
   },

@@ -26,6 +26,22 @@ const HEALTH_STYLES = {
   fail: { icon: "error", color: "agento.health.fail" },
 } satisfies Record<string, StatusStyle>;
 
+const ROLE_BANNER_COLORS: Record<string, string> = {
+  primary: "agento.role.primary",
+  plan: "agento.role.plan",
+  build: "agento.role.build",
+  freehand: "agento.role.freehand",
+  unmanaged: "agento.role.unmanaged",
+};
+
+const ROLE_UNAVAILABLE_COLOR = "agento.role.unavailable";
+
+export const ROLE_FOREGROUND_COLOR = "agento.role.foreground";
+
+export function roleBannerColor(role: string): string {
+  return Object.hasOwn(ROLE_BANNER_COLORS, role) ? ROLE_BANNER_COLORS[role]! : ROLE_UNAVAILABLE_COLOR;
+}
+
 export function lifecycleStyle(lifecycle: string): StatusStyle {
   return Object.hasOwn(LIFECYCLE_STYLES, lifecycle) ? { ...LIFECYCLE_STYLES[lifecycle]! } : { icon: "folder" };
 }
@@ -41,9 +57,12 @@ export function healthStyle(status: string): StatusStyle {
 }
 
 export const STATUS_COLOR_IDS: readonly string[] = [
-  ...new Set(
-    [...Object.values(LIFECYCLE_STYLES), ...Object.values(INITIATIVE_GROUP_STYLES), ...Object.values(HEALTH_STYLES)]
+  ...new Set([
+    ...[...Object.values(LIFECYCLE_STYLES), ...Object.values(INITIATIVE_GROUP_STYLES), ...Object.values(HEALTH_STYLES)]
       .map((style) => style.color)
       .filter((color): color is string => color !== undefined),
-  ),
+    ...Object.values(ROLE_BANNER_COLORS),
+    ROLE_UNAVAILABLE_COLOR,
+    ROLE_FOREGROUND_COLOR,
+  ]),
 ];
