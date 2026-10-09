@@ -2,7 +2,9 @@
 
 Agento is a VS Code dashboard and command launcher for the Agento delivery workflow.
 The Agento activity-bar container includes Deliveries, Initiatives, and Session &
-Doctor views, plus refresh, command dispatch, and output commands.
+Doctor views, plus refresh, command dispatch, and output commands. A colored
+window banner at the top of the sidebar names the window type (primary, plan, build,
+freehand, or unmanaged); click it to focus Session & Doctor.
 
 For installation and day-to-day use, see the
 [VS Code extension guide](../docs/extension.md). This README focuses on extension
