@@ -40,7 +40,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
-import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict } from "./release-state.mjs";
+import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 
@@ -1367,6 +1367,20 @@ function gitRun(dir, args, timeout = 30000) {
   }
 }
 
+// The same shape for gh: stdin closed, stderr captured, never a prompt.
+function ghRun(cwd, args, timeout = 30000) {
+  try {
+    const stdout = execFileSync("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" } });
+    return { ok: true, stdout: stdout.trim(), stderr: "", timedOut: false, missing: false };
+  } catch (error) {
+    const missing = error?.code === "ENOENT";
+    const timedOut = error?.code === "ETIMEDOUT" || Boolean(error?.signal && !error?.status);
+    const stderr = (error?.stderr ?? "").toString().trim();
+    const message = missing ? "gh CLI not found on PATH" : timedOut ? `gh ${args[0]} timed out after ${timeout / 1000} s` : stderr || error?.message || "unknown error";
+    return { ok: false, stdout: (error?.stdout ?? "").toString().trim(), stderr: message, timedOut, missing };
+  }
+}
+
 function reauthFor(url) {
   if (/^https:\/\/github\.com\//.test(url ?? "")) return "gh auth login";
   return `re-authenticate the credentials for ${url ?? "origin"} (credential helper or SSH key)`;
@@ -2090,7 +2104,7 @@ function releaseContext(workflow, shaArg) {
 }
 
 function releaseSnapshot(ctx) {
-  return releaseVerdict({
+  return deriveReleaseVerdict({
     sha: ctx.sha,
     defaultBranch: config.branches.default,
     mergeDate: ctx.mergeDate,
@@ -2102,6 +2116,34 @@ function releaseSnapshot(ctx) {
     filesTruncated: ctx.filesTruncated,
     descendantOf: ctx.descendantOf,
   });
+}
+
+// The `release` document and its exit code for a merge commit: one snapshot, then
+// bounded polls while `pending` (dispatch-required never loops: only the caller can
+// start that run). Shared by `case "release"` and the ship release phase.
+function releaseVerdict(shaArg, { wait = 0, interval = 10 } = {}) {
+  const workflow = config.checks?.releaseWorkflow ?? null;
+  const base = { status: "ok", verdict: null, sha: shaArg, workflow, run: null, supersededBy: null, reason: null, mergeDate: null, graceSeconds: GRACE_SECONDS, polls: 0, waitedSeconds: 0 };
+  if (!workflow) return { fields: { ...base, verdict: "not-configured", reason: "checks.releaseWorkflow is not set; there is no release to wait for" }, code: 0 };
+  try {
+    if (!ghVersion().ok) throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
+    const ctx = releaseContext(workflow, shaArg);
+    const sleeper = new Int32Array(new SharedArrayBuffer(4));
+    let result = releaseSnapshot(ctx);
+    let polls = 1;
+    let waited = 0;
+    while (result.verdict === "pending" && waited + interval <= wait) {
+      Atomics.wait(sleeper, 0, 0, interval * 1000);
+      waited += interval;
+      result = releaseSnapshot(ctx);
+      polls += 1;
+    }
+    const code = RELEASE_EXIT[result.verdict];
+    return { fields: { ...base, status: RELEASE_STATUS[code], verdict: result.verdict, sha: ctx.sha, run: runSummary(result.run), supersededBy: runSummary(result.supersededBy), reason: result.reason, mergeDate: ctx.mergeDate, polls, waitedSeconds: waited }, code };
+  } catch (error) {
+    if (!(error instanceof GhFailure)) throw error;
+    return { fields: { ...base, status: "error", reason: error.reason, message: error.message }, code: 3 };
+  }
 }
 
 // --- documents -------------------------------------------------------------
@@ -2768,31 +2810,8 @@ switch (command) {
     const [shaArg, ...extra] = rest;
     if (!shaArg || extra.length) usage("release takes exactly one <merge-sha>");
     if (!/^[0-9a-f]{7,40}$/.test(shaArg)) usage(`release: <merge-sha> must be 7-40 lowercase hex characters, got ${JSON.stringify(shaArg)}`);
-    const workflow = config.checks?.releaseWorkflow ?? null;
-    const report = (fields, code) => emit({ status: "ok", verdict: null, sha: shaArg, workflow, run: null, supersededBy: null, reason: null, mergeDate: null, graceSeconds: GRACE_SECONDS, polls: 0, waitedSeconds: 0, ...fields, root, configSource: source }, code);
-    if (!workflow) report({ verdict: "not-configured", reason: "checks.releaseWorkflow is not set; there is no release to wait for" }, 0);
-    try {
-      if (!ghVersion().ok) throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
-      const ctx = releaseContext(workflow, shaArg);
-      const wait = options.wait ?? 0;
-      const interval = options.interval ?? 10;
-      const sleeper = new Int32Array(new SharedArrayBuffer(4));
-      let result = releaseSnapshot(ctx);
-      let polls = 1;
-      let waited = 0;
-      // dispatch-required never loops: only the caller can start that run.
-      while (result.verdict === "pending" && waited + interval <= wait) {
-        Atomics.wait(sleeper, 0, 0, interval * 1000);
-        waited += interval;
-        result = releaseSnapshot(ctx);
-        polls += 1;
-      }
-      const code = RELEASE_EXIT[result.verdict];
-      report({ status: RELEASE_STATUS[code], verdict: result.verdict, sha: ctx.sha, run: runSummary(result.run), supersededBy: runSummary(result.supersededBy), reason: result.reason, mergeDate: ctx.mergeDate, polls, waitedSeconds: waited }, code);
-    } catch (error) {
-      if (!(error instanceof GhFailure)) throw error;
-      report({ status: "error", reason: error.reason, message: error.message }, 3);
-    }
+    const { fields, code } = releaseVerdict(shaArg, { wait: options.wait ?? 0, interval: options.interval ?? 10 });
+    emit({ ...fields, root, configSource: source }, code);
     break;
   }
 
