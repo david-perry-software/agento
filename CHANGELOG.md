@@ -17,7 +17,7 @@
   judged by their refspec destinations: `git push origin HEAD:feature/x` from the
   default branch is now allowed, while `HEAD:refs/heads/main`, `:refs/heads/main`, and
   `--delete refs/heads/main` are now denied and `main-thing` no longer counts as
-  `main`; a bare `git push`, `HEAD`, `--all`, or `--mirror` from the default branch
+  `main`; a bare `git push`, `HEAD`/`@`, `--all`, or `--mirror` from the default branch
   stays denied. The companion-half roadmap nudge is verified against the half's
   `HEAD`.
 

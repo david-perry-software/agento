@@ -100,7 +100,8 @@ export function pushRefspecs(tokens) {
     }
     positional.push(tok);
   }
-  const branchOf = (ref) => ref.replace(/^refs\/heads\//, "");
+  // `@` is git's shorthand for `HEAD`.
+  const branchOf = (ref) => (ref === "@" ? "HEAD" : ref.replace(/^refs\/heads\//, ""));
   for (const spec of positional.slice(1)) {
     const plain = spec.replace(/^\+/, "");
     const colon = plain.indexOf(":");

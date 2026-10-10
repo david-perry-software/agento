@@ -161,6 +161,7 @@ test("pushes are judged by refspec destination, the default branch as a whole to
     "git push -u origin feature/x",
     "git push origin feature/x :feature/y",
     "git push origin HEAD:refs/heads/feature/x",
+    "git push origin @:feature/x",
     "git push -o ci.skip origin feature/x",
     "git push origin --tags",
   ]) assert.equal(on(command), "allow", command);
@@ -169,6 +170,8 @@ test("pushes are judged by refspec destination, the default branch as a whole to
     "git push",
     "git push origin",
     "git push origin HEAD",
+    "git push origin @",
+    "git push -u origin @",
     "git push --all origin",
     "git push --mirror origin",
     "git push origin feature/x main",
