@@ -4428,16 +4428,16 @@ test("ship warns and continues when origin is unreachable, and fails with a re-l
   assert.deepEqual(refState(repo), before);
 });
 
-// An in-repo delivery: `feature/<slug>` published from main with its roadmap (status
+// An in-repo delivery: `<type>/<slug>` published from main with its roadmap (status
 // `in-review` by default) and, with `owner`, a managed worktree on it.
-function inRepoDelivery({ repo, wt }, slug, { status = "in-review", owner = true, write = null } = {}) {
-  const branch = `feature/${slug}`;
+function inRepoDelivery({ repo, wt }, slug, { type = "feature", status = "in-review", owner = true, write = null } = {}) {
+  const branch = `${type}/${slug}`;
   publishBranch(repo, branch, (w) => {
-    roadmapFor("feature", slug, status)(w);
+    roadmapFor(type, slug, status)(w);
     write?.(w);
   }, { keepLocal: owner });
-  if (owner) git(repo, "worktree", "add", "-q", path.join(wt, `feature-${slug}`), branch);
-  return { branch, owner: owner ? path.join(wt, `feature-${slug}`) : null, dir: `features/2026/10/${slug}` };
+  if (owner) git(repo, "worktree", "add", "-q", path.join(wt, `${type}-${slug}`), branch);
+  return { branch, owner: owner ? path.join(wt, `${type}-${slug}`) : null, dir: `${type === "feature" ? "features" : "issues"}/2026/10/${slug}` };
 }
 
 // A companion-mode delivery: code branch in the product, roadmap branch in the companion.
@@ -4558,8 +4558,7 @@ test("ship derives the phase in companion mode: both PRs, merge-companion on a h
   const both = (product, companion) => shipStub({ product: { prs: { [branch]: product } }, companion: { prs: { [branch]: { number: 7, ...companion } } } });
 
   const open = shipRun(repo, both({}, {}).env, "feature", "widget");
-  assert.equal(open.json.status, "ok", JSON.stringify(open.json));
-  assert.equal(open.json.mode, "companion");
+  assert.equal(open.json.mode, "companion", JSON.stringify(open.json));
   assert.equal(open.json.resumedAt, "audit");
   assert.equal(open.json.pr.number, 15);
   assert.equal(open.json.companionPr.number, 7);
@@ -4586,6 +4585,273 @@ test("ship derives the phase in companion mode: both PRs, merge-companion on a h
   assert.equal(teardown.json.audit.owner.path, owner);
   assert.equal(teardown.json.audit.artifactRef, "origin/main");
   assert.equal(teardown.json.audit.roadmapPath, "features/2026/10/widget/roadmap.md");
+});
+
+// Writers for a shippable artifact set: every step ticked, review approved.
+const DONE_STEPS = "- [x] 1.1 done — verify: x\n- [x] 1.2 also done — verify: y\n";
+const shipReady = (type, slug, { steps = DONE_STEPS, verdict = "approve", header = null, plan = "# Plan\n\n## Risks\n\nnone\n" } = {}) => (w) => {
+  const dir = `${type === "feature" ? "features" : "issues"}/2026/10/${slug}`;
+  writeRoadmap(w, dir, header ?? `status: in-review\nbranch: ${type}/${slug}\nlast-updated: 2026-10-01\nnext-step: "review"`, steps);
+  if (verdict) fs.writeFileSync(path.join(w, dir, "review.md"), `# Review\n\nVerdict: ${verdict}\n`);
+  if (plan) fs.writeFileSync(path.join(w, dir, "plan.md"), plan);
+};
+const writeFile = (rel, text) => (w) => {
+  fs.mkdirSync(path.dirname(path.join(w, rel)), { recursive: true });
+  fs.writeFileSync(path.join(w, rel), text);
+};
+const both = (...writers) => (w) => writers.forEach((f) => f?.(w));
+const codes = (gaps) => gaps.map((g) => g.code);
+
+// A delivery whose roadmap is shippable; `extra` adds files to the branch commit.
+function shippable(fixture, slug, { type = "feature", owner = true, extra = null, roadmap = {} } = {}) {
+  const branch = `${type}/${slug}`;
+  publishBranch(fixture.repo, branch, both(shipReady(type, slug, roadmap), extra), { keepLocal: owner });
+  if (owner) git(fixture.repo, "worktree", "add", "-q", path.join(fixture.wt, `${type}-${slug}`), branch);
+  return { branch, owner: owner ? path.join(fixture.wt, `${type}-${slug}`) : null, dir: `${type === "feature" ? "features" : "issues"}/2026/10/${slug}` };
+}
+
+test("ship audit: a clean in-repo feature is awaiting-confirm with a stable token, and the audit call writes nothing", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { body: "Body" } } } });
+  const before = [refState(repo), JSON.stringify(stub.state())];
+
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.phase, "audit");
+  assert.equal(json.outcome, "awaiting-confirm");
+  assert.deepEqual(json.gaps, { hard: [], confirm: [] });
+  assert.match(json.confirmToken, /^[0-9a-f]{12}$/);
+  assert.equal(json.rejectTo, null);
+  assert.deepEqual(json.next, ["/agento ship widget"]);
+  assert.deepEqual(json.actions, []);
+  assert.deepEqual(json.audit.roadmap, { status: "in-review", unticked: [], postShip: [] });
+  assert.equal(json.audit.review.present, true);
+  assert.equal(json.audit.review.verdict, "approve");
+  assert.equal(json.audit.review.stale, false);
+  assert.match(json.audit.review.reviewedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(json.audit.review.lastCodeCommit.sha, /^[0-9a-f]{40}$/);
+  assert.equal(json.audit.issue, null);
+  assert.deepEqual(json.audit.changelog, { versionChanged: false, from: null, to: null, unreleasedHeading: null, needsStamp: false, headingWithoutVersionChange: false });
+  assert.ok(json.audit.diffFiles.includes("src.js"), json.audit.diffFiles.join(","));
+  assert.equal(json.audit.pr.title, branch);
+  assert.equal(json.audit.owner.path, owner);
+  assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before, "the audit call changed refs, worktrees, or PR state");
+
+  // Stable across unrelated commits on main and a re-committed review; changed by a new confirm gap.
+  const token = json.confirmToken;
+  fs.writeFileSync(path.join(repo, "other.txt"), "unrelated\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "unrelated");
+  git(repo, "push", "-q", "origin", "main");
+  assert.equal(shipRun(repo, stub.env, "feature", "widget").json.confirmToken, token);
+  fs.writeFileSync(path.join(owner, "scratch.png"), "bytes");
+  const withByproduct = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.deepEqual(codes(withByproduct.gaps.confirm), ["untracked-byproducts"]);
+  assert.deepEqual(withByproduct.gaps.confirm[0].paths, ["scratch.png"]);
+  assert.notEqual(withByproduct.confirmToken, token);
+  assert.ok(fs.existsSync(path.join(owner, "scratch.png")), "the audit never cleans");
+
+  // A stale token is rejected with both tokens and the current confirm list; nothing is written.
+  const stale = shipRun(repo, stub.env, "feature", "widget", "--confirm", token);
+  assert.equal(stale.code, 3);
+  assert.equal(stale.json.status, "rejected");
+  assert.equal(stale.json.reason, "confirm-stale");
+  assert.equal(stale.json.providedToken, token);
+  assert.equal(stale.json.confirmToken, withByproduct.confirmToken);
+  assert.deepEqual(codes(stale.json.gaps.confirm), ["untracked-byproducts"]);
+  assert.deepEqual(stale.json.actions, []);
+  assert.ok(fs.existsSync(path.join(owner, "scratch.png")));
+});
+
+test("ship audit: every hard gap code in the in-repo layout rejects with the right reject-back command and no writes", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const stubFor = (branch, pr = {}) => shipStub({ product: { prs: { [branch]: pr } } });
+  const expectHard = (slug, expected, { pr = {}, rejectTo } = {}) => {
+    const stub = stubFor(`feature/${slug}`, pr);
+    const before = [refState(repo), JSON.stringify(stub.state())];
+    const { code, json } = shipRun(repo, stub.env, "feature", slug);
+    assert.equal(code, 3, `${slug}: ${JSON.stringify(json)}`);
+    assert.equal(json.status, "rejected", slug);
+    assert.equal(json.reason, "audit-gaps", slug);
+    assert.deepEqual(codes(json.gaps.hard), expected, slug);
+    if (rejectTo) assert.deepEqual(json.rejectTo, rejectTo, slug);
+    assert.deepEqual(json.next, [json.rejectTo.command], slug);
+    assert.deepEqual(json.actions, [], slug);
+    assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before, `${slug}: the rejected audit wrote something`);
+    return json;
+  };
+
+  shippable(fixture, "steps", { roadmap: { steps: "- [x] 1.1 done — verify: x\n- [ ] 1.2 todo — verify: y\n" } });
+  const steps = expectHard("steps", ["unticked-steps"], { rejectTo: { command: "/agento build-feature steps", window: "build" } });
+  assert.deepEqual(steps.audit.roadmap.unticked, ["1.2 todo — verify: y"]);
+
+  shippable(fixture, "noreview", { roadmap: { verdict: null } });
+  expectHard("noreview", ["review-missing"], { rejectTo: { command: "/agento review-feature noreview", window: "build" } });
+  shippable(fixture, "changes", { roadmap: { verdict: "request-changes" } });
+  expectHard("changes", ["review-request-changes"], { rejectTo: { command: "/agento review-feature changes", window: "build" } });
+
+  // A code commit newer than the review makes it stale.
+  const staleDelivery = shippable(fixture, "stale");
+  fs.writeFileSync(path.join(staleDelivery.owner, "late.js"), "late\n");
+  git(staleDelivery.owner, "add", "-A");
+  const future = new Date(Date.now() + 120_000).toISOString();
+  execFileSync("git", ["-C", staleDelivery.owner, "commit", "-q", "-m", "late code"], { env: { ...process.env, GIT_COMMITTER_DATE: future, GIT_AUTHOR_DATE: future } });
+  git(staleDelivery.owner, "push", "-q");
+  const stale = expectHard("stale", ["review-stale"], { rejectTo: { command: "/agento review-feature stale", window: "build" } });
+  assert.equal(stale.audit.review.stale, true);
+  assert.equal(stale.audit.review.lastCodeCommit.sha, git(staleDelivery.owner, "rev-parse", "HEAD"));
+
+  // Owner tree: tracked changes, unpushed commits, both; unreadable when the directory is gone.
+  const dirty = shippable(fixture, "dirty");
+  fs.appendFileSync(path.join(dirty.owner, `${dirty.dir}/plan.md`), "edit\n");
+  const dirtyJson = expectHard("dirty", ["owner-tree-dirty"], { rejectTo: { command: "/agento build-feature dirty", window: "build" } });
+  assert.deepEqual(dirtyJson.gaps.hard[0].paths, [`${dirty.dir}/plan.md`]);
+  git(dirty.owner, "commit", "-qam", "unpushed");
+  expectHard("dirty", ["owner-ahead"]);
+  fs.writeFileSync(path.join(dirty.owner, "x.txt"), "x");
+  git(dirty.owner, "add", "x.txt");
+  expectHard("dirty", ["owner-tree-dirty", "owner-ahead"]);
+  const gone = shippable(fixture, "gone");
+  fs.rmSync(gone.owner, { recursive: true, force: true });
+  expectHard("gone", ["owner-tree-unreadable"]);
+
+  shippable(fixture, "conflict");
+  const conflict = expectHard("conflict", ["pr-conflicting"], { pr: { mergeStateStatus: "CONFLICTING" } });
+  assert.match(conflict.gaps.hard[0].detail, /conflicts with main/);
+
+  shippable(fixture, "heading", { extra: writeFile("CHANGELOG.md", "# Changelog\n\n## 1.2.0 (unreleased)\n\n- thing\n") });
+  const heading = expectHard("heading", ["changelog-heading-without-version"]);
+  assert.equal(heading.audit.changelog.unreleasedHeading, "1.2.0");
+  assert.equal(heading.audit.changelog.headingWithoutVersionChange, true);
+
+  shippable(fixture, "postship", { roadmap: { steps: `${DONE_STEPS}- [ ] 2.1 (manual, post-ship) check production — verify: dashboard\n` } });
+  const unjustified = expectHard("postship", ["post-ship-unjustified"]);
+  assert.deepEqual(unjustified.audit.roadmap.postShip, [{ id: "2.1", text: "(manual, post-ship) check production — verify: dashboard", ticked: false }]);
+  assert.deepEqual(unjustified.audit.roadmap.unticked, [], "post-ship steps are not unticked-steps gaps");
+
+  // Several gaps at once reject back to the build window; with no owner, to a resumed session.
+  shippable(fixture, "many", { owner: false, roadmap: { verdict: null, steps: "- [ ] 1.1 todo — verify: x\n" } });
+  expectHard("many", ["unticked-steps", "review-missing"], { rejectTo: { command: "/agento start-session feature/many --resume", window: "primary" } });
+});
+
+test("ship audit: post-ship steps justified under ## Risks, a version bump with and without the (unreleased) heading, and a behind PR are confirm-path or clean", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name: "p", version: "1.0.0" }));
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "package");
+  git(repo, "push", "-q", "origin", "main");
+  const stubFor = (branch, pr = {}) => shipStub({ product: { prs: { [branch]: pr } } });
+
+  const justified = shippable(fixture, "justified", { roadmap: { steps: `${DONE_STEPS}- [ ] 2.1 (manual, post-ship) check production — verify: dashboard\n`, plan: "# Plan\n\n## Risks\n\nThe production check is a post-ship exception accepted by the user.\n\n## Out of scope\n\nnone\n" } });
+  const ok = shipRun(repo, stubFor(justified.branch).env, "feature", "justified").json;
+  assert.equal(ok.outcome, "awaiting-confirm", JSON.stringify(ok));
+  assert.deepEqual(ok.gaps.hard, []);
+  assert.equal(ok.audit.roadmap.postShip.length, 1);
+
+  const bump = shippable(fixture, "bump", { extra: both(writeFile("package.json", JSON.stringify({ name: "p", version: "1.1.0" })), writeFile("CHANGELOG.md", "# Changelog\n\n## 1.1.0 (unreleased)\n\n- feature\n\n## 1.0.0 (2026-01-01)\n")) });
+  const stamp = shipRun(repo, stubFor(bump.branch, { mergeStateStatus: "BEHIND" }).env, "feature", "bump").json;
+  assert.equal(stamp.outcome, "awaiting-confirm", JSON.stringify(stamp));
+  assert.deepEqual(stamp.audit.changelog, { versionChanged: true, from: "1.0.0", to: "1.1.0", unreleasedHeading: "1.1.0", needsStamp: true, headingWithoutVersionChange: false });
+  assert.deepEqual(codes(stamp.gaps.confirm), ["changelog-unstamped", "pr-behind"]);
+  assert.match(stamp.gaps.confirm[1].detail, /origin\/main will be merged into feature\/bump \(never rebased\)/);
+
+  const noHeading = shippable(fixture, "noheading", { extra: writeFile("package.json", JSON.stringify({ name: "p", version: "1.2.0" })) });
+  const plain = shipRun(repo, stubFor(noHeading.branch).env, "feature", "noheading").json;
+  assert.equal(plain.outcome, "awaiting-confirm", JSON.stringify(plain));
+  assert.deepEqual(plain.audit.changelog, { versionChanged: true, from: "1.0.0", to: "1.2.0", unreleasedHeading: null, needsStamp: false, headingWithoutVersionChange: false });
+  assert.deepEqual(plain.gaps.confirm, []);
+});
+
+test("ship audit on an issue: Fixes #<n> is appended through the REST PATCH with a real blank line, only when absent", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch } = shippable(fixture, "bug", { type: "issue", roadmap: { header: 'status: in-review\nbranch: issue/bug\ngithub-issue: "#12"\nnext-step: "review"', plan: "# Plan\n\n## Resolution\n\nfixed\n" } });
+  const stub = shipStub({ product: { prs: { [branch]: { body: "Reproduces the bug.  \n" } } } });
+  const { code, json } = shipRun(repo, stub.env, "issue", "bug");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "awaiting-confirm");
+  assert.deepEqual(json.audit.issue, { githubIssue: "12", fixesLine: true, resolutionWritten: true });
+  assert.deepEqual(json.actions, [{ step: "fixes-line-added", detail: "Fixes #12 appended to the body of PR #15" }]);
+  assert.equal(stub.state().product.prs[branch].body, "Reproduces the bug.\n\nFixes #12");
+  const patches = stub.calls().filter((c) => / api repos\/acme\/project\/pulls\/15 -X PATCH -f body=/.test(c));
+  assert.equal(patches.length, 1, stub.calls().join("\n"));
+  assert.ok(stub.calls().some((c) => / repo view --json nameWithOwner -q \.nameWithOwner$/.test(c)));
+
+  stub.reset();
+  const again = shipRun(repo, stub.env, "issue", "bug").json;
+  assert.deepEqual(again.actions, []);
+  assert.equal(again.audit.issue.fixesLine, true);
+  assert.ok(stub.calls().every((c) => !/ -X PATCH /.test(c)), "a present Fixes line is never patched again");
+
+  // No github-issue header: nothing to patch, reported as null.
+  const { branch: plainBranch } = shippable(fixture, "plain", { type: "issue", roadmap: { plan: "# Plan\n" } });
+  const plain = shipRun(repo, shipStub({ product: { prs: { [plainBranch]: {} } } }).env, "issue", "plain").json;
+  assert.deepEqual(plain.audit.issue, { githubIssue: null, fixesLine: false, resolutionWritten: false });
+  assert.deepEqual(plain.actions, []);
+});
+
+test("ship audit in companion mode: companion half and companion PR gaps are hard, a behind companion PR is confirm-path", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt, docsWt } = pair;
+  const open = (slug, { owner = true } = {}) => {
+    const branch = `feature/${slug}`;
+    publishBranch(repo, branch, writeFile("src.js", "code\n"), { keepLocal: owner });
+    publishBranch(docs, branch, shipReady("feature", slug), { keepLocal: owner });
+    if (owner) {
+      git(repo, "worktree", "add", "-q", path.join(wt, `feature-${slug}`), branch);
+      git(docs, "worktree", "add", "-q", path.join(docsWt, `feature-${slug}`), branch);
+      fs.writeFileSync(path.join(wt, `feature-${slug}.code-workspace`), "{}\n");
+    }
+    return { branch, owner: path.join(wt, `feature-${slug}`), half: path.join(docsWt, `feature-${slug}`) };
+  };
+  const stubFor = (branch, companion = {}) => shipStub({ product: { prs: { [branch]: {} } }, companion: { prs: companion === null ? {} : { [branch]: { number: 7, ...companion } } } });
+  const audit = (slug, companion) => {
+    const stub = stubFor(`feature/${slug}`, companion);
+    const before = [refState(repo, docs), JSON.stringify(stub.state())];
+    const json = shipRun(repo, stub.env, "feature", slug).json;
+    assert.deepEqual([refState(repo, docs), JSON.stringify(stub.state())], before, `${slug}: the audit wrote something`);
+    return json;
+  };
+
+  const clean = open("clean");
+  const ok = audit("clean");
+  assert.equal(ok.outcome, "awaiting-confirm", JSON.stringify(ok));
+  assert.equal(ok.mode, "companion");
+  assert.deepEqual(ok.gaps, { hard: [], confirm: [] });
+  assert.equal(ok.audit.companion.path, clean.half);
+  assert.equal(ok.audit.companionPr.number, 7);
+  assert.ok(ok.audit.diffFiles.includes("src.js"));
+  assert.equal(ok.audit.review.present, true, "the review is read from the companion branch");
+  assert.equal(git(docs, "branch", "--show-current"), "main");
+
+  const behind = audit("clean", { mergeStateStatus: "BEHIND" });
+  assert.deepEqual(codes(behind.gaps.confirm), ["companion-pr-behind"]);
+  assert.notEqual(behind.confirmToken, ok.confirmToken);
+  assert.deepEqual(codes(audit("clean", { mergeStateStatus: "CONFLICTING" }).gaps.hard), ["companion-pr-conflicting"]);
+  assert.deepEqual(codes(audit("clean", { state: "CLOSED" }).gaps.hard), ["companion-pr-not-open"]);
+  const missing = audit("clean", null);
+  assert.deepEqual(codes(missing.gaps.hard), ["companion-missing-pr"]);
+  assert.deepEqual(missing.rejectTo, { command: "/agento build-feature clean", window: "build" });
+
+  // Half gaps: dirty (with the paths), unpushed, behind — each with its fix text.
+  fs.writeFileSync(path.join(clean.half, "notes.md"), "draft\n");
+  const dirty = audit("clean");
+  assert.deepEqual(codes(dirty.gaps.hard), ["companion-dirty"]);
+  assert.deepEqual(dirty.gaps.hard[0].paths, ["notes.md"]);
+  assert.match(dirty.gaps.hard[0].detail, /commit and push it \(or discard the changes\)/);
+  git(clean.half, "add", "-A");
+  git(clean.half, "commit", "-q", "-m", "notes");
+  assert.deepEqual(codes(audit("clean").gaps.hard), ["companion-unpushed"]);
+  git(clean.half, "push", "-q");
+  git(clean.half, "reset", "-q", "--hard", "HEAD~1");
+  const lagging = audit("clean");
+  assert.deepEqual(codes(lagging.gaps.hard), ["companion-behind"]);
+  assert.match(lagging.gaps.hard[0].detail, /merge origin\/feature\/clean \(a fast-forward\)/);
 });
 
 // --- dashboard: one process per refresh ---------------------------------------

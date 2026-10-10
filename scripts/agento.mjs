@@ -29,6 +29,7 @@
 // companion half re-anchors on its product checkout).
 
 import { execFile, execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -2063,7 +2064,118 @@ function ship() {
   out.phase = phase;
   out.audit = { owner, ownerTree, companion, companionGaps: companionGaps(companion), companionTree, layout: layout.layout, artifactsRoot: artifactsClone, artifactRef, roadmapPath: roadmapRel };
 
+  // Code-side facts shared by the audit and the write phase.
+  const pgit = (...args) => git(root, ...args);
+  const codeRef = pr.state === "MERGED" ? `origin/${defaultBranch}` : refFor(branch, pgit).ref;
+  const versionOf = (ref, file) => pgit("show", `${ref}:${file}`).match(/"version"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+  const changelogFacts = () => {
+    let from = null;
+    let to = null;
+    for (const file of [".claude-plugin/plugin.json", "package.json"]) {
+      const before = versionOf(`origin/${defaultBranch}`, file);
+      const after = versionOf(codeRef, file);
+      if (after && after !== before) {
+        from = before;
+        to = after;
+        break;
+      }
+    }
+    const versionChanged = to !== null;
+    const heading = pgit("show", `${codeRef}:CHANGELOG.md`).match(/^## (\S+) \(unreleased\)/m)?.[1] ?? null;
+    return { versionChanged, from, to, unreleasedHeading: heading, needsStamp: versionChanged && heading !== null, headingWithoutVersionChange: heading !== null && !versionChanged };
+  };
+
+  // ---- audit (the PR is open and the confirm writes have not landed) ----
+  if (phase === "audit") {
+    const reviewContent = readArtifact("review.md");
+    const planContent = readArtifact("plan.md") ?? "";
+    const reviewTs = reviewContent === null ? null : Number(layout.agit("log", "-1", "--format=%ct", artifactRef, "--", `${artifactDir}/review.md`)) || null;
+    const codeLine = pgit("log", "-1", "--format=%H %ct", codeRef, "--", ".", `:(exclude)${artifactDir}`) || pgit("log", "-1", "--format=%H %ct", codeRef);
+    const [codeSha, codeTs] = codeLine ? codeLine.split(" ") : [null, null];
+    const iso = (ts) => (ts ? new Date(Number(ts) * 1000).toISOString() : null);
+    const review = {
+      present: reviewContent !== null,
+      verdict: reviewContent?.match(/^Verdict:\s*(approve|request-changes)/m)?.[1] ?? null,
+      stale: reviewTs !== null && codeTs !== null && reviewTs < Number(codeTs),
+      reviewedAt: iso(reviewTs),
+      lastCodeCommit: codeSha ? { sha: codeSha, at: iso(codeTs) } : null,
+    };
+    const issueNumber = type === "issue" ? header(roadmapContent, "github-issue").match(/\d+/)?.[0] ?? null : null;
+    const issue = type === "issue" ? { githubIssue: issueNumber, fixesLine: issueNumber !== null && (pr.body ?? "").includes(`Fixes #${issueNumber}`), resolutionWritten: /^## Resolution\b/m.test(planContent) } : null;
+    const changelog = changelogFacts();
+    const diffFiles = pgit("diff", "--name-only", `origin/${defaultBranch}...${codeRef}`).split("\n").filter(Boolean);
+    const postShipSteps = steps.filter((s) => s.postShip);
+    const risks = planContent.match(/^## Risks\b[\s\S]*?(?=^## |(?![\s\S]))/m)?.[0] ?? "";
+    Object.assign(out.audit, {
+      roadmap: { status: header(roadmapContent, "status"), unticked: steps.filter((s) => !s.ticked && !s.postShip).map((s) => `${s.id} ${s.text}`), postShip: postShipSteps.map((s) => ({ id: s.id, text: s.text, ticked: s.ticked })) },
+      review,
+      issue,
+      changelog,
+      pr: { ...out.pr, title: pr.title ?? null, mergeable: pr.mergeable ?? null },
+      companionPr: companionPr ? { ...out.companionPr, title: companionPr.title ?? null, mergeable: companionPr.mergeable ?? null } : null,
+      diffFiles,
+    });
+
+    // Gap sorting: the two pinned lists; nothing else counts as a gap.
+    const hard = [];
+    const confirmGaps = [];
+    const unticked = out.audit.roadmap.unticked;
+    if (unticked.length) hard.push({ code: "unticked-steps", detail: `${unticked.length} unticked step(s) that are not (manual, post-ship): ${steps.filter((s) => !s.ticked && !s.postShip).map((s) => s.id).join(", ")}` });
+    if (!review.present) hard.push({ code: "review-missing", detail: `${artifactDir}/review.md is absent on ${artifactRef}` });
+    else if (review.verdict === "request-changes") hard.push({ code: "review-request-changes", detail: `${artifactDir}/review.md ends with Verdict: request-changes` });
+    else if (review.verdict !== "approve") hard.push({ code: "review-missing", detail: `${artifactDir}/review.md carries no Verdict: approve line` });
+    if (review.present && review.stale) hard.push({ code: "review-stale", detail: `review.md (${review.reviewedAt}) is older than the last code commit ${codeSha.slice(0, 7)} (${review.lastCodeCommit.at}) on ${codeRef}` });
+    if (owner && ownerTree === null) hard.push({ code: "owner-tree-unreadable", detail: `the owner worktree ${owner.path} could not be read, so it cannot be shown clean` });
+    if (ownerTree?.tracked.length) hard.push({ code: "owner-tree-dirty", detail: `uncommitted tracked changes in ${owner.path}: ${ownerTree.tracked.join(", ")}`, paths: ownerTree.tracked });
+    if (ownerTree?.ahead > 0) hard.push({ code: "owner-ahead", detail: `${ownerTree.ahead} commit(s) in ${owner.path} are not pushed to origin/${branch}` });
+    for (const gap of out.audit.companionGaps) {
+      const entry = { code: `companion-${gap}`, detail: companionGapMessage(companion, [gap], type, slug) };
+      if (gap === "dirty" && companionTree) entry.paths = [...companionTree.tracked, ...companionTree.untracked];
+      hard.push(entry);
+    }
+    if (external) {
+      if (!companionPr) hard.push({ code: "companion-missing-pr", detail: `no pull request for ${branch} in the companion repository at ${artifactsClone}; open it from the companion half` });
+      else if (companionPr.state !== "OPEN") hard.push({ code: "companion-pr-not-open", detail: `companion PR #${companionPr.number} is ${companionPr.state.toLowerCase()} (${companionPr.url}); the code PR is still open` });
+      else if (companionPr.mergeStateStatus === "CONFLICTING") hard.push({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
+    }
+    if (pr.mergeStateStatus === "CONFLICTING") hard.push({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
+    if (changelog.headingWithoutVersionChange) hard.push({ code: "changelog-heading-without-version", detail: `CHANGELOG.md carries "## ${changelog.unreleasedHeading} (unreleased)" but the branch does not change "version" in .claude-plugin/plugin.json or package.json` });
+    if (postShipSteps.length && !/post-ship/i.test(risks)) hard.push({ code: "post-ship-unjustified", detail: `${postShipSteps.length} (manual, post-ship) step(s) without a post-ship justification under plan.md ## Risks: ${postShipSteps.map((s) => s.id).join(", ")}` });
+    if (ownerTree && !ownerTree.tracked.length && ownerTree.ahead === 0 && ownerTree.untracked.length) {
+      confirmGaps.push({ code: "untracked-byproducts", detail: `${ownerTree.untracked.length} untracked file(s) in ${owner.path} will be deleted`, paths: ownerTree.untracked });
+    }
+    if (changelog.needsStamp) confirmGaps.push({ code: "changelog-unstamped", detail: `CHANGELOG.md "## ${changelog.unreleasedHeading} (unreleased)" will be stamped with today's UTC date in the product` });
+    if (pr.mergeStateStatus === "BEHIND") confirmGaps.push({ code: "pr-behind", detail: `PR #${pr.number} is behind ${defaultBranch}; origin/${defaultBranch} will be merged into ${branch} (never rebased)` });
+    if (external && companionPr?.mergeStateStatus === "BEHIND") confirmGaps.push({ code: "companion-pr-behind", detail: `companion PR #${companionPr.number} is behind ${artifactDefault}; origin/${artifactDefault} will be merged into the companion half` });
+
+    out.gaps = { hard, confirm: confirmGaps };
+    out.confirmToken = confirmTokenFor({ slug, pr: pr.number, companionPr: companionPr?.number ?? null, confirm: confirmGaps });
+    const reviewOnly = hard.length > 0 && hard.every((g) => g.code.startsWith("review-"));
+    out.rejectTo = !hard.length ? null : reviewOnly ? { command: `/agento review-${type} ${slug}`, window: "build" } : owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+    if (hard.length) reject("audit-gaps", { message: `${hard.length} hard gap(s): ${hard.map((g) => g.code).join(", ")}`, next: [out.rejectTo.command] });
+
+    // Not a gap: an issue PR without its closing keyword gets it, idempotently.
+    if (issue && issue.githubIssue && !issue.fixesLine) {
+      const nwo = ghRun(root, ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], 15000);
+      if (!nwo.ok) fail("gh-error", `gh repo view --json nameWithOwner: ${nwo.stderr}`);
+      const body = `${(pr.body ?? "").replace(/\s+$/, "")}\n\nFixes #${issue.githubIssue}`.replace(/^\n+/, "");
+      const patch = ghRun(root, ["api", `repos/${nwo.stdout}/pulls/${pr.number}`, "-X", "PATCH", "-f", `body=${body}`], 20000);
+      if (!patch.ok) fail("gh-error", `gh api repos/${nwo.stdout}/pulls/${pr.number} -X PATCH: ${patch.stderr}`);
+      issue.fixesLine = true;
+      act("fixes-line-added", `Fixes #${issue.githubIssue} appended to the body of PR #${pr.number}`);
+    }
+
+    if (!confirm) finish({ outcome: "awaiting-confirm", next: [shipCommand()] });
+    if (confirm !== out.confirmToken) reject("confirm-stale", { message: `--confirm ${confirm} does not match the recomputed token ${out.confirmToken}; the confirmation gaps changed — present them again`, providedToken: confirm, next: [shipCommand()] });
+  }
+
   finish();
+}
+
+// First 12 hex characters of SHA-256 over the canonical JSON of the accepted gap set,
+// so the token survives the CLI's own later commits and dies with any change to the gaps.
+function confirmTokenFor(payload) {
+  return crypto.createHash("sha256").update(JSON.stringify(canonicalizeJson(payload))).digest("hex").slice(0, 12);
 }
 
 function roadmapPathOnRef(layout, ref, type, slug) {
