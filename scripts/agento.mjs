@@ -1931,6 +1931,7 @@ function ship() {
     branch: deliveryBranch(type, slug),
     mode: "in-repo",
     phase: null,
+    resumedAt: null,
     outcome: null,
     audit: null,
     gaps: { hard: [], confirm: [] },
@@ -1990,7 +1991,95 @@ function ship() {
   fetch(primary, "product");
   if (artifacts.external) fetch(artifactsRoot, "companion");
 
+  // Preflight: the ship-preflight computation in process. After the merge the remote
+  // branch is gone and the roadmap lives on the artifact default; resume from there.
+  const worktreeList = productWorktreeText({ fresh: true });
+  const decided = decideWithLayout(type, slug, (l) =>
+    evaluateShipPreflight({ type, slug, rootDir: root, artifactsRoot: l.artifactsRoot, currentBranch, git: l.artifactsGit, config: l.config, worktreeList }),
+  );
+  let preflight = decided.decision;
+  const { layout } = decided;
+  const external = layout.artifacts.external;
+  const artifactsClone = layout.artifactsRoot;
+  const artifactDefault = layout.config.branches.default;
+  const branch = out.branch;
+  let roadmapRel = null;
+  if (preflight.status === "ok") {
+    const { result } = resolveWithLayout(type, slug);
+    roadmapRel = result.source === "local" ? path.relative(layout.artifactsRoot, result.path).split(path.sep).join("/") : result.path;
+  } else if (preflight.reason === "no-resolvable-roadmap") {
+    roadmapRel = roadmapPathOnRef(layout, `origin/${artifactDefault}`, type, slug);
+    if (roadmapRel) {
+      const owner = findOwner({ worktrees: parseWorktreeList(worktreeList), worktreesDir: primaryWorktreesDir(), branch, config });
+      preflight = { status: "ok", resolutionSource: "default", branch, owner, message: `Roadmap for ${type}/${slug} resolved from origin/${artifactDefault}; the delivery branch is already merged.` };
+    }
+  }
+  if (preflight.status !== "ok") reject(preflight.reason, { message: preflight.message });
+  if (external) fetch(artifactsClone, "companion");
+  out.mode = external ? "companion" : "in-repo";
+  const { owner } = preflight;
+  if (owner?.role === "primary") {
+    reject("primary-owns-branch", { message: `The primary worktree at ${owner.path} is on ${branch}; return it to ${defaultBranch} first.`, fix: `git switch ${defaultBranch}` });
+  }
+  const companion = companionOfOwner(owner, layout);
+  const ownerTree = ownerTreeOf(owner);
+  const companionTree = companionTreeOf(companion);
+
+  // Pull requests: the code PR in the product, the artifact PR inside the companion clone.
+  const codeLookup = shipPrLookup(branch, root, "pr");
+  if (codeLookup.warning) out.warnings.push(codeLookup.warning);
+  const pr = codeLookup.pr;
+  let companionPr = null;
+  if (external) {
+    const lookup = shipPrLookup(branch, artifactsClone, "companionPr");
+    if (lookup.warning) out.warnings.push(lookup.warning);
+    companionPr = lookup.pr;
+  }
+  out.pr = prSummary(pr);
+  out.companionPr = prSummary(companionPr);
+  if (!pr) reject("pr-missing", { message: `no pull request found for ${branch} in the product repository; the Builder opens the draft PR on its first push` });
+  if (pr.state === "CLOSED") reject("pr-closed", { message: `pull request #${pr.number} for ${branch} is closed without a merge; reopen it or start the delivery over` });
+  out.mergeSha = pr.mergeCommit?.oid ?? null;
+
+  // Artifact reads: the branch while the PR is open, the artifact default once merged.
+  const artifactRef = pr.state === "MERGED" ? `origin/${artifactDefault}` : refFor(branch, layout.agit).ref;
+  const artifactDir = path.posix.dirname(roadmapRel);
+  const readArtifact = (name) => layout.agit("show", `${artifactRef}:${artifactDir}/${name}`) || null;
+  const roadmapContent = readArtifact("roadmap.md") ?? "";
+  const steps = parseRoadmapSteps(roadmapContent);
+  const postShipPending = steps.filter((s) => s.postShip && !s.ticked);
+  const behindDefault = (clone, name) => (git(clone, "rev-parse", "--verify", "--quiet", `refs/heads/${name}`) ? Number.parseInt(git(clone, "rev-list", "--count", `${name}..origin/${name}`), 10) || 0 : 0);
+
+  // Phase derivation from git + GitHub state, never from a journal.
+  let phase;
+  if (pr.state === "OPEN") phase = header(roadmapContent, "status") === "complete" ? "checks" : "audit";
+  else if (external && companionPr?.state === "OPEN") phase = "merge-companion";
+  else if (behindDefault(primary, defaultBranch) > 0 || (external && behindDefault(artifactsClone, artifactDefault) > 0)) phase = "sync";
+  else if (config.checks?.releaseWorkflow) phase = "release";
+  else if (owner) phase = "teardown";
+  else if (postShipPending.length) phase = "epilogue";
+  else phase = "done";
+  out.resumedAt = phase;
+  out.phase = phase;
+  out.audit = { owner, ownerTree, companion, companionGaps: companionGaps(companion), companionTree, layout: layout.layout, artifactsRoot: artifactsClone, artifactRef, roadmapPath: roadmapRel };
+
   finish();
+}
+
+function roadmapPathOnRef(layout, ref, type, slug) {
+  const top = type === "feature" ? layout.config.artifacts.features : layout.config.artifacts.issues;
+  return layout.agit("ls-tree", "-r", "--name-only", ref, `${top}/`).split("\n").find((p) => p.endsWith(`/${slug}/roadmap.md`)) ?? null;
+}
+
+// `- [ ] N.M (manual, post-ship) text — verify: …` lines of a roadmap.
+function parseRoadmapSteps(content) {
+  return [...content.matchAll(/^- \[( |x)\] (\d+\.\d+) (.*)$/gm)].map(([, mark, id, text]) => ({
+    id,
+    text,
+    ticked: mark === "x",
+    manual: /^\(manual/.test(text),
+    postShip: text.startsWith("(manual, post-ship)"),
+  }));
 }
 
 // --- model profiles --------------------------------------------------------
