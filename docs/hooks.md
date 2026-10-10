@@ -60,9 +60,9 @@ prompts you normally see once the session `.code-workspace` settings are current
 
 | Rule | Decision |
 |---|---|
-| Commit, push, or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain — or a push whose refspec targets it | deny |
+| Commit or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain. A push is judged by its refspec destinations (`refs/heads/` stripped, the default branch matched as a whole name, so `main-thing` is not `main`): denied from any branch when a destination is the default branch; from the default branch also when it names no refspec (and no `--tags`), pushes `HEAD`, or uses `--all`/`--mirror` — `git push origin HEAD:feature/x` from the default branch is allowed | deny |
 | `git push --force` / `--force-with-lease` / `--force-if-includes` / `-f` / `+refspec` | deny |
-| `git push --delete <default>` / `:<default>` — deleting any **non-default** remote branch (`--delete <ref>` / `:<ref>`) is allowed even while the checkout is on the default branch (#47) | deny |
+| `git push --delete <default>` / `:<default>` (also spelled `refs/heads/<default>`) — deleting any **non-default** remote branch (`--delete <ref>` / `:<ref>`) is allowed even while the checkout is on the default branch (#47) | deny |
 | `git commit --no-verify` / `-n`, `git push --no-verify` | deny |
 | `gh pr merge --admin` | deny |
 | `gh pr merge --squash` / `--rebase` | ask |

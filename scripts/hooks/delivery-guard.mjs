@@ -59,8 +59,58 @@ const COMMIT_VALUE_OPTIONS = new Set([
   "--reuse-message", "--reedit-message", "--trailer", "--template",
 ]);
 const MANAGED_HALF = /^(plan|feature|issue|freehand)-/;
+// `git push` options whose value is the next token.
+const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"]);
 
-const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// What a `git push` segment sends: `{ all, tags, refspecs: [{ src, dst }] }`. `src` is
+// "" for a deletion, a bare ref is its own destination, and `refs/heads/` is stripped.
+export function pushRefspecs(tokens) {
+  let at = tokens.indexOf("push");
+  if (at < 0) {
+    tokens = tokens.flatMap((t) => (/\s/.test(t) ? shellSplit(t) : [t])); // `bash -c 'git push …'`
+    at = tokens.indexOf("push");
+  }
+  const result = { all: false, tags: false, refspecs: [] };
+  if (at < 0) return result;
+  const positional = [];
+  let del = false;
+  let skip = false;
+  for (const tok of tokens.slice(at + 1)) {
+    if (skip) {
+      skip = false;
+      continue;
+    }
+    const redirect = tok.match(REDIRECT);
+    if (redirect) {
+      skip = redirect[1] === "";
+      continue;
+    }
+    if (tok.startsWith("--") && tok.length > 2) {
+      const name = tok.split("=")[0];
+      skip = PUSH_VALUE_OPTIONS.has(name) && !tok.includes("=");
+      result.all ||= name === "--all" || name === "--branches" || name === "--mirror";
+      result.tags ||= name === "--tags";
+      del ||= name === "--delete";
+      continue;
+    }
+    if (tok.startsWith("-") && tok.length > 1) {
+      del ||= tok.includes("d");
+      skip = tok.endsWith("o");
+      continue;
+    }
+    positional.push(tok);
+  }
+  const branchOf = (ref) => ref.replace(/^refs\/heads\//, "");
+  for (const spec of positional.slice(1)) {
+    const plain = spec.replace(/^\+/, "");
+    const colon = plain.indexOf(":");
+    const src = del ? "" : colon < 0 ? plain : plain.slice(0, colon);
+    const dst = colon < 0 ? plain : plain.slice(colon + 1);
+    result.refspecs.push({ src: branchOf(src), dst: branchOf(dst) });
+  }
+  return result;
+}
+
 const stripQuotes = (s) => s.replace(/^['"]+|['"]+$/g, "");
 // os.path.basename: everything after the last slash ("" for a trailing slash).
 const baseName = (s) => s.slice(s.lastIndexOf("/") + 1);
@@ -236,7 +286,6 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
   const defaultBranch = config.branches.default || "main";
   const featurePrefix = config.branches.feature || "feature/";
   const issuePrefix = config.branches.issue || "issue/";
-  const DEFAULT = escapeRegExp(defaultBranch);
   const re = (source) => new RegExp(source);
 
   const commitFiles = (segment) => {
@@ -282,6 +331,7 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
     if (!/\bgit\b/.test(segment)) continue;
     const isPush = re(GIT + String.raw`\s+push\b`).test(segment);
     const isCommit = re(GIT + String.raw`\s+commit\b`).test(segment);
+    const push = isPush ? pushRefspecs(shellSplit(segment)) : null;
 
     if (isPush) {
       if (/\s(--force(?:-with-lease|-if-includes)?(?:=\S*)?|-f)\b/.test(segment) || /\spush\b.*\s\+\S/.test(segment)) {
@@ -290,7 +340,7 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
       if (/\s--no-verify\b/.test(segment)) {
         return verdict("deny", "Bypassing pre-push hooks is forbidden by repository policy.");
       }
-      if (re(String.raw`\s(?:--delete\s+` + DEFAULT + String.raw`|:` + DEFAULT + String.raw`)\b`).test(segment)) {
+      if (push.refspecs.some((r) => r.src === "" && r.dst === defaultBranch)) {
         return verdict("deny", `Deleting ${defaultBranch} on the remote is forbidden.`);
       }
     }
@@ -324,10 +374,12 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
 
     const isMerge = re(GIT + String.raw`\s+(merge|cherry-pick|revert)\b`).test(segment)
       && !segment.includes("--ff-only") && !segment.includes("--abort");
-    const pushToDefault = re(String.raw`\spush\b.*(?:\s|:)` + DEFAULT + String.raw`\b`).test(segment);
-    // A delete-only push of another ref (--delete/-d <ref> or a bare :<ref>) is exempt from the on-default rule (#47).
-    const isDeletePush = /\spush\b.*\s(?:--delete\s+\S+|-d\s+\S+|:[\w./-]+)/.test(segment);
-    if ((branch === defaultBranch && (isCommit || (isPush && !isDeletePush) || isMerge)) || (isPush && pushToDefault)) {
+    // A push is judged by its destinations: any of them the default branch, or — from the
+    // default branch — an implicit (no refspec), HEAD, or all-branches push.
+    const pushToDefault = isPush && push.refspecs.some((r) => r.src !== "" && r.dst === defaultBranch);
+    const pushFromDefault = isPush && branch === defaultBranch
+      && (push.all || (!push.refspecs.length && !push.tags) || push.refspecs.some((r) => r.dst === "HEAD"));
+    if ((branch === defaultBranch && (isCommit || isMerge)) || pushToDefault || pushFromDefault) {
       return verdict("deny", `Direct commits/pushes to ${defaultBranch} are forbidden; use a work branch and a pull request.`);
     }
 

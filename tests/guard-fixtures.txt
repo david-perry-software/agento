@@ -123,4 +123,22 @@ allow git switch main && git push origin :feature/x
 allow git switch main && git push origin -d feature/x
 deny  git switch main && git push origin --delete main
 deny  git switch main && git push origin :main
-deny  git switch main && git push origin HEAD:feature/x
+allow git switch main && git push origin HEAD:feature/x
+
+# Pushes are judged by refspec destination; the default branch matches as a whole token (hooks-node-port)
+allow git switch main && git push origin feature/x
+allow git switch main && git push -u origin feature/x
+allow git switch main && git push origin feature/x :feature/y
+allow git switch main && git push origin HEAD:refs/heads/feature/x
+deny  git switch main && git push
+deny  git switch main && git push origin
+deny  git switch main && git push origin HEAD
+deny  git switch main && git push --all origin
+deny  git switch main && git push --mirror origin
+deny  git switch main && git push origin feature/x main
+deny  git push origin HEAD:refs/heads/main
+deny  git push origin :refs/heads/main
+deny  git push origin --delete refs/heads/main
+allow git push origin main-thing
+allow git push origin --delete main-thing
+allow git push origin HEAD:main-thing

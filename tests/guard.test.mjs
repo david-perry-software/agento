@@ -151,6 +151,40 @@ test("tracks a plain switch/checkout to the default branch through a chain", () 
   assert.equal(decide("git switch main && git switch -c feature/other && git commit --allow-empty -m x", { cwd: repo }).decision, "allow");
 });
 
+test("pushes are judged by refspec destination, the default branch as a whole token", () => {
+  const repo = makeGitRepo();
+  const on = (command) => decide(command, { cwd: repo }).decision;
+  // On the default branch: a push whose every destination is another branch passes.
+  for (const command of [
+    "git push origin HEAD:feature/x",
+    "git push origin feature/x",
+    "git push -u origin feature/x",
+    "git push origin feature/x :feature/y",
+    "git push origin HEAD:refs/heads/feature/x",
+    "git push -o ci.skip origin feature/x",
+    "git push origin --tags",
+  ]) assert.equal(on(command), "allow", command);
+  // ... while an implicit, HEAD, all-refs, or default destination is denied.
+  for (const command of [
+    "git push",
+    "git push origin",
+    "git push origin HEAD",
+    "git push --all origin",
+    "git push --mirror origin",
+    "git push origin feature/x main",
+    "git push origin +HEAD:feature/x",
+  ]) assert.equal(on(command), "deny", command);
+  // From any branch: `refs/heads/<default>` is the default; `main-thing` is not.
+  for (const command of ["git push origin HEAD:refs/heads/main", "git push origin :refs/heads/main", "git push origin --delete refs/heads/main"]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  for (const command of ["git push origin main-thing", "git push origin --delete main-thing", "git push origin HEAD:main-thing", "git push origin :main-thing"]) {
+    assert.equal(decide(command).decision, "allow", command);
+  }
+  assert.match(decide("git push origin --delete refs/heads/main").reason, /Deleting main/);
+  assert.equal(decide("bash -c 'git push origin HEAD:refs/heads/main'").decision, "deny");
+});
+
 test("decision reasons survive colons intact", () => {
   const { decision, reason } = decide("gh pr merge 5 --admin");
   assert.equal(decision, "deny");

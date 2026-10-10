@@ -48,3 +48,30 @@ allow git status
 allow git -C {companion} switch trunk && git -C {companion} push origin --delete feature/x
 allow git -C {companion} switch trunk && git -C {companion} push origin :feature/x
 deny  git -C {companion} switch trunk && git -C {companion} push origin --delete trunk
+
+# Companion and product: pushes are judged by refspec destination against `trunk` (hooks-node-port)
+allow git -C {companion} switch trunk && git -C {companion} push origin HEAD:feature/x
+allow git -C {companion} switch trunk && git -C {companion} push origin feature/x
+allow git -C {companion} switch trunk && git -C {companion} push -u origin feature/x
+allow git -C {companion} switch trunk && git -C {companion} push origin feature/x :feature/y
+allow git -C {companion} switch trunk && git -C {companion} push origin HEAD:refs/heads/feature/x
+deny  git -C {companion} switch trunk && git -C {companion} push
+deny  git -C {companion} switch trunk && git -C {companion} push origin
+deny  git -C {companion} switch trunk && git -C {companion} push origin HEAD
+deny  git -C {companion} switch trunk && git -C {companion} push --all origin
+deny  git -C {companion} switch trunk && git -C {companion} push --mirror origin
+deny  git -C {companion} switch trunk && git -C {companion} push origin feature/x trunk
+deny  git -C {companion} push origin HEAD:refs/heads/trunk
+deny  git -C {companion} push origin :refs/heads/trunk
+deny  git -C {companion} push origin --delete refs/heads/trunk
+allow git -C {companion} push origin trunk-thing
+allow git -C {companion} push origin --delete trunk-thing
+allow git -C {companion} push origin HEAD:trunk-thing
+allow git switch trunk && git push origin HEAD:feature/x
+allow git switch trunk && git push origin feature/x :feature/y
+deny  git switch trunk && git push origin HEAD
+deny  git switch trunk && git push --all origin
+deny  git push origin HEAD:refs/heads/trunk
+deny  git push origin --delete refs/heads/trunk
+allow git push origin trunk-thing
+allow git push origin --delete trunk-thing
