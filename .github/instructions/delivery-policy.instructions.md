@@ -144,7 +144,8 @@ historical artifacts solely to adopt it.
   CI waits use `scripts/wait-for-checks.sh pr <n>` or `run <id>`; deploy waits use
   `node <agento-root>/scripts/agento.mjs release <merge-sha> --wait N` (N ≤ 60). Exit
   2 = still pending: rerun. Never `--watch`, background terminals, VS Code tasks, or
-  ending the turn to "wait".
+  ending the turn to "wait". `agento.mjs ship` runs both waits internally under the
+  same ≤ 60 s bound and returns `status: pending` (exit 2) for the re-send.
 
 ## 7. Git rules
 

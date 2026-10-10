@@ -331,13 +331,19 @@ test("ship is one agento.mjs ship call with no hand-run fallback procedure", () 
 });
 
 test("only the ship prompt and its mirror reference agento.mjs ship", () => {
-  // Any other prompt or agent calling the merging subcommand would bypass the user's /agento ship.
+  // Any other prompt or agent calling the merging subcommand would bypass the user's
+  // /agento ship. Instructions may describe it (policy §6 names its bounded waits)
+  // but never as a command to run.
   const allowed = new Set([".github/prompts/ship.prompt.md", "commands/ship.md"]);
   const offenders = [];
-  for (const file of [...promptFiles, ...agentFiles, ...instructionFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
     const label = path.relative(repoRoot, file);
     if (allowed.has(label)) continue;
     if (/agento\.mjs ship\b(?!-preflight)/.test(fs.readFileSync(file, "utf8"))) offenders.push(label);
+  }
+  for (const file of instructionFiles) {
+    const label = path.relative(repoRoot, file);
+    if (/(?:node |scripts\/)[^\n]*agento\.mjs ship\b(?!-preflight)/.test(fs.readFileSync(file, "utf8"))) offenders.push(`${label} (runs it)`);
   }
   assert.deepEqual(offenders, [], `files that reference agento.mjs ship outside the ship prompt and its mirror:\n${offenders.join("\n")}`);
   for (const label of allowed) assert.match(fs.readFileSync(rel(...label.split("/")), "utf8"), /agento\.mjs ship\b(?!-preflight)/, `${label} must call agento.mjs ship`);
