@@ -2347,10 +2347,19 @@ function ship() {
 
   // ---- sync: both defaults fast-forwarded to their origin ----
   out.phase = "sync";
-  const syncDefault = (clone, name, label) => {
+  const postBranch = `${config.branches.postShip}${slug}`;
+  const syncDefault = (clone, name, label, { keepPostShip = true } = {}) => {
     gitRun(clone, ["fetch", "--prune", "origin"]);
     const current = git(clone, "branch", "--show-current");
     if (current !== name) {
+      // The epilogue works on post-ship/<slug> in this checkout: update the default in place.
+      if (keepPostShip && current === postBranch && postShipPending.length) {
+        const before = git(clone, "rev-parse", "--verify", "--quiet", `refs/heads/${name}`);
+        const ff = gitRun(clone, ["fetch", "origin", `${name}:${name}`], 120000);
+        if (!ff.ok) fail("sync-failed", `git -C ${clone} fetch origin ${name}:${name}: ${ff.stderr.split("\n")[0]}; reconcile ${name} by hand, then re-send`);
+        if (git(clone, "rev-parse", name) !== before) act("sync", `${label}: ${name} fast-forwarded to origin/${name} at ${clone} (kept on ${postBranch})`);
+        return;
+      }
       if (git(clone, "status", "--porcelain") !== "") {
         out.warnings.push(`sync: ${label} checkout ${clone} is on ${current || "a detached HEAD"} with uncommitted changes; ${name} was not fast-forwarded`);
         return;
@@ -2379,10 +2388,55 @@ function ship() {
     }
   }
 
-  // ---- release, teardown, epilogue ----
+  // ---- release: the deploy verdict for the merge commit, bounded by the remaining budget ----
   if (config.checks?.releaseWorkflow) {
     out.phase = "release";
-    finish({ outcome: null, message: "release phase not yet implemented", next: [shipCommand()] });
+    const workflow = config.checks.releaseWorkflow;
+    if (!out.mergeSha) {
+      const fresh = shipPrLookup(branch, root, "pr");
+      out.mergeSha = fresh.pr?.mergeCommit?.oid ?? null;
+    }
+    if (!out.mergeSha) fail("release-no-merge-sha", `PR #${pr.number} reports no merge commit yet; re-send in a moment`);
+    const short = out.mergeSha.slice(0, 7);
+    const { fields } = releaseVerdict(out.mergeSha, { wait: remainingSeconds(), interval: 10 });
+    out.release = { verdict: fields.verdict, workflow, run: fields.run, supersededBy: fields.supersededBy, reason: fields.reason ?? null, mergeDate: fields.mergeDate ?? null, dispatched: false };
+    if (fields.status === "error") {
+      if (fields.reason === "gh-missing" || fields.reason === "auth") fail("gh-auth", fields.message, { reauth: "gh auth login" });
+      fail("gh-error", fields.message);
+    }
+    if (fields.verdict === "pending") pending("release", `release ${workflow} for ${short}: ${fields.reason ?? "run in progress"}`);
+    if (fields.verdict === "dispatch-required") {
+      // Follow a dispatch run created after the merge; otherwise dispatch exactly once and let the re-send find it.
+      const list = ghRun(root, ["run", "list", "--workflow", workflow, "--event", "workflow_dispatch", "--json", "databaseId,createdAt,url,status,conclusion", "--limit", "20"], 30000);
+      if (!list.ok) ghFailure(list, `gh run list --workflow ${workflow} --event workflow_dispatch`);
+      let runs = [];
+      try {
+        runs = JSON.parse(list.stdout || "[]");
+      } catch {
+        fail("gh-error", `gh run list --workflow ${workflow} returned non-JSON output`);
+      }
+      const run = runs.filter((r) => fields.mergeDate && r.createdAt > fields.mergeDate).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0] ?? null;
+      if (!run) {
+        const dispatch = ghRun(root, ["workflow", "run", workflow, "--ref", defaultBranch], 30000);
+        if (!dispatch.ok) ghFailure(dispatch, `gh workflow run ${workflow} --ref ${defaultBranch}`);
+        out.release.dispatched = true;
+        act("release-dispatch", `gh workflow run ${workflow} --ref ${defaultBranch} (no workflow_dispatch run after ${fields.mergeDate})`);
+        pending("release", `release ${workflow} dispatched for ${short}; the re-send follows the run it created`);
+      }
+      out.release.run = { id: run.databaseId, event: "workflow_dispatch", status: run.status ?? null, conclusion: run.conclusion ?? null, url: run.url ?? null, headSha: null };
+      if (run.status !== "completed") {
+        const follow = waitForChecks("run", run.databaseId, root);
+        if (follow.code === 2) pending("release", `release run ${run.url ?? run.databaseId}: ${follow.last}`);
+        if (follow.code === 1) fail("release-failed", `release run ${run.url ?? run.databaseId} failed: ${follow.last}`);
+        if (follow.code !== 0) fail("gh-auth", `wait-for-checks.sh run ${run.databaseId}: ${follow.last}`, { reauth: "gh auth login" });
+        Object.assign(out.release.run, { status: "completed", conclusion: "success" });
+      } else if (run.conclusion !== "success") fail("release-failed", `release run ${run.url ?? run.databaseId} concluded ${run.conclusion}`);
+      out.release.verdict = "success";
+    }
+    if (fields.verdict === "failed" || fields.verdict === "no-run") {
+      fail(`release-${fields.verdict}`, `release ${workflow} for ${short}: ${fields.verdict}${fields.reason ? ` (${fields.reason})` : ""}${fields.run?.url ? ` — ${fields.run.url}` : ""}; re-sending re-derives the verdict, never a second release`);
+    }
+    act("release", `${workflow} for ${short}: ${out.release.verdict}${out.release.run?.url ? ` (${out.release.run.url})` : ""}${out.release.supersededBy?.url ? `, superseded by ${out.release.supersededBy.url}` : ""}`);
   }
 
   // ---- teardown: the owner's halves, workspace file, and merged local branches ----
@@ -2416,9 +2470,66 @@ function ship() {
     shippedHere = true;
   }
 
+  // ---- epilogue: (manual, post-ship) steps land from a post-ship branch of the artifact checkout ----
   if (postShipPending.length) {
     out.phase = "epilogue";
-    finish({ outcome: null, message: "epilogue phase not yet implemented", next: [shipCommand()] });
+    const checkout = external ? artifactsClone : primary;
+    const label = external ? "companion" : "product";
+    gitRun(checkout, ["fetch", "--prune", "origin"]);
+    if (git(checkout, "branch", "--show-current") !== postBranch) {
+      if (git(checkout, "status", "--porcelain") !== "") {
+        reject("primary-dirty", { message: `${label} checkout ${checkout} has uncommitted changes; the post-ship evidence lands from ${postBranch} there — commit, stash, or discard them first` });
+      }
+      const exists = git(checkout, "rev-parse", "--verify", "--quiet", `refs/heads/${postBranch}`);
+      const sw = exists ? gitRun(checkout, ["switch", postBranch]) : gitRun(checkout, ["switch", "-c", postBranch, "--no-track", `origin/${artifactDefault}`]);
+      if (!sw.ok) fail("switch-failed", `git -C ${checkout} switch ${exists ? "" : "-c "}${postBranch}: ${sw.stderr}`);
+      act(exists ? "switch" : "post-ship-branch", exists ? `${label}: switched ${checkout} to ${postBranch}` : `${label}: created ${postBranch} from origin/${artifactDefault} at ${checkout}`);
+    }
+    const roadmapFile = path.join(checkout, roadmapRel);
+    const working = fs.existsSync(roadmapFile) ? fs.readFileSync(roadmapFile, "utf8") : roadmapContent;
+    const evidenceOf = (text) => text.match(/\((evidence\/[^)\s]+)\)/)?.[1] ?? text.match(/\bevidence\/[^\s)]+/)?.[0] ?? null;
+    const postSteps = parseRoadmapSteps(working).filter((s) => s.postShip).map((s) => {
+      const evidence = evidenceOf(s.text);
+      return { id: s.id, text: s.text, ticked: s.ticked, evidence, evidencePresent: evidence !== null && fs.existsSync(path.join(checkout, artifactDir, evidence)) };
+    });
+    const existing = shipPrLookup(postBranch, checkout, "postShipPr");
+    let postPr = existing.pr?.state === "OPEN" ? existing.pr : null;
+    out.postShip = { branch: postBranch, path: checkout, steps: postSteps, pr: prSummary(postPr) };
+    const remaining = postSteps.filter((s) => !s.ticked || !s.evidencePresent);
+    if (!postSteps.length || remaining.length) {
+      finish({ outcome: "post-ship-pending", message: `${remaining.length} (manual, post-ship) step(s) await a tick with a linked evidence file under ${checkout}/${artifactDir}/evidence/: ${remaining.map((s) => s.id).join(", ")}`, next: [shipCommand()] });
+    }
+    if (git(checkout, "status", "--porcelain") !== "") {
+      gitRun(checkout, ["add", "--", artifactDir]);
+      const commit = gitRun(checkout, ["commit", "-q", "-m", `docs(post-ship): ${slug} evidence`]);
+      if (!commit.ok) fail("commit-failed", `git -C ${checkout} commit (post-ship evidence): ${commit.stderr}`);
+      act("post-ship-commit", `evidence and roadmap ticks committed on ${postBranch} at ${checkout}`);
+    }
+    if (git(checkout, "rev-parse", "HEAD") !== git(checkout, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${postBranch}`)) push(checkout, label, postBranch);
+    if (!postPr) {
+      const create = ghRun(checkout, ["pr", "create", "--base", artifactDefault, "--head", postBranch, "--title", `docs(post-ship): ${slug} evidence`, "--body", `Post-ship evidence for ${type}/${slug}: ${postSteps.map((s) => s.id).join(", ")}.`], 60000);
+      if (!create.ok) ghFailure(create, `gh pr create --head ${postBranch}`);
+      postPr = shipPrLookup(postBranch, checkout, "postShipPr").pr;
+      if (!postPr) fail("gh-error", `gh pr create for ${postBranch} returned but the PR cannot be looked up`);
+      act("post-ship-pr", `opened PR #${postPr.number} for ${postBranch} (${postPr.url})`);
+    }
+    out.postShip.pr = prSummary(postPr);
+    const checks = waitForChecks("pr", postPr.number, checkout, external ? { repo: nameWithOwner(checkout) } : {});
+    if (checks.code === 2) pending("epilogue", `post-ship PR #${postPr.number}: ${checks.last}`);
+    if (checks.code === 1) fail("post-ship-checks-failed", `post-ship PR #${postPr.number} has a failing required check (${checks.last})`);
+    if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${postPr.number}: ${checks.last}`, { reauth: "gh auth login" });
+    const merge = ghRun(checkout, ["pr", "merge", String(postPr.number), "--merge"], 120000);
+    if (!merge.ok) ghFailure(merge, `gh pr merge ${postPr.number} --merge`);
+    act("post-ship-merge", `post-ship PR #${postPr.number} merged into ${artifactDefault}`);
+    const del = gitRun(checkout, ["push", "origin", "--delete", postBranch], 60000);
+    if (!del.ok) out.warnings.push(`post-ship-delete-branch: git -C ${checkout} push origin --delete ${postBranch} failed (${del.stderr.split("\n")[0]})`);
+    syncDefault(checkout, artifactDefault, label, { keepPostShip: false });
+    const deletion = gitRun(checkout, ["branch", "-d", postBranch]);
+    if (deletion.ok) act("post-ship-cleanup", `${label}: local ${postBranch} deleted at ${checkout}`);
+    else out.warnings.push(`post-ship-cleanup: git -C ${checkout} branch -d ${postBranch} failed: ${deletion.stderr.split("\n")[0]}`);
+    const landed = shipPrLookup(postBranch, checkout, "postShipPr").pr;
+    if (landed) out.postShip.pr = prSummary(landed);
+    shippedHere = true;
   }
   finish({ phase: "done", outcome: shippedHere ? "shipped" : "already-shipped", next: [] });
 }

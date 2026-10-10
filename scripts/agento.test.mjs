@@ -5271,6 +5271,300 @@ test("ship sync and done: merged deliveries with a default behind origin are fas
   assert.equal(git(fixture.repo, "rev-parse", "HEAD"), git(fixture.repo, "rev-parse", "origin/main"));
 });
 
+// A merged in-repo delivery (owner still present) in a repository with checks.releaseWorkflow.
+function releasedFixture() {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  fs.writeFileSync(path.join(repo, ".github", "agento.json"), JSON.stringify({ worktrees: { dir: "../wt" }, checks: { releaseWorkflow: "release.yml" } }));
+  git(repo, "commit", "-qam", "release workflow");
+  git(repo, "push", "-q", "origin", "main");
+  const delivery = shippable(fixture, "widget");
+  landBranch(repo, delivery.branch);
+  const mergeSha = git(repo, "rev-parse", "origin/main");
+  const stubFor = (api, runs = []) => shipStub({ product: { prs: { [delivery.branch]: { state: "MERGED", isDraft: false, mergeCommit: mergeSha } } }, api, runs });
+  return { ...fixture, ...delivery, mergeSha, stubFor };
+}
+
+test("ship release phase: success advances to teardown; pending is exit 2 with the owner intact; failed and no-run stop; gh auth failures name the re-login", () => {
+  const success = releasedFixture();
+  const ok = shipRun(success.repo, success.stubFor(releaseRoutes({ [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(101)] } })).env, "feature", "widget", "--wait", "0");
+  assert.equal(ok.code, 0, JSON.stringify(ok.json));
+  assert.equal(ok.json.resumedAt, "release");
+  assert.equal(ok.json.outcome, "shipped");
+  assert.deepEqual(stepsOf(ok.json), ["release", "teardown"]);
+  assert.equal(ok.json.release.verdict, "success");
+  assert.equal(ok.json.release.workflow, "release.yml");
+  assert.equal(ok.json.release.run.url, "https://github.test/runs/101");
+  assert.equal(ok.json.release.dispatched, false);
+  assert.equal(fs.existsSync(success.owner), false);
+
+  const pending = releasedFixture();
+  const inProgress = { workflow_runs: [releaseRun(102, { status: "in_progress", conclusion: null })] };
+  const stub = pending.stubFor(releaseRoutes({ [`${RUNS}?head_sha=`]: [inProgress, { workflow_runs: [releaseRun(102)] }] }));
+  const first = shipRun(pending.repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(first.code, 2, JSON.stringify(first.json));
+  assert.equal(first.json.status, "pending");
+  assert.equal(first.json.phase, "release");
+  assert.equal(first.json.release.verdict, "pending");
+  assert.deepEqual(first.json.next, ["/agento ship widget"]);
+  assert.ok(fs.existsSync(pending.owner), "the owner stays until the release lands");
+  const second = shipRun(pending.repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(second.code, 0, JSON.stringify(second.json));
+  assert.equal(second.json.release.verdict, "success");
+  assert.equal(fs.existsSync(pending.owner), false);
+
+  const failing = releasedFixture();
+  const failed = shipRun(failing.repo, failing.stubFor(releaseRoutes({ [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(103, { conclusion: "failure" })] } })).env, "feature", "widget", "--wait", "0");
+  assert.equal(failed.code, 3);
+  assert.equal(failed.json.status, "failed");
+  assert.equal(failed.json.reason, "release-failed");
+  assert.match(failed.json.message, /https:\/\/github\.test\/runs\/103/);
+  assert.ok(fs.existsSync(failing.owner));
+  const noRun = shipRun(failing.repo, failing.stubFor(releaseRoutes()).env, "feature", "widget", "--wait", "0");
+  assert.equal(noRun.json.reason, "release-no-run");
+
+  const auth = shipRun(failing.repo, failing.stubFor(releaseRoutes({ [`repos/{owner}/{repo}/commits/`]: { __stderr: "gh: Bad credentials (HTTP 401)" } })).env, "feature", "widget", "--wait", "0");
+  assert.equal(auth.json.status, "failed");
+  assert.equal(auth.json.reason, "gh-auth");
+  assert.equal(auth.json.reauth, "gh auth login");
+
+  // superseded-success and not-triggered advance like success.
+  const superseded = releasedFixture();
+  const sup = shipRun(superseded.repo, superseded.stubFor(releaseRoutes({
+    [`${RUNS}?head_sha=`]: { workflow_runs: [releaseRun(104, { conclusion: "cancelled" })] },
+    [`${RUNS}?branch=`]: { workflow_runs: [releaseRun(105, { head_sha: LATER, created_at: "2026-10-07T10:05:00Z" })] },
+    [`repos/{owner}/{repo}/compare/${MERGE}...${LATER}`]: { status: "ahead" },
+  })).env, "feature", "widget", "--wait", "0");
+  assert.equal(sup.json.outcome, "shipped", JSON.stringify(sup.json));
+  assert.equal(sup.json.release.verdict, "superseded-success");
+  assert.equal(sup.json.release.supersededBy.url, "https://github.test/runs/105");
+  const docsOnly = releasedFixture();
+  const nt = shipRun(docsOnly.repo, docsOnly.stubFor(releaseRoutes({ [`repos/{owner}/{repo}/compare/${PARENT}...`]: { status: "ahead", files: [{ filename: "docs/a.md" }] } })).env, "feature", "widget", "--wait", "0");
+  assert.equal(nt.json.release.verdict, "not-triggered", JSON.stringify(nt.json));
+  assert.equal(nt.json.outcome, "shipped");
+});
+
+test("ship release phase: dispatch-required dispatches exactly once across re-sends, follows the run it created, and advances when it succeeds", () => {
+  const fx = releasedFixture();
+  const stub = fx.stubFor(releaseRoutes({ [`repos/{owner}/{repo}/contents/.github/workflows/release.yml`]: workflowFile("on:\n  workflow_dispatch:\n") }));
+  const dispatched = shipRun(fx.repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(dispatched.code, 2, JSON.stringify(dispatched.json));
+  assert.equal(dispatched.json.phase, "release");
+  assert.equal(dispatched.json.release.dispatched, true);
+  assert.deepEqual(stepsOf(dispatched.json), ["release-dispatch"]);
+  assert.deepEqual(stub.calls().filter((c) => / workflow run /.test(c)), [`${fx.repo} workflow run release.yml --ref main`]);
+  assert.ok(stub.calls().some((c) => / run list --workflow release\.yml --event workflow_dispatch --json databaseId,createdAt,url,status,conclusion/.test(c)));
+
+  const following = shipRun(fx.repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(following.code, 2, JSON.stringify(following.json));
+  assert.equal(following.json.release.dispatched, false);
+  assert.equal(following.json.release.run.id, 900);
+  assert.deepEqual(following.json.actions, []);
+  assert.equal(stub.calls().filter((c) => / workflow run /.test(c)).length, 1, "never a second dispatch");
+  assert.ok(stub.calls().some((c) => / run view 900 --json status,conclusion,url --jq /.test(c)), "the created run is followed");
+  assert.ok(fs.existsSync(fx.owner));
+
+  stub.update((s) => Object.assign(s.runs[0], { status: "completed", conclusion: "success" }));
+  const landed = shipRun(fx.repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(landed.code, 0, JSON.stringify(landed.json));
+  assert.equal(landed.json.release.verdict, "success");
+  assert.equal(landed.json.release.run.url, "https://example.test/runs/900");
+  assert.deepEqual(stepsOf(landed.json), ["release", "teardown"]);
+  assert.equal(stub.calls().filter((c) => / workflow run /.test(c)).length, 1);
+  assert.equal(fs.existsSync(fx.owner), false);
+
+  // A failed dispatch run stops.
+  const broken = releasedFixture();
+  const brokenStub = broken.stubFor(releaseRoutes({ [`repos/{owner}/{repo}/contents/.github/workflows/release.yml`]: workflowFile("on:\n  workflow_dispatch:\n") }), [{ id: 901, createdAt: new Date().toISOString(), url: "https://example.test/runs/901", status: "completed", conclusion: "failure" }]);
+  const stopped = shipRun(broken.repo, brokenStub.env, "feature", "widget", "--wait", "0");
+  assert.equal(stopped.json.status, "failed");
+  assert.equal(stopped.json.reason, "release-failed");
+  assert.ok(brokenStub.calls().every((c) => !/ workflow run /.test(c)), "a run created after the merge is never re-dispatched");
+});
+
+// A merged companion-mode delivery whose owner pair is still present (both defaults synced).
+function mergedPair() {
+  const pair = makePairRepo();
+  const delivery = pairShippable(pair, "widget");
+  landBranch(pair.repo, delivery.branch);
+  landBranch(pair.docs, delivery.branch);
+  const stub = pairStub(delivery.branch, { state: "MERGED", isDraft: false, mergeCommit: git(pair.repo, "rev-parse", "origin/main") }, { state: "MERGED", isDraft: false });
+  return { ...pair, ...delivery, stub };
+}
+
+test("ship teardown: a live process inside a half blocks with paused-teardown and the flagged path, changes nothing, and the re-send resumes once it leaves", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const fx = mergedPair();
+  const { repo, docs, owner, half, workspace, stub } = fx;
+  const child = spawn("sleep", ["30"], { cwd: half, stdio: "ignore" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const before = [cloneState(repo, docs), fs.readFileSync(workspace, "utf8")];
+    const { code, json } = shipRun(repo, stub.env, "feature", "widget");
+    assert.equal(code, 3, JSON.stringify(json));
+    assert.equal(json.status, "blocked");
+    assert.equal(json.reason, "occupied");
+    assert.equal(json.phase, "teardown");
+    assert.equal(json.resumedAt, "teardown");
+    assert.equal(json.outcome, "paused-teardown");
+    assert.equal(json.teardown.pausedPath, half);
+    assert.deepEqual(json.teardown.occupants, { product: [], companion: [`PID ${child.pid} (sleep)`] });
+    assert.equal(json.teardown.product.removed, false);
+    assert.equal(json.teardown.companion.removed, false);
+    assert.equal(json.teardown.workspace.removed, false);
+    assert.match(json.message, new RegExp(`^paused at teardown \\(worktree ${half.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} still open\\): companion half .*: PID \\d+ \\(sleep\\); close that VS Code window or terminal, then re-send /agento ship widget$`));
+    assert.deepEqual(json.next, ["/agento ship widget"]);
+    assert.deepEqual(json.actions, []);
+    assert.deepEqual([cloneState(repo, docs), fs.readFileSync(workspace, "utf8")], before);
+    assert.ok(fs.existsSync(owner) && fs.existsSync(half));
+    const again = shipRun(repo, stub.env, "feature", "widget").json;
+    assert.equal(again.status, "blocked", "still blocked while the occupant lives");
+    assert.deepEqual([cloneState(repo, docs), fs.readFileSync(workspace, "utf8")], before);
+  } finally {
+    child.kill();
+  }
+  await new Promise((resolve) => child.once("exit", resolve));
+  const resumed = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(resumed.status, "ok", JSON.stringify(resumed));
+  assert.equal(resumed.outcome, "shipped");
+  assert.deepEqual(stepsOf(resumed), ["teardown"]);
+  assert.equal(fs.existsSync(owner), false);
+  assert.equal(fs.existsSync(half), false);
+  assert.equal(fs.existsSync(workspace), false);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/widget"));
+  assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/feature/widget"));
+});
+
+test("ship teardown: code --status naming a half as a Folder or a Workspace window blocks with the first flagged half; a half removed earlier is skipped on the re-send", () => {
+  const fx = mergedPair();
+  const { repo, docs, owner, half, workspace, stub } = fx;
+  const before = [cloneState(repo, docs), fs.readFileSync(workspace, "utf8")];
+  for (const status of ["|    Folder (feature-widget): 12 files", "|  Window (roadmap.md - feature-widget (Workspace) - Visual Studio Code)"]) {
+    fs.writeFileSync(path.join(stub.bin, "code"), `#!/bin/sh\nprintf '%s\\n' '${status}'\n`, { mode: 0o755 });
+    const { code, json } = shipRun(repo, stub.env, "feature", "widget");
+    assert.equal(code, 3, status);
+    assert.equal(json.status, "blocked");
+    assert.equal(json.outcome, "paused-teardown");
+    assert.equal(json.teardown.pausedPath, owner, "the product half is the first flagged");
+    assert.equal(json.teardown.occupants.product.length, 1);
+    assert.equal(json.teardown.occupants.companion.length, 1);
+    assert.deepEqual([cloneState(repo, docs), fs.readFileSync(workspace, "utf8")], before);
+  }
+  fs.rmSync(path.join(stub.bin, "code"));
+  git(docs, "worktree", "remove", half);
+  const resumed = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(resumed.outcome, "shipped", JSON.stringify(resumed));
+  assert.equal(resumed.teardown.product.removed, true);
+  assert.deepEqual(resumed.teardown.companion, { path: half, branch: null, detached: false, registered: false, onDisk: false, removed: false });
+  assert.equal(resumed.teardown.workspace.removed, true);
+  assert.equal(resumed.teardown.branches.companion.action, "deleted");
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(fs.existsSync(workspace), false);
+});
+
+const POST_SHIP = `${DONE_STEPS}- [ ] 2.1 (manual, post-ship) check production — verify: dashboard\n`;
+const RISKS = "# Plan\n\n## Risks\n\nThe production check is a post-ship exception the user accepted.\n";
+
+test("ship epilogue (in-repo): post-ship/<slug> is created from the default, pending steps are reported with evidencePresent and never ticked by the CLI, and ticked steps with evidence land through a PR", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, dir } = shippable(fixture, "widget", { owner: false, roadmap: { steps: POST_SHIP, plan: RISKS, header: 'status: complete\nbranch: feature/widget\nlast-updated: 2026-10-10\nnext-step: ""' } });
+  landBranch(repo, `origin/${branch}`, { remote: branch });
+  const stub = shipStub({ product: { prs: { [branch]: { state: "MERGED", isDraft: false, mergeCommit: git(repo, "rev-parse", "origin/main") } } } });
+
+  const first = shipRun(repo, stub.env, "feature", "widget");
+  assert.equal(first.code, 0, JSON.stringify(first.json));
+  assert.equal(first.json.status, "ok");
+  assert.equal(first.json.resumedAt, "epilogue");
+  assert.equal(first.json.phase, "epilogue");
+  assert.equal(first.json.outcome, "post-ship-pending");
+  assert.deepEqual(first.json.postShip, { branch: "post-ship/widget", path: repo, steps: [{ id: "2.1", text: "(manual, post-ship) check production — verify: dashboard", ticked: false, evidence: null, evidencePresent: false }], pr: null });
+  assert.deepEqual(stepsOf(first.json), ["post-ship-branch"]);
+  assert.deepEqual(first.json.next, ["/agento ship widget"]);
+  assert.equal(git(repo, "branch", "--show-current"), "post-ship/widget");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.match(fs.readFileSync(path.join(repo, dir, "roadmap.md"), "utf8"), /^- \[ \] 2\.1 \(manual, post-ship\)/m, "the CLI never ticks a post-ship step");
+
+  // Ticked with a link but the file is missing: still pending, nothing committed, no PR.
+  const roadmap = path.join(repo, dir, "roadmap.md");
+  fs.writeFileSync(roadmap, fs.readFileSync(roadmap, "utf8").replace("- [ ] 2.1 (manual, post-ship) check production — verify: dashboard", "- [x] 2.1 (manual, post-ship) check production — verify: dashboard — [evidence](evidence/step-2-1-prod.png) (2026-10-11)"));
+  const missing = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(missing.outcome, "post-ship-pending", JSON.stringify(missing));
+  assert.deepEqual(missing.postShip.steps[0], { id: "2.1", text: "(manual, post-ship) check production — verify: dashboard — [evidence](evidence/step-2-1-prod.png) (2026-10-11)", ticked: true, evidence: "evidence/step-2-1-prod.png", evidencePresent: false });
+  assert.deepEqual(missing.actions, []);
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"), "nothing committed");
+  assert.ok(stub.calls().every((c) => !/ pr create/.test(c)));
+
+  // With the evidence file: one commit, push, PR, merge, default synced, branch gone.
+  fs.mkdirSync(path.join(repo, dir, "evidence"), { recursive: true });
+  fs.writeFileSync(path.join(repo, dir, "evidence", "step-2-1-prod.png"), "png");
+  const landed = shipRun(repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(landed.code, 0, JSON.stringify(landed.json));
+  assert.equal(landed.json.outcome, "shipped");
+  assert.equal(landed.json.phase, "done");
+  assert.deepEqual(stepsOf(landed.json), ["post-ship-commit", "push", "post-ship-pr", "post-ship-merge", "switch", "sync", "post-ship-cleanup"]);
+  assert.equal(landed.json.postShip.pr.number, 100);
+  assert.equal(landed.json.postShip.pr.state, "MERGED");
+  assert.deepEqual(stub.calls().filter((c) => / pr (create|merge) /.test(c)), [`${repo} pr create --base main --head post-ship/widget --title docs(post-ship): widget evidence --body Post-ship evidence for feature/widget: 2.1.`, `${repo} pr merge 100 --merge`]);
+  assert.match(git(repo, "show", `origin/main:${dir}/roadmap.md`), /^- \[x\] 2\.1 \(manual, post-ship\).*evidence\/step-2-1-prod\.png/m);
+  assert.equal(git(repo, "show", `origin/main:${dir}/evidence/step-2-1-prod.png`), "png");
+  assert.match(git(repo, "log", "-1", "--format=%s", "origin/main^2"), /^docs\(post-ship\): widget evidence$/);
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/post-ship/widget"));
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/post-ship/widget"));
+
+  stub.reset();
+  const done = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(done.resumedAt, "done");
+  assert.equal(done.outcome, "already-shipped");
+  assert.ok(stub.calls().every((c) => !/ pr (create|merge)/.test(c)));
+});
+
+test("ship epilogue (companion): the post-ship branch, commit, PR, and merge happen in the companion clone; a pending check is exit 2 and the re-send reuses the open PR", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const branch = "feature/widget";
+  const dir = "features/2026/10/widget";
+  publishBranch(repo, branch, writeFile("src.js", "code\n"));
+  publishBranch(docs, branch, shipReady("feature", "widget", { steps: POST_SHIP, plan: RISKS, header: 'status: complete\nbranch: feature/widget\nlast-updated: 2026-10-10\nnext-step: ""' }));
+  landBranch(repo, `origin/${branch}`, { remote: branch });
+  landBranch(docs, `origin/${branch}`, { remote: branch });
+  const stub = shipStub({
+    product: { prs: { [branch]: { state: "MERGED", isDraft: false, mergeCommit: git(repo, "rev-parse", "origin/main") } } },
+    companion: { prs: { [branch]: { number: 7, state: "MERGED", isDraft: false }, "post-ship/widget": { number: 8, isDraft: false, rollups: [[{ name: "Docs", status: "IN_PROGRESS", conclusion: null }], PASSING[0]] } } },
+  });
+
+  const first = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(first.outcome, "post-ship-pending", JSON.stringify(first));
+  assert.equal(first.postShip.path, docs);
+  assert.equal(git(docs, "branch", "--show-current"), "post-ship/widget");
+  assert.equal(git(repo, "branch", "--show-current"), "main", "the product never gets a post-ship branch");
+
+  const roadmap = path.join(docs, dir, "roadmap.md");
+  fs.writeFileSync(roadmap, fs.readFileSync(roadmap, "utf8").replace("- [ ] 2.1 (manual, post-ship) check production — verify: dashboard", "- [x] 2.1 (manual, post-ship) check production — verify: dashboard — [evidence](evidence/step-2-1-prod.png) (2026-10-11)"));
+  fs.mkdirSync(path.join(docs, dir, "evidence"), { recursive: true });
+  fs.writeFileSync(path.join(docs, dir, "evidence", "step-2-1-prod.png"), "png");
+  const pending = shipRun(repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(pending.code, 2, JSON.stringify(pending.json));
+  assert.equal(pending.json.phase, "epilogue");
+  assert.equal(pending.json.postShip.pr.number, 8, "the branch's open PR is reused");
+  assert.deepEqual(stepsOf(pending.json), ["post-ship-commit", "push"]);
+  assert.ok(stub.calls().every((c) => !/ pr create/.test(c)));
+  assert.ok(stub.calls().some((c) => c.startsWith(`${docs} pr view 8 --repo acme/project-docs --json statusCheckRollup`)));
+  assert.equal(git(docs, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/post-ship/widget"));
+
+  const landed = shipRun(repo, stub.env, "feature", "widget", "--wait", "0");
+  assert.equal(landed.code, 0, JSON.stringify(landed.json));
+  assert.equal(landed.json.outcome, "shipped");
+  assert.deepEqual(stepsOf(landed.json), ["post-ship-merge", "switch", "sync", "post-ship-cleanup"]);
+  assert.deepEqual(stub.calls().filter((c) => / pr merge /.test(c)), [`${docs} pr merge 8 --merge`]);
+  assert.match(git(docs, "show", `origin/main:${dir}/roadmap.md`), /^- \[x\] 2\.1 \(manual, post-ship\)/m);
+  assert.equal(git(docs, "branch", "--show-current"), "main");
+  assert.equal(git(docs, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+  assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/post-ship/widget"));
+  assert.equal(git(repo, "ls-tree", "-r", "--name-only", "origin/main", dir), "", "the product receives no post-ship commit");
+});
+
 // --- dashboard: one process per refresh ---------------------------------------
 
 // A restricted PATH whose `git` appends its arguments to `log` before running the real binary.
