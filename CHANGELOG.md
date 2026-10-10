@@ -16,6 +16,16 @@
   `metrics` section and `timings.metrics`; its git logs run asynchronously beside the
   PR lookups.
 
+- **Added.** The Deliveries view shows a **Timeline** child under every delivery: a
+  compact description (`plan 2h 00m · build 3h 05m… · 1 round · paused 30m`, an open
+  phase suffixed `…`) and a tooltip with each phase's start → end, the cycle, review
+  rounds, pauses, merge date and PR, post-ship progress and latency, and the source
+  ref, all from the dashboard's `metrics` section of the same refresh. Delivery rows
+  are now collapsible: they start collapsed in each new window and keep their
+  expansion across refreshes; selecting the label still opens the roadmap. A failed
+  metrics section shows `unavailable` on each Timeline row and leaves the rest of the
+  view intact.
+
 - **Changed.** `/agento ship` is one `agento.mjs ship <feature|issue> <slug>
   [--confirm <token>] [--wait N]` state machine whose JSON the prompt formats. The
   CLI runs the audit read-only (roadmap, review freshness, issue `Fixes #<n>`,
