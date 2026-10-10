@@ -1786,50 +1786,86 @@ function closeSession() {
     if (args.mode === "freehand" && unmerged) out.next = [`/agento start-freehand ${args.slug} --resume`];
   }
 
-  // Occupant gate: the guard cannot see a removal made from inside this process.
-  const codeStatus = once(defaultCodeStatus);
-  for (const [label, half] of halves) {
+  // Occupant gate and apply block, shared with the ship teardown.
+  const removal = removeSessionPair({
+    halves: halves.map(([label, half, clone]) => ({ label, half, clone })),
+    workspace: out.workspace,
+    branches: out.branches,
+    ignoreOccupants: Boolean(options.ignoreOccupants),
+    dryRun,
+  });
+  out.occupants = removal.occupants;
+  out.warnings.push(...removal.warnings);
+  out.applied = removal.applied;
+  if (removal.status === "blocked") finish({ status: "blocked", reason: removal.reason, message: removal.message });
+  if (removal.status === "failed") fail(removal.reason, removal.message, { half: removal.half });
+  finish();
+}
+
+// The occupant gate and the removal of a managed pair (companion half, prune,
+// product half, prune, workspace file, merged local branches), as a result instead
+// of an emission so close-session and the ship teardown share one implementation.
+// `halves` are `{ label, half: { path, registered, onDisk, removed }, clone }` in
+// product-first order; `branches.<label>` verdicts with `action: "deleted"` are
+// deleted after the halves. The half, workspace, and branch objects are updated in
+// place. The guard cannot see removals made from inside this process, so the gate
+// runs here on every call.
+function removeSessionPair({ halves, workspace = null, branches = { product: null, companion: null }, ignoreOccupants = false, dryRun = false, codeStatus = once(defaultCodeStatus) }) {
+  const out = {
+    status: "ok",
+    reason: null,
+    message: null,
+    half: null,
+    applied: false,
+    occupants: { product: [], companion: [] },
+    product: halves.find((h) => h.label === "product")?.half ?? null,
+    companion: halves.find((h) => h.label === "companion")?.half ?? null,
+    workspace,
+    branches,
+    warnings: [],
+  };
+  for (const { label, half } of halves) {
     if (half.registered && half.onDisk) out.occupants[label] = findOccupants(half.path, { codeStatus }).details;
   }
-  const occupied = halves.filter(([label]) => out.occupants[label].length);
+  const occupied = halves.filter(({ label }) => out.occupants[label].length);
   if (occupied.length) {
-    const summary = occupied.map(([label, half]) => `${label} half ${half.path}: ${out.occupants[label].join(", ")}`).join("; ");
-    if (!options.ignoreOccupants) {
-      finish({ status: "blocked", reason: "occupied", message: `Active worktree occupants detected - ${summary}. Close their terminals or VS Code window before removal, or re-send with --ignore-occupants.` });
+    const summary = occupied.map(({ label, half }) => `${label} half ${half.path}: ${out.occupants[label].join(", ")}`).join("; ");
+    if (!ignoreOccupants) {
+      return { ...out, status: "blocked", reason: "occupied", half: occupied[0].label, message: `Active worktree occupants detected - ${summary}. Close their terminals or VS Code window before removal, or re-send with --ignore-occupants.` };
     }
     out.warnings.push(`occupants: ignored (--ignore-occupants) - ${summary}`);
   }
 
-  for (const [, half] of halves) half.removed = half.registered;
-  if (out.workspace) out.workspace.removed = out.workspace.existed;
-  if (dryRun) finish();
+  for (const { half } of halves) half.removed = half.registered;
+  if (workspace) workspace.removed = workspace.existed;
+  if (dryRun) return out;
 
   // Apply: companion half, prune, product half, prune, workspace file, merged branches.
   out.applied = true;
-  for (const [label, half, clone] of [...halves].reverse()) {
+  for (const { label, half, clone } of [...halves].reverse()) {
     if (half.registered) {
       const removal = gitRun(clone, ["worktree", "remove", half.path], 120000);
       if (!removal.ok) {
         half.removed = false;
-        if (label === "companion") out.product.removed = false;
-        if (out.workspace) out.workspace.removed = false;
-        for (const verdict of Object.values(out.branches)) if (verdict?.action === "deleted") Object.assign(verdict, { action: "retained", reason: "not attempted: a worktree removal failed" });
-        fail("worktree-remove", `git -C ${clone} worktree remove ${half.path}: ${removal.stderr}`, { half: label });
+        if (label === "companion" && out.product) out.product.removed = false;
+        if (workspace) workspace.removed = false;
+        for (const verdict of Object.values(branches)) if (verdict?.action === "deleted") Object.assign(verdict, { action: "retained", reason: "not attempted: a worktree removal failed" });
+        return { ...out, status: "failed", reason: "worktree-remove", half: label, message: `git -C ${clone} worktree remove ${half.path}: ${removal.stderr}` };
       }
     }
     gitRun(clone, ["worktree", "prune"]);
   }
-  if (out.workspace?.existed) fs.rmSync(out.workspace.path, { force: true });
-  for (const [label, clone] of [["product", primary], ["companion", companionClone]]) {
-    const verdict = out.branches[label];
+  if (workspace?.existed) fs.rmSync(workspace.path, { force: true });
+  for (const { label, clone } of halves) {
+    const verdict = branches[label];
     if (verdict?.action !== "deleted") continue;
     const deletion = gitRun(clone, ["branch", "-d", verdict.name]);
     if (!deletion.ok) {
       Object.assign(verdict, { action: "retained", reason: `git branch -d failed: ${deletion.stderr.split("\n")[0]}` });
-      fail("branch-delete", `git -C ${clone} branch -d ${verdict.name}: ${deletion.stderr}`, { half: label });
+      return { ...out, status: "failed", reason: "branch-delete", half: label, message: `git -C ${clone} branch -d ${verdict.name}: ${deletion.stderr}` };
     }
   }
-  finish();
+  return out;
 }
 
 // --- model profiles --------------------------------------------------------
