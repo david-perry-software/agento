@@ -4375,7 +4375,8 @@ die("gh stub: unsupported " + args.join(" "));
 const shipRun = (cwd, env, ...args) => runWith({ cwd, env }, "ship", ...args);
 
 // Every ref and worktree registration of the clones, for "nothing changed" checks.
-const refState = (...clones) => clones.map((c) => [git(c, "for-each-ref"), git(c, "worktree", "list", "--porcelain")]);
+// `origin/HEAD` is excluded: git ≥ 2.48 creates that pointer on the first fetch.
+const refState = (...clones) => clones.map((c) => [git(c, "for-each-ref", "--exclude=refs/remotes/origin/HEAD"), git(c, "worktree", "list", "--porcelain")]);
 
 test("shipStub self-test: wait-for-checks.sh reads the scripted rollups (exit 0 / 1 / 2), pr merge lands a real merge commit, forbidden flags are refused", () => {
   const fixture = makeWorktreeRepo();
