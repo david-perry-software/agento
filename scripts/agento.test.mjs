@@ -4266,7 +4266,7 @@ const fs = require("fs"), path = require("path"), cp = require("child_process"),
 const dir = ${JSON.stringify(dir)};
 const stateFile = path.join(dir, "state.json");
 const args = process.argv.slice(2);
-fs.appendFileSync(path.join(dir, "calls.log"), process.cwd() + " " + args.join(" ") + "\\n");
+fs.appendFileSync(path.join(dir, "calls.log"), process.cwd() + " " + args.map((a) => a.replace(/\\n/g, "\\\\n")).join(" ") + "\\n");
 const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
 const save = () => fs.writeFileSync(stateFile, JSON.stringify(state));
 const repo = process.cwd().includes("project-docs") ? state.companion : state.product;
@@ -4359,6 +4359,8 @@ if (args[0] === "workflow" && args[1] === "run") {
 die("gh stub: unsupported " + args.join(" "));
 `;
   const { env, bin } = restrictedPath({ gh: script });
+  // wait-for-checks.sh needs a shell and its few coreutils beside node, git, and gh.
+  for (const tool of ["bash", "grep", "sed", "sleep"]) fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), path.join(bin, tool));
   const calls = () => (fs.existsSync(path.join(dir, "calls.log")) ? fs.readFileSync(path.join(dir, "calls.log"), "utf8").trim().split("\n").filter(Boolean) : []);
   const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
   const update = (fn) => {
@@ -4373,6 +4375,76 @@ const shipRun = (cwd, env, ...args) => runWith({ cwd, env }, "ship", ...args);
 
 // Every ref and worktree registration of the clones, for "nothing changed" checks.
 const refState = (...clones) => clones.map((c) => [git(c, "for-each-ref"), git(c, "worktree", "list", "--porcelain")]);
+
+test("shipStub self-test: wait-for-checks.sh reads the scripted rollups (exit 0 / 1 / 2), pr merge lands a real merge commit, forbidden flags are refused", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const wait = (stub, ...extra) => spawnSync("bash", [path.join(repoRoot, "scripts", "wait-for-checks.sh"), "pr", "15", "--max-seconds", "0", "--interval", "1", ...extra], { cwd: repo, env: stub.env, encoding: "utf8" });
+  const check = (name, conclusion) => ({ name, status: conclusion ? "COMPLETED" : "IN_PROGRESS", conclusion });
+  const withRollups = (rollups, extra = {}) => shipStub({ product: { prs: { [branch]: { rollups, ...extra } } } });
+
+  const pass = wait(withRollups([[check("Unit tests", "SUCCESS"), check("Shellcheck", "SKIPPED")]]));
+  assert.equal(pass.status, 0, pass.stdout + pass.stderr);
+  assert.match(pass.stdout, /RESULT: success/);
+  const failing = wait(withRollups([[check("Unit tests", "FAILURE")]]));
+  assert.equal(failing.status, 1);
+  assert.match(failing.stdout, /Unit tests=fail/);
+  const pending = withRollups([[check("Unit tests", null)], [check("Unit tests", "SUCCESS")]]);
+  assert.equal(wait(pending).status, 2, "first snapshot pending");
+  assert.equal(wait(pending).status, 0, "second snapshot passes");
+  assert.equal(wait(withRollups([[]])).status, 0, "no checks with merge=CLEAN is success");
+  assert.equal(wait(withRollups([[]], { mergeStateStatus: "BLOCKED" })).status, 2, "no checks and not CLEAN stays pending within the grace window");
+  assert.equal(wait(withRollups([[]]), "--repo", "acme/project").status, 0, "--repo passes through");
+  assert.ok(pending.calls().every((c) => c.startsWith(`${repo} pr view 15 --json statusCheckRollup,mergeStateStatus --jq `)), pending.calls().join("\n"));
+
+  // pr view answers by number or branch with the requested fields; pr ready flips isDraft.
+  const gh = (stub, ...args) => spawnSync("gh", args, { cwd: repo, env: stub.env, encoding: "utf8" });
+  const stub = withRollups([[]]);
+  assert.deepEqual(JSON.parse(gh(stub, "pr", "view", branch, "--json", "number,state,isDraft,mergeCommit").stdout), { number: 15, state: "OPEN", isDraft: true, mergeCommit: null });
+  assert.equal(gh(stub, "pr", "view", "nope", "--json", "number").status, 1);
+  const draftMerge = gh(stub, "pr", "merge", "15", "--merge");
+  assert.equal(draftMerge.status, 1, "a draft cannot merge");
+  assert.equal(gh(stub, "pr", "ready", "15").status, 0);
+  assert.equal(stub.state().product.prs[branch].isDraft, false);
+  for (const flag of ["--admin", "--squash", "--rebase", "--delete-branch"]) {
+    assert.equal(gh(stub, "pr", "merge", "15", "--merge", flag).status, 1, flag);
+    assert.equal(stub.state().product.prs[branch].state, "OPEN", flag);
+  }
+
+  // A real merge commit lands on the bare origin's main; the branch stays on origin until deleted.
+  const merged = gh(stub, "pr", "merge", "15", "--merge");
+  assert.equal(merged.status, 0, merged.stderr);
+  git(repo, "fetch", "-q", "--prune", "origin");
+  assert.equal(git(repo, "show", "origin/main:src.js"), "code");
+  assert.equal(stub.state().product.prs[branch].state, "MERGED");
+  assert.equal(stub.state().product.prs[branch].mergeCommit, git(repo, "rev-parse", "origin/main"));
+  assert.match(git(repo, "log", "-1", "--format=%s", "origin/main"), /^Merge pull request #15 from feature\/widget$/);
+  assert.equal(git(repo, "rev-list", "--count", "origin/main", "^origin/feature/widget"), "1", "one merge commit on top of the branch");
+  assert.deepEqual(JSON.parse(gh(stub, "pr", "view", branch, "--json", "state,mergeCommit").stdout), { state: "MERGED", mergeCommit: { oid: git(repo, "rev-parse", "origin/main") } });
+  assert.equal(gh(stub, "pr", "merge", "15", "--merge").status, 1, "a merged PR cannot merge twice");
+
+  // pr create registers a new PR for the head branch; api PATCH edits the body; repo view, run list/view, workflow run.
+  git(repo, "switch", "-q", "-c", "post-ship/widget");
+  const created = gh(stub, "pr", "create", "--base", "main", "--head", "post-ship/widget", "--title", "post-ship", "--body", "evidence");
+  assert.equal(created.status, 0, created.stderr);
+  assert.match(created.stdout, /^https:\/\/example\.test\/pull\/100$/m);
+  assert.equal(gh(stub, "pr", "create", "--head", "post-ship/widget").status, 1, "a second PR for the same open head is refused");
+  git(repo, "switch", "-q", "main");
+  assert.equal(gh(stub, "api", "repos/acme/project/pulls/100", "-X", "PATCH", "-f", "body=evidence\n\nFixes #3").status, 0);
+  assert.equal(stub.state().product.prs["post-ship/widget"].body, "evidence\n\nFixes #3");
+  assert.equal(gh(stub, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").stdout.trim(), "acme/project");
+  assert.deepEqual(JSON.parse(gh(stub, "run", "list", "--workflow", "release.yml", "--event", "workflow_dispatch", "--json", "databaseId,createdAt,url").stdout), []);
+  assert.equal(gh(stub, "workflow", "run", "release.yml", "--ref", "main").status, 0);
+  const runs = JSON.parse(gh(stub, "run", "list", "--workflow", "release.yml", "--event", "workflow_dispatch", "--json", "databaseId,createdAt,url").stdout);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].databaseId, 900);
+  assert.equal(gh(stub, "run", "view", "900", "--json", "status,conclusion,url", "--jq", "x").stdout.trim(), "in_progress - https://example.test/runs/900");
+  const runWait = spawnSync("bash", [path.join(repoRoot, "scripts", "wait-for-checks.sh"), "run", "900", "--max-seconds", "0", "--interval", "1"], { cwd: repo, env: stub.env, encoding: "utf8" });
+  assert.equal(runWait.status, 2, runWait.stdout);
+  stub.update((s) => Object.assign(s.runs[0], { status: "completed", conclusion: "success" }));
+  assert.equal(spawnSync("bash", [path.join(repoRoot, "scripts", "wait-for-checks.sh"), "run", "900", "--max-seconds", "0"], { cwd: repo, env: stub.env, encoding: "utf8" }).status, 0);
+});
 
 test("ship validates its arguments, is listed in the usage header, and --confirm needs a value", () => {
   const { repo, wt } = makeWorktreeRepo();
