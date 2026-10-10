@@ -133,6 +133,24 @@ test("a missing in-review: review is null, build is open while not complete and 
   assert.deepEqual(done.warnings, ["no in-review transition", "no merge commit names feature/x"]);
 });
 
+test("a reopened delivery: the cycle ends at the final complete run and review never ends before it starts", () => {
+  const text = [
+    commit("h1", "2026-10-01T10:00:00Z", [status(null, "complete")]),
+    commit("h2", "2026-10-01T11:00:00Z", [status("complete", "in-progress")]),
+    commit("h3", "2026-10-01T12:00:00Z", [status("in-progress", "complete")]),
+    commit("h4", "2026-10-01T13:00:00Z", [status("complete", "in-review")]),
+    commit("h5", "2026-10-01T14:00:00Z", [status("in-review", "complete")]),
+  ].join("");
+  const m = metricsOf(text);
+  assert.equal(m.phases.planned, null);
+  assert.deepEqual(m.cycle, { start: "2026-10-01T10:00:00Z", end: "2026-10-01T14:00:00Z", seconds: 4 * 3600, open: false });
+  assert.deepEqual(m.phases.build, { start: "2026-10-01T11:00:00Z", end: "2026-10-01T13:00:00Z", seconds: 7200, open: false });
+  assert.deepEqual(m.phases.review, { start: "2026-10-01T13:00:00Z", end: "2026-10-01T14:00:00Z", seconds: 3600, open: false });
+  const reopened = metricsOf(text.split("\u0000commit h5")[0], { status: "in-review" });
+  assert.equal(reopened.cycle.open, true);
+  assert.equal(reopened.phases.review.open, true);
+});
+
 test("two +status: lines in one commit are deduplicated", () => {
   const text = commit("f1", "2026-10-01T10:00:00Z", [roadmap(["status: planned", "status: planned"], [], { created: true })]);
   assert.deepEqual(eventsOf(text).map((e) => [e.sha, e.value]), [["f1", "planned"]]);
