@@ -3848,10 +3848,11 @@ test("close-session closes a promoted plan-<id> worktree as the build it became"
 });
 
 // Land <branch> on origin/main (fast-forward push) and delete it from origin;
-// `syncMain` also fast-forwards the clone's local main.
-function landBranch(work, branch, { syncMain = true } = {}) {
+// `syncMain` also fast-forwards the clone's local main. `remote` names the remote
+// branch to delete when `branch` is a remote-tracking ref (`origin/<name>`).
+function landBranch(work, branch, { syncMain = true, remote = branch } = {}) {
   git(work, "push", "-q", "origin", `${branch}:main`);
-  git(work, "push", "-q", "origin", "--delete", branch);
+  git(work, "push", "-q", "origin", "--delete", remote);
   git(work, "fetch", "-q", "--prune", "origin");
   if (syncMain) git(work, "merge", "-q", "--ff-only", "origin/main");
 }
@@ -4569,10 +4570,11 @@ test("ship passes resolver errors and a primary on the branch through as rejecte
   assert.equal(noPr.json.reason, "pr-missing");
 });
 
-test("ship derives the phase from git and GitHub state in the in-repo layout", () => {
+test("ship derives the phase from git and GitHub state in the in-repo layout and resumes from every interruption", () => {
   const fixture = makeWorktreeRepo();
   const { repo, wt } = fixture;
   const { branch, owner } = inRepoDelivery(fixture, "widget");
+  const PENDING = [[{ name: "Unit tests", status: "IN_PROGRESS", conclusion: null }]];
 
   const open = shipRun(repo, shipStub({ product: { prs: { [branch]: {} } } }).env, "feature", "widget");
   assert.equal(open.json.resumedAt, "audit", JSON.stringify(open.json));
@@ -4582,14 +4584,18 @@ test("ship derives the phase from git and GitHub state in the in-repo layout", (
   assert.equal(open.json.audit.owner.path, owner);
   assert.deepEqual(open.json.audit.ownerTree, { tracked: [], untracked: [], ahead: 0 });
 
-  // A roadmap already `complete` on the open branch means the confirm writes landed: resume at checks.
+  // A roadmap already `complete` on the open branch means the confirm writes landed: resume at checks (still pending here).
   const stamped = path.join(owner, "features/2026/10/widget/roadmap.md");
   fs.writeFileSync(stamped, fs.readFileSync(stamped, "utf8").replace("status: in-review", "status: complete"));
   git(owner, "commit", "-qam", "docs(feature): ship widget");
   git(owner, "push", "-q");
-  assert.equal(shipRun(repo, shipStub({ product: { prs: { [branch]: {} } } }).env, "feature", "widget").json.resumedAt, "checks");
+  const checks = shipRun(repo, shipStub({ product: { prs: { [branch]: { rollups: PENDING } } } }).env, "feature", "widget", "--wait", "0");
+  assert.equal(checks.json.resumedAt, "checks", JSON.stringify(checks.json));
+  assert.equal(checks.json.status, "pending");
+  assert.equal(checks.json.phase, "checks");
+  assert.ok(fs.existsSync(owner));
 
-  // Merged on origin, remote branch gone, local main behind: sync.
+  // Merged on origin, remote branch gone, local main behind: sync, then the owner is torn down.
   landBranch(repo, branch, { syncMain: false });
   const merged = shipStub({ product: { prs: { [branch]: { state: "MERGED", isDraft: false, mergeCommit: git(repo, "rev-parse", "origin/main") } } } });
   const behind = shipRun(repo, merged.env, "feature", "widget");
@@ -4597,13 +4603,25 @@ test("ship derives the phase from git and GitHub state in the in-repo layout", (
   assert.equal(behind.json.resumedAt, "sync");
   assert.equal(behind.json.mergeSha, git(repo, "rev-parse", "origin/main"));
   assert.equal(behind.json.audit.artifactRef, "origin/main");
+  assert.deepEqual(stepsOf(behind.json), ["sync", "teardown"]);
+  assert.equal(behind.json.outcome, "shipped");
+  assert.equal(fs.existsSync(owner), false);
+  assert.ok(merged.calls().every((c) => !/ pr (merge|ready|create)/.test(c)), "a merged PR is never merged again");
 
-  // Synced with an owner still present: teardown; no owner: done.
-  git(repo, "merge", "-q", "--ff-only", "origin/main");
-  assert.equal(shipRun(repo, merged.env, "feature", "widget").json.resumedAt, "teardown");
-  git(repo, "worktree", "remove", owner);
-  git(repo, "branch", "-q", "-d", branch);
-  assert.equal(shipRun(repo, merged.env, "feature", "widget").json.resumedAt, "done");
+  // Synced, no owner: done.
+  const done = shipRun(repo, merged.env, "feature", "widget").json;
+  assert.equal(done.resumedAt, "done");
+  assert.equal(done.outcome, "already-shipped");
+  assert.deepEqual(done.actions, []);
+
+  // Synced with an owner still present: teardown.
+  const other = inRepoDelivery(fixture, "other", { status: "complete" });
+  landBranch(repo, other.branch);
+  const teardown = shipRun(repo, shipStub({ product: { prs: { [other.branch]: { state: "MERGED", isDraft: false } } } }).env, "feature", "other").json;
+  assert.equal(teardown.resumedAt, "teardown", JSON.stringify(teardown));
+  assert.deepEqual(stepsOf(teardown), ["teardown"]);
+  assert.equal(fs.existsSync(other.owner), false);
+  assert.deepEqual(fs.readdirSync(wt), []);
 
   // A post-ship step left unticked on the default: epilogue.
   fs.writeFileSync(stamped.replace(owner, repo), "```yaml\nstatus: complete\nbranch: feature/widget\nnext-step: \"\"\n```\n\n## Phase 1\n\n- [x] 1.1 done — verify: x\n- [ ] 1.2 (manual, post-ship) check prod — verify: y\n");
@@ -4623,9 +4641,9 @@ test("ship derives the phase from git and GitHub state in the in-repo layout", (
   assert.equal(release.json.resumedAt, "release", JSON.stringify(release.json));
 });
 
-test("ship derives the phase in companion mode: both PRs, merge-companion on a half-shipped pair, sync for either default", () => {
+test("ship derives the phase in companion mode and resumes a half-shipped pair at the companion merge, then syncs both defaults", () => {
   const pair = makePairRepo();
-  const { repo, docs } = pair;
+  const { repo, docs, wt, docsWt } = pair;
   const { branch, owner, half } = pairDelivery(pair, "widget");
   const both = (product, companion) => shipStub({ product: { prs: { [branch]: product } }, companion: { prs: { [branch]: { number: 7, ...companion } } } });
 
@@ -4640,23 +4658,31 @@ test("ship derives the phase in companion mode: both PRs, merge-companion on a h
   assert.equal(open.json.audit.artifactsRoot, docs);
   assert.equal(git(docs, "branch", "--show-current"), "main", "the companion clone is never switched");
 
-  // Code merged, companion still open: resume at the companion merge.
+  // Code merged, companion still open with pending checks: resume at the companion merge, nothing merged yet.
   landBranch(repo, branch, { syncMain: false });
-  const halfShipped = shipRun(repo, both({ state: "MERGED", isDraft: false }, { state: "OPEN" }).env, "feature", "widget");
+  const halfShipped = shipRun(repo, both({ state: "MERGED", isDraft: false }, { state: "OPEN", rollups: [[{ name: "Docs", status: "IN_PROGRESS", conclusion: null }]] }).env, "feature", "widget", "--wait", "0");
   assert.equal(halfShipped.json.resumedAt, "merge-companion", JSON.stringify(halfShipped.json));
+  assert.equal(halfShipped.json.status, "pending");
+  assert.equal(halfShipped.json.phase, "merge-companion");
+  assert.ok(fs.existsSync(owner) && fs.existsSync(half));
 
-  // Both merged, product default behind: sync; then the companion default behind: still sync; then teardown.
+  // Both merged, both defaults behind: sync both, then teardown; the re-send is done.
   landBranch(docs, branch, { syncMain: false });
   const merged = both({ state: "MERGED", isDraft: false }, { state: "MERGED", isDraft: false });
-  assert.equal(shipRun(repo, merged.env, "feature", "widget").json.resumedAt, "sync");
-  git(repo, "merge", "-q", "--ff-only", "origin/main");
-  assert.equal(shipRun(repo, merged.env, "feature", "widget").json.resumedAt, "sync");
-  git(docs, "merge", "-q", "--ff-only", "origin/main");
-  const teardown = shipRun(repo, merged.env, "feature", "widget");
-  assert.equal(teardown.json.resumedAt, "teardown", JSON.stringify(teardown.json));
-  assert.equal(teardown.json.audit.owner.path, owner);
-  assert.equal(teardown.json.audit.artifactRef, "origin/main");
-  assert.equal(teardown.json.audit.roadmapPath, "features/2026/10/widget/roadmap.md");
+  const synced = shipRun(repo, merged.env, "feature", "widget").json;
+  assert.equal(synced.resumedAt, "sync", JSON.stringify(synced));
+  assert.deepEqual(stepsOf(synced), ["sync", "sync", "teardown"]);
+  assert.equal(synced.audit.owner.path, owner);
+  assert.equal(synced.audit.artifactRef, "origin/main");
+  assert.equal(synced.audit.roadmapPath, "features/2026/10/widget/roadmap.md");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(git(docs, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+  assert.deepEqual(fs.readdirSync(wt), []);
+  assert.deepEqual(fs.readdirSync(docsWt), []);
+  assert.ok(merged.calls().every((c) => !/ pr (merge|ready|create)/.test(c)));
+  const done = shipRun(repo, merged.env, "feature", "widget").json;
+  assert.equal(done.resumedAt, "done");
+  assert.equal(done.outcome, "already-shipped");
 });
 
 // Writers for a shippable artifact set: every step ticked, review approved.
@@ -4924,6 +4950,325 @@ test("ship audit in companion mode: companion half and companion PR gaps are har
   const lagging = audit("clean");
   assert.deepEqual(codes(lagging.gaps.hard), ["companion-behind"]);
   assert.match(lagging.gaps.hard[0].detail, /merge origin\/feature\/clean \(a fast-forward\)/);
+});
+
+const PASSING = [[{ name: "Unit tests", status: "COMPLETED", conclusion: "SUCCESS" }]];
+const stepsOf = (json) => json.actions.map((a) => a.step);
+const today = () => new Date().toISOString().slice(0, 10);
+
+test("ship --confirm (in-repo, owner): cleans the listed byproducts, completes the roadmap with follow-ups, stamps the changelog, readies, waits, merges, deletes the branch, syncs, and tears down", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo, wt } = fixture;
+  fs.writeFileSync(path.join(repo, "package.json"), JSON.stringify({ name: "p", version: "1.0.0" }));
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "package");
+  git(repo, "push", "-q", "origin", "main");
+  const { branch, owner, dir } = shippable(fixture, "widget", { extra: both(writeFile("src.js", "code\n"), writeFile("package.json", JSON.stringify({ name: "p", version: "1.1.0" })), writeFile("CHANGELOG.md", "# Changelog\n\n## 1.1.0 (unreleased)\n\n- feature\n")) });
+  fs.writeFileSync(path.join(owner, "shot[1].png"), "bytes");
+  fs.writeFileSync(path.join(owner, "shot1.png"), "bytes");
+  git(owner, "add", "shot1.png");
+  git(owner, "commit", "-q", "-m", "tracked shot");
+  git(owner, "push", "-q");
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING } } } });
+
+  const audit = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(audit.outcome, "awaiting-confirm", JSON.stringify(audit));
+  assert.deepEqual(codes(audit.gaps.confirm), ["untracked-byproducts", "changelog-unstamped"]);
+  assert.deepEqual(audit.gaps.confirm[0].paths, ["shot[1].png"]);
+
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", audit.confirmToken, "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.phase, "done");
+  assert.equal(json.outcome, "shipped");
+  assert.equal(json.resumedAt, "audit");
+  assert.deepEqual(stepsOf(json), ["clean", "roadmap-complete", "changelog-stamp", "push", "pr-ready", "merge-code", "delete-branch", "sync", "teardown"]);
+  assert.match(json.actions[0].detail, /removed 1 untracked file\(s\) from .*feature-widget: shot\[1\]\.png$/);
+  assert.equal(json.pr.state, "MERGED");
+  assert.equal(json.mergeSha, git(repo, "rev-parse", "origin/main"));
+  assert.equal(json.teardown.product.removed, true);
+  assert.equal(json.teardown.branches.product.action, "deleted");
+  assert.deepEqual(json.next, []);
+
+  // The literal pathspec removed shot[1].png only; the tracked shot1.png survived the clean and shipped.
+  assert.equal(git(repo, "show", "origin/main:shot1.png"), "bytes");
+  assert.ok(!git(repo, "ls-tree", "-r", "--name-only", "origin/main").split("\n").includes("shot[1].png"), "the untracked byproduct never shipped");
+  assert.equal(fs.existsSync(path.join(owner, "shot[1].png")), false, "the owner worktree is gone with its byproduct");
+  const roadmap = git(repo, "show", `origin/main:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: complete$/m);
+  assert.match(roadmap, new RegExp(`^last-updated: ${today()}$`, "m"));
+  assert.match(roadmap, /^next-step: ""$/m);
+  assert.match(roadmap, /## Follow-ups \(accepted at ship\)\n\n- untracked-byproducts: .*\(shot\[1\]\.png\) — accepted \d{4}-\d{2}-\d{2}\n- changelog-unstamped: /);
+  assert.match(git(repo, "show", "origin/main:CHANGELOG.md"), new RegExp(`^## 1\\.1\\.0 \\(${today()}\\)$`, "m"));
+  assert.match(git(repo, "log", "--format=%s", "origin/main"), /^docs\(feature\): ship widget$/m);
+  assert.match(git(repo, "log", "--format=%s", "origin/main"), /^chore\(release\): stamp CHANGELOG 1\.1\.0/m);
+
+  // gh saw exactly: ready, one bounded poll, a plain --merge; never admin/squash/rebase/delete-branch.
+  const gh = stub.calls().map((c) => c.replace(`${repo} `, "")).filter((c) => !/^--version|^auth status|^pr view feature\/widget --json number,state/.test(c));
+  assert.deepEqual(gh.filter((c) => /^pr (ready|merge)/.test(c)), ["pr ready 15", "pr merge 15 --merge"]);
+  assert.ok(gh.some((c) => c.startsWith("pr view 15 --json statusCheckRollup,mergeStateStatus --jq ")), gh.join("\n"));
+
+  // Remote branch gone, primary on main at origin/main and clean, owner worktree and local branch removed.
+  git(repo, "fetch", "-q", "--prune", "origin");
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/feature/widget"), "the remote branch is deleted");
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  assert.equal(worktreeCount(repo), 1);
+  assert.equal(fs.existsSync(owner), false);
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/widget"));
+  assert.deepEqual(fs.readdirSync(wt), []);
+
+  // A re-send after the ship is a sync-only report with no second merge, push, or PR.
+  stub.reset();
+  const again = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(again.status, "ok", JSON.stringify(again));
+  assert.equal(again.phase, "done");
+  assert.equal(again.outcome, "already-shipped");
+  assert.equal(again.resumedAt, "done");
+  assert.deepEqual(again.actions, []);
+  assert.ok(stub.calls().every((c) => !/ pr (merge|ready|create)/.test(c)), stub.calls().join("\n"));
+});
+
+test("ship --confirm: pending checks return exit 2 with the same --confirm command and the re-send continues; a failing check stops before the merge", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: [[{ name: "Unit tests", status: "IN_PROGRESS", conclusion: null }], ...PASSING] } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+
+  const first = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(first.code, 2, JSON.stringify(first.json));
+  assert.equal(first.json.status, "pending");
+  assert.equal(first.json.phase, "checks");
+  assert.deepEqual(stepsOf(first.json), ["roadmap-complete", "push", "pr-ready"]);
+  assert.deepEqual(first.json.next, [`/agento ship widget --confirm ${token}`]);
+  assert.match(first.json.message, /PR #15: RESULT: still pending/);
+  assert.equal(stub.state().product.prs[branch].state, "OPEN", "nothing merged while pending");
+  assert.match(git(repo, "show", `origin/${branch}:${dir}/roadmap.md`), /^status: complete$/m);
+
+  // The re-send finds the roadmap complete on the open branch, skips the audit and the token, and merges.
+  const second = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(second.code, 0, JSON.stringify(second.json));
+  assert.equal(second.json.resumedAt, "checks");
+  assert.equal(second.json.outcome, "shipped");
+  assert.deepEqual(stepsOf(second.json), ["merge-code", "delete-branch", "sync", "teardown"]);
+  assert.equal(stub.calls().filter((c) => / pr merge 15 --merge$/.test(c)).length, 1);
+  assert.equal(stub.calls().filter((c) => / pr ready 15$/.test(c)).length, 1, "ready is not repeated once the PR is ready");
+  assert.equal(fs.existsSync(owner), false);
+
+  // A failing required check: failed / checks-failed, nothing merged, resumable.
+  const failing = shippable(fixture, "broken", { extra: writeFile("src.js", "code\n") });
+  const failStub = shipStub({ product: { prs: { [failing.branch]: { number: 16, rollups: [[{ name: "Unit tests", status: "COMPLETED", conclusion: "FAILURE" }]] } } } });
+  const failToken = shipRun(repo, failStub.env, "feature", "broken").json.confirmToken;
+  const failed = shipRun(repo, failStub.env, "feature", "broken", "--confirm", failToken, "--wait", "0");
+  assert.equal(failed.code, 3);
+  assert.equal(failed.json.status, "failed");
+  assert.equal(failed.json.reason, "checks-failed");
+  assert.deepEqual(failed.json.rejectTo, { command: "/agento build-feature broken", window: "build" });
+  assert.equal(failStub.state().product.prs[failing.branch].state, "OPEN");
+  assert.ok(failStub.calls().every((c) => !/ pr merge/.test(c)));
+  assert.ok(fs.existsSync(failing.owner));
+});
+
+test("ship --confirm (in-repo, no owner): the primary is switched onto the branch for the writes and back; a behind PR is integrated by merge; a conflicting integration aborts and rejects", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  fs.writeFileSync(path.join(repo, "shared.txt"), "main v1\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "shared");
+  git(repo, "push", "-q", "origin", "main");
+  const { branch, dir } = shippable(fixture, "widget", { owner: false, extra: writeFile("src.js", "code\n") });
+  fs.writeFileSync(path.join(repo, "other.txt"), "main moves on\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "main advances");
+  git(repo, "push", "-q", "origin", "main");
+  const stub = shipStub({ product: { prs: { [branch]: { mergeStateStatus: "BEHIND", rollups: PASSING } } } });
+
+  const audit = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.deepEqual(codes(audit.gaps.confirm), ["pr-behind"]);
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", audit.confirmToken, "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "shipped");
+  assert.deepEqual(stepsOf(json), ["integrate", "roadmap-complete", "push", "pr-ready", "merge-code", "delete-branch", "sync", "delete-local-branch"]);
+  assert.equal(json.teardown, null);
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.throws(() => git(repo, "rev-parse", "--verify", "--quiet", "refs/heads/feature/widget"), "the local branch the writes used is deleted once merged");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(git(repo, "show", "origin/main:other.txt"), "main moves on");
+  assert.equal(git(repo, "show", "origin/main:src.js"), "code");
+  assert.match(git(repo, "show", `origin/main:${dir}/roadmap.md`), /^status: complete$/m);
+  assert.match(git(repo, "show", `origin/main:${dir}/roadmap.md`), /- pr-behind: PR #15 is behind main/);
+  assert.equal(worktreeCount(repo), 1);
+
+  // A conflicting integration: merge --abort, clean tree, rejected with the resume-session handoff, nothing pushed.
+  const conflict = shippable(fixture, "clash", { owner: false, extra: writeFile("shared.txt", "branch v2\n") });
+  fs.writeFileSync(path.join(repo, "shared.txt"), "main v3\n");
+  git(repo, "commit", "-qam", "main edits shared");
+  git(repo, "push", "-q", "origin", "main");
+  const clashStub = shipStub({ product: { prs: { [conflict.branch]: { number: 16, mergeStateStatus: "BEHIND", rollups: PASSING } } } });
+  const clashToken = shipRun(repo, clashStub.env, "feature", "clash").json.confirmToken;
+  const remoteRefs = () => [git(repo, "for-each-ref", "refs/remotes"), git(repo, "worktree", "list", "--porcelain")];
+  const before = remoteRefs();
+  const rejected = shipRun(repo, clashStub.env, "feature", "clash", "--confirm", clashToken, "--wait", "0");
+  assert.equal(rejected.code, 3, JSON.stringify(rejected.json));
+  assert.equal(rejected.json.status, "rejected");
+  assert.equal(rejected.json.reason, "integration-conflict");
+  assert.match(rejected.json.message, /the merge was aborted and the tree is clean again/);
+  assert.deepEqual(rejected.json.rejectTo, { command: "/agento start-session feature/clash --resume", window: "primary" });
+  assert.deepEqual(rejected.json.actions, []);
+  assert.equal(git(repo, "branch", "--show-current"), "main", "the primary is switched back");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  assert.deepEqual(remoteRefs(), before);
+  assert.equal(git(repo, "rev-parse", "refs/heads/feature/clash"), git(repo, "rev-parse", "origin/feature/clash"), "the local branch left behind is exactly origin/feature/clash");
+  assert.equal(clashStub.state().product.prs[conflict.branch].state, "OPEN");
+});
+
+// A companion-mode delivery ready to ship: code on the product branch, artifacts on the
+// companion branch, optionally a managed pair with its workspace file.
+function pairShippable(pair, slug, { owner = true, extra = writeFile("src.js", "code\n") } = {}) {
+  const { repo, docs, wt, docsWt } = pair;
+  const branch = `feature/${slug}`;
+  publishBranch(repo, branch, extra, { keepLocal: owner });
+  publishBranch(docs, branch, shipReady("feature", slug), { keepLocal: owner });
+  if (owner) {
+    git(repo, "worktree", "add", "-q", path.join(wt, `feature-${slug}`), branch);
+    git(docs, "worktree", "add", "-q", path.join(docsWt, `feature-${slug}`), branch);
+    fs.writeFileSync(path.join(wt, `feature-${slug}.code-workspace`), "{}\n");
+  }
+  return { branch, owner: owner ? path.join(wt, `feature-${slug}`) : null, half: owner ? path.join(docsWt, `feature-${slug}`) : null, workspace: path.join(wt, `feature-${slug}.code-workspace`), dir: `features/2026/10/${slug}` };
+}
+const pairStub = (branch, product = {}, companion = {}) => shipStub({ product: { prs: { [branch]: { rollups: PASSING, ...product } } }, companion: { prs: { [branch]: { number: 7, rollups: PASSING, ...companion } } } });
+
+test("ship --confirm (companion, owner): the roadmap commit lands in the companion half, both PRs are readied, code merges first, then the companion, both defaults sync, both halves and the workspace file go", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt, docsWt } = pair;
+  const { branch, owner, half, workspace, dir } = pairShippable(pair, "widget");
+  const stub = pairStub(branch);
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "companion");
+  assert.equal(json.outcome, "shipped");
+  assert.deepEqual(stepsOf(json), ["roadmap-complete", "push", "pr-ready", "companion-pr-ready", "merge-code", "delete-branch", "merge-companion", "companion-delete-branch", "sync", "sync", "teardown"]);
+  assert.match(json.actions[0].detail, new RegExp(`committed at ${half.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+  assert.match(json.actions[1].detail, /^companion: pushed feature\/widget/);
+  assert.equal(json.pr.state, "MERGED");
+  assert.equal(json.companionPr.state, "MERGED");
+  assert.deepEqual([json.teardown.product.removed, json.teardown.companion.removed, json.teardown.workspace.removed], [true, true, true]);
+  assert.deepEqual([json.teardown.branches.product.action, json.teardown.branches.companion.action], ["deleted", "deleted"]);
+
+  // Order: code merged from the product checkout before the companion merged from inside its clone.
+  const merges = stub.calls().filter((c) => / pr merge /.test(c));
+  assert.deepEqual(merges, [`${repo} pr merge 15 --merge`, `${docs} pr merge 7 --merge`]);
+  const readies = stub.calls().filter((c) => / pr ready /.test(c));
+  assert.deepEqual(readies, [`${repo} pr ready 15`, `${docs} pr ready 7`]);
+  assert.ok(stub.calls().some((c) => c.startsWith(`${docs} pr view 7 --repo acme/project-docs --json statusCheckRollup,mergeStateStatus --jq `)), "the companion wait names its repository");
+
+  // Both defaults carry the delivery, both remote branches are gone, both clones are on their default and clean.
+  assert.equal(git(repo, "show", "origin/main:src.js"), "code");
+  assert.match(git(docs, "show", `origin/main:${dir}/roadmap.md`), /^status: complete$/m);
+  assert.equal(git(repo, "ls-tree", "-r", "--name-only", "origin/main", dir), "", "the product receives no roadmap");
+  for (const clone of [repo, docs]) {
+    assert.throws(() => git(clone, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/feature/widget"), clone);
+    assert.equal(git(clone, "branch", "--show-current"), "main", clone);
+    assert.equal(git(clone, "rev-parse", "HEAD"), git(clone, "rev-parse", "origin/main"), clone);
+    assert.equal(git(clone, "status", "--porcelain"), "", clone);
+    assert.equal(worktreeCount(clone), 1, clone);
+    assert.throws(() => git(clone, "rev-parse", "--verify", "--quiet", "refs/heads/feature/widget"), clone);
+  }
+  assert.equal(fs.existsSync(owner), false);
+  assert.equal(fs.existsSync(half), false);
+  assert.equal(fs.existsSync(workspace), false);
+  assert.deepEqual(fs.readdirSync(wt), []);
+  assert.deepEqual(fs.readdirSync(docsWt), []);
+});
+
+test("ship resumes a half-shipped pair at the companion merge, and a failed companion merge reports the exact resumable sentence", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { branch, owner, half } = pairShippable(pair, "widget");
+  // Simulate the code merge having landed: origin/main carries the branch, the remote branch is gone.
+  landBranch(repo, branch, { syncMain: false });
+  const mergeSha = git(repo, "rev-parse", "origin/main");
+  const failing = pairStub(branch, { state: "MERGED", isDraft: false, mergeCommit: mergeSha }, { rollups: [[{ name: "Docs", status: "COMPLETED", conclusion: "FAILURE" }]] });
+  const failed = shipRun(repo, failing.env, "feature", "widget", "--wait", "0");
+  assert.equal(failed.code, 3, JSON.stringify(failed.json));
+  assert.equal(failed.json.status, "failed");
+  assert.equal(failed.json.reason, "companion-merge");
+  assert.equal(failed.json.resumedAt, "merge-companion");
+  assert.equal(failed.json.phase, "merge-companion");
+  assert.equal(failed.json.message, "code PR #15 merged, companion PR #7 open at https://example.test/companion/pull/7; re-send /agento ship widget to resume at the companion merge");
+  assert.deepEqual(stepsOf(failed.json), ["companion-pr-ready"]);
+  assert.ok(failing.calls().every((c) => !/ pr merge /.test(c)));
+  assert.ok(fs.existsSync(owner) && fs.existsSync(half), "nothing torn down");
+
+  const passing = pairStub(branch, { state: "MERGED", isDraft: false, mergeCommit: mergeSha }, { isDraft: false });
+  const resumed = shipRun(repo, passing.env, "feature", "widget", "--wait", "0");
+  assert.equal(resumed.code, 0, JSON.stringify(resumed.json));
+  assert.equal(resumed.json.resumedAt, "merge-companion");
+  assert.equal(resumed.json.outcome, "shipped");
+  assert.equal(resumed.json.mergeSha, mergeSha);
+  assert.deepEqual(stepsOf(resumed.json), ["merge-companion", "companion-delete-branch", "sync", "sync", "teardown"]);
+  assert.deepEqual(passing.calls().filter((c) => / pr (merge|ready) /.test(c)), [`${docs} pr merge 7 --merge`]);
+  assert.equal(fs.existsSync(owner), false);
+  assert.equal(fs.existsSync(half), false);
+  assert.equal(git(docs, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+});
+
+test("ship --confirm (companion, no owner): the companion clone is switched onto the mirrored branch for the roadmap commit and back; both local branches are deleted after the merge", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt, docsWt } = pair;
+  const { branch, dir } = pairShippable(pair, "widget", { owner: false });
+  const stub = pairStub(branch);
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "shipped");
+  assert.equal(json.teardown, null);
+  assert.deepEqual(stepsOf(json), ["roadmap-complete", "push", "pr-ready", "companion-pr-ready", "merge-code", "delete-branch", "merge-companion", "companion-delete-branch", "sync", "sync", "delete-local-branch", "delete-local-branch"]);
+  assert.match(git(docs, "show", `origin/main:${dir}/roadmap.md`), /^status: complete$/m);
+  for (const clone of [repo, docs]) {
+    assert.equal(git(clone, "branch", "--show-current"), "main", clone);
+    assert.equal(git(clone, "status", "--porcelain"), "", clone);
+    assert.throws(() => git(clone, "rev-parse", "--verify", "--quiet", "refs/heads/feature/widget"), clone);
+  }
+  assert.deepEqual(fs.readdirSync(wt), []);
+  assert.deepEqual(fs.readdirSync(docsWt), []);
+});
+
+test("ship sync and done: merged deliveries with a default behind origin are fast-forwarded and reported already-shipped, and re-sends never merge, push, or open a PR again", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { branch } = pairShippable(pair, "widget", { owner: false });
+  landBranch(repo, `origin/${branch}`, { syncMain: false, remote: branch });
+  landBranch(docs, `origin/${branch}`, { syncMain: false, remote: branch });
+  const stub = pairStub(branch, { state: "MERGED", isDraft: false, mergeCommit: git(repo, "rev-parse", "origin/main") }, { state: "MERGED", isDraft: false });
+  const first = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(first.status, "ok", JSON.stringify(first));
+  assert.equal(first.resumedAt, "sync");
+  assert.equal(first.phase, "done");
+  assert.equal(first.outcome, "already-shipped");
+  assert.deepEqual(stepsOf(first), ["sync", "sync"]);
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(git(docs, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+
+  stub.reset();
+  const second = shipRun(repo, stub.env, "feature", "widget").json;
+  assert.equal(second.resumedAt, "done");
+  assert.equal(second.outcome, "already-shipped");
+  assert.deepEqual(second.actions, []);
+  assert.ok(stub.calls().every((c) => /(--version|auth status| pr view | repo view )/.test(c)), stub.calls().join("\n"));
+
+  // In-repo: the same sync-only report.
+  const fixture = makeWorktreeRepo();
+  const inRepo = shippable(fixture, "solo", { owner: false });
+  landBranch(fixture.repo, `origin/${inRepo.branch}`, { syncMain: false, remote: inRepo.branch });
+  const solo = shipRun(fixture.repo, shipStub({ product: { prs: { [inRepo.branch]: { state: "MERGED", isDraft: false } } } }).env, "feature", "solo").json;
+  assert.equal(solo.outcome, "already-shipped", JSON.stringify(solo));
+  assert.deepEqual(stepsOf(solo), ["sync"]);
+  assert.equal(git(fixture.repo, "rev-parse", "HEAD"), git(fixture.repo, "rev-parse", "origin/main"));
 });
 
 // --- dashboard: one process per refresh ---------------------------------------

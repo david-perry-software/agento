@@ -28,7 +28,7 @@
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -1782,25 +1782,8 @@ function closeSession() {
       ["product", primary, productList, `origin/${config.branches.default}`],
       ...(companionClone ? [["companion", companionClone, companionList, `origin/${layout.config.branches.default}`]] : []),
     ]) {
-      const local = git(clone, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
-      const verdict = {
-        name: branch,
-        upstream: local ? git(clone, "for-each-ref", "--format=%(upstream:short)", `refs/heads/${branch}`) || null : null,
-        remoteExists: Boolean(git(clone, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)),
-        mergedIntoDefault: Boolean(local) && isAncestor(clone, `refs/heads/${branch}`, defaultRef),
-        action: "retained",
-        reason: null,
-      };
       const ownHalf = out[label];
-      const holder = list.find((w) => w.branch === branch && !(ownHalf?.registered && samePath(w.path, ownHalf.path)));
-      const head = git(clone, "symbolic-ref", "--short", "-q", "HEAD") || "HEAD";
-      if (!local) Object.assign(verdict, { action: "absent", reason: `no local ${branch} in ${clone}` });
-      else if (verdict.remoteExists) verdict.reason = `origin/${branch} still exists`;
-      else if (!verdict.mergedIntoDefault) verdict.reason = `not merged into ${defaultRef}`;
-      else if (holder) verdict.reason = `checked out at ${holder.path}`;
-      else if (!isAncestor(clone, `refs/heads/${branch}`, "HEAD")) verdict.reason = `merged into ${defaultRef} but not into ${head} at ${clone}, so git branch -d would refuse; run git -C ${clone} pull --ff-only, then re-send`;
-      else Object.assign(verdict, { action: "deleted", reason: `merged into ${defaultRef} and gone from origin` });
-      out.branches[label] = verdict;
+      out.branches[label] = branchVerdict(clone, list, branch, defaultRef, ownHalf?.registered ? ownHalf.path : null);
     }
     const unmerged = Object.values(out.branches).some((v) => v?.action === "retained" && !v.mergedIntoDefault);
     if (args.mode === "freehand" && unmerged) out.next = [`/agento start-freehand ${args.slug} --resume`];
@@ -1820,6 +1803,30 @@ function closeSession() {
   if (removal.status === "blocked") finish({ status: "blocked", reason: removal.reason, message: removal.message });
   if (removal.status === "failed") fail(removal.reason, removal.message, { half: removal.half });
   finish();
+}
+
+// Whether `git branch -d <branch>` in `clone` is safe and wanted: the local branch
+// exists, is gone from origin, is merged into `defaultRef`, is checked out nowhere
+// but `ownHalfPath` (which is about to be removed), and is reachable from HEAD.
+function branchVerdict(clone, list, branch, defaultRef, ownHalfPath = null) {
+  const local = git(clone, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
+  const verdict = {
+    name: branch,
+    upstream: local ? git(clone, "for-each-ref", "--format=%(upstream:short)", `refs/heads/${branch}`) || null : null,
+    remoteExists: Boolean(git(clone, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)),
+    mergedIntoDefault: Boolean(local) && isAncestor(clone, `refs/heads/${branch}`, defaultRef),
+    action: "retained",
+    reason: null,
+  };
+  const holder = list.find((w) => w.branch === branch && !(ownHalfPath && samePath(w.path, ownHalfPath)));
+  const head = git(clone, "symbolic-ref", "--short", "-q", "HEAD") || "HEAD";
+  if (!local) Object.assign(verdict, { action: "absent", reason: `no local ${branch} in ${clone}` });
+  else if (verdict.remoteExists) verdict.reason = `origin/${branch} still exists`;
+  else if (!verdict.mergedIntoDefault) verdict.reason = `not merged into ${defaultRef}`;
+  else if (holder) verdict.reason = `checked out at ${holder.path}`;
+  else if (!isAncestor(clone, `refs/heads/${branch}`, "HEAD")) verdict.reason = `merged into ${defaultRef} but not into ${head} at ${clone}, so git branch -d would refuse; run git -C ${clone} pull --ff-only, then re-send`;
+  else Object.assign(verdict, { action: "deleted", reason: `merged into ${defaultRef} and gone from origin` });
+  return verdict;
 }
 
 // The occupant gate and the removal of a managed pair (companion half, prune,
@@ -2086,6 +2093,8 @@ function ship() {
   };
 
   // ---- audit (the PR is open and the confirm writes have not landed) ----
+  let acceptedGaps = [];
+  let changelog = null;
   if (phase === "audit") {
     const reviewContent = readArtifact("review.md");
     const planContent = readArtifact("plan.md") ?? "";
@@ -2102,7 +2111,7 @@ function ship() {
     };
     const issueNumber = type === "issue" ? header(roadmapContent, "github-issue").match(/\d+/)?.[0] ?? null : null;
     const issue = type === "issue" ? { githubIssue: issueNumber, fixesLine: issueNumber !== null && (pr.body ?? "").includes(`Fixes #${issueNumber}`), resolutionWritten: /^## Resolution\b/m.test(planContent) } : null;
-    const changelog = changelogFacts();
+    changelog = changelogFacts();
     const diffFiles = pgit("diff", "--name-only", `origin/${defaultBranch}...${codeRef}`).split("\n").filter(Boolean);
     const postShipSteps = steps.filter((s) => s.postShip);
     const risks = planContent.match(/^## Risks\b[\s\S]*?(?=^## |(?![\s\S]))/m)?.[0] ?? "";
@@ -2167,9 +2176,278 @@ function ship() {
 
     if (!confirm) finish({ outcome: "awaiting-confirm", next: [shipCommand()] });
     if (confirm !== out.confirmToken) reject("confirm-stale", { message: `--confirm ${confirm} does not match the recomputed token ${out.confirmToken}; the confirmation gaps changed — present them again`, providedToken: confirm, next: [shipCommand()] });
+    acceptedGaps = confirmGaps;
   }
 
-  finish();
+  // Restorations for the no-owner path (the primary or the companion clone switched
+  // onto the branch) run on exit, whichever result line ends the call.
+  const restores = [];
+  process.on("exit", () => {
+    for (const restore of restores.reverse()) restore();
+  });
+  const switchTo = (clone, target, label) => {
+    if (git(clone, "branch", "--show-current") === target) return;
+    if (git(clone, "status", "--porcelain") !== "") reject("primary-dirty", { message: `${label} checkout ${clone} has uncommitted changes; with no owner worktree the ship writes happen there — commit, stash, or discard them first` });
+    const back = git(clone, "branch", "--show-current");
+    const sw = gitRun(clone, ["switch", target]);
+    if (!sw.ok) fail("switch-failed", `git -C ${clone} switch ${target}: ${sw.stderr}`);
+    restores.push(() => gitRun(clone, ["switch", back || layout.config.branches.default]));
+  };
+  const integrate = (dir, defaultRef, label) => {
+    const merge = gitRun(dir, ["merge", "--no-edit", defaultRef], 120000);
+    if (merge.ok) {
+      if (!/Already up to date/.test(merge.stdout)) act("integrate", `${label}: merged ${defaultRef} into ${branch} at ${dir}`);
+      return;
+    }
+    gitRun(dir, ["merge", "--abort"]);
+    const clean = git(dir, "status", "--porcelain") === "";
+    out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+    reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr.split("\n")[0]}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, next: [out.rejectTo.command] });
+  };
+  const push = (dir, label, refspec = branch) => {
+    const result = gitRun(dir, ["push", "origin", refspec], 120000);
+    if (!result.ok) {
+      if (classifyFetchFailure(result.stderr) === "auth") fail("push-auth", `git -C ${dir} push origin ${refspec}: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(originOf(dir)) });
+      fail("push-failed", `git -C ${dir} push origin ${refspec}: ${result.stderr.split("\n")[0]}`);
+    }
+    act("push", `${label}: pushed ${refspec} from ${dir}`);
+  };
+  const nameWithOwner = (cwd) => {
+    const result = ghRun(cwd, ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], 15000);
+    if (!result.ok) fail("gh-error", `gh repo view --json nameWithOwner in ${cwd}: ${result.stderr}`);
+    return result.stdout;
+  };
+  // scripts/wait-for-checks.sh in the foreground, bounded by the remaining budget.
+  const waitForChecks = (kind, target, cwd, { repo = null } = {}) => {
+    const args = [WAIT_FOR_CHECKS, kind, String(target), "--max-seconds", String(remainingSeconds()), "--interval", "10", ...(repo ? ["--repo", repo] : [])];
+    const result = spawnSync("bash", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GH_PROMPT_DISABLED: "1" } });
+    const lines = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.split("\n").filter(Boolean);
+    return { code: result.status ?? 3, last: lines.at(-1) ?? (result.error?.message ?? "wait-for-checks.sh produced no output") };
+  };
+  const pending = (atPhase, message) => finish({ status: "pending", phase: atPhase, message, next: [shipCommand(atPhase === "checks" ? confirm : null)] });
+  const ghFailure = (result, what) => {
+    if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
+    fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
+  };
+  let shippedHere = false;
+
+  // ---- confirm → checks → merge-code (the PR is still open) ----
+  if (phase === "audit" || phase === "checks") {
+    const accepted = new Set(acceptedGaps.map((g) => g.code));
+    const productTarget = owner ? owner.path : primary;
+    const artifactTarget = !external ? productTarget : companion?.registered ? companion.path : artifactsClone;
+    if (!owner) switchTo(primary, branch, "primary");
+    if (external && !companion?.registered) switchTo(artifactsClone, branch, "companion");
+
+    if (phase === "audit") {
+      out.phase = "confirm";
+      // Untracked byproducts first: exactly the listed paths, literal, never -d or -x.
+      const byproducts = acceptedGaps.find((g) => g.code === "untracked-byproducts");
+      if (byproducts) {
+        const clean = gitRun(owner.path, ["--literal-pathspecs", "clean", "-f", "--", ...byproducts.paths]);
+        if (!clean.ok) fail("clean-failed", `git -C ${owner.path} --literal-pathspecs clean -f -- …: ${clean.stderr}`);
+        act("clean", `removed ${byproducts.paths.length} untracked file(s) from ${owner.path}: ${byproducts.paths.join(", ")}`);
+        const after = treeState(owner.path);
+        if (!after || after.tracked.length || after.untracked.length || after.ahead !== 0) {
+          reject("owner-tree-changed", { message: `${owner.path} is not clean after the byproduct cleanup (tracked: ${after?.tracked.join(", ") || "none"}; untracked: ${after?.untracked.join(", ") || "none"}; ahead: ${after?.ahead ?? "?"}); nothing else was written`, ownerTreeAfter: after });
+        }
+      }
+    }
+
+    // The write targets sit at origin/<branch> (owners are never ahead here); then the accepted integrations.
+    for (const [dir, ref, label] of [[productTarget, `origin/${branch}`, "product"], ...(external ? [[artifactTarget, `origin/${branch}`, "companion"]] : [])]) {
+      if (!git(dir, "rev-parse", "--verify", "--quiet", ref)) continue;
+      const ff = gitRun(dir, ["merge", "--ff-only", ref]);
+      if (!ff.ok) reject("owner-diverged", { message: `${label} checkout ${dir} cannot fast-forward to ${ref}: ${ff.stderr.split("\n")[0]}; reconcile it in the build window` });
+    }
+    const behindNow = phase === "checks" && pr.mergeStateStatus === "BEHIND";
+    if (accepted.has("pr-behind") || behindNow) integrate(productTarget, `origin/${defaultBranch}`, "product");
+    if (external && (accepted.has("companion-pr-behind") || (phase === "checks" && companionPr?.mergeStateStatus === "BEHIND"))) integrate(artifactTarget, `origin/${artifactDefault}`, "companion");
+
+    const today = utcDate();
+    if (phase === "audit") {
+      // Roadmap: status complete, the accepted gaps as Follow-ups; one artifact commit.
+      const roadmapFile = path.join(artifactTarget, roadmapRel);
+      fs.writeFileSync(roadmapFile, completeRoadmap(fs.readFileSync(roadmapFile, "utf8"), { date: today, followups: acceptedGaps }));
+      gitRun(artifactTarget, ["add", "--", roadmapRel]);
+      const commit = gitRun(artifactTarget, ["commit", "-q", "-m", `docs(${type}): ship ${slug}`]);
+      if (!commit.ok) fail("commit-failed", `git -C ${artifactTarget} commit (roadmap): ${commit.stderr}`);
+      act("roadmap-complete", `roadmap status: complete${acceptedGaps.length ? ` with ${acceptedGaps.length} accepted gap(s) under ## Follow-ups (accepted at ship)` : ""} committed at ${artifactTarget}`);
+      if (changelog.needsStamp) stampChangelog(productTarget, changelog.unreleasedHeading, today, act);
+    } else {
+      // Resume on a later UTC date: refresh a stamp older than today before the merge.
+      const facts = changelogFacts();
+      const stamped = pgit("show", `${codeRef}:CHANGELOG.md`).match(/^## (\S+) \((\d{4}-\d{2}-\d{2})\)/m);
+      if (facts.versionChanged && stamped && stamped[1] === facts.to && stamped[2] !== today) stampChangelog(productTarget, facts.to, today, act, stamped[2]);
+    }
+
+    // Push product first, then companion, so the tick never precedes its code.
+    if (git(productTarget, "rev-parse", "HEAD") !== pgit("rev-parse", `origin/${branch}`)) push(productTarget, "product");
+    if (external && git(artifactTarget, "rev-parse", "HEAD") !== layout.agit("rev-parse", `origin/${branch}`)) push(artifactTarget, "companion");
+    for (const restore of restores.splice(0)) restore();
+
+    // Ready, wait, merge — the code PR first; the companion PR is readied now and merged after.
+    out.phase = "checks";
+    if (pr.isDraft) {
+      const ready = ghRun(root, ["pr", "ready", String(pr.number)], 30000);
+      if (!ready.ok) ghFailure(ready, `gh pr ready ${pr.number}`);
+      act("pr-ready", `PR #${pr.number} marked ready for review`);
+    }
+    if (external && companionPr?.isDraft) {
+      const ready = ghRun(artifactsClone, ["pr", "ready", String(companionPr.number)], 30000);
+      if (!ready.ok) ghFailure(ready, `gh pr ready ${companionPr.number} (companion)`);
+      companionPr.isDraft = false;
+      act("companion-pr-ready", `companion PR #${companionPr.number} marked ready for review`);
+    }
+    const checks = waitForChecks("pr", pr.number, root);
+    if (checks.code === 2) pending("checks", `PR #${pr.number}: ${checks.last}`);
+    if (checks.code === 1) fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); fix it in the build window, then re-send`, { rejectTo: owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : null });
+    if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
+
+    out.phase = "merge-code";
+    const merge = ghRun(root, ["pr", "merge", String(pr.number), "--merge"], 120000);
+    if (!merge.ok) ghFailure(merge, `gh pr merge ${pr.number} --merge`);
+    act("merge-code", `PR #${pr.number} merged into ${defaultBranch} with a merge commit`);
+    shippedHere = true;
+    const del = gitRun(primary, ["push", "origin", "--delete", branch], 60000);
+    if (del.ok) act("delete-branch", `origin/${branch} deleted from the product`);
+    else out.warnings.push(`delete-branch: git push origin --delete ${branch} failed (${del.stderr.split("\n")[0]}); the remote branch may already be gone`);
+    gitRun(primary, ["fetch", "--prune", "origin"]);
+    const merged = shipPrLookup(branch, root, "pr");
+    if (merged.pr) {
+      out.pr = prSummary(merged.pr);
+      out.mergeSha = merged.pr.mergeCommit?.oid ?? null;
+    }
+  }
+
+  // ---- merge-companion (companion mode; the resume point of the half-shipped case) ----
+  if (external && companionPr?.state === "OPEN") {
+    out.phase = "merge-companion";
+    const halfShipped = `code PR #${pr.number} merged, companion PR #${companionPr.number} open at ${companionPr.url}; re-send /agento ship ${slug} to resume at the companion merge`;
+    const companionFail = (detail) => fail("companion-merge", halfShipped, { detail });
+    if (companionPr.isDraft) {
+      const ready = ghRun(artifactsClone, ["pr", "ready", String(companionPr.number)], 30000);
+      if (!ready.ok) companionFail(`gh pr ready ${companionPr.number}: ${ready.stderr}`);
+      act("companion-pr-ready", `companion PR #${companionPr.number} marked ready for review`);
+    }
+    const checks = waitForChecks("pr", companionPr.number, artifactsClone, { repo: nameWithOwner(artifactsClone) });
+    if (checks.code === 2) pending("merge-companion", `companion PR #${companionPr.number}: ${checks.last}`);
+    if (checks.code !== 0) companionFail(`wait-for-checks.sh pr ${companionPr.number}: ${checks.last}`);
+    const merge = ghRun(artifactsClone, ["pr", "merge", String(companionPr.number), "--merge"], 120000);
+    if (!merge.ok) companionFail(`gh pr merge ${companionPr.number} --merge: ${merge.stderr}`);
+    act("merge-companion", `companion PR #${companionPr.number} merged into ${artifactDefault} with a merge commit`);
+    shippedHere = true;
+    const del = gitRun(artifactsClone, ["push", "origin", "--delete", branch], 60000);
+    if (del.ok) act("companion-delete-branch", `origin/${branch} deleted from the companion`);
+    else out.warnings.push(`companion-delete-branch: git -C ${artifactsClone} push origin --delete ${branch} failed (${del.stderr.split("\n")[0]}); the remote branch may already be gone`);
+    gitRun(artifactsClone, ["fetch", "--prune", "origin"]);
+    const merged = shipPrLookup(branch, artifactsClone, "companionPr");
+    if (merged.pr) out.companionPr = prSummary(merged.pr);
+  }
+
+  // ---- sync: both defaults fast-forwarded to their origin ----
+  out.phase = "sync";
+  const syncDefault = (clone, name, label) => {
+    gitRun(clone, ["fetch", "--prune", "origin"]);
+    const current = git(clone, "branch", "--show-current");
+    if (current !== name) {
+      if (git(clone, "status", "--porcelain") !== "") {
+        out.warnings.push(`sync: ${label} checkout ${clone} is on ${current || "a detached HEAD"} with uncommitted changes; ${name} was not fast-forwarded`);
+        return;
+      }
+      const sw = gitRun(clone, ["switch", name]);
+      if (!sw.ok) fail("sync-failed", `git -C ${clone} switch ${name}: ${sw.stderr}`);
+      act("switch", `${label}: switched ${clone} to ${name}`);
+    }
+    const before = git(clone, "rev-parse", "HEAD");
+    const ff = gitRun(clone, ["merge", "--ff-only", `origin/${name}`], 120000);
+    if (!ff.ok) fail("sync-failed", `git -C ${clone} merge --ff-only origin/${name}: ${ff.stderr.split("\n")[0]}; reconcile ${name} by hand, then re-send`);
+    if (git(clone, "rev-parse", "HEAD") !== before) act("sync", `${label}: ${name} fast-forwarded to origin/${name} at ${clone}`);
+    const ahead = Number.parseInt(git(clone, "rev-list", "--count", `origin/${name}..HEAD`), 10) || 0;
+    if (ahead || git(clone, "status", "--porcelain") !== "") out.warnings.push(`sync: ${label} ${name} at ${clone} is ${ahead ? `${ahead} commit(s) ahead of origin/${name}` : "not clean"} after the fast-forward`);
+  };
+  syncDefault(primary, defaultBranch, "product");
+  if (external) syncDefault(artifactsClone, artifactDefault, "companion");
+  // No owner: the local branch the writes used (or an earlier session left) goes once merged.
+  if (!owner) {
+    for (const [clone, defaultRef, label] of [[primary, `origin/${defaultBranch}`, "product"], ...(external ? [[artifactsClone, `origin/${artifactDefault}`, "companion"]] : [])]) {
+      const verdict = branchVerdict(clone, parseWorktreeList(git(clone, "worktree", "list", "--porcelain")), branch, defaultRef);
+      if (verdict.action !== "deleted") continue;
+      const deletion = gitRun(clone, ["branch", "-d", branch]);
+      if (deletion.ok) act("delete-local-branch", `${label}: local ${branch} deleted at ${clone} (${verdict.reason})`);
+      else out.warnings.push(`delete-local-branch: git -C ${clone} branch -d ${branch} failed: ${deletion.stderr.split("\n")[0]}`);
+    }
+  }
+
+  // ---- release, teardown, epilogue ----
+  if (config.checks?.releaseWorkflow) {
+    out.phase = "release";
+    finish({ outcome: null, message: "release phase not yet implemented", next: [shipCommand()] });
+  }
+
+  // ---- teardown: the owner's halves, workspace file, and merged local branches ----
+  if (owner) {
+    out.phase = "teardown";
+    const productList = productWorktrees({ fresh: true });
+    const companionList = external ? parseWorktreeList(git(artifactsClone, "worktree", "list", "--porcelain")) : [];
+    const resolved = resolveSessionPaths(owner.dirPrefix, owner.id, layout);
+    const inspect = (halfPath, list) => {
+      const entry = registeredAt(list, halfPath);
+      return { path: entry?.path ?? halfPath, branch: entry?.branch ?? null, detached: entry ? Boolean(entry.detached) : false, registered: Boolean(entry), onDisk: fs.existsSync(halfPath), removed: false };
+    };
+    const halves = [{ label: "product", half: inspect(owner.path, productList), clone: primary }];
+    if (external) halves.push({ label: "companion", half: inspect(companion?.path ?? resolved.companion.worktree, companionList), clone: artifactsClone });
+    const workspace = resolved.workspace ? { path: resolved.workspace, existed: fs.existsSync(resolved.workspace), removed: false } : null;
+    const branches = {
+      product: branchVerdict(primary, productList, branch, `origin/${defaultBranch}`, halves[0].half.path),
+      companion: external ? branchVerdict(artifactsClone, companionList, branch, `origin/${artifactDefault}`, halves[1].half.path) : null,
+    };
+    const removal = removeSessionPair({ halves, workspace, branches });
+    out.teardown = { product: removal.product, companion: removal.companion, workspace, branches, occupants: removal.occupants, pausedPath: null };
+    if (removal.status === "blocked") {
+      const flagged = halves.find((h) => h.label === removal.half).half.path;
+      out.teardown.pausedPath = flagged;
+      const summary = halves.filter((h) => removal.occupants[h.label].length).map((h) => `${h.label} half ${h.half.path}: ${removal.occupants[h.label].join(", ")}`).join("; ");
+      finish({ status: "blocked", reason: "occupied", outcome: "paused-teardown", message: `paused at teardown (worktree ${flagged} still open): ${summary}; close that VS Code window or terminal, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+    }
+    if (removal.status === "failed") fail(removal.reason, removal.message, { half: removal.half });
+    const removed = halves.filter((h) => h.half.removed).map((h) => h.half.path);
+    act("teardown", `removed ${removed.length ? removed.join(", ") : "no registered half"}${workspace?.removed ? ` and ${workspace.path}` : ""}; branches: product ${branches.product.action}${branches.companion ? `, companion ${branches.companion.action}` : ""}`);
+    shippedHere = true;
+  }
+
+  if (postShipPending.length) {
+    out.phase = "epilogue";
+    finish({ outcome: null, message: "epilogue phase not yet implemented", next: [shipCommand()] });
+  }
+  finish({ phase: "done", outcome: shippedHere ? "shipped" : "already-shipped", next: [] });
+}
+
+// roadmap.md → status complete, last-updated today, next-step cleared, and the
+// accepted confirm gaps recorded under `## Follow-ups (accepted at ship)`.
+function completeRoadmap(content, { date, followups }) {
+  const setHeader = (text, key, value) => (new RegExp(`(^|\\n)${key}:[^\\n]*`).test(text) ? text.replace(new RegExp(`(^|\\n)${key}:[^\\n]*`), `$1${key}: ${value}`) : text.replace(/(^|\n)(status:[^\n]*)/, `$1$2\n${key}: ${value}`));
+  let next = setHeader(content, "status", "complete");
+  next = setHeader(next, "last-updated", date);
+  next = setHeader(next, "next-step", '""');
+  if (followups.length) {
+    const lines = followups.map((g) => `- ${g.code}: ${g.detail}${g.paths?.length ? ` (${g.paths.join(", ")})` : ""} — accepted ${date}`);
+    next = `${next.replace(/\s+$/, "")}\n\n## Follow-ups (accepted at ship)\n\n${lines.join("\n")}\n`;
+  }
+  return next;
+}
+
+// `## <version> (unreleased)` → `## <version> (<date>)` in CHANGELOG.md, one product commit.
+function stampChangelog(dir, version, date, act, previous = null) {
+  const file = path.join(dir, "CHANGELOG.md");
+  const before = fs.readFileSync(file, "utf8");
+  const from = previous ? `## ${version} (${previous})` : `## ${version} (unreleased)`;
+  if (!before.includes(from)) return;
+  fs.writeFileSync(file, before.replace(from, `## ${version} (${date})`));
+  gitRun(dir, ["add", "--", "CHANGELOG.md"]);
+  const commit = gitRun(dir, ["commit", "-q", "-m", `chore(release): stamp CHANGELOG ${version} (${date})`]);
+  if (!commit.ok) emit({ status: "failed", reason: "commit-failed", message: `git -C ${dir} commit (changelog stamp): ${commit.stderr}` }, 3);
+  act("changelog-stamp", `CHANGELOG.md "## ${version} (${previous ?? "unreleased"})" stamped (${date}) at ${dir}`);
 }
 
 // First 12 hex characters of SHA-256 over the canonical JSON of the accepted gap set,
