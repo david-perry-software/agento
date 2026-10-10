@@ -5,6 +5,16 @@ Claude-format layout next to `.claude-plugin/plugin.json`) with `${CLAUDE_PLUGIN
 paths; the same scripts are wired workspace-mode in `.github/hooks/` for developing
 Agento itself.
 
+Each wired script (`scripts/hooks/delivery-guard.sh`, `scripts/hooks/session-context.sh`)
+is a short Bash wrapper that `exec`s one Node module beside it
+(`delivery-guard.mjs`, `session-context.mjs`) with the hook input on stdin. Both
+modules share `scripts/hooks/hook-lib.mjs` (payload, git, config, and companion
+resolution helpers) and import the CLI's `agento-config.mjs` and
+`worktree-occupants.mjs`, so the config loader and the occupant check exist once.
+`node` ≥ 20 is required; without `node` on `PATH` both wrappers exit 0 and print
+nothing — no guard verdicts, no session context — and `agento.mjs doctor` fails its
+`node` check.
+
 ## SessionStart — `scripts/hooks/session-context.sh`
 
 Injects `Current git branch: <branch>`, the `Agento CLI:` path, one
@@ -14,17 +24,17 @@ and `worktrees[]` are JSON-only and do not appear on the line), plus one line pe
 in-progress / paused / in-review roadmap (`status:` and `next-step:` from the YAML
 header) into every new chat session via `hookSpecificOutput.additionalContext`. It
 reads the repository from the hook input's `cwd` and the artifact roots from the
-target's `.github/agento.json` — it never assumes the plugin's own directory. The
-`Session:` line needs `node` on `PATH`; when it is missing, or the CLI fails or
-exceeds its 5 s timeout, the line is omitted and the rest of the output is unchanged.
+target's `.github/agento.json` — it never assumes the plugin's own directory. When
+the CLI call behind the `Session:` line fails or exceeds its 5 s timeout, the line is
+omitted and the rest of the output is unchanged.
 
 When the config sets `artifacts.repo`, the roadmaps are walked in the sibling
 companion checkout instead (resolved against the primary checkout, like
 `worktrees.dir`, so managed worktrees agree with the CLI) and the product's own
 `features/` and `issues/` are ignored. One extra line,
 `Artifacts: <absolute companion path> (branch <name|detached>)`, follows the
-`Session:` line (or `Agento CLI:` when there is none); it is produced without `node`,
-so the no-node fallback still equals the full output minus `Session:`. A missing
+`Session:` line (or `Agento CLI:` when there is none); it does not depend on the CLI
+call, so it is printed even when `Session:` is omitted. A missing
 companion directory yields the same line with `detached` and the usual "No
 in-progress delivery work" line — `agento.mjs doctor` is where the companion is
 validated. From a managed product worktree `<kind>-<id>` whose companion half
@@ -50,9 +60,9 @@ prompts you normally see once the session `.code-workspace` settings are current
 
 | Rule | Decision |
 |---|---|
-| Commit, push, or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain — or a push whose refspec targets it | deny |
+| Commit or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain. A push is judged by its refspec destinations (`refs/heads/` stripped, the default branch matched as a whole name, so `main-thing` is not `main`): denied from any branch when a destination is the default branch; from the default branch also when it names no refspec (and no `--tags`), pushes `HEAD` (or its shorthand `@`), or uses `--all`/`--mirror` — `git push origin HEAD:feature/x` from the default branch is allowed | deny |
 | `git push --force` / `--force-with-lease` / `--force-if-includes` / `-f` / `+refspec` | deny |
-| `git push --delete <default>` / `:<default>` — deleting any **non-default** remote branch (`--delete <ref>` / `:<ref>`) is allowed even while the checkout is on the default branch (#47) | deny |
+| `git push --delete <default>` / `:<default>` (also spelled `refs/heads/<default>`) — deleting any **non-default** remote branch (`--delete <ref>` / `:<ref>`) is allowed even while the checkout is on the default branch (#47) | deny |
 | `git commit --no-verify` / `-n`, `git push --no-verify` | deny |
 | `gh pr merge --admin` | deny |
 | `gh pr merge --squash` / `--rebase` | ask |
@@ -61,6 +71,7 @@ prompts you normally see once the session `.code-workspace` settings are current
 | Any shell command whose word is not a known read-only command and that names `.github/hooks/` or `scripts/hooks/` (rm, mv, cp/install *into* it, truncate, tee, `perl -pi`, `sed -i`, `git checkout -- <hook>`, redirections) | deny — use an edit tool |
 | `chmod` / `chown` / `touch` on a hook file | ask |
 | Editing a hook file with an edit tool | ask — per-change approval |
+| The plugin hook wiring — `hooks/hooks.json` and `.claude-plugin/` — is a hook file for the three rows above: shell writes denied, `chmod`/`chown`/`touch` and edit-tool edits ask | deny / ask |
 | Committing on a `feature/`/`issue/` branch without `roadmap.md` among the files that commit would record (index, `-a` modifications, or explicit pathspecs) | ask — progress may be lost on resume |
 | Companion mode (`artifacts.repo` set): the same commit in the product checkout while the companion checkout has no pending `roadmap.md` change (untracked, unstaged, or staged) and no `roadmap.md` in its `HEAD` commit — the reason names the companion path and its current branch; the product commit's own files are never what decides. From a managed product half `<kind>-<id>` the inspected checkout is the paired companion half `<companion>-worktrees/<kind>-<id>` when it exists | ask — progress may be lost on resume |
 | Companion mode: commit, push, or merge targeting the companion checkout or any worktree of it (`git -C <companion or half> …`, `cd <companion or half> && …`) on the **product** config's default branch, or a push whose refspec targets it | deny — the product config governs the companion |
@@ -94,6 +105,8 @@ companion half is not mistaken for a product commit.
   absolute path.
 - `tests/guard.test.mjs` — the assertion suite (spins up real temp git repos).
 - `tests/session-context.test.mjs` — SessionStart output against temp repos.
+- `tests/hook-lib.test.mjs` — unit tests for the shared hook helpers (shell
+  tokenizing, config loading, companion resolution).
 - `tests/customizations.test.mjs` — frontmatter validity and cross-reference
   integrity for every agent, prompt, instruction, and hook wiring file.
 - VS Code: Output panel → **GitHub Copilot Chat Hooks**, or *Developer: Show Agent

@@ -49,10 +49,10 @@ function run(cwd, env) {
   return parsed.hookSpecificOutput.additionalContext;
 }
 
-// A PATH with only the tools the hook itself needs (no node), to exercise the fallback.
+// A PATH with only bash and the tools the wrapper could reach (no node).
 function pathWithoutNode() {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-nonode-"));
-  for (const tool of ["bash", "python3", "git", "cat", "dirname"]) {
+  for (const tool of ["bash", "git", "cat", "dirname"]) {
     fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), path.join(bin, tool));
   }
   return { ...process.env, PATH: bin };
@@ -130,16 +130,13 @@ test("reports role=build with the delivery and lifecycle from a managed worktree
   assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
 });
 
-test("falls back to the pre-feature output byte for byte when node is absent from PATH", () => {
+test("without node on PATH the hook exits 0 and prints nothing", () => {
   const repo = makeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");
-  const withNode = run(repo);
-  assert.match(withNode, /^Session: /m);
-  const withoutNode = run(repo, pathWithoutNode());
-  assert.doesNotMatch(withoutNode, /^Session: /m);
-  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
-  assert.match(withoutNode, /^Agento CLI: node /m);
-  assert.match(withoutNode, /Delivery work: features\/2026\/09\/alpha/);
+  const env = pathWithoutNode();
+  const result = spawnSync(path.join(env.PATH, "bash"), [hook], { input: JSON.stringify({ cwd: repo }), encoding: "utf8", timeout: 20000, env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
 });
 
 test("companion: lists roadmaps from the companion checkout and ignores the product's own roots", () => {
@@ -182,18 +179,6 @@ test("companion: no Artifacts: line when artifacts.repo is unset", () => {
   const context = run(repo);
   assert.doesNotMatch(context, /^Artifacts: /m);
   assert.match(context, /Delivery work: features\/2026\/09\/alpha/);
-});
-
-test("companion: the no-node fallback equals the with-node output minus Session:, Artifacts: included", () => {
-  const { product, companion } = makeRepo({ companion: true });
-  writeRoadmap(companion, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");
-  const withNode = run(product);
-  assert.match(withNode, /^Session: /m);
-  const withoutNode = run(product, pathWithoutNode());
-  assert.doesNotMatch(withoutNode, /^Session: /m);
-  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
-  assert.match(withoutNode, new RegExp(`^Artifacts: ${companion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(branch main\\)$`, "m"));
-  assert.match(withoutNode, /Delivery work: features\/2026\/09\/alpha/);
 });
 
 test("companion: a managed worktree resolves the companion relative to the primary checkout", () => {
@@ -265,17 +250,6 @@ test("companion pair: the primary names the clone, not a half, even when halves 
   assert.doesNotMatch(context, /-worktrees\/feature-widget/);
 });
 
-test("companion pair: the no-node fallback equals the with-node output minus Session:", () => {
-  const { build, half } = makePair();
-  writeRoadmap(half, "features/2026/09/widget", 'status: in-progress\nbranch: feature/widget\nnext-step: "1.1 step"');
-  const withNode = run(build);
-  assert.match(withNode, /^Session: /m);
-  const withoutNode = run(build, pathWithoutNode());
-  assert.doesNotMatch(withoutNode, /^Session: /m);
-  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
-  assert.match(withoutNode, new RegExp(`^Artifacts: ${escapeRe(half)} \\(branch feature/widget\\)$`, "m"));
-});
-
 test("companion: a worktree whose branch sets artifacts.repo resolves the companion while the primary has none", () => {
   // The layout rule: the checkout decides, the primary anchors. Only the worktree's
   // branch commits `artifacts.repo`; the primary stays in-repo.
@@ -302,10 +276,6 @@ test("companion: a worktree whose branch sets artifacts.repo resolves the compan
   assert.doesNotMatch(withNode, new RegExp(escapeRe(worktreesDir) + "/project-docs"));
   assert.match(withNode, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
   assert.doesNotMatch(withNode, /product-only/);
-
-  const withoutNode = run(build, pathWithoutNode());
-  assert.doesNotMatch(withoutNode, /^Session: /m);
-  assert.equal(withoutNode, withNode.split("\n").filter((l) => !l.startsWith("Session: ")).join("\n"));
 
   // The primary itself stays in-repo: no Artifacts: line, and it reads its own roots.
   const primary = run(product);

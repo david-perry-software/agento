@@ -330,7 +330,7 @@ function policyCapabilities() {
   const vocabulary = section[1].match(/\*\*Vocabulary\*\*[\s\S]*?\n\n([\s\S]*?)\n\n/);
   assert.ok(vocabulary, "§10 has no Vocabulary list");
   const tokens = [...vocabulary[1].matchAll(/^- `([a-z0-9-]+)` — /gm)].map((m) => m[1]);
-  assert.ok(tokens.length >= 7, `§10 vocabulary too short: ${tokens.join(", ")}`);
+  assert.ok(tokens.length >= 6, `§10 vocabulary too short: ${tokens.join(", ")}`);
   return new Set(tokens);
 }
 
@@ -482,7 +482,7 @@ test("the CLI needs table agrees with every prompt's Needs: line", () => {
   }
 });
 
-// A PATH with node and git only, so the cross-check never probes real gh/code/python3.
+// A PATH with node and git only, so the cross-check never probes real gh/code.
 let restrictedBinDir;
 function restrictedBin() {
   if (restrictedBinDir) return restrictedBinDir;

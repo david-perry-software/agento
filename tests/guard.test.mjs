@@ -151,6 +151,43 @@ test("tracks a plain switch/checkout to the default branch through a chain", () 
   assert.equal(decide("git switch main && git switch -c feature/other && git commit --allow-empty -m x", { cwd: repo }).decision, "allow");
 });
 
+test("pushes are judged by refspec destination, the default branch as a whole token", () => {
+  const repo = makeGitRepo();
+  const on = (command) => decide(command, { cwd: repo }).decision;
+  // On the default branch: a push whose every destination is another branch passes.
+  for (const command of [
+    "git push origin HEAD:feature/x",
+    "git push origin feature/x",
+    "git push -u origin feature/x",
+    "git push origin feature/x :feature/y",
+    "git push origin HEAD:refs/heads/feature/x",
+    "git push origin @:feature/x",
+    "git push -o ci.skip origin feature/x",
+    "git push origin --tags",
+  ]) assert.equal(on(command), "allow", command);
+  // ... while an implicit, HEAD, all-refs, or default destination is denied.
+  for (const command of [
+    "git push",
+    "git push origin",
+    "git push origin HEAD",
+    "git push origin @",
+    "git push -u origin @",
+    "git push --all origin",
+    "git push --mirror origin",
+    "git push origin feature/x main",
+    "git push origin +HEAD:feature/x",
+  ]) assert.equal(on(command), "deny", command);
+  // From any branch: `refs/heads/<default>` is the default; `main-thing` is not.
+  for (const command of ["git push origin HEAD:refs/heads/main", "git push origin :refs/heads/main", "git push origin --delete refs/heads/main"]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  for (const command of ["git push origin main-thing", "git push origin --delete main-thing", "git push origin HEAD:main-thing", "git push origin :main-thing"]) {
+    assert.equal(decide(command).decision, "allow", command);
+  }
+  assert.match(decide("git push origin --delete refs/heads/main").reason, /Deleting main/);
+  assert.equal(decide("bash -c 'git push origin HEAD:refs/heads/main'").decision, "deny");
+});
+
 test("decision reasons survive colons intact", () => {
   const { decision, reason } = decide("gh pr merge 5 --admin");
   assert.equal(decision, "deny");
@@ -175,6 +212,14 @@ test("asks before edits to protected hook files via edit tools", () => {
     tool: "replace_string_in_file",
   });
   assert.equal(decision, "ask");
+});
+
+test("asks before edits to the plugin hook wiring via edit tools", () => {
+  for (const filePath of [path.join(repoRoot, "hooks", "hooks.json"), path.join(repoRoot, ".claude-plugin", "plugin.json")]) {
+    assert.equal(decide("", { filePath, tool: "replace_string_in_file" }).decision, "ask", filePath);
+    assert.equal(decide("", { filePath, tool: "create_file" }).decision, "ask", filePath);
+  }
+  assert.equal(decide("", { filePath: path.join(repoRoot, "docs", "hooks.md"), tool: "replace_string_in_file" }).decision, "allow");
 });
 
 test("honours a custom default branch and feature prefix from .github/agento.json", () => {
@@ -345,6 +390,37 @@ test("companion: the nudge on a product-half commit inspects the paired companio
   assert.equal(decide("git commit -m 'feat: widget'", { cwd: productHalf }).decision, "allow");
 });
 
+test("companion pair: the nudge reads the half's HEAD, not the clone's", () => {
+  const seedRoadmap = (dir, git) => {
+    fs.mkdirSync(path.join(dir, "features", "widget"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "features", "widget", "roadmap.md"), "status: in-progress\n");
+    git(dir, "add", "features/widget/roadmap.md");
+    git(dir, "commit", "-q", "-m", "roadmap");
+  };
+  const stageCode = (productHalf, git) => {
+    fs.writeFileSync(path.join(productHalf, "code.js"), "export {};\n");
+    git(productHalf, "add", "code.js");
+  };
+
+  // (a) The half's HEAD touched roadmap.md; the clone's HEAD touched nothing.
+  const a = makeSessionPair();
+  seedRoadmap(a.companionHalf, a.git);
+  stageCode(a.productHalf, a.git);
+  assert.equal(a.git(a.companion, "show", "--name-only", "--format=", "HEAD").trim(), "");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: a.productHalf }).decision, "allow");
+
+  // (b) The clone's HEAD touched roadmap.md; the half's HEAD did not.
+  const b = makeSessionPair();
+  seedRoadmap(b.companion, b.git);
+  fs.writeFileSync(path.join(b.companionHalf, "notes.md"), "n\n");
+  b.git(b.companionHalf, "add", "notes.md");
+  b.git(b.companionHalf, "commit", "-q", "-m", "notes");
+  stageCode(b.productHalf, b.git);
+  const nudged = decide("git commit -m 'feat: widget'", { cwd: b.productHalf });
+  assert.equal(nudged.decision, "ask");
+  assert.match(nudged.reason, /project-docs-worktrees\/plan-1 \(branch feature\/widget\)/);
+});
+
 // A managed worktree whose branch commits the companion config while the primary
 // has none: the layout rule ("the checkout decides, the primary anchors") resolves
 // the companion beside the primary. `branches.default` differs between the halves'
@@ -401,6 +477,17 @@ test("companion: a worktree whose branch sets artifacts.repo consults the compan
   fs.writeFileSync(path.join(companion, "features", "widget", "roadmap.md"), "status: in-progress\n");
   git(companion, "add", "features/widget/roadmap.md");
   assert.equal(decide("git commit -m x", { cwd: worktree }).decision, "allow");
+});
+
+test("without node on PATH the hook exits 0 and prints nothing", () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-nonode-"));
+  for (const tool of ["bash", "git", "cat", "dirname"]) {
+    fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), path.join(bin, tool));
+  }
+  const payload = { tool_name: "run_in_terminal", tool_input: { command: "git push origin main" }, cwd: os.tmpdir() };
+  const result = spawnSync(path.join(bin, "bash"), [guardScript], { input: JSON.stringify(payload), encoding: "utf8", timeout: 20000, env: { ...process.env, PATH: bin } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
 });
 
 test("allows worktree removal with no occupants", () => {

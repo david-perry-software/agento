@@ -105,8 +105,8 @@ re-add rules here that belong there. These are mechanics gotchas only.
   config values instead of restating the algorithm; the session context announces
   the CLI path as `Agento CLI:`. Prose that says "recursively locate the roadmap" is a
   regression.
-- Heredoc + pipe: `printf | python3 - <<'PY'` loses the piped stdin (the heredoc wins);
-  pass hook input via an environment variable instead.
+- Hook input is read from stdin by the Node module each wrapper `exec`s
+  (`scripts/hooks/<name>.mjs`); keep the wrappers free of anything that consumes stdin.
 - The guard evaluates commands per shell segment and tracks `git switch`/`checkout`
   through a chain; hook-file protection is by command word against a read-only
   allowlist, not a verb denylist. Keep both behaviors when touching the guard, and

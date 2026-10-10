@@ -10,12 +10,12 @@ you open.
   a second VS Code window on a sibling worktree) is built around the VS Code CLI
   (`code`); the Copilot CLI can run the prompts but the window choreography is
   VS Code-specific.
-- Linux or macOS. The hooks are Bash + `python3`; the worktree-occupant check reads
-  `/proc` and is skipped elsewhere. Windows is untested.
+- Linux or macOS. The hooks are Bash wrappers around Node modules; the
+  worktree-occupant check reads `/proc` and is skipped elsewhere. Windows is untested.
 - `git` and `gh` (GitHub CLI, authenticated) in the target project.
-- `python3` on PATH (the hooks use it; standard on Linux/macOS).
 - `node` ≥ 20 — required: the prompts call `scripts/agento.mjs` for slug resolution
-  and config lookups, and the test suite runs on it.
+  and config lookups, both hooks run on it (without `node` on PATH they exit
+  silently: no delivery guard, no SessionStart context), and the test suite runs on it.
 
 ## Option A — local clone (recommended for forkers)
 

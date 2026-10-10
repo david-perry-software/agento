@@ -22,14 +22,12 @@ function fakeGh(responses) {
 set -u
 dir="$(dirname "$0")"
 n=$(cat "$dir/count" 2>/dev/null || echo 0); echo $((n + 1)) > "$dir/count"
-python3 - "$dir/responses.json" "$n" "$@" <<'PY'
-import json, sys
-responses = json.load(open(sys.argv[1])); n = int(sys.argv[2]); args = sys.argv[3:]
-r = responses[min(n, len(responses) - 1)]
-if r.get("error"):
-    sys.stderr.write(r["error"] + "\\n"); sys.exit(1)
-print(r["line"])
-PY
+node -e '
+const responses = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const r = responses[Math.min(Number(process.argv[2]), responses.length - 1)];
+if (r.error) { process.stderr.write(r.error + "\\n"); process.exit(1); }
+console.log(r.line);
+' "$dir/responses.json" "$n"
 `,
   );
   fs.chmodSync(gh, 0o755);

@@ -83,9 +83,9 @@ Read more: [Architecture](docs/architecture.md).
 - **VS Code** with GitHub Copilot (agent mode) and `chat.plugins.enabled: true`. The
   session model opens a second VS Code window via the `code` CLI; the Copilot CLI can
   run the prompts, but the window choreography is VS Code-specific.
-- **Linux or macOS.** Hooks are Bash + `python3`. Windows is untested.
+- **Linux or macOS.** Hooks are Bash wrappers around Node modules. Windows is untested.
 - **`git`**, **`gh`** (authenticated, with permission to open and merge PRs in the
-  target repo), **`node` ≥ 20**, **`python3`** on `PATH`.
+  target repo), **`node` ≥ 20** on `PATH` (the CLI and both hooks run on it).
 - A **GitHub repository** for the project. Agento's flow is PR-based end to end.
 
 ## Install the plugin

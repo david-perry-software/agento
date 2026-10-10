@@ -1,5 +1,5 @@
 ---
-description: "Report environment readiness for Agento commands: Node, git remote, gh auth, code CLI, python3, worktrees dir — each with status and fallback; fixes nothing"
+description: "Report environment readiness for Agento commands: Node, git remote, gh auth, code CLI, worktrees dir — each with status and fallback; fixes nothing"
 argument-hint: "Optional --for <command> to check only that command's needs"
 agent: "agent"
 tools: [read, execute]
