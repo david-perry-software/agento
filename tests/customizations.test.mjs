@@ -307,11 +307,46 @@ test("close-session is one agento.mjs close-session call with no hand-run fallba
   assert.doesNotMatch(body, /agento\.mjs close-decision/, "the CLI makes the close decision; the prompt must not");
 });
 
+test("ship is one agento.mjs ship call with no hand-run fallback procedure", () => {
+  const prompt = rel(".github", "prompts", "ship.prompt.md");
+  const body = splitFrontmatter(prompt).body;
+  assert.equal(fs.readFileSync(rel("commands", "ship.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/ship.md must mirror the prompt byte for byte");
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs find <slug>/);
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs ship <type> <slug>/);
+  assert.match(body, /--confirm <confirmToken>/, "the confirmation reaches the CLI as --confirm <token>");
+  for (const [pattern, why] of [
+    [/gh pr merge/, "the CLI merges"],
+    [/gh pr ready/, "the CLI marks the PR ready"],
+    [/git push origin --delete/, "the CLI deletes the remote branch"],
+    [/git (?:-C \S+ )?worktree remove/, "the CLI removes the halves"],
+    [/wait-for-checks\.sh/, "the CLI runs the bounded check wait"],
+    [/agento\.mjs release/, "the CLI derives the release verdict"],
+    [/agento\.mjs ship-preflight/, "the CLI runs the preflight in process"],
+    [/\bclean -f\b/, "the CLI cleans accepted byproducts"],
+  ]) {
+    assert.doesNotMatch(body, pattern, `${why}; the prompt must not (${pattern})`);
+  }
+  assert.match(body, /\/agento ap <slug>/, "the reject-back handoff keeps the unattended alternative");
+  assert.match(body, /paused at teardown \(worktree <teardown\.pausedPath> still open\)/, "the teardown pause result line stays");
+});
+
+test("only the ship prompt and its mirror reference agento.mjs ship", () => {
+  // Any other prompt or agent calling the merging subcommand would bypass the user's /agento ship.
+  const allowed = new Set([".github/prompts/ship.prompt.md", "commands/ship.md"]);
+  const offenders = [];
+  for (const file of [...promptFiles, ...agentFiles, ...instructionFiles, ...listFiles(rel("commands"), ".md")]) {
+    const label = path.relative(repoRoot, file);
+    if (allowed.has(label)) continue;
+    if (/agento\.mjs ship\b(?!-preflight)/.test(fs.readFileSync(file, "utf8"))) offenders.push(label);
+  }
+  assert.deepEqual(offenders, [], `files that reference agento.mjs ship outside the ship prompt and its mirror:\n${offenders.join("\n")}`);
+  for (const label of allowed) assert.match(fs.readFileSync(rel(...label.split("/")), "utf8"), /agento\.mjs ship\b(?!-preflight)/, `${label} must call agento.mjs ship`);
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
-  // Everyone else reads the session record (policy §11). start-session and
-  // close-session now delegate to agento.mjs but stay listed: §11 lets the commands
-  // that create or remove worktrees read the list. `ship` stays here until
-  // `ship-audit-first` removes its worktree precondition, then the list shrinks to three.
+  // Everyone else reads the session record (policy §11). start-session, close-session,
+  // and ship delegate to agento.mjs but stay listed: §11 lets the commands that create
+  // or remove worktrees read the list, and ship removes the pair at its teardown.
   const allowlist = new Set(["start-session", "start-freehand", "close-session", "ship"]);
   const offenders = [];
   for (const file of [...promptFiles, ...listFiles(rel("commands"), ".md"), ...agentFiles]) {
@@ -426,18 +461,17 @@ test("/agento agento-init scaffolds the concurrency pointer into the companion",
   assert.ok(init.indexOf("agento-concurrency.instructions.md") > init.indexOf("`.github/instructions/agento.instructions.md`"), "the pointer is published after agento.instructions.md");
 });
 
-test("every git clean in prompts, agents, and command mirrors uses --literal-pathspecs (#88 ship-untracked-byproducts)", () => {
+test("the byproduct cleanup lives in the CLI with --literal-pathspecs; no prompt, agent, or mirror runs git clean by hand (#88 ship-untracked-byproducts)", () => {
+  const cli = fs.readFileSync(path.join(repoRoot, "scripts", "agento.mjs"), "utf8");
+  assert.match(cli, /\["--literal-pathspecs", "clean", "-f", "--", /, "scripts/agento.mjs must spell the literal, non-recursive clean");
+  assert.doesNotMatch(cli, /"clean", "-fd"|"clean", "-fx"|"clean", "-f", "-d"|"clean", "-f", "-x"/, "the CLI never cleans directories or ignored files");
   const offenders = [];
-  let cleans = 0;
   for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-      if (!/\bclean -f\b/.test(line)) continue;
-      cleans += 1;
-      if (!/--literal-pathspecs clean -f -- /.test(line)) offenders.push(`${path.relative(repoRoot, file)}: ${line.trim()}`);
+      if (/\bgit (?:-C \S+ )?(?:--literal-pathspecs )?clean\b/.test(line)) offenders.push(`${path.relative(repoRoot, file)}: ${line.trim()}`);
     }
   }
-  assert.ok(cleans >= 2, "expected the ship prompt's byproduct cleanup and its command mirror");
-  assert.deepEqual(offenders, [], `git clean without --literal-pathspecs deletes unlisted glob matches:\n${offenders.join("\n")}`);
+  assert.deepEqual(offenders, [], `git clean by hand (the CLI performs the accepted byproduct cleanup):\n${offenders.join("\n")}`);
 });
 
 test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-deprecation)", () => {
@@ -449,7 +483,8 @@ test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-
     }
   }
 
-  assert.equal(examples.length, 9, "expected every PR-body REST PATCH example and command mirror");
+  // The ship prompt's Fixes #<n> patch moved into the CLI (its blank line is asserted in scripts/agento.test.mjs).
+  assert.equal(examples.length, 7, "expected every PR-body REST PATCH example and command mirror");
   for (const { label, expression } of examples) {
     const rendered = execFileSync("bash", ["-c", `current_body='Existing body'; printf '%s' ${expression}`], { encoding: "utf8" });
     assert.match(rendered, /^Existing body\n\n(?:Companion PR: |Product PR: |Fixes #)\S/, `${label}: body must contain a real blank line`);
