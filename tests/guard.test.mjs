@@ -387,6 +387,37 @@ test("companion: the nudge on a product-half commit inspects the paired companio
   assert.equal(decide("git commit -m 'feat: widget'", { cwd: productHalf }).decision, "allow");
 });
 
+test("companion pair: the nudge reads the half's HEAD, not the clone's", () => {
+  const seedRoadmap = (dir, git) => {
+    fs.mkdirSync(path.join(dir, "features", "widget"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "features", "widget", "roadmap.md"), "status: in-progress\n");
+    git(dir, "add", "features/widget/roadmap.md");
+    git(dir, "commit", "-q", "-m", "roadmap");
+  };
+  const stageCode = (productHalf, git) => {
+    fs.writeFileSync(path.join(productHalf, "code.js"), "export {};\n");
+    git(productHalf, "add", "code.js");
+  };
+
+  // (a) The half's HEAD touched roadmap.md; the clone's HEAD touched nothing.
+  const a = makeSessionPair();
+  seedRoadmap(a.companionHalf, a.git);
+  stageCode(a.productHalf, a.git);
+  assert.equal(a.git(a.companion, "show", "--name-only", "--format=", "HEAD").trim(), "");
+  assert.equal(decide("git commit -m 'feat: widget'", { cwd: a.productHalf }).decision, "allow");
+
+  // (b) The clone's HEAD touched roadmap.md; the half's HEAD did not.
+  const b = makeSessionPair();
+  seedRoadmap(b.companion, b.git);
+  fs.writeFileSync(path.join(b.companionHalf, "notes.md"), "n\n");
+  b.git(b.companionHalf, "add", "notes.md");
+  b.git(b.companionHalf, "commit", "-q", "-m", "notes");
+  stageCode(b.productHalf, b.git);
+  const nudged = decide("git commit -m 'feat: widget'", { cwd: b.productHalf });
+  assert.equal(nudged.decision, "ask");
+  assert.match(nudged.reason, /project-docs-worktrees\/plan-1 \(branch feature\/widget\)/);
+});
+
 // A managed worktree whose branch commits the companion config while the primary
 // has none: the layout rule ("the checkout decides, the primary anchors") resolves
 // the companion beside the primary. `branches.default` differs between the halves'
