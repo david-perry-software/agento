@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Added.** `agento.mjs metrics [<slug>]` derives delivery metrics from git history
+  alone — no `gh`, no network, nothing persisted: per delivery the planned, build,
+  and review phase durations and the cycle (from the roadmap's `status:` header
+  transitions), review rounds (`review.md` commits whose verdict is
+  `request-changes`), pauses (`status: paused` runs), the code PR's merge date and
+  number (the product's first-parent `Merge pull request #<n> from <owner>/<branch>`
+  commit), and post-ship latency (merge to the last `(manual, post-ship)` tick),
+  plus an `aggregate` of medians over closed samples. Open phases are measured to
+  now and flagged `open: true`; squashed or rewritten histories yield nullable
+  fields and `warnings[]`. The pure derivation lives in `scripts/delivery-metrics.mjs`
+  (bundled into `extension/cli/`). `dashboard` gains the same document as a
+  `metrics` section and `timings.metrics`; its git logs run asynchronously beside the
+  PR lookups.
+
+- **Added.** The Deliveries view shows a **Timeline** child under every delivery: a
+  compact description (`plan 2h 00m · build 3h 05m… · 1 round · paused 30m`, an open
+  phase suffixed `…`) and a tooltip with each phase's start → end, the cycle, review
+  rounds, pauses, merge date and PR, post-ship progress and latency, and the source
+  ref, all from the dashboard's `metrics` section of the same refresh. Delivery rows
+  are now collapsible: they start collapsed in each new window and keep their
+  expansion across refreshes; selecting the label still opens the roadmap. A failed
+  metrics section shows `unavailable` on each Timeline row and leaves the rest of the
+  view intact.
+
 - **Changed.** `/agento ship` is one `agento.mjs ship <feature|issue> <slug>
   [--confirm <token>] [--wait N]` state machine whose JSON the prompt formats. The
   CLI runs the audit read-only (roadmap, review freshness, issue `Fixes #<n>`,

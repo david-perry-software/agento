@@ -40,6 +40,29 @@ preview tab. Use the play action to choose from commands the CLI currently allow
 for that delivery. The New Plan title action appears only in the primary window or
 an unpromoted plan window (see [Command routing](#command-routing)).
 
+### Timeline
+
+Every delivery row is collapsible and holds one **Timeline** child. Its description
+is a compact summary of where the delivery's time went, for example `plan 2h 00m ·
+build 3h 05m… · 1 round · paused 30m · post-ship 10m`: the planned, build, and
+review phase durations, review rounds that requested changes, total paused time,
+and the latency from the code PR's merge to the last post-ship tick. A part is
+omitted when it does not apply, a phase still running ends with `…`, a history with
+no phases reads `cycle <d>`, and a roadmap with no history reads `no history`.
+Durations read `<1m`, `42m`, `3h 05m`, `2d 4h`, or `3w 2d`. Hover the row for one
+line per phase and the whole cycle (start → end, or `now`), the review rounds, the
+pauses, the merge date and PR number, post-ship progress and latency, the git ref
+the history was read from, and any warning.
+
+The numbers come from the `metrics` section of the same `dashboard --pr` document
+(`agento.mjs metrics`), which derives them from git history alone — `status:`
+transitions in the roadmap, `review.md` verdict commits, post-ship tick commits, and
+the product's merge commits — so nothing is stored and nothing calls GitHub. When
+that section fails, each Timeline row reads `unavailable` and its tooltip carries the
+error; the rest of the view is unaffected. Delivery rows start collapsed in each new
+window and keep their expansion across refreshes while the window stays open;
+selecting a delivery's label still opens its roadmap.
+
 ## Initiatives
 
 The Initiatives view groups members as Ready, In flight, Blocked, and Complete.
@@ -176,9 +199,9 @@ Run **Agento: Refresh** (`agento.refresh`) after an external change. The extensi
 also refreshes on activation, when Session & Doctor first becomes visible, and after
 watched roadmap, review, or Git state changes. File events are debounced by at least
 three seconds. Each refresh is one `agento.mjs dashboard --pr` call: the CLI returns
-the session, doctor, status, and initiative documents together, and Deliveries,
-Initiatives, Session & Doctor, the status bar, and the window banner all update from
-that snapshot. A newer refresh always wins over a slower older one. Load failures
+the session, doctor, status, initiative, and metrics documents together, and
+Deliveries (with its Timeline rows), Initiatives, Session & Doctor, the status bar,
+and the window banner all update from that snapshot. A newer refresh always wins over a slower older one. Load failures
 remain visible in the affected tree and are written to the **Agento** output channel;
 a failed dashboard section affects only the views that read it. Run Refresh to retry.
 

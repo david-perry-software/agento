@@ -7,6 +7,7 @@ export interface DashboardSections {
   doctor: unknown;
   deliveries: unknown;
   initiatives: { list: unknown; details: ReadonlyMap<string, unknown> } | Error;
+  metrics: unknown;
   timings: Readonly<Record<string, number>> | null;
 }
 
@@ -55,7 +56,7 @@ export function splitDashboardDocument(json: unknown): DashboardSections {
       details: new Map(initiativeSlugs(list).filter((slug) => Object.hasOwn(details, slug)).map((slug) => [slug, details[slug]])),
     };
   }
-  return { session, doctor, deliveries, initiatives, timings: parseTimings(json.timings) };
+  return { session, doctor, deliveries, initiatives, metrics: json.metrics === undefined ? null : section(json, "metrics"), timings: parseTimings(json.timings) };
 }
 
 export function formatDashboardTimings(timings: Readonly<Record<string, number>> | null): string | null {

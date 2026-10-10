@@ -67,6 +67,18 @@ test("splitDashboardDocument keys details by initiativeSlugs(list), dropping slu
   assert.equal(splitDashboardDocument(dashboard({ timings: undefined })).timings, null);
 });
 
+test("splitDashboardDocument carries the metrics section: present, error, and absent", () => {
+  const metrics = { status: "ok", items: [], aggregate: { count: 0 } };
+  assert.equal(splitDashboardDocument(dashboard({ metrics })).metrics, metrics);
+  const failed = splitDashboardDocument(dashboard({ metrics: { status: "error", message: "git log failed" } }));
+  assert.ok(failed.metrics instanceof Error);
+  assert.equal((failed.metrics as Error).message, "git log failed");
+  assert.equal(failed.session, session);
+  assert.ok(!(failed.deliveries instanceof Error));
+  assert.equal(splitDashboardDocument(dashboard()).metrics, null, "an older CLI without the section");
+  assert.throws(() => splitDashboardDocument(dashboard({ metrics: "bad" })), /dashboard\.metrics must be an object/);
+});
+
 test("formatDashboardTimings renders one output-channel line", () => {
   assert.equal(formatDashboardTimings({ session: 3, total: 60 }), "dashboard timings: session 3 ms, total 60 ms");
   assert.equal(formatDashboardTimings(null), null);

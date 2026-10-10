@@ -15,13 +15,18 @@ interface DeliveryElement {
   item: DeliveryTreeItem;
 }
 
+interface TimelineElement {
+  kind: "timeline";
+  item: DeliveryTreeItem;
+}
+
 interface MessageElement {
   kind: "message";
   label: string;
   severity: "empty" | "error";
 }
 
-export type DeliveryTreeElement = GroupElement | DeliveryElement | MessageElement;
+export type DeliveryTreeElement = GroupElement | DeliveryElement | TimelineElement | MessageElement;
 
 export interface DeliveryTreeSnapshot {
   model: DeliveryTreeModel;
@@ -68,8 +73,18 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
         : new vscode.ThemeIcon("info");
       return item;
     }
+    if (element.kind === "timeline") {
+      const timeline = element.item.timeline ?? { description: "unavailable", tooltip: "No metrics in this dashboard document." };
+      const item = new vscode.TreeItem("Timeline", vscode.TreeItemCollapsibleState.None);
+      item.description = timeline.description;
+      item.tooltip = timeline.tooltip;
+      item.contextValue = "agento.timeline";
+      item.iconPath = new vscode.ThemeIcon("history");
+      return item;
+    }
 
-    const item = new vscode.TreeItem(element.item.slug, vscode.TreeItemCollapsibleState.None);
+    const item = new vscode.TreeItem(element.item.slug, vscode.TreeItemCollapsibleState.Collapsed);
+    item.id = this.treeId("deliveries", "delivery", element.item.roadmap);
     item.description = element.item.description;
     item.tooltip = element.item.tooltip;
     item.contextValue = "agento.delivery";
@@ -86,6 +101,9 @@ export class DeliveryTreeProvider implements vscode.TreeDataProvider<DeliveryTre
   getChildren(element?: DeliveryTreeElement): DeliveryTreeElement[] {
     if (element?.kind === "group") {
       return element.group.items.map((item) => ({ kind: "delivery", item }));
+    }
+    if (element?.kind === "delivery") {
+      return [{ kind: "timeline", item: element.item }];
     }
     if (element) {
       return [];

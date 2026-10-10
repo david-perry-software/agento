@@ -10,6 +10,7 @@ import type { ExtensionApi } from "../../src/extension.js";
 // @ts-expect-error generated CLI bundle ships runtime JS only
 import { SESSION_WORKSPACE_SETTINGS } from "../../../cli/session-state.mjs";
 import { dispatchCommandAction, dispatchCommandToTarget } from "../../src/commandDispatcher.js";
+import { createTimelineRow } from "../../src/deliveryTimeline.js";
 import { createDeliveryTreeError } from "../../src/deliveryTreeModel.js";
 import type { DeliveryTreeElement } from "../../src/deliveryTreeProvider.js";
 import { initiativeMemberActionSource } from "../../src/initiativeMemberActions.js";
@@ -242,6 +243,7 @@ function dashboardResponse(
   doctor: unknown,
   status: unknown,
   initiatives: unknown = { list: { status: "ok", items: [] }, details: {} },
+  metrics: unknown = metricsResponse(status),
 ) {
   return {
     status: "ok",
@@ -249,10 +251,58 @@ function dashboardResponse(
     doctor,
     deliveries: status,
     initiatives,
-    timings: { session: 1, doctor: 1, deliveries: 1, initiatives: 1, total: 4 },
+    metrics,
+    timings: { session: 1, doctor: 1, deliveries: 1, initiatives: 1, metrics: 1, total: 5 },
     root: "/fixture/product",
     configSource: null,
   };
+}
+
+const timelineDelivery = {
+  type: "feature",
+  slug: "timeline-delivery",
+  lifecycle: "building",
+  status: "in-progress",
+  roadmap: "features/2026/10/timeline-delivery/roadmap.md",
+  steps: { ticked: 1, total: 2 },
+  pr: null,
+  companionPr: null,
+  owner: null,
+  workspace: null,
+  companion: null,
+  allowed: [],
+  elsewhere: [],
+};
+
+// The `metrics` item for a status item: a closed plan phase, an open build, one round, one pause.
+function metricsItem(delivery: { type: string; slug: string; roadmap: string; status: string }) {
+  return {
+    type: delivery.type,
+    slug: delivery.slug,
+    roadmap: delivery.roadmap,
+    status: delivery.status,
+    ref: `origin/feature/${delivery.slug}`,
+    events: [
+      { at: "2026-10-01T10:00:00+00:00", sha: "a1", kind: "status", value: "planned" },
+      { at: "2026-10-01T12:00:00+00:00", sha: "a2", kind: "status", value: "in-progress" },
+    ],
+    phases: {
+      planned: { start: "2026-10-01T10:00:00+00:00", end: "2026-10-01T12:00:00+00:00", seconds: 7200, open: false },
+      build: { start: "2026-10-01T12:00:00+00:00", end: null, seconds: 3 * 3600 + 5 * 60, open: true },
+      review: null,
+    },
+    cycle: { start: "2026-10-01T10:00:00+00:00", end: null, seconds: 5 * 3600 + 5 * 60, open: true },
+    reviewRounds: 1,
+    pauses: { count: 1, seconds: 1800, open: false },
+    merged: null,
+    postShip: { total: 0, ticked: 0, lastTickAt: null, latencySeconds: null, pending: false },
+    warnings: [],
+  };
+}
+
+function metricsResponse(status: unknown) {
+  const items = (status as { items?: Array<{ type: string; slug: string; roadmap: string; status: string }> }).items ?? [];
+  return { status: "ok", generatedAt: "2026-10-01T15:05:00.000Z", ref: { artifacts: "origin/main", product: "origin/main" }, items: items.map(metricsItem), aggregate: { count: items.length } };
 }
 
 // A throwaway primary checkout with a bare origin (plus, for `companion`, an `artifacts`
@@ -456,6 +506,25 @@ function assertCollapsedGroup(item: vscode.TreeItem): string {
 function assertLeaf(item: vscode.TreeItem): void {
   assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.None, `${String(item.label)} is a leaf`);
   assert.equal(item.id, undefined, `${String(item.label)} keeps a label-derived handle`);
+}
+
+// A delivery row's single child: the Timeline leaf, with no click command.
+function timelineItem(api: ExtensionApi, delivery: DeliveryTreeElement): vscode.TreeItem {
+  const children = api.deliveries.getChildren(delivery);
+  assert.equal(children.length, 1, "one Timeline child per delivery");
+  assert.equal(children[0]?.kind, "timeline");
+  const item = api.deliveries.getTreeItem(children[0]!);
+  assert.equal(item.label, "Timeline");
+  assertLeaf(item);
+  assert.deepEqual(iconOf(item), ["history", undefined]);
+  assert.equal(item.contextValue, "agento.timeline");
+  assert.equal(item.command, undefined);
+  assert.deepEqual(api.deliveries.getChildren(children[0]!), []);
+  return item;
+}
+
+function deliveryRows(api: ExtensionApi): DeliveryTreeElement[] {
+  return api.deliveries.getChildren().flatMap((group) => deliveryElements(api, group));
 }
 
 async function assertGatedCommandsRejected(api: ExtensionApi, commands: Array<[GatedCommand, unknown?]>): Promise<void> {
@@ -679,7 +748,16 @@ export async function run(): Promise<void> {
     }
   }
   const items = groups.flatMap((group) => deliveryElements(api, group));
-  items.forEach((item) => assertLeaf(api.deliveries.getTreeItem(item)));
+  const deliveryIds = items.map((item) => assertCollapsedGroup(api.deliveries.getTreeItem(item)));
+  assert.equal(new Set(deliveryIds).size, deliveryIds.length, "each delivery row has its own id");
+  for (const item of items) {
+    assert.equal(api.deliveries.getTreeItem(item).command?.command, "agento.openRoadmap", "the label click still opens the roadmap");
+    const timeline = timelineItem(api, item);
+    assert.equal(typeof timeline.description, "string");
+    assert.match(String(timeline.tooltip), /^Planned: .*\nBuild: .*\nReview: .*\nCycle: .*\nReview rounds: \d+\nPauses: \d+.*\nMerged: .*\nPost-ship: .*\nSource: origin\/\S+/);
+  }
+  // The fixture commits every roadmap at once, so a complete delivery's cycle is that one commit.
+  assert.equal(timelineItem(api, items[3]!).description, "cycle <1m");
   assert.deepEqual(
     items.map((item) => api.deliveries.getTreeItem(item).label),
     ["planned-delivery", "building-delivery", "anomalous-delivery", "complete-delivery", "finished-delivery"],
@@ -1151,6 +1229,35 @@ export async function run(): Promise<void> {
     assert.notEqual(api.deliveries.current.model.kind, "error");
     assert.notEqual(api.initiatives.current.model.kind, "error");
     assert.deepEqual(api.windowGate(), { primary: true, canPlan: true }, "a doctor failure leaves the session's gate open");
+
+    // The Timeline row reads the metrics section of the same document.
+    const timelineStatus = { ...statusResponse(1), items: [timelineDelivery] };
+    const hasTimelineDelivery = () => deliveryRows(api).some((row) => row.kind === "delivery" && row.item.slug === "timeline-delivery");
+    await refreshWith(
+      dashboardResponse(sessionResponse("primary"), doctorResponse, timelineStatus),
+      () => api.sessionDoctor.current.kind === "ready" && hasTimelineDelivery(),
+      "metrics section",
+    );
+    const [timelineRow] = deliveryRows(api);
+    assert.ok(timelineRow);
+    assertCollapsedGroup(api.deliveries.getTreeItem(timelineRow));
+    const fixtureTimeline = timelineItem(api, timelineRow);
+    assert.equal(fixtureTimeline.description, "plan 2h 00m · build 3h 05m… · 1 round · paused 30m");
+    assert.equal(fixtureTimeline.tooltip, createTimelineRow(metricsItem(timelineDelivery)).tooltip);
+    assert.match(String(fixtureTimeline.tooltip), /^Build: 2026-10-01 12:00 \+00:00 → now \(3h 05m…\)$/m);
+    assert.match(String(fixtureTimeline.tooltip), /^Source: origin\/feature\/timeline-delivery$/m);
+
+    await refreshWith(
+      dashboardResponse(sessionResponse("primary"), doctorResponse, timelineStatus, undefined, { status: "error", message: "fixture git log failed" }),
+      () => api.sessionDoctor.current.kind === "ready" && deliveryRows(api).every((row) => timelineItem(api, row).description === "unavailable"),
+      "metrics section error",
+    );
+    assert.equal(api.deliveries.current.model.kind, "ready", "a metrics failure leaves Deliveries ready");
+    for (const row of deliveryRows(api)) {
+      const failed = timelineItem(api, row);
+      assert.equal(failed.description, "unavailable");
+      assert.equal(failed.tooltip, "fixture git log failed");
+    }
   } finally {
     api.client.run = originalRun;
   }

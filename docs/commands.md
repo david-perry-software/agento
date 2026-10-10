@@ -271,6 +271,37 @@ ship` resumes from),
 `initiative [<slug>]` (list every breakdown with progress counts, or derive one
 initiative's per-feature state, `blockedBy`, waves, `next`, validation `errors`, and
 `anomalies` from its member roadmaps),
+`metrics [<slug>]` (delivery metrics derived from git history only — never `gh`,
+never the network, nothing persisted: `{ status: "ok", generatedAt, ref: { artifacts,
+product }, items, aggregate, root, configSource }`, one item per roadmap `status`
+lists, in its order, or the one item for `<slug>`. The artifact log is one
+`git log --reverse -p --unified=0` over every `roadmap.md` and `review.md` on the
+artifact default ref (`origin/<default>`, else `<default>`, else `HEAD`); each
+non-complete item whose delivery branch resolves (`origin/<branch>`, else the local
+branch) adds its branch-only commits (`--not <default ref>`); the product's
+`git log --first-parent --merges` supplies merge dates. Each item carries `type`,
+`slug`, `dir`, `roadmap`, `branch`, `status`, `ref` (what its events were read from),
+`events[]` (`{ at, sha, kind, value }` — `status` per `status:` header transition,
+`review` per `review.md` commit valued with the verdict that commit leaves,
+`post-ship-tick` per newly ticked `(manual, post-ship)` step), `phases.planned |
+build | review` and `cycle` (`{ start, end, seconds, open }` or `null`: `planned`
+runs from the first commit when it is `planned` to the first other status, `build`
+from the first `in-progress` to the first `in-review` after it, `review` from there
+to the cycle end, and the cycle from the first status to the start of the final
+`complete` run; a started phase with no end is `open: true`, measured to now, while
+the delivery is not complete), `reviewRounds` (`review` events valued
+`request-changes`), `pauses { count, seconds, open }` (each `paused` run up to the
+next other status), `merged` (`{ at, sha, pr }` from the first product merge whose
+subject is `Merge pull request #<n> from <owner>/<branch>`, or `null`), `postShip {
+total, ticked, lastTickAt, latencySeconds, pending }` (latency from `merged.at`, else
+the cycle end, to the last tick), and `warnings[]`; `aggregate` is `{ count,
+complete, median: { plannedSeconds, buildSeconds, reviewSeconds, cycleSeconds,
+pauseSeconds, reviewRounds, postShipLatencySeconds } }`, each median over closed
+samples only and `null` without one. Every derived field is nullable: a squashed or
+rewritten history collapses transitions into one commit, so phases read as zero or
+`null`, `merged` is `null`, and `warnings[]` names what is missing — `no in-progress
+transition`, `no merge commit names <branch>`; timestamps are committer dates; an
+unknown slug is `status: "missing"`, exit 3),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
 `code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
@@ -281,17 +312,19 @@ clone at `--plugin-root`, nothing pinned, or a named profile applied, `warn` on 
 invalid profiles file, `custom` pins, the BYOK tier conflict, or unqualified pins),
 `dashboard [--pr] [--plugin-root <dir>]` (everything the VS Code extension renders
 in one process: `{ status: "ok", session, doctor, deliveries, initiatives: { list,
-details: { <slug>: … } }, timings, root, configSource }`, where `session` is
+details: { <slug>: … } }, metrics, timings, root, configSource }`, where `session` is
 `session [--pr]`, `doctor` is `doctor [--plugin-root <dir>]` with every check,
-`deliveries` is `status [--pr]`, `initiatives.list` is `initiative`, and each
-`initiatives.details[<slug>]` is `initiative <slug>` — each byte-for-byte what that
-subcommand prints in the same state; `timings` gives `session`, `doctor`,
-`deliveries`, `initiatives`, and `total` in milliseconds; the worktree list is read
-once per clone, the roadmaps are walked once for `deliveries` and `initiatives`, and
-the doctor's network probes plus — with `--pr` only — one `gh pr view` per distinct
-`(clone, branch)` run concurrently, at most four processes at a time, after a single
-`gh --version`; a section that throws becomes `{ status: "error", message }` while the
-others are unaffected; exit 0 whatever the sections report),
+`deliveries` is `status [--pr]`, `initiatives.list` is `initiative`, each
+`initiatives.details[<slug>]` is `initiative <slug>`, and `metrics` is `metrics` —
+each what that subcommand prints in the same state (`metrics` up to `generatedAt`
+and the seconds of open intervals, which follow the clock); `timings` gives `session`,
+`doctor`, `deliveries`, `initiatives`, `metrics`, and `total` in milliseconds; the
+worktree list is read once per clone, the roadmaps are walked once for `deliveries`,
+`initiatives`, and `metrics`, the doctor's network probes plus — with `--pr` only —
+one `gh pr view` per distinct `(clone, branch)` run concurrently, at most four
+processes at a time, after a single `gh --version`, and the metrics `git log` reads
+run asynchronously beside them; a section that throws becomes `{ status: "error",
+message }` while the others are unaffected; exit 0 whatever the sections report),
 `next [<slug>]` (the one legal delivery transition derived from the same record as
 `session` plus roadmap ownership, review freshness, and initiative readiness:
 `status` ∈ `ok | none | ambiguous | blocked | unsupported | missing`, `next`
@@ -339,6 +372,7 @@ document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `non
 2 = `release` still `pending` or `dispatch-required` (rerun, or dispatch once),
 3 = resolution failure
 (`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`,
+`metrics` `missing`,
 `next` `ambiguous | blocked | unsupported | missing`, `models` `not-found | invalid |
 dirty | failed`, `release` `gh-missing | auth | unknown-sha | gh-error`),
 4 = `release` `failed` or `no-run`,

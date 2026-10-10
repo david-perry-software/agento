@@ -1,4 +1,5 @@
 import { projectCommandActions, type CommandAction } from "./commandActions.js";
+import type { TimelineLookup, TimelineRow } from "./deliveryTimeline.js";
 
 interface DeliverySteps {
   ticked: number;
@@ -45,6 +46,7 @@ export interface DeliveryTreeItem {
   description: string;
   tooltip: string;
   actions: CommandAction[];
+  timeline: TimelineRow | null;
 }
 
 export interface DeliveryTreeGroup {
@@ -180,7 +182,7 @@ function lifecycleLabel(lifecycle: string): string {
     .join(" ");
 }
 
-function parseItem(value: unknown): DeliveryTreeItem {
+function parseItem(value: unknown, timelines: TimelineLookup | null): DeliveryTreeItem {
   if (!isRecord(value)) {
     throw new Error("each item must be an object");
   }
@@ -244,10 +246,11 @@ function parseItem(value: unknown): DeliveryTreeItem {
       `Initiative: ${initiative ?? "none"}`,
     ].join("\n"),
     actions: projectCommandActions(value),
+    timeline: timelines?.get(roadmap) ?? null,
   };
 }
 
-export function createDeliveryTreeModel(value: unknown): DeliveryTreeModel {
+export function createDeliveryTreeModel(value: unknown, timelines: TimelineLookup | null = null): DeliveryTreeModel {
   try {
     if (!isRecord(value) || value.status !== "ok") {
       throw new Error("status must be ok");
@@ -263,7 +266,7 @@ export function createDeliveryTreeModel(value: unknown): DeliveryTreeModel {
     }
 
     const warnings = [...value.warnings];
-    const items = value.items.map(parseItem);
+    const items = value.items.map((item) => parseItem(item, timelines));
     const groups = value.lifecycles.flatMap((lifecycle) => {
       const groupedItems = items.filter((item) => item.lifecycle === lifecycle);
       return groupedItems.length === 0 ? [] : [{ lifecycle, label: lifecycleLabel(lifecycle), items: groupedItems }];
