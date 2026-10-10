@@ -4242,6 +4242,192 @@ test("close-session is idempotent: a re-send is nothing-to-close or already-clos
   assert.throws(() => git(docs, "rev-parse", "--verify", "--quiet", "refs/heads/feature/half"));
 });
 
+// --- ship -------------------------------------------------------------------------
+
+// A scriptable `gh` for the ship tests. `prs` is `{ "<branch>": { number, state, isDraft,
+// mergeStateStatus, body, title, rollups: [ [ { name, status, conclusion } ] … ] } }`
+// per repo (`product`, `companion`); the repo is chosen by `$PWD` (anything under
+// project-docs is the companion). `pr merge <n> --merge` performs a real merge of the
+// branch into the repo's bare origin default, so later fetches and `pr view` report
+// `MERGED` with a `mergeCommit`. `api` routes are prefix-matched like `releaseGh`.
+// Every call logs `$PWD $*` to `calls.log`; the state file is rewritten after writes.
+function shipStub({ product = {}, companion = {}, api = {}, runs = [] } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-ship-gh-"));
+  const state = { product: { nameWithOwner: "acme/project", origin: null, defaultBranch: "main", prs: {}, ...product }, companion: { nameWithOwner: "acme/project-docs", origin: null, defaultBranch: "main", prs: {}, ...companion }, api, runs, nextNumber: 100, dispatched: [] };
+  for (const repo of ["product", "companion"]) {
+    for (const [branch, pr] of Object.entries(state[repo].prs)) {
+      state[repo].prs[branch] = { number: 15, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", title: branch, body: "", baseRefName: "main", mergeCommit: null, rollups: [[]], rollupCalls: 0, ...pr, url: pr.url ?? `https://example.test/${repo}/pull/${pr.number ?? 15}` };
+    }
+  }
+  const stateFile = path.join(dir, "state.json");
+  fs.writeFileSync(stateFile, JSON.stringify(state));
+  const script = `#!/usr/bin/env node
+const fs = require("fs"), path = require("path"), cp = require("child_process"), os = require("os");
+const dir = ${JSON.stringify(dir)};
+const stateFile = path.join(dir, "state.json");
+const args = process.argv.slice(2);
+fs.appendFileSync(path.join(dir, "calls.log"), process.cwd() + " " + args.join(" ") + "\\n");
+const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+const save = () => fs.writeFileSync(stateFile, JSON.stringify(state));
+const repo = process.cwd().includes("project-docs") ? state.companion : state.product;
+const opt = (name) => { const i = args.indexOf(name); return i === -1 ? null : args[i + 1]; };
+const die = (msg, code = 1) => { process.stderr.write(msg + "\\n"); process.exit(code); };
+const findPr = (key) => Object.values(repo.prs).find((p) => String(p.number) === String(key)) ?? repo.prs[key] ?? null;
+const git = (...a) => cp.execFileSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+if (args[0] === "--version") { console.log("gh version 9.9.9"); process.exit(0); }
+if (args[0] === "auth") { console.log("Logged in"); process.exit(0); }
+if (args[0] === "repo" && args[1] === "view") { console.log(args.includes("-q") || args.includes("--jq") ? repo.nameWithOwner : JSON.stringify({ nameWithOwner: repo.nameWithOwner })); process.exit(0); }
+if (args[0] === "pr" && args[1] === "view") {
+  const pr = findPr(args[2]);
+  if (!pr) die("no pull requests found for branch \\"" + args[2] + "\\"");
+  const fields = (opt("--json") || "").split(",").filter(Boolean);
+  const jq = opt("--jq") ?? opt("-q");
+  if (fields.includes("statusCheckRollup") && jq) {
+    const snapshots = pr.rollups || [[]];
+    const rollup = snapshots[Math.min(pr.rollupCalls || 0, snapshots.length - 1)];
+    pr.rollupCalls = (pr.rollupCalls || 0) + 1; save();
+    const bucket = (c) => c.status !== "COMPLETED" ? "pending" : (c.conclusion === "SUCCESS" || c.conclusion === "NEUTRAL") ? "pass" : c.conclusion === "SKIPPED" ? "skipped" : "fail";
+    const rows = rollup.map((c) => ({ name: c.name, bucket: bucket(c) }));
+    const count = (b) => rows.filter((r) => r.bucket === b).length;
+    console.log([count("pass"), count("fail"), count("pending"), count("skipped"), pr.mergeStateStatus || "UNKNOWN"].join(" ") + " | " + rows.filter((r) => r.bucket !== "pass").map((r) => r.name + "=" + r.bucket).join(", "));
+    process.exit(0);
+  }
+  const view = {};
+  for (const f of fields) view[f] = f === "mergeCommit" ? (pr.mergeCommit ? { oid: pr.mergeCommit } : null) : f === "statusCheckRollup" ? [] : (pr[f] ?? null);
+  console.log(JSON.stringify(fields.length ? view : pr));
+  process.exit(0);
+}
+if (args[0] === "pr" && args[1] === "ready") { const pr = findPr(args[2]); if (!pr) die("not found"); pr.isDraft = false; save(); console.log("Pull request #" + pr.number + " is marked as ready for review"); process.exit(0); }
+if (args[0] === "pr" && args[1] === "merge") {
+  const pr = findPr(args[2]);
+  if (!pr) die("not found");
+  if (pr.state !== "OPEN") die("Pull request #" + pr.number + " is not open");
+  if (pr.isDraft) die("Pull request #" + pr.number + " is still a draft");
+  if (args.includes("--admin") || args.includes("--squash") || args.includes("--rebase") || args.includes("--delete-branch")) die("forbidden merge flag: " + args.slice(3).join(" "));
+  const branch = Object.keys(repo.prs).find((b) => repo.prs[b] === pr);
+  const origin = repo.origin || git("-C", process.cwd(), "remote", "get-url", "origin");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gh-merge-"));
+  git("clone", "-q", origin, tmp);
+  git("-C", tmp, "config", "user.email", "bot@example.com"); git("-C", tmp, "config", "user.name", "gh-stub");
+  git("-C", tmp, "switch", "-q", repo.defaultBranch);
+  git("-C", tmp, "merge", "-q", "--no-ff", "-m", "Merge pull request #" + pr.number + " from " + branch, "origin/" + branch);
+  git("-C", tmp, "push", "-q", "origin", repo.defaultBranch);
+  pr.state = "MERGED"; pr.mergeCommit = git("-C", tmp, "rev-parse", "HEAD"); pr.mergeStateStatus = "UNKNOWN"; save();
+  console.log("Merged pull request #" + pr.number); process.exit(0);
+}
+if (args[0] === "pr" && args[1] === "create") {
+  const head = opt("--head") || git("-C", process.cwd(), "branch", "--show-current");
+  if (repo.prs[head] && repo.prs[head].state === "OPEN") die("a pull request for branch \\"" + head + "\\" already exists: " + repo.prs[head].url);
+  const number = state.nextNumber++;
+  repo.prs[head] = { number, state: "OPEN", isDraft: args.includes("--draft"), mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", title: opt("--title") || head, body: opt("--body") || "", baseRefName: opt("--base") || repo.defaultBranch, mergeCommit: null, rollups: [[]], rollupCalls: 0, url: "https://example.test/pull/" + number };
+  save(); console.log(repo.prs[head].url); process.exit(0);
+}
+if (args[0] === "api") {
+  const target = args.filter((a) => !a.startsWith("-") && a !== "api" && !/^(Accept|body)=/.test(a) && !a.startsWith("Accept:"))[0];
+  if (args.includes("-X") && opt("-X") === "PATCH") {
+    const m = target.match(/pulls\\/(\\d+)$/);
+    const pr = m && findPr(m[1]);
+    if (!pr) die("Not Found (HTTP 404)");
+    const field = args.find((a) => a.startsWith("body="));
+    if (field) pr.body = field.slice(5);
+    save(); console.log(JSON.stringify({ number: pr.number, body: pr.body })); process.exit(0);
+  }
+  const key = Object.keys(state.api).filter((k) => target.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+  if (!key) die("gh: Not Found (HTTP 404)");
+  let reply = state.api[key];
+  if (Array.isArray(reply)) {
+    state.apiCounts = state.apiCounts || {};
+    const n = state.apiCounts[key] || 0; state.apiCounts[key] = n + 1; save();
+    reply = reply[Math.min(n, reply.length - 1)];
+  }
+  if (reply && reply.__stderr) die(reply.__stderr, reply.__exit || 1);
+  process.stdout.write(JSON.stringify(reply)); process.exit(0);
+}
+if (args[0] === "run" && args[1] === "list") { console.log(JSON.stringify(state.runs.map((r) => ({ databaseId: r.id, createdAt: r.createdAt, url: r.url, status: r.status, conclusion: r.conclusion })))); process.exit(0); }
+if (args[0] === "run" && args[1] === "view") {
+  const run = state.runs.find((r) => String(r.id) === String(args[2]));
+  if (!run) die("could not resolve run " + args[2]);
+  const jq = opt("--jq");
+  console.log(jq ? run.status + " " + (run.conclusion || "-") + " " + run.url : JSON.stringify(run)); process.exit(0);
+}
+if (args[0] === "workflow" && args[1] === "run") {
+  const id = 900 + state.dispatched.length;
+  state.dispatched.push({ workflow: args[2], ref: opt("--ref") });
+  state.runs.push({ id, createdAt: new Date().toISOString(), url: "https://example.test/runs/" + id, status: "in_progress", conclusion: null });
+  save(); console.log("Created workflow_dispatch event"); process.exit(0);
+}
+die("gh stub: unsupported " + args.join(" "));
+`;
+  const { env, bin } = restrictedPath({ gh: script });
+  const calls = () => (fs.existsSync(path.join(dir, "calls.log")) ? fs.readFileSync(path.join(dir, "calls.log"), "utf8").trim().split("\n").filter(Boolean) : []);
+  const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
+  const update = (fn) => {
+    const current = read();
+    fn(current);
+    fs.writeFileSync(stateFile, JSON.stringify(current));
+  };
+  return { env, bin, dir, calls, state: read, update, reset: () => fs.rmSync(path.join(dir, "calls.log"), { force: true }) };
+}
+
+const shipRun = (cwd, env, ...args) => runWith({ cwd, env }, "ship", ...args);
+
+// Every ref and worktree registration of the clones, for "nothing changed" checks.
+const refState = (...clones) => clones.map((c) => [git(c, "for-each-ref"), git(c, "worktree", "list", "--porcelain")]);
+
+test("ship validates its arguments, is listed in the usage header, and --confirm needs a value", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env } = shipStub();
+  for (const args of [[], ["feature"], ["chore", "x"], ["feature", "Bad_Slug"], ["feature", "widget", "extra"], ["feature", "widget", "--wait", "61"], ["feature", "widget", "--confirm"], ["feature", "widget", "--confirm", "--wait"], ["feature", "widget", "--bogus"]]) {
+    const { code, json } = shipRun(repo, env, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+  const usage = run(repo).json.usage.join("\n");
+  assert.match(usage, /ship <feature\|issue> <slug> \[--confirm <token>\] \[--wait N\]/);
+  assert.deepEqual(fs.readdirSync(wt), []);
+});
+
+test("ship rejects from a non-primary window with the session record's alternatives, writing nothing", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env, calls } = shipStub();
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/10/widget", "status: in-review\nbranch: feature/widget\nnext-step: review");
+  const before = refState(repo);
+  const { code, json } = shipRun(build, env, "feature", "widget");
+  assert.equal(code, 3);
+  assert.equal(json.status, "rejected");
+  assert.match(json.reason, /^wrong window: role=build \(.*feature-widget, branch feature\/widget\)$/);
+  const record = run(build, "session").json;
+  assert.deepEqual(json.allowed, record.allowed);
+  assert.deepEqual(json.elsewhere, record.elsewhere);
+  assert.deepEqual(json.actions, []);
+  assert.deepEqual(refState(repo), before);
+  assert.ok(calls().every((c) => !/ pr (merge|ready|create)/.test(c)), calls().join("\n"));
+});
+
+test("ship warns and continues when origin is unreachable, and fails with a re-login command on an authentication failure before any write", () => {
+  const { repo } = makeWorktreeRepo();
+  const { env } = shipStub();
+  git(repo, "remote", "set-url", "origin", path.join(path.dirname(repo), "missing.git"));
+  const offline = shipRun(repo, env, "feature", "widget");
+  assert.ok(offline.json.warnings.some((w) => /^fetch: product .*missing\.git not fetched \(.*\); continuing from local refs$/.test(w)), JSON.stringify(offline.json));
+  assert.ok(offline.json.preflight.some((p) => p.id === "git-remote" && p.status === "warn"), "doctor warns about the unreachable origin");
+
+  const ssh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-ssh-")), "ssh");
+  fs.writeFileSync(ssh, "#!/bin/sh\necho 'git@example.invalid: Permission denied (publickey).' >&2\nexit 255\n", { mode: 0o755 });
+  git(repo, "remote", "set-url", "origin", "git@example.invalid:o/r.git");
+  const before = refState(repo);
+  const auth = shipRun(repo, { ...env, GIT_SSH_COMMAND: ssh }, "feature", "widget");
+  assert.equal(auth.code, 3);
+  assert.equal(auth.json.status, "failed");
+  assert.equal(auth.json.reason, "fetch-auth");
+  assert.match(auth.json.message, /Permission denied \(publickey\)/);
+  assert.match(auth.json.reauth, /git@example\.invalid:o\/r\.git/);
+  assert.deepEqual(auth.json.actions, []);
+  assert.deepEqual(refState(repo), before);
+});
+
 // --- dashboard: one process per refresh ---------------------------------------
 
 // A restricted PATH whose `git` appends its arguments to `log` before running the real binary.

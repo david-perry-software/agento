@@ -15,6 +15,7 @@
 //   node scripts/agento.mjs workspace <feature|issue|plan|freehand> <slug|session-id> [--write]   (pair workspace file status; write the canonical document with --write)
 //   node scripts/agento.mjs start-session [<feature|issue>/<slug> | <session-id>] [--resume] [--no-open]   (window check, doctor, fetch, worktree pair, post-add check, workspace file, code --new-window)
 //   node scripts/agento.mjs close-session <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]   (window check, fetch --prune, close decision, clean/pushed checks, occupant gate, remove pair + workspace file, delete merged local branches)
+//   node scripts/agento.mjs ship <feature|issue> <slug> [--confirm <token>] [--wait N]   (audit → --confirm → ready, checks, merge, companion merge, sync, release wait, teardown, epilogue; resumes from git + GitHub state; exit 0 ok, 2 pending, 3 rejected/blocked/failed)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
@@ -47,7 +48,7 @@ import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 28);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 29);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -86,6 +87,10 @@ function parseArgs(argv) {
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--ignore-occupants") options.ignoreOccupants = true;
+    else if (arg === "--confirm") {
+      options.confirm = argv[++i];
+      if (!options.confirm || options.confirm.startsWith("--")) usage("--confirm takes the confirmToken reported by the audit");
+    }
     else if (arg === "--plugin-root") {
       options.pluginRoot = argv[++i];
       if (!options.pluginRoot) usage("--plugin-root takes a directory");
@@ -1882,6 +1887,112 @@ function removeSessionPair({ halves, workspace = null, branches = { product: nul
   return out;
 }
 
+// --- ship ------------------------------------------------------------------
+
+const SHIP_EXIT = { ok: 0, pending: 2, rejected: 3, blocked: 3, failed: 3 };
+const SHIP_PR_FIELDS = "number,state,isDraft,mergeStateStatus,mergeable,url,title,body,mergeCommit,baseRefName";
+const WAIT_FOR_CHECKS = path.join(PLUGIN_ROOT, "scripts", "wait-for-checks.sh");
+
+function shipArgs() {
+  const type = requireType(rest[0]);
+  const slug = requireSlug(rest[1]);
+  if (rest.length > 2) usage(`ship takes exactly <feature|issue> <slug>, got extra ${JSON.stringify(rest.slice(2).join(" "))}`);
+  return { type, slug, confirm: options.confirm ?? null, wait: options.wait ?? 50 };
+}
+
+// `gh pr view <branch>` with the fields the ship audit and merge need; a merged PR
+// is still found by its head branch after the remote branch is deleted.
+function shipPrLookup(branch, cwd, label) {
+  const result = ghRun(cwd, ["pr", "view", branch, "--json", SHIP_PR_FIELDS], 20000);
+  if (!result.ok) return { pr: null, warning: `${label}: gh pr view ${branch} failed: ${result.stderr.split("\n")[0]}` };
+  try {
+    return { pr: JSON.parse(result.stdout), warning: null };
+  } catch {
+    return { pr: null, warning: `${label}: gh pr view ${branch} returned non-JSON output` };
+  }
+}
+
+const prSummary = (pr) => (pr ? { number: pr.number, state: pr.state, isDraft: Boolean(pr.isDraft), mergeStateStatus: pr.mergeStateStatus ?? null, url: pr.url ?? null, mergeCommit: pr.mergeCommit?.oid ?? null } : null);
+
+const utcDate = () => new Date().toISOString().slice(0, 10);
+
+function ship() {
+  const { type, slug, confirm, wait } = shipArgs();
+  const startedAt = Date.now();
+  const remainingSeconds = () => Math.max(0, wait - Math.floor((Date.now() - startedAt) / 1000));
+  const record = sessionRecord();
+  const primary = record.worktrees[0]?.path ?? root;
+  const defaultBranch = config.branches.default;
+  const shipCommand = (token = null) => `/agento ship ${slug}${token ? ` --confirm ${token}` : ""}`;
+  const out = {
+    status: "ok",
+    type,
+    slug,
+    branch: deliveryBranch(type, slug),
+    mode: "in-repo",
+    phase: null,
+    outcome: null,
+    audit: null,
+    gaps: { hard: [], confirm: [] },
+    confirmToken: null,
+    rejectTo: null,
+    actions: [],
+    pr: null,
+    companionPr: null,
+    mergeSha: null,
+    release: null,
+    teardown: null,
+    postShip: null,
+    next: [],
+    preflight: [],
+    reason: null,
+    message: null,
+    fix: null,
+    reauth: null,
+    allowed: record.allowed,
+    elsewhere: record.elsewhere,
+    warnings: [...record.warnings],
+    root,
+    configSource: source,
+  };
+  const finish = (fields = {}) => {
+    const result = { ...out, ...fields };
+    emit(result, SHIP_EXIT[result.status]);
+  };
+  const reject = (reason, fields = {}) => finish({ status: "rejected", reason, ...fields });
+  const fail = (reason, message, fields = {}) => finish({ status: "failed", reason, message, ...fields });
+  const act = (step, detail) => out.actions.push({ step, detail });
+
+  // Window check (§11): the primary checkout.
+  const { worktree } = record;
+  const where = `${worktree.path}, branch ${worktree.detached || !worktree.branch ? "detached" : worktree.branch}`;
+  if (record.role !== "primary") reject(`wrong window: role=${record.role} (${where})`);
+
+  // Capability preflight (§10): fail rejects, warn proceeds with the fallback.
+  const doctor = runDoctor(checksFor(COMMAND_NEEDS.ship));
+  const failed = doctor.checks.find((c) => c.status === "fail");
+  if (failed) reject(failed.detail, { capability: capabilityOf(failed.id), check: failed.id, fallback: failed.fallback });
+  out.preflight = doctor.checks.filter((c) => c.status === "warn").map(({ id, status, detail, fallback }) => ({ id, capability: capabilityOf(id), status, detail, fallback }));
+
+  // --prune, so a remote branch deleted by an earlier call reads as gone.
+  const fetched = new Set();
+  const fetch = (dir, label) => {
+    if (fetched.has(path.resolve(dir))) return;
+    fetched.add(path.resolve(dir));
+    const result = gitRun(dir, ["fetch", "--prune", "origin"]);
+    if (result.ok) return;
+    const url = originOf(dir);
+    if (!result.timedOut && classifyFetchFailure(result.stderr) === "auth") {
+      fail("fetch-auth", `git -C ${dir} fetch --prune origin: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(url) });
+    }
+    out.warnings.push(`fetch: ${label} ${url ?? "origin"} not fetched (${result.stderr.split("\n")[0]}); continuing from local refs`);
+  };
+  fetch(primary, "product");
+  if (artifacts.external) fetch(artifactsRoot, "companion");
+
+  finish();
+}
+
 // --- model profiles --------------------------------------------------------
 
 const MODELS_HINT =
@@ -2495,6 +2606,11 @@ switch (command) {
 
   case "close-session": {
     closeSession();
+    break;
+  }
+
+  case "ship": {
+    ship();
     break;
   }
 
