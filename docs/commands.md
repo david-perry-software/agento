@@ -12,7 +12,7 @@
 | `/agento build-feature <slug>` · `/agento build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
 | `/agento review-feature <slug>` · `/agento review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
 | `/agento ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
-| `/agento ship <slug>` | default | Acceptance gate: audit in place while the build worktree is open, reject back to that window on a real gap, else required checks green, merge PR, sync main, optional release workflow, tear the worktree down, post-ship epilogue |
+| `/agento ship <slug>` | default | Acceptance gate: audit in place while the build worktree is open, reject back to that window on a real gap, else required checks green, merge PR, sync main, optional release workflow, tear the worktree down, post-ship epilogue; one `agento.mjs ship` state machine (audit → `--confirm <token>` → merge → companion merge → sync → release → teardown → epilogue) whose JSON the prompt formats and whose `pending` the prompt re-sends |
 | `/agento continue [<slug>]` | default | Derive the one legal next transition from the session record (`agento.mjs next`) and perform it: build, review, or ship here by following that command's own prompt and agent files, or open the worktree window that owns the next step and name the command for it; rejects with the choices when several deliveries are in flight |
 | `/agento close-session <session-id \| type/slug \| changes/slug> [--dry-run] [--ignore-occupants]` | default | Remove a plan/freehand worktree or abandon a build (ship tears down finished builds); one `agento.mjs close-session` call whose JSON the prompt formats |
 | `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
@@ -162,7 +162,91 @@ already removed; `next` is `/agento ship <slug>` for an incomplete build,
 start-freehand <slug> --resume` for unmerged freehand work; a re-send is safe — a
 half already gone is `registered: false` and skipped, a merged branch left behind is
 still deleted; exit 0 for `ok`, 3 for `rejected`/`failed`/`blocked`, 1 for a usage
-error), `ports <slug>`,
+error),
+`ship <feature|issue> <slug> [--confirm <token>] [--wait N]` (the whole ship slash
+command as a resumable state machine: the §11 window check — role `primary` — the
+`doctor --for ship` checks (`fail` rejects with the check's `detail` and
+`fallback`, `warn` lands in `preflight[]`), a bounded `git fetch --prune origin`
+in the product clone and the companion clone (`fetch-auth` fails with `reauth`;
+unreachable warns and continues), the `ship-preflight --pr` computation in process
+(resolver `conflict`/`branch-mismatch`/`missing` and a primary on the branch
+reject; a roadmap already on the artifact default after the merge still resolves),
+then the **phase** derived from git and GitHub alone, never a journal: `audit`
+while the PR is open and the roadmap is not `complete`; `checks` once the confirm
+writes landed; `merge-companion` when the code PR is `MERGED` and the companion PR
+`OPEN`; `sync` when a default is behind its origin; `release` with
+`checks.releaseWorkflow`; `teardown` while a managed worktree owns the branch;
+`epilogue` with unticked `(manual, post-ship)` steps on the artifact default; else
+`done`. The audit never writes: it reads roadmap.md, review.md, and plan.md from the
+artifact `origin/<branch>`, the diff file list, and both PRs, and reports `audit
+{ roadmap { status, unticked, postShip }, review { present, verdict, stale,
+reviewedAt, lastCodeCommit }, issue { githubIssue, fixesLine, resolutionWritten } |
+null, changelog { versionChanged, from, to, unreleasedHeading, needsStamp,
+headingWithoutVersionChange }, pr, companionPr, diffFiles, owner, ownerTree,
+companion, companionGaps, companionTree }`; `gaps.hard[]` (`unticked-steps`,
+`review-missing`, `review-stale`, `review-request-changes`, `owner-tree-dirty`,
+`owner-ahead`, `owner-tree-unreadable`, `companion-dirty` / `-unpushed` / `-behind`
+/ `-missing-pr` / `-pr-not-open` / `-pr-conflicting`, `pr-conflicting`,
+`changelog-heading-without-version`, `post-ship-unjustified`) → `status:
+"rejected"`, `reason: "audit-gaps"`, `rejectTo { command, window }` (`review-<type>`
+when the review is the only gap, else `build-<type>` with an owner or
+`start-session <type>/<slug> --resume` without); `gaps.confirm[]`
+(`untracked-byproducts` with `paths`, `changelog-unstamped`, `pr-behind`,
+`companion-pr-behind`) and `confirmToken` — the first 12 hex characters of SHA-256
+over the canonical JSON of `{ slug, pr, companionPr, confirm }`, so it survives the
+CLI's own commits and dies with any change to the gap set — → `status: "ok"`,
+`phase: "audit"`, `outcome: "awaiting-confirm"`; an issue PR body without `Fixes
+#<n>` gets it through `gh api … -X PATCH` (`actions[]: fixes-line-added`), the one
+audit-time write. `--confirm <token>` must equal the recomputed token (else
+`confirm-stale` with both tokens and the current list) and performs, in order: `git
+--literal-pathspecs clean -f -- <paths>` for accepted byproducts (exactly the
+listed paths, then the owner tree must be `{ tracked: [], untracked: [], ahead: 0 }`
+or `owner-tree-changed` rejects), the accepted `origin/<default>` merges (a conflict
+is `merge --abort` + `integration-conflict`, nothing pushed), the roadmap `status:
+complete` / `last-updated` / `next-step: ""` / `## Follow-ups (accepted at ship)`
+commit (`docs(<type>): ship <slug>`, in the companion half in companion mode), the
+`CHANGELOG.md` `(unreleased)` → `(<UTC date>)` stamp as a product commit when
+`needsStamp` (refreshed on a later UTC date), the pushes (product first), `gh pr
+ready` for both PRs, `scripts/wait-for-checks.sh pr <n>` bounded by the remaining
+`--wait` budget (exit 2 → `status: "pending"`, `phase: "checks"`, CLI exit 2, `next`
+the same `--confirm` command; exit 1 → `failed` / `checks-failed`), `gh pr merge <n>
+--merge` (never `--admin`, `--squash`, `--rebase`, or `--delete-branch`), `git push
+origin --delete <branch>` from the primary; then `merge-companion` (`wait-for-checks.sh
+pr <m> --repo <nameWithOwner>` from inside the clone, `gh pr merge <m> --merge`, the
+companion remote branch delete; a failure here is `failed` / `companion-merge` with
+the message `code PR #<n> merged, companion PR #<m> open at <url>; re-send /agento
+ship <slug> to resume at the companion merge`), `sync` (`fetch --prune` + `merge
+--ff-only origin/<default>` in each clone, plus the merged local branch delete on the
+no-owner path), `release` (`releaseVerdict` for `pr.mergeCommit` within the budget:
+`pending` → `status: "pending"`; `dispatch-required` → follow a `workflow_dispatch`
+run created after `mergeDate` or `gh workflow run <w> --ref <default>` exactly once
+and return `pending`; `failed` / `no-run` → `failed` / `release-<verdict>` with
+`release.run.url`; `success`, `superseded-success`, `not-triggered`,
+`not-configured` advance), `teardown` (`removeSessionPair` over the owner's halves,
+workspace file, and merged local branches — the same occupant gate as
+`close-session`: an occupant is `status: "blocked"`, `reason: "occupied"`, `outcome:
+"paused-teardown"`, `teardown.pausedPath` the flagged half, nothing removed, and the
+re-send resumes here), and `epilogue` (unticked `(manual, post-ship)` steps:
+`post-ship/<slug>` created from fresh `origin/<default>` in the artifact checkout —
+the companion clone in companion mode, the primary in-repo — and `postShip { branch,
+path, steps: [{ id, text, ticked, evidence, evidencePresent }], pr }` reported as
+`outcome: "post-ship-pending"`, exit 0; once every step is ticked with an existing
+evidence file the CLI commits `docs(post-ship): <slug> evidence`, pushes, opens or
+reuses the PR, waits, merges, deletes the branch, syncs the default; the CLI never
+ticks a post-ship step). The no-owner path switches the primary (and the companion
+clone) onto the branch for the writes and back. Output `{ status: ok | pending |
+rejected | blocked | failed | usage-error, type, slug, branch, mode: in-repo |
+companion, phase, resumedAt, outcome: awaiting-confirm | shipped | already-shipped |
+paused-teardown | post-ship-pending | null, audit, gaps { hard, confirm },
+confirmToken, rejectTo, actions: [{ step, detail }], pr, companionPr, mergeSha,
+release { verdict, workflow, run, supersededBy, reason, mergeDate, dispatched } |
+null, teardown { product, companion, workspace, branches, occupants, pausedPath } |
+null, postShip | null, next[], preflight, reason, message, fix, reauth, allowed,
+elsewhere, warnings }`; exit 0 for `ok`, 2 for `pending`, 3 for
+`rejected`/`blocked`/`failed`, 1 for a usage error (`--wait` 0–60, default 50;
+`--confirm` needs a value). A re-send after any stop lands on the first unfinished
+phase: a merged PR is never merged, pushed, or readied again),
+`ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
 `GITHUB_ACTIONS=true`, where the role is derived from the branch alone and
@@ -288,15 +372,16 @@ from `agento.mjs config` (`artifactsRoot` ≠ `root`), address the clone as
 `artifactsRoot`, and run `gh` from inside it (or with `--repo` set to the
 `nameWithOwner` derived there — `artifacts.repo.name` is a directory basename, not a
 `gh --repo` value); `/agento delivery-status` shows `companionPr` beside `pr`.
-`/agento ship` consumes the `artifact-pr` header end to end: it audits with
-`ship-preflight --pr`, reads the artifacts from the companion's `origin/<branch>`,
+`/agento ship` consumes the `artifact-pr` header end to end through one
+`agento.mjs ship` state machine: it audits with the `ship-preflight --pr`
+computation in process, reads the artifacts from the companion's `origin/<branch>`,
 commits `status: complete` in the companion half, marks both PRs ready, merges the
 code PR first (its required checks are the gate) and then the companion PR from
 inside the clone, syncs both default branches, tears down both halves and the
 `.code-workspace` file, and lands any post-ship evidence on the companion's
 `post-ship/<slug>`. A companion merge that fails after the code merge is a
 resumable stop: re-sending `/agento ship <slug>` sees `pr: MERGED` and
-`companionPr: OPEN` and resumes at the companion merge.
+`companionPr: OPEN` and the CLI derives `phase: merge-companion`.
 
 ## Invocation
 

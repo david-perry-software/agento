@@ -13,7 +13,7 @@ flowchart TD
     B -->|"steps + ticks + commits + pushes"| B
     B -->|handoff| R[🔍 Agento Reviewer]
     R -->|"handoff: Continue unattended"| AP
-    R -->|review.md: approve| SHIP[/agento ship/]
+    R -->|review.md: approve| SHIP["/agento ship → agento.mjs ship: audit, --confirm, merge, sync, release, teardown, epilogue"]
     U -->|"/agento ap"| AP[🤖 Agento Autopilot]
     AP -->|"request-changes: fix loop"| B
     AP --> R
@@ -82,8 +82,12 @@ flowchart TD
   breakdown itself holds no progress), worktree path and per-slug port
   derivation, the session start and close (`start-session`, and `close-session`
   with its own worktree-occupant check in `scripts/worktree-occupants.mjs` — the
-  guard cannot see a removal made inside the CLI), the bounded CI poller, and the
-  guard replay harness. Prompts call the
+  guard cannot see a removal made inside the CLI), the ship state machine
+  (`agento.mjs ship`: the read-only audit with its confirmation token, the
+  `--confirm` writes, both merges, the default syncs, the release wait, the
+  teardown through the same occupant gate, and the post-ship epilogue — every phase
+  derived from git and GitHub state so a re-send resumes), the bounded CI poller,
+  and the guard replay harness. Prompts call the
   CLI rather than re-deriving these algorithms in prose, so the configured branch
   names and artifact roots are honoured everywhere the hooks honour them.
 - **Extension** (`extension/`) renders CLI state and dispatches only the command

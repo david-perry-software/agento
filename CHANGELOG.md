@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **Changed.** `/agento ship` is one `agento.mjs ship <feature|issue> <slug>
+  [--confirm <token>] [--wait N]` state machine whose JSON the prompt formats. The
+  CLI runs the audit read-only (roadmap, review freshness, issue `Fixes #<n>`,
+  changelog version stamp, PR states, owner and companion trees) and sorts the gaps
+  into `gaps.hard` (rejected with `rejectTo`) and `gaps.confirm` (untracked
+  byproducts, unstamped changelog, behind PRs) with a `confirmToken` hashed from
+  that list; the prompt presents the list, performs its read-only judgment checks,
+  asks the user, and re-sends with `--confirm <token>`. The confirm call cleans
+  exactly the accepted paths with `--literal-pathspecs clean -f --`, commits the
+  roadmap `status: complete` with `## Follow-ups (accepted at ship)`, stamps the
+  changelog, readies both PRs, waits with `scripts/wait-for-checks.sh` under the
+  ≤ 60 s bound (returning `pending`, exit 2, for the re-send), merges with `gh pr
+  merge --merge`, deletes the remote branch, merges the companion PR, syncs both
+  defaults, derives the release verdict (dispatching at most once), tears the pair
+  down through the same occupant gate as `close-session` (`blocked` /
+  `paused-teardown`), and lands post-ship evidence from `post-ship/<slug>`. Every
+  phase is derived from git and GitHub state, so a re-send after any stop resumes
+  without a second merge, push, or PR. `ship.prompt.md` and `commands/ship.md` no
+  longer carry any `git`, `gh`, `wait-for-checks.sh`, or `agento.mjs release`
+  instruction; a customizations test keeps `agento.mjs ship` exclusive to them.
+  `closeSession()` and `case "release"` now share `removeSessionPair()`,
+  `branchVerdict()`, and `releaseVerdict()` with the ship; their contracts are
+  unchanged. Policy §6 names the CLI ship's internal bounded waits.
+
 - **Changed.** Both hooks run on Node. The delivery guard and the SessionStart
   context were Bash wrappers around Python heredocs; each wrapper now `exec`s one
   Node module under `scripts/hooks/` (`delivery-guard.mjs`, `session-context.mjs`,
