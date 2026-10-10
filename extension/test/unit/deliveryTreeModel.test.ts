@@ -100,6 +100,26 @@ test("delivery model renders null PR and optional metadata explicitly", () => {
   assert.match(item.tooltip, /Initiative: none/);
 });
 
+test("delivery model attaches the Timeline row by roadmap path and null without metrics", () => {
+  const row = { description: "plan 2d 0h · build 5d 0h", tooltip: "Planned: …" };
+  const other = { ...delivery, slug: "other", roadmap: "features/2026/09/other/roadmap.md" };
+  const timelines = new Map([[delivery.roadmap, row]]);
+  const model = createDeliveryTreeModel(response([delivery, other]), timelines);
+  assert.equal(model.kind, "ready");
+  if (model.kind !== "ready") {
+    return;
+  }
+  const [first, second] = model.groups[0]!.items;
+  assert.deepEqual(first?.timeline, row);
+  assert.equal(second?.timeline, null);
+  assert.equal(first?.description, "feature | 2/8 | in-progress | PR #51 draft", "existing description unchanged");
+
+  const without = createDeliveryTreeModel(response([delivery]));
+  assert.equal(without.kind === "ready" && without.groups[0]!.items[0]!.timeline, null);
+  const failed = createDeliveryTreeModel(response([delivery]), { get: () => ({ description: "unavailable", tooltip: "git log failed" }) });
+  assert.deepEqual(failed.kind === "ready" && failed.groups[0]!.items[0]!.timeline, { description: "unavailable", tooltip: "git log failed" });
+});
+
 test("delivery model preserves CLI warnings", () => {
   const model = createDeliveryTreeModel(response([delivery], ["gh unavailable", "preview stale"]));
 
