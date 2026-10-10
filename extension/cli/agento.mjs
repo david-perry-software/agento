@@ -21,7 +21,7 @@
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
-//   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details } and timings in one document; a failing section is { status: "error", message })
+//   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
@@ -3030,11 +3030,12 @@ function metricsDocument({ slugFilter = null, roadmaps = null, now = Date.now(),
   return { status: "ok", generatedAt: new Date(now).toISOString(), ref: planned.ref, items, aggregate: aggregateMetrics(items), root, configSource: source };
 }
 
-// What `dashboard` emits: the session, doctor, status (`deliveries`), and initiative
-// documents from one process. The roadmaps are walked once for deliveries and
-// initiatives; every PR lookup (with `pr`) and the doctor's probes run through one
-// bounded pool while the local doctor checks and the initiatives are computed. A
-// section that throws becomes { status: "error", message }.
+// What `dashboard` emits: the session, doctor, status (`deliveries`), initiative, and
+// metrics documents from one process. The roadmaps are walked once for deliveries,
+// initiatives, and metrics; every PR lookup (with `pr`) and the doctor's probes run
+// through one bounded pool, and the metrics git logs run beside it, while the local
+// doctor checks and the initiatives are computed. A section that throws becomes
+// { status: "error", message }.
 async function dashboardDocument({ pr: withPr = false } = {}) {
   const started = performance.now();
   const attempt = (build) => {
@@ -3076,6 +3077,9 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
   // before the synchronous work below blocks the event loop.
   if (requests.length) await probeAsync("gh", ["--version"]);
   const prefetch = lookupPullRequests(requests, { probes: doctorProbes() });
+  // The metrics logs (git only) overlap the PR lookups and the synchronous sections below.
+  const metricsPlanned = attempt(() => metricsPlan(valueOf(roadmaps)));
+  const metricsLogs = metricsPlanned.error ? Promise.resolve(null) : readMetricsLogsAsync(metricsPlanned.value);
   await new Promise((resolve) => setImmediate(resolve));
   const initiatives = section("initiatives", () => {
     const features = valueOf(roadmaps).filter((r) => r.type === "feature");
@@ -3085,6 +3089,7 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
   });
   runDoctor(LOCAL_DOCTOR_CHECKS);
   const lookup = prefetchedLookup(await prefetch);
+  const logs = await metricsLogs;
 
   const document = {
     status: "ok",
@@ -3093,6 +3098,7 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
     // statusDocument adds fields to its items; the initiatives read the records unchanged.
     deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
     initiatives,
+    metrics: section("metrics", () => metricsDocument({ roadmaps: valueOf(roadmaps), plan: valueOf(metricsPlanned), logs })),
   };
   timings.total = Math.round(performance.now() - started);
   return { ...document, timings, root, configSource: source };

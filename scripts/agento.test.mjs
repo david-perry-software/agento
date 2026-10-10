@@ -5668,18 +5668,36 @@ function makeDashboardRepo({ companion }) {
   return { repo: pair.repo, docs: pair.docs, build, artifacts };
 }
 
+// `metrics` with the clock-dependent fields (generatedAt, every open interval's seconds) blanked.
+function stableMetrics(doc) {
+  if (doc.status !== "ok") return doc;
+  const fix = (interval) => (interval?.open ? { ...interval, seconds: null } : interval);
+  return {
+    ...doc,
+    generatedAt: null,
+    items: doc.items.map((item) => ({
+      ...item,
+      phases: Object.fromEntries(Object.entries(item.phases).map(([name, interval]) => [name, fix(interval)])),
+      cycle: fix(item.cycle),
+      pauses: fix(item.pauses),
+    })),
+  };
+}
+
 // `dashboard` from `cwd`: every section deep-equals its standalone subcommand run in the same state.
 function assertDashboardMatches(cwd, env, { pr }) {
   const flag = pr ? ["--pr"] : [];
   const sub = (...args) => runWith({ cwd, env }, ...args).json;
   const dash = runWith({ cwd, env }, "dashboard", ...flag);
   assert.equal(dash.code, 0);
-  assert.deepEqual(Object.keys(dash.json), ["status", "session", "doctor", "deliveries", "initiatives", "timings", "root", "configSource"]);
+  assert.deepEqual(Object.keys(dash.json), ["status", "session", "doctor", "deliveries", "initiatives", "metrics", "timings", "root", "configSource"]);
   assert.equal(dash.json.status, "ok");
-  for (const key of ["session", "doctor", "deliveries", "initiatives", "total"]) assert.equal(typeof dash.json.timings[key], "number", key);
+  for (const key of ["session", "doctor", "deliveries", "initiatives", "metrics", "total"]) assert.equal(typeof dash.json.timings[key], "number", key);
   assert.deepEqual(dash.json.session, sub("session", ...flag));
   assert.deepEqual(dash.json.doctor, sub("doctor"));
   assert.deepEqual(dash.json.deliveries, sub("status", ...flag));
+  assert.deepEqual(stableMetrics(dash.json.metrics), stableMetrics(sub("metrics")));
+  assert.deepEqual(dash.json.metrics.items.map((i) => i.roadmap), dash.json.deliveries.items.map((i) => i.roadmap));
   const list = sub("initiative");
   assert.deepEqual(dash.json.initiatives.list, list);
   assert.deepEqual(Object.keys(dash.json.initiatives.details), list.items.map((i) => i.slug));
@@ -5687,7 +5705,7 @@ function assertDashboardMatches(cwd, env, { pr }) {
   return dash.json;
 }
 
-test("dashboard sections deep-equal session, doctor, status, and initiative in in-repo and companion fixtures", () => {
+test("dashboard sections deep-equal session, doctor, status, initiative, and metrics in in-repo and companion fixtures", () => {
   for (const companion of [false, true]) {
     const { repo, build } = makeDashboardRepo({ companion });
     const marker = path.join(path.dirname(repo), "gh-calls");
@@ -5764,6 +5782,9 @@ test("dashboard turns a throwing section into { status: error, message } and kee
     assert.equal(json.status, "ok");
     assert.equal(json.deliveries.status, "error");
     assert.match(json.deliveries.message, /EACCES/);
+    assert.equal(typeof json.metrics.status, "string");
+    assert.equal(json.metrics.status, "error");
+    assert.equal(typeof json.timings.metrics, "number");
     assert.equal(typeof json.doctor.status, "string");
     assert.ok(json.doctor.checks.length > 0 && json.doctor.checks.every((c) => typeof c.id === "string"));
   } finally {
@@ -5919,6 +5940,14 @@ test("metrics derives phases, rounds, pauses, the merge, and post-ship latency f
     assert.equal(missing.code, 3);
     assert.equal(missing.json.status, "missing");
     assert.match(missing.json.message, /No roadmap for slug nope/);
+
+    // The dashboard carries the same document, read through its asynchronous logs.
+    for (const pr of [false, true]) {
+      const dash = runWith({ cwd: repo, env: restrictedPath({ gh: prStub(path.join(path.dirname(repo), "gh-calls")) }).env }, "dashboard", ...(pr ? ["--pr"] : []));
+      assert.equal(dash.code, 0);
+      assert.deepEqual(stableMetrics(dash.json.metrics), stableMetrics(json));
+      assert.deepEqual(withoutShas(dash.json.metrics.items[1]), expectedMetricsX(repo));
+    }
   }
 });
 
