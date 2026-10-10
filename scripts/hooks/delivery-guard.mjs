@@ -18,8 +18,9 @@ import { fileURLToPath } from "node:url";
 import { findOccupants as defaultFindOccupants } from "../worktree-occupants.mjs";
 import { emit, loadHookConfig, readPayload, realpath, resolveArtifacts, runGit, shellSplit } from "./hook-lib.mjs";
 
-const PROTECTED = /(\.github\/hooks\/|scripts\/hooks\/)/;
-const PROTECTED_REDIRECT = /(?<![<])>{1,2}\s*\S*(\.github\/hooks\/|scripts\/hooks\/)/;
+const PROTECTED_PATHS = String.raw`\.github\/hooks\/|scripts\/hooks\/|(?<![\w.-])hooks\/hooks\.json|\.claude-plugin(?![\w.-])`;
+const PROTECTED = new RegExp(`(${PROTECTED_PATHS})`);
+const PROTECTED_REDIRECT = new RegExp(String.raw`(?<![<])>{1,2}\s*\S*(` + PROTECTED_PATHS + ")");
 const WRITE_TOOL = /edit|create|write|replace|patch|apply|insert|notebook/;
 
 // Shell segments: split on control operators so branch state and command words are

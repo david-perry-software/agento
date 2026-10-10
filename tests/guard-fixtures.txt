@@ -107,6 +107,16 @@ allow cat scripts/hooks/delivery-guard.sh > /tmp/copy.sh
 allow code scripts/hooks/delivery-guard.sh
 allow shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh
 
+# Plugin hook wiring is protected like the hook scripts (hooks-node-port)
+deny  rm hooks/hooks.json
+deny  rm -rf .claude-plugin
+deny  tee hooks/hooks.json
+deny  sed -i 's/a/b/' .claude-plugin/plugin.json
+ask   chmod 644 hooks/hooks.json
+allow cat hooks/hooks.json
+allow git add hooks/hooks.json .claude-plugin/plugin.json
+allow node -e 'require("./hooks/hooks.json")'
+
 # Deleting a non-default remote branch is allowed even from the default branch (#47 guard-branch-delete-on-main)
 allow git switch main && git push origin --delete feature/x
 allow git switch main && git push origin :feature/x

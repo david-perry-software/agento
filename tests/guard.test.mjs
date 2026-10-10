@@ -177,6 +177,14 @@ test("asks before edits to protected hook files via edit tools", () => {
   assert.equal(decision, "ask");
 });
 
+test("asks before edits to the plugin hook wiring via edit tools", () => {
+  for (const filePath of [path.join(repoRoot, "hooks", "hooks.json"), path.join(repoRoot, ".claude-plugin", "plugin.json")]) {
+    assert.equal(decide("", { filePath, tool: "replace_string_in_file" }).decision, "ask", filePath);
+    assert.equal(decide("", { filePath, tool: "create_file" }).decision, "ask", filePath);
+  }
+  assert.equal(decide("", { filePath: path.join(repoRoot, "docs", "hooks.md"), tool: "replace_string_in_file" }).decision, "allow");
+});
+
 test("honours a custom default branch and feature prefix from .github/agento.json", () => {
   const repo = makeGitRepo({
     config: { branches: { default: "trunk", feature: "feat/" } },
