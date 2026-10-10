@@ -5592,13 +5592,13 @@ function worktreeListCalls(log) {
   return counts;
 }
 
-test("session, status --pr, initiative, and dashboard read each clone's worktree list once from a product cwd", () => {
+test("session, status --pr, initiative, metrics, and dashboard read each clone's worktree list once from a product cwd", () => {
   const { repo, wt } = makeWorktreeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", 'status: in-progress\nbranch: feature/alpha\ninitiative: "demo"\nnext-step: "1.2"');
   writeBreakdown(repo, "initiatives/2026/09/demo", null, [{ slug: "alpha" }, { slug: "beta" }]);
   git(repo, "worktree", "add", "-q", "-b", "feature/alpha", path.join(wt, "feature-alpha"));
   const { log, env } = gitLoggingPath();
-  const commands = [["session"], ["status", "--pr"], ["initiative"], ["dashboard"], ["dashboard", "--pr"]];
+  const commands = [["session"], ["status", "--pr"], ["initiative"], ["metrics"], ["dashboard"], ["dashboard", "--pr"]];
   for (const args of commands) {
     assert.equal(runWith({ cwd: repo, env }, ...args).code, 0);
     assert.deepEqual(worktreeListCalls(log), { [fs.realpathSync(repo)]: 1 }, `in-repo ${args.join(" ")}`);
@@ -5780,4 +5780,162 @@ test("dashboard --plugin-root reaches the doctor section's model-profile check l
   assert.deepEqual(viaDashboard, modelProfile(run(repo, "doctor", "--plugin-root", plugin).json));
   assert.match(viaDashboard.detail, new RegExp(plugin));
   assert.notDeepEqual(viaDashboard, modelProfile(run(repo, "dashboard").json.doctor));
+});
+
+// --- metrics: git history only ------------------------------------------------
+
+const atUtc = (hhmm) => `2026-09-01T${hhmm}:00Z`;
+const isoUtc = (hhmm) => `2026-09-01T${hhmm}:00+00:00`;
+const postShipSteps = (ticked) => `- [x] 1.1 done — verify: x\n- [${ticked ? "x" : " "}] 2.1 (manual, post-ship) confirm the release — verify: y\n`;
+const METRICS_X = "features/2026/09/xray";
+const METRICS_Y = "features/2026/09/yank";
+
+// Delivery xray lived its whole lifecycle on feature/xray — planned, in-progress, in-review,
+// request-changes, paused, in-progress, in-review, approve, complete — was merged as
+// product PR #7 (the companion's own merge is #8), and had its post-ship step ticked
+// on main later. Delivery yank is in flight: committed only on its managed half's
+// feature/yank branch, pushed. Every commit carries a fixed clock.
+function makeMetricsRepo({ companion }) {
+  const pair = companion ? makePairRepo() : { ...makeWorktreeRepo(), docs: null };
+  const artifacts = pair.docs ?? pair.repo;
+  const header = (status) => `status: ${status}\nbranch: feature/xray\nnext-step: ""`;
+  const step = (hhmm, status) => {
+    writeRoadmap(artifacts, METRICS_X, header(status), postShipSteps(false));
+    commitAt(artifacts, `docs(feature): xray ${status}`, atUtc(hhmm));
+  };
+  const verdict = (hhmm, value) => {
+    fs.writeFileSync(path.join(artifacts, METRICS_X, "review.md"), `# Review: xray\n\nVerdict: ${value}\n\nRound at ${hhmm}.\n`);
+    commitAt(artifacts, `docs(feature): review xray — ${value}`, atUtc(hhmm));
+  };
+  git(artifacts, "switch", "-q", "-c", "feature/xray");
+  step("10:00", "planned");
+  step("11:00", "in-progress");
+  step("13:00", "in-review");
+  verdict("13:30", "request-changes");
+  step("14:00", "paused");
+  step("14:30", "in-progress");
+  step("15:00", "in-review");
+  verdict("15:30", "approve");
+  step("16:00", "complete");
+  const merge = (clone, hhmm, pr) => {
+    git(clone, "switch", "-q", "main");
+    execFileSync("git", ["-C", clone, "merge", "-q", "--no-ff", "-m", `Merge pull request #${pr} from owner/feature/xray`, "feature/xray"], { env: { ...process.env, GIT_AUTHOR_DATE: atUtc(hhmm), GIT_COMMITTER_DATE: atUtc(hhmm) } });
+  };
+  if (companion) {
+    git(pair.repo, "switch", "-q", "-c", "feature/xray");
+    commitAt(pair.repo, "feat: xray", atUtc("15:45"));
+    merge(artifacts, "16:20", 8);
+  }
+  merge(pair.repo, "16:30", 7);
+  writeRoadmap(artifacts, METRICS_X, header("complete"), postShipSteps(true));
+  commitAt(artifacts, "docs(feature): xray post-ship 2.1", atUtc("18:00"));
+  for (const clone of new Set([artifacts, pair.repo])) git(clone, "push", "-q", "origin", "main");
+
+  git(pair.repo, "worktree", "add", "-q", "-b", "feature/yank", path.join(pair.wt, "feature-yank"));
+  const half = companion ? path.join(pair.docsWt, "feature-yank") : path.join(pair.wt, "feature-yank");
+  if (companion) git(pair.docs, "worktree", "add", "-q", "-b", "feature/yank", half);
+  for (const [hhmm, status] of [["19:00", "planned"], ["20:00", "in-progress"]]) {
+    writeRoadmap(half, METRICS_Y, `status: ${status}\nbranch: feature/yank\nnext-step: "1.2"`);
+    commitAt(half, `docs(feature): yank ${status}`, atUtc(hhmm));
+  }
+  git(half, "push", "-q", "-u", "origin", "feature/yank");
+  return { repo: pair.repo, docs: pair.docs, artifacts, half };
+}
+
+const closedAt = (from, to, seconds) => ({ start: isoUtc(from), end: isoUtc(to), seconds, open: false });
+
+function expectedMetricsX(product) {
+  const status = (hhmm, value) => ({ at: isoUtc(hhmm), kind: "status", value });
+  return {
+    type: "feature",
+    slug: "xray",
+    dir: METRICS_X,
+    roadmap: `${METRICS_X}/roadmap.md`,
+    branch: "feature/xray",
+    status: "complete",
+    ref: "origin/main",
+    events: [
+      status("10:00", "planned"),
+      status("11:00", "in-progress"),
+      status("13:00", "in-review"),
+      { at: isoUtc("13:30"), kind: "review", value: "request-changes" },
+      status("14:00", "paused"),
+      status("14:30", "in-progress"),
+      status("15:00", "in-review"),
+      { at: isoUtc("15:30"), kind: "review", value: "approve" },
+      status("16:00", "complete"),
+      { at: isoUtc("18:00"), kind: "post-ship-tick", value: "2.1" },
+    ],
+    phases: { planned: closedAt("10:00", "11:00", 3600), build: closedAt("11:00", "13:00", 7200), review: closedAt("13:00", "16:00", 10800) },
+    cycle: closedAt("10:00", "16:00", 21600),
+    reviewRounds: 1,
+    pauses: { count: 1, seconds: 1800, open: false },
+    merged: { at: isoUtc("16:30"), sha: git(product, "log", "-1", "--merges", "--format=%H", "origin/main"), pr: 7 },
+    postShip: { total: 1, ticked: 1, lastTickAt: isoUtc("18:00"), latencySeconds: 5400, pending: false },
+    warnings: [],
+  };
+}
+
+const withoutShas = (item) => ({ ...item, events: item.events.map(({ sha, ...event }) => event) });
+
+test("metrics derives phases, rounds, pauses, the merge, and post-ship latency from fixed-date history in both layouts", () => {
+  for (const companion of [false, true]) {
+    const { repo, artifacts } = makeMetricsRepo({ companion });
+    const { code, json } = run(repo, "metrics");
+    assert.equal(code, 0, JSON.stringify(json));
+    assert.deepEqual(Object.keys(json), ["status", "generatedAt", "ref", "items", "aggregate", "root", "configSource"]);
+    assert.equal(json.status, "ok");
+    assert.ok(!Number.isNaN(Date.parse(json.generatedAt)));
+    assert.deepEqual(json.ref, { artifacts: "origin/main", product: "origin/main" });
+    assert.deepEqual(json.items.map((i) => i.slug), run(repo, "status").json.items.map((i) => i.slug));
+    assert.deepEqual(json.items.map((i) => [i.slug, i.status]), [["yank", "in-progress"], ["xray", "complete"]]);
+    const [y, x] = json.items;
+    assert.deepEqual(withoutShas(x), expectedMetricsX(repo), `companion: ${companion}`);
+    assert.ok(x.events.every((e) => git(artifacts, "cat-file", "-t", e.sha) === "commit"));
+
+    // The in-flight item's events come from its branch only, read from origin/feature/yank.
+    assert.equal(y.ref, "origin/feature/yank");
+    assert.deepEqual(y.events.map((e) => [e.at, e.value]), [[isoUtc("19:00"), "planned"], [isoUtc("20:00"), "in-progress"]]);
+    assert.deepEqual(y.phases.planned, closedAt("19:00", "20:00", 3600));
+    assert.equal(y.phases.build.open, true);
+    assert.equal(y.phases.build.end, null);
+    assert.equal(y.phases.build.seconds, Math.round((Date.parse(json.generatedAt) - Date.parse(atUtc("20:00"))) / 1000));
+    assert.equal(y.phases.review, null);
+    assert.equal(y.cycle.open, true);
+    assert.equal(y.merged, null);
+    assert.deepEqual(y.warnings, []);
+
+    assert.deepEqual(json.aggregate, {
+      count: 2,
+      complete: 1,
+      median: { plannedSeconds: 3600, buildSeconds: 7200, reviewSeconds: 10800, cycleSeconds: 21600, pauseSeconds: 1800, reviewRounds: 1, postShipLatencySeconds: 5400 },
+    });
+
+    const one = run(repo, "metrics", "xray");
+    assert.equal(one.code, 0);
+    assert.deepEqual(one.json.items.map(withoutShas), [expectedMetricsX(repo)]);
+    assert.deepEqual(one.json.aggregate.count, 1);
+    const missing = run(repo, "metrics", "nope");
+    assert.equal(missing.code, 3);
+    assert.equal(missing.json.status, "missing");
+    assert.match(missing.json.message, /No roadmap for slug nope/);
+  }
+});
+
+test("metrics never invokes gh and reads history only through git log in the artifacts and product clones", () => {
+  for (const companion of [false, true]) {
+    const { repo, artifacts } = makeMetricsRepo({ companion });
+    const marker = path.join(path.dirname(repo), "gh-called");
+    const { log, env } = gitLoggingPath({ gh: `#!/bin/sh\necho "$*" >> ${JSON.stringify(marker)}\nexit 99\n` });
+    const { code, json } = runWith({ cwd: repo, env }, "metrics");
+    assert.equal(code, 0);
+    assert.deepEqual(json.items.map((i) => i.slug), ["yank", "xray"]);
+    assert.ok(!fs.existsSync(marker), "gh was invoked");
+    const calls = fs.readFileSync(log, "utf8").trim().split("\n");
+    assert.deepEqual(calls.filter((l) => / (fetch|push|pull|ls-remote|remote) /.test(` ${l} `)), [], "no network git calls");
+    const logs = calls.map((l) => l.match(/^-C (\S+) log (.*)$/)).filter(Boolean).map(([, dir, args]) => [fs.realpathSync(dir), args.split(" ")[0]]);
+    const docsDir = fs.realpathSync(artifacts);
+    const productDir = fs.realpathSync(repo);
+    assert.deepEqual(logs.sort(), [[docsDir, "origin/feature/yank"], [docsDir, "origin/main"], [productDir, "--first-parent"]].sort());
+  }
 });
