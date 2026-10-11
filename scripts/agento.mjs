@@ -637,7 +637,7 @@ function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
   }
 }
 
-const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"];
+const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,mergeable,url"];
 const ghMissingLookup = (label) => ({ pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] });
 
 function failedLookup(label, branch, error) {
@@ -1922,7 +1922,10 @@ function shipPrLookup(branch, cwd, label) {
   }
 }
 
-const prSummary = (pr) => (pr ? { number: pr.number, state: pr.state, isDraft: Boolean(pr.isDraft), mergeStateStatus: pr.mergeStateStatus ?? null, url: pr.url ?? null, mergeCommit: pr.mergeCommit?.oid ?? null } : null);
+const prSummary = (pr) => (pr ? { number: pr.number, state: pr.state, isDraft: Boolean(pr.isDraft), mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, url: pr.url ?? null, mergeCommit: pr.mergeCommit?.oid ?? null } : null);
+
+// GitHub reports a conflict as mergeable CONFLICTING / mergeStateStatus DIRTY; mergeStateStatus is never CONFLICTING.
+const isConflicting = (pr) => pr?.mergeable === "CONFLICTING" || pr?.mergeStateStatus === "DIRTY";
 
 const utcDate = () => new Date().toISOString().slice(0, 10);
 
@@ -2147,9 +2150,9 @@ function ship() {
     if (external) {
       if (!companionPr) hard.push({ code: "companion-missing-pr", detail: `no pull request for ${branch} in the companion repository at ${artifactsClone}; open it from the companion half` });
       else if (companionPr.state !== "OPEN") hard.push({ code: "companion-pr-not-open", detail: `companion PR #${companionPr.number} is ${companionPr.state.toLowerCase()} (${companionPr.url}); the code PR is still open` });
-      else if (companionPr.mergeStateStatus === "CONFLICTING") hard.push({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
+      else if (isConflicting(companionPr)) hard.push({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
     }
-    if (pr.mergeStateStatus === "CONFLICTING") hard.push({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
+    if (isConflicting(pr)) hard.push({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
     if (changelog.headingWithoutVersionChange) hard.push({ code: "changelog-heading-without-version", detail: `CHANGELOG.md carries "## ${changelog.unreleasedHeading} (unreleased)" but the branch does not change "version" in .claude-plugin/plugin.json or package.json` });
     if (postShipSteps.length && !/post-ship/i.test(risks)) hard.push({ code: "post-ship-unjustified", detail: `${postShipSteps.length} (manual, post-ship) step(s) without a post-ship justification under plan.md ## Risks: ${postShipSteps.map((s) => s.id).join(", ")}` });
     if (ownerTree && !ownerTree.tracked.length && ownerTree.ahead === 0 && ownerTree.untracked.length) {
@@ -2158,6 +2161,8 @@ function ship() {
     if (changelog.needsStamp) confirmGaps.push({ code: "changelog-unstamped", detail: `CHANGELOG.md "## ${changelog.unreleasedHeading} (unreleased)" will be stamped with today's UTC date in the product` });
     if (pr.mergeStateStatus === "BEHIND") confirmGaps.push({ code: "pr-behind", detail: `PR #${pr.number} is behind ${defaultBranch}; origin/${defaultBranch} will be merged into ${branch} (never rebased)` });
     if (external && companionPr?.mergeStateStatus === "BEHIND") confirmGaps.push({ code: "companion-pr-behind", detail: `companion PR #${companionPr.number} is behind ${artifactDefault}; origin/${artifactDefault} will be merged into the companion half` });
+    if (pr.mergeable === "UNKNOWN") out.warnings.push(`pr-mergeable-unknown: GitHub has not computed mergeability for PR #${pr.number} yet; re-send to re-check`);
+    if (external && companionPr?.state === "OPEN" && companionPr.mergeable === "UNKNOWN") out.warnings.push(`companion-pr-mergeable-unknown: GitHub has not computed mergeability for companion PR #${companionPr.number} yet; re-send to re-check`);
 
     out.gaps = { hard, confirm: confirmGaps };
     out.confirmToken = confirmTokenFor({ slug, pr: pr.number, companionPr: companionPr?.number ?? null, confirm: confirmGaps });
@@ -3193,7 +3198,7 @@ switch (command) {
     if (layout.artifacts.external) {
       if (!companionPr) gaps.push("missing-pr");
       else if (companionPr.state === "CLOSED") gaps.push("pr-not-open");
-      else if (companionPr.mergeStateStatus === "CONFLICTING") gaps.push("conflicting-pr");
+      else if (isConflicting(companionPr)) gaps.push("conflicting-pr");
     }
     withExit(withLayout({ ...preflight, companion, companionGaps: gaps, ownerTree, companionTree, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] }, layout));
     break;
