@@ -1238,7 +1238,7 @@ test("status --pr looks up PRs for non-complete items only, warns per slug on fa
   assert.deepEqual(withPr.json.items.map((i) => i.slug), ["alpha", "bug", "done"]);
   for (const slug of ["alpha", "bug"]) {
     const item = withPr.json.items.find((i) => i.slug === slug);
-    assert.deepEqual(item.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+    assert.deepEqual(item.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", url: "https://example.test/pr/15" });
     assert.equal(item.companionPr, null);
   }
   const done = withPr.json.items.find((i) => i.slug === "done");
@@ -1248,7 +1248,7 @@ test("status --pr looks up PRs for non-complete items only, warns per slug on fa
   assert.deepEqual(withPr.json.warnings, []);
   assert.deepEqual(
     calls().sort(),
-    [`${repo} pr view feature/alpha --json number,state,isDraft,mergeStateStatus,url`, `${repo} pr view issue/bug --json number,state,isDraft,mergeStateStatus,url`],
+    [`${repo} pr view feature/alpha --json number,state,isDraft,mergeStateStatus,mergeable,url`, `${repo} pr view issue/bug --json number,state,isDraft,mergeStateStatus,mergeable,url`],
   );
 
   // A failing gh: pr null plus one slug-prefixed warning; exit code and lifecycle unchanged.
@@ -1280,7 +1280,7 @@ test("status --pr looks up PRs for non-complete items only, warns per slug on fa
   assert.equal(pairDone.companionPr, null);
   assert.deepEqual(
     fs.readFileSync(pairMarker, "utf8").trim().split("\n").sort(),
-    [`${pair.repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`, `${pair.docs} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`],
+    [`${pair.repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,mergeable,url`, `${pair.docs} pr view feature/widget --json number,state,isDraft,mergeStateStatus,mergeable,url`],
   );
   assert.deepEqual(both.json.warnings, []);
 
@@ -1799,7 +1799,7 @@ test("session never invokes gh without --pr and reads its JSON with --pr", () =>
   assert.equal(withPr.code, 0);
   assert.deepEqual(withPr.json.pr, { number: 15, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
   assert.deepEqual(withPr.json.warnings, []);
-  assert.match(fs.readFileSync(marker, "utf8"), /pr view feature\/widget --json number,state,isDraft,mergeStateStatus,url/);
+  assert.match(fs.readFileSync(marker, "utf8"), /pr view feature\/widget --json number,state,isDraft,mergeStateStatus,mergeable,url/);
 
   // A gh that fails (exit 99) is reported as a warning, not an error.
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\necho 'no pull requests found for branch' >&2\nexit 99\n", { mode: 0o755 });
@@ -1878,9 +1878,9 @@ test("session --pr: companionPr is null with no extra gh call in-repo, and the c
 // A stub gh answering `pr view` with a per-repo state: `product` for the product
 // checkout, `companion` for anything under project-docs. Logs `$PWD $*` to marker;
 // `logVersion` logs the `--version` probe too.
-function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN", logVersion = false } = {}) {
+function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN", companionMergeable = "MERGEABLE", logVersion = false } = {}) {
   const versionLog = logVersion ? `echo "$PWD $*" >> ${JSON.stringify(marker)}; ` : "";
-  return `#!/bin/sh\nif [ "$1" = "--version" ]; then ${versionLog}exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge};; *) n=15; s=${product}; m=CLEAN;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
+  return `#!/bin/sh\nif [ "$1" = "--version" ]; then ${versionLog}exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge}; g=${companionMergeable};; *) n=15; s=${product}; m=CLEAN; g=MERGEABLE;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"mergeable\\":\\"$g\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
 }
 
 test("ship-preflight --pr: in-repo one gh call with companionPr null; companion mode both PRs and PR gaps; no --pr means no pr key", () => {
@@ -1904,7 +1904,7 @@ test("ship-preflight --pr: in-repo one gh call with companionPr null; companion 
   assert.deepEqual(inRepo.json.warnings, []);
   const inRepoCalls = fs.readFileSync(marker, "utf8").trim().split("\n");
   assert.equal(inRepoCalls.length, 1, "in-repo mode runs gh pr view once");
-  assert.match(inRepoCalls[0], new RegExp(`^${repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url$`));
+  assert.match(inRepoCalls[0], new RegExp(`^${repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,mergeable,url$`));
 
   // Companion mode: both PRs, the companion one looked up from inside the clone.
   const pair = makePairRepo();
@@ -1921,8 +1921,8 @@ test("ship-preflight --pr: in-repo one gh call with companionPr null; companion 
   };
   const both = shipWith({});
   assert.equal(both.json.status, "ok");
-  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
-  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/7" });
+  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", url: "https://example.test/pr/15" });
+  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", url: "https://example.test/pr/7" });
   assert.deepEqual(both.json.companionGaps, []);
   assert.deepEqual(both.json.warnings, []);
   assert.equal(both.json.companion.path, half);
@@ -1937,7 +1937,7 @@ test("ship-preflight --pr: in-repo one gh call with companionPr null; companion 
   assert.equal(missing.json.warnings.length, 1);
   assert.match(missing.json.warnings[0], /^companionPr: gh pr view feature\/widget failed/);
   assert.deepEqual(shipWith({ companion: "CLOSED" }).json.companionGaps, ["pr-not-open"]);
-  assert.deepEqual(shipWith({ companionMerge: "CONFLICTING" }).json.companionGaps, ["conflicting-pr"]);
+  assert.deepEqual(shipWith({ companionMerge: "DIRTY", companionMergeable: "CONFLICTING" }).json.companionGaps, ["conflicting-pr"]);
   const merged = shipWith({ product: "MERGED", companion: "MERGED" });
   assert.equal(merged.json.companionPr.state, "MERGED");
   assert.deepEqual(merged.json.companionGaps, [], "a merged companion PR is the resume-at-teardown case, not a gap");
@@ -4819,7 +4819,7 @@ test("ship audit: every hard gap code in the in-repo layout rejects with the rig
   expectHard("gone", ["owner-tree-unreadable"]);
 
   shippable(fixture, "conflict");
-  const conflict = expectHard("conflict", ["pr-conflicting"], { pr: { mergeStateStatus: "CONFLICTING" } });
+  const conflict = expectHard("conflict", ["pr-conflicting"], { pr: { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" } });
   assert.match(conflict.gaps.hard[0].detail, /conflicts with main/);
 
   shippable(fixture, "heading", { extra: writeFile("CHANGELOG.md", "# Changelog\n\n## 1.2.0 (unreleased)\n\n- thing\n") });
@@ -4931,7 +4931,7 @@ test("ship audit in companion mode: companion half and companion PR gaps are har
   const behind = audit("clean", { mergeStateStatus: "BEHIND" });
   assert.deepEqual(codes(behind.gaps.confirm), ["companion-pr-behind"]);
   assert.notEqual(behind.confirmToken, ok.confirmToken);
-  assert.deepEqual(codes(audit("clean", { mergeStateStatus: "CONFLICTING" }).gaps.hard), ["companion-pr-conflicting"]);
+  assert.deepEqual(codes(audit("clean", { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" }).gaps.hard), ["companion-pr-conflicting"]);
   assert.deepEqual(codes(audit("clean", { state: "CLOSED" }).gaps.hard), ["companion-pr-not-open"]);
   const missing = audit("clean", null);
   assert.deepEqual(codes(missing.gaps.hard), ["companion-missing-pr"]);
@@ -4981,6 +4981,17 @@ test("ship audit rejects a PR GitHub reports as conflicting (#107 ship-conflict-
   assert.deepEqual(codes(companion.json.gaps.hard), ["companion-pr-conflicting"]);
   assert.deepEqual(companion.json.rejectTo, { command: "/agento build-feature conflict107", window: "build" });
   assert.deepEqual([refState(pair.repo, pair.docs), JSON.stringify(pairedStub.state())], pairedBefore, "the rejected companion audit wrote something");
+});
+
+test("ship audit: an open PR whose mergeability GitHub has not computed yet is a warning, not a gap", () => {
+  const fixture = makeWorktreeRepo();
+  const { branch } = shippable(fixture, "unknown");
+  const { code, json } = shipRun(fixture.repo, shipStub({ product: { prs: { [branch]: { mergeStateStatus: "UNKNOWN", mergeable: "UNKNOWN" } } } }).env, "feature", "unknown");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "awaiting-confirm");
+  assert.deepEqual(json.gaps, { hard: [], confirm: [] });
+  assert.equal(json.pr.mergeable, "UNKNOWN");
+  assert.deepEqual(json.warnings, ["pr-mergeable-unknown: GitHub has not computed mergeability for PR #15 yet; re-send to re-check"]);
 });
 
 const PASSING = [[{ name: "Unit tests", status: "COMPLETED", conclusion: "SUCCESS" }]];
