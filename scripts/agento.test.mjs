@@ -4953,6 +4953,36 @@ test("ship audit in companion mode: companion half and companion PR gaps are har
   assert.match(lagging.gaps.hard[0].detail, /merge origin\/feature\/clean \(a fast-forward\)/);
 });
 
+test("ship audit rejects a PR GitHub reports as conflicting (#107 ship-conflict-gate)", () => {
+  // GitHub reports a conflict as mergeable: CONFLICTING / mergeStateStatus: DIRTY.
+  const CONFLICT = { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" };
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch } = shippable(fixture, "conflict107");
+  const stub = shipStub({ product: { prs: { [branch]: CONFLICT } } });
+  const before = [refState(repo), JSON.stringify(stub.state())];
+  const { code, json } = shipRun(repo, stub.env, "feature", "conflict107");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "audit-gaps");
+  assert.deepEqual(codes(json.gaps.hard), ["pr-conflicting"]);
+  assert.deepEqual(json.rejectTo, { command: "/agento build-feature conflict107", window: "build" });
+  assert.deepEqual(json.actions, []);
+  assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before, "the rejected audit wrote something");
+
+  const pair = makePairRepo();
+  const paired = pairShippable(pair, "conflict107");
+  const pairedStub = shipStub({ product: { prs: { [paired.branch]: {} } }, companion: { prs: { [paired.branch]: { number: 7, ...CONFLICT } } } });
+  const pairedBefore = [refState(pair.repo, pair.docs), JSON.stringify(pairedStub.state())];
+  const companion = shipRun(pair.repo, pairedStub.env, "feature", "conflict107");
+  assert.equal(companion.code, 3, JSON.stringify(companion.json));
+  assert.equal(companion.json.status, "rejected");
+  assert.equal(companion.json.reason, "audit-gaps");
+  assert.deepEqual(codes(companion.json.gaps.hard), ["companion-pr-conflicting"]);
+  assert.deepEqual(companion.json.rejectTo, { command: "/agento build-feature conflict107", window: "build" });
+  assert.deepEqual([refState(pair.repo, pair.docs), JSON.stringify(pairedStub.state())], pairedBefore, "the rejected companion audit wrote something");
+});
+
 const PASSING = [[{ name: "Unit tests", status: "COMPLETED", conclusion: "SUCCESS" }]];
 const stepsOf = (json) => json.actions.map((a) => a.step);
 const today = () => new Date().toISOString().slice(0, 10);
