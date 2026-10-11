@@ -39,7 +39,9 @@ import { promisify } from "node:util";
 import { loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
   closeBuildSessionDecision,
+  completeRoadmap,
   evaluateShipPreflight,
+  reopenRoadmap,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
@@ -2539,20 +2541,6 @@ function ship() {
     shippedHere = true;
   }
   finish({ phase: "done", outcome: shippedHere ? "shipped" : "already-shipped", next: [] });
-}
-
-// roadmap.md → status complete, last-updated today, next-step cleared, and the
-// accepted confirm gaps recorded under `## Follow-ups (accepted at ship)`.
-function completeRoadmap(content, { date, followups }) {
-  const setHeader = (text, key, value) => (new RegExp(`(^|\\n)${key}:[^\\n]*`).test(text) ? text.replace(new RegExp(`(^|\\n)${key}:[^\\n]*`), `$1${key}: ${value}`) : text.replace(/(^|\n)(status:[^\n]*)/, `$1$2\n${key}: ${value}`));
-  let next = setHeader(content, "status", "complete");
-  next = setHeader(next, "last-updated", date);
-  next = setHeader(next, "next-step", '""');
-  if (followups.length) {
-    const lines = followups.map((g) => `- ${g.code}: ${g.detail}${g.paths?.length ? ` (${g.paths.join(", ")})` : ""} — accepted ${date}`);
-    next = `${next.replace(/\s+$/, "")}\n\n## Follow-ups (accepted at ship)\n\n${lines.join("\n")}\n`;
-  }
-  return next;
 }
 
 // `## <version> (unreleased)` → `## <version> (<date>)` in CHANGELOG.md, one product commit.

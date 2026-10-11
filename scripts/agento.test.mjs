@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -5111,6 +5112,24 @@ test("ship --confirm: pending checks return exit 2 with the same --confirm comma
   assert.equal(failStub.state().product.prs[failing.branch].state, "OPEN");
   assert.ok(failStub.calls().every((c) => !/ pr merge/.test(c)));
   assert.ok(fs.existsSync(failing.owner));
+test("reopenRoadmap restores in-review, sets last-updated and next-step, and removes only the accepted-at-ship follow-ups", () => {
+  const original = '```yaml\nstatus: in-review\nbranch: feature/widget\nlast-updated: 2026-10-01\nnext-step: "review"\n```\n\n## Phase 1\n\n- [x] 1.1 done — verify: x\n\n## Follow-ups\n\n- later\n';
+  const completed = completeRoadmap(original, { date: "2026-10-10", followups: [{ code: "pr-behind", detail: "PR #15 is behind main" }, { code: "untracked-byproducts", detail: "1 untracked file(s)", paths: ["a.png"] }] });
+  assert.match(completed, /^status: complete$/m);
+  assert.match(completed, /## Follow-ups \(accepted at ship\)\n\n- pr-behind: .*\n- untracked-byproducts: /);
+  const reopened = reopenRoadmap(completed, { date: "2026-10-11", codes: ["pr-conflicting"] });
+  assert.equal(reopened, original.replace("last-updated: 2026-10-01", "last-updated: 2026-10-11").replace('next-step: "review"', 'next-step: "ship reopened (pr-conflicting): resolve in the build window, then re-review"'));
+
+  // Without the section only the three header fields change.
+  const done = original.replace("status: in-review", "status: complete");
+  const plain = reopenRoadmap(done, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] });
+  const before = done.split("\n");
+  const after = plain.split("\n");
+  assert.equal(after.length, before.length);
+  assert.deepEqual(after.filter((line, i) => line !== before[i]), ["status: in-review", "last-updated: 2026-10-11", 'next-step: "ship reopened (checks-failed, pr-conflicting): resolve in the build window, then re-review"']);
+  assert.equal(reopenRoadmap(plain, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] }), plain, "idempotent");
+});
+
 });
 
 test("ship --confirm (in-repo, no owner): the primary is switched onto the branch for the writes and back; a behind PR is integrated by merge; a conflicting integration aborts and rejects", () => {
