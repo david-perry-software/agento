@@ -2352,6 +2352,10 @@ function ship() {
 
     out.phase = "merge-code";
     const merge = ghRun(root, ["pr", "merge", String(pr.number), "--merge"], 120000);
+    if (!merge.ok && /not mergeable|merge conflict/i.test(merge.stderr)) {
+      reopen(["pr-conflicting"]);
+      rejectReopened([conflictGap()]);
+    }
     if (!merge.ok) ghFailure(merge, `gh pr merge ${pr.number} --merge`);
     act("merge-code", `PR #${pr.number} merged into ${defaultBranch} with a merge commit`);
     shippedHere = true;

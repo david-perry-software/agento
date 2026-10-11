@@ -4247,7 +4247,7 @@ test("close-session is idempotent: a re-send is nothing-to-close or already-clos
 // --- ship -------------------------------------------------------------------------
 
 // A scriptable `gh` for the ship tests. `prs` is `{ "<branch>": { number, state, isDraft,
-// mergeStateStatus, body, title, rollups: [ [ { name, status, conclusion } ] … ] } }`
+// mergeStateStatus, mergeable, body, title, refuseMerge, rollups: [ [ { name, status, conclusion } ] … ] } }`
 // per repo (`product`, `companion`); the repo is chosen by `$PWD` (anything under
 // project-docs is the companion). `pr merge <n> --merge` performs a real merge of the
 // branch into the repo's bare origin default, so later fetches and `pr view` report
@@ -4306,6 +4306,7 @@ if (args[0] === "pr" && args[1] === "merge") {
   if (pr.state !== "OPEN") die("Pull request #" + pr.number + " is not open");
   if (pr.isDraft) die("Pull request #" + pr.number + " is still a draft");
   if (args.includes("--admin") || args.includes("--squash") || args.includes("--rebase") || args.includes("--delete-branch")) die("forbidden merge flag: " + args.slice(3).join(" "));
+  if (pr.refuseMerge) die(typeof pr.refuseMerge === "string" ? pr.refuseMerge : "Pull request #" + pr.number + " is not mergeable: the merge commit cannot be cleanly created.");
   const branch = Object.keys(repo.prs).find((b) => repo.prs[b] === pr);
   const origin = repo.origin || git("-C", process.cwd(), "remote", "get-url", "origin");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gh-merge-"));
@@ -5197,6 +5198,39 @@ test("ship --confirm at checks with a conflicting PR reopens the roadmap and rej
   assert.equal(shipRun(pair.repo, pairedStub.env, "feature", "widget").json.resumedAt, "audit");
 });
 
+test("ship --confirm: a merge refused as not mergeable reopens the roadmap on the no-owner path; any other merge failure does not (#107 ship-conflict-gate)", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  // Clean when audited and when the checks pass, refused by GitHub at the merge itself.
+  const { branch, dir } = shippable(fixture, "widget", { owner: false, extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING, refuseMerge: true } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "audit-gaps");
+  assert.deepEqual(codes(json.gaps.hard), ["pr-conflicting"]);
+  assert.ok(stepsOf(json).includes("roadmap-reopened"), JSON.stringify(json.actions));
+  assert.deepEqual(json.rejectTo, { command: "/agento start-session feature/widget --resume", window: "primary" });
+  assert.equal(git(repo, "branch", "--show-current"), "main", "the primary is switched back");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  git(repo, "fetch", "-q", "origin");
+  const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: in-review$/m);
+  assert.doesNotMatch(roadmap, /## Follow-ups \(accepted at ship\)/);
+  assert.equal(stub.state().product.prs[branch].state, "OPEN");
+
+  // Any other merge failure keeps gh-error and the complete roadmap.
+  const other = shippable(fixture, "other", { owner: false, extra: writeFile("src.js", "code\n") });
+  const otherStub = shipStub({ product: { prs: { [other.branch]: { number: 16, rollups: PASSING, refuseMerge: "GraphQL: Something went wrong while executing your query (mergePullRequest)" } } } });
+  const otherToken = shipRun(repo, otherStub.env, "feature", "other").json.confirmToken;
+  const failed = shipRun(repo, otherStub.env, "feature", "other", "--confirm", otherToken, "--wait", "0");
+  assert.equal(failed.json.status, "failed", JSON.stringify(failed.json));
+  assert.equal(failed.json.reason, "gh-error");
+  assert.ok(!stepsOf(failed.json).includes("roadmap-reopened"));
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${other.branch}:${other.dir}/roadmap.md`), /^status: complete$/m);
+  assert.equal(git(repo, "branch", "--show-current"), "main");
 });
 
 test("ship --confirm (in-repo, no owner): the primary is switched onto the branch for the writes and back; a behind PR is integrated by merge; a conflicting integration aborts and rejects", () => {
