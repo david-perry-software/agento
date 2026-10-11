@@ -9,6 +9,7 @@ const extensionRoot = path.join(repositoryRoot, "extension");
 const cliFiles = [
   "agento-config.mjs",
   "agento.mjs",
+  "delivery-metrics.mjs",
   "delivery-roadmap-resolver.mjs",
   "model-profiles.mjs",
   "release-state.mjs",

@@ -9,6 +9,7 @@ import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget,
 import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { formatDashboardTimings, splitDashboardDocument } from "./dashboardDocument.js";
+import { createTimelineRows } from "./deliveryTimeline.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
@@ -209,13 +210,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       async () => {
         const root = pluginRoot();
         const result = await client.run(["dashboard", "--pr", ...(root ? ["--plugin-root", root] : [])], folder.uri.fsPath);
-        const { session, doctor, deliveries: status, initiatives: initiativeSection, timings } = splitDashboardDocument(result.json);
+        const { session, doctor, deliveries: status, initiatives: initiativeSection, metrics, timings } = splitDashboardDocument(result.json);
         const artifactRoot = roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath;
         // Session & Doctor reads the session, doctor, and status documents; it errors only when one of them did.
         const sessionDoctorError = [session, doctor, status].find((value) => value instanceof Error);
         return {
           deliveries: {
-            model: status instanceof Error ? createDeliveryTreeError(status) : createDeliveryTreeModel(status),
+            model: status instanceof Error ? createDeliveryTreeError(status) : createDeliveryTreeModel(status, metrics === null ? null : createTimelineRows(metrics)),
             roadmapRoot: artifactRoot,
           },
           sessionDoctor: sessionDoctorError ? createSessionDoctorError(sessionDoctorError) : createSessionDoctorModel(session, doctor, status),

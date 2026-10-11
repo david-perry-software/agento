@@ -17,10 +17,11 @@
 //   node scripts/agento.mjs close-session <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]   (window check, fetch --prune, close decision, clean/pushed checks, occupant gate, remove pair + workspace file, delete merged local branches)
 //   node scripts/agento.mjs ship <feature|issue> <slug> [--confirm <token>] [--wait N]   (audit → --confirm → ready, checks, merge, companion merge, sync, release wait, teardown, epilogue; resumes from git + GitHub state; exit 0 ok, 2 pending, 3 rejected/blocked/failed)
 //   node scripts/agento.mjs initiative [<slug>]
+//   node scripts/agento.mjs metrics [<slug>]           (phase durations, review rounds, pauses, merge date, post-ship latency from git history; + aggregate medians)
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
-//   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details } and timings in one document; a failing section is { status: "error", message })
+//   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
@@ -41,6 +42,7 @@ import {
   evaluateShipPreflight,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
+import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
@@ -49,7 +51,7 @@ import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 29);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 30);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -2849,6 +2851,9 @@ function releaseVerdict(shaArg, { wait = 0, interval = 10 } = {}) {
 
 // --- documents -------------------------------------------------------------
 
+const STATUS_ORDER = ["in-progress", "paused", "in-review", "planned", "complete"];
+const byStatusOrder = (a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || a.slug.localeCompare(b.slug);
+
 // What `status` emits. `lookup` as in sessionRecord; `roadmaps` replaces the walk.
 function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = false, lookup = lookupPullRequest, roadmaps = null } = {}) {
   const worktrees = productWorktrees();
@@ -2857,8 +2862,7 @@ function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = fal
   const bySlug = new Map();
   for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
   const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
-  const order = ["in-progress", "paused", "in-review", "planned", "complete"];
-  items.sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.slug.localeCompare(b.slug));
+  items.sort(byStatusOrder);
   // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
   const warnings = [];
   const layout = checkoutLayout();
@@ -2941,11 +2945,97 @@ function doctorDocument(command = null) {
   return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
 }
 
-// What `dashboard` emits: the session, doctor, status (`deliveries`), and initiative
-// documents from one process. The roadmaps are walked once for deliveries and
-// initiatives; every PR lookup (with `pr`) and the doctor's probes run through one
-// bounded pool while the local doctor checks and the initiatives are computed. A
-// section that throws becomes { status: "error", message }.
+// --- metrics: git history only, never gh, never network ------------------------
+
+// Fixed diff output whatever the user's git config says (prefixes, colour, external diff, renames).
+const METRICS_PATCH = ["--reverse", "--format=%x00commit %H %cI", "-p", "--unified=0", "--no-color", "--no-ext-diff", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/"];
+const METRICS_MAX_BUFFER = 256 * 1024 * 1024;
+
+// origin/<default>, else <default>, else HEAD — in the clone `g` binds.
+function defaultRefIn(g) {
+  const name = config.branches.default;
+  if (g("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${name}`)) return `origin/${name}`;
+  if (g("rev-parse", "--verify", "--quiet", `refs/heads/${name}`)) return name;
+  return "HEAD";
+}
+
+// The git logs `metrics` reads, as [cwd, args] pairs: one patch log over every
+// roadmap.md/review.md on the artifact default ref, one branch-only patch log per
+// non-complete item whose delivery branch resolves, one first-parent merge log of
+// the product default.
+function metricsPlan(roadmaps) {
+  const artifactRef = defaultRefIn(agit);
+  const productRef = artifacts.external ? defaultRefIn((...args) => git(root, ...args)) : artifactRef;
+  const pathspecs = [config.artifacts.features, config.artifacts.issues].flatMap((r) => [`:(glob)${r}/**/roadmap.md`, `:(glob)${r}/**/review.md`]);
+  const branches = [];
+  for (const record of roadmaps) {
+    if (record.status === "complete" || !record.branch) continue;
+    const { ref } = refFor(record.branch, agit);
+    if (ref === "HEAD") continue;
+    branches.push({ roadmap: record.roadmap, ref, run: [artifactsRoot, ["log", ref, "--not", artifactRef, ...METRICS_PATCH, "--", `${record.dir}/roadmap.md`, `${record.dir}/review.md`]] });
+  }
+  return {
+    ref: { artifacts: artifactRef, product: productRef },
+    artifacts: [artifactsRoot, ["log", artifactRef, ...METRICS_PATCH, "--", ...pathspecs]],
+    branches,
+    product: [root, ["log", "--first-parent", "--merges", productRef, "--format=%H%x09%cI%x09%s"]],
+  };
+}
+
+// A missing ref or a failed log reads as no history (the items then carry warnings).
+function gitLogText(cwd, args) {
+  try {
+    return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: METRICS_MAX_BUFFER });
+  } catch {
+    return "";
+  }
+}
+
+async function gitLogTextAsync(cwd, args) {
+  try {
+    return (await execAsync("git", ["-C", cwd, ...args], { maxBuffer: METRICS_MAX_BUFFER })).stdout;
+  } catch {
+    return "";
+  }
+}
+
+function readMetricsLogs(plan) {
+  return {
+    artifacts: gitLogText(...plan.artifacts),
+    branches: new Map(plan.branches.map((b) => [b.roadmap, gitLogText(...b.run)])),
+    product: gitLogText(...plan.product),
+  };
+}
+
+async function readMetricsLogsAsync(plan) {
+  const [artifactsText, productText, ...branchTexts] = await Promise.all([plan.artifacts, plan.product, ...plan.branches.map((b) => b.run)].map((run) => gitLogTextAsync(...run)));
+  return { artifacts: artifactsText, branches: new Map(plan.branches.map((b, i) => [b.roadmap, branchTexts[i]])), product: productText };
+}
+
+// What `metrics [<slug>]` emits. `roadmaps` replaces the walk; `plan` and `logs` are
+// the dashboard's injection point (it reads the logs asynchronously beside its PR lookups).
+function metricsDocument({ slugFilter = null, roadmaps = null, now = Date.now(), plan = null, logs = null } = {}) {
+  const records = [...(roadmaps ?? allRoadmaps(null, managedHalves(productWorktrees())))].filter((r) => !slugFilter || r.slug === slugFilter).sort(byStatusOrder);
+  if (slugFilter && !records.length) return { status: "missing", message: `No roadmap for slug ${slugFilter} under ${config.artifacts.features}/ or ${config.artifacts.issues}/.`, root, configSource: source };
+  const planned = plan ?? metricsPlan(records);
+  const read = logs ?? readMetricsLogs(planned);
+  const byDir = parseArtifactLog(read.artifacts);
+  const merged = parseMergeLog(read.product);
+  const items = records.map((record) => {
+    const branch = planned.branches.find((b) => b.roadmap === record.roadmap);
+    const events = [...(byDir.get(record.dir) ?? [])];
+    if (branch) events.push(...(parseArtifactLog(read.branches.get(record.roadmap) ?? "").get(record.dir) ?? []));
+    return deriveMetrics({ record, events, merged, now, ref: branch?.ref ?? planned.ref.artifacts });
+  });
+  return { status: "ok", generatedAt: new Date(now).toISOString(), ref: planned.ref, items, aggregate: aggregateMetrics(items), root, configSource: source };
+}
+
+// What `dashboard` emits: the session, doctor, status (`deliveries`), initiative, and
+// metrics documents from one process. The roadmaps are walked once for deliveries,
+// initiatives, and metrics; every PR lookup (with `pr`) and the doctor's probes run
+// through one bounded pool, and the metrics git logs run beside it, while the local
+// doctor checks and the initiatives are computed. A section that throws becomes
+// { status: "error", message }.
 async function dashboardDocument({ pr: withPr = false } = {}) {
   const started = performance.now();
   const attempt = (build) => {
@@ -2987,6 +3077,9 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
   // before the synchronous work below blocks the event loop.
   if (requests.length) await probeAsync("gh", ["--version"]);
   const prefetch = lookupPullRequests(requests, { probes: doctorProbes() });
+  // The metrics logs (git only) overlap the PR lookups and the synchronous sections below.
+  const metricsPlanned = attempt(() => metricsPlan(valueOf(roadmaps)));
+  const metricsLogs = metricsPlanned.error ? Promise.resolve(null) : readMetricsLogsAsync(metricsPlanned.value);
   await new Promise((resolve) => setImmediate(resolve));
   const initiatives = section("initiatives", () => {
     const features = valueOf(roadmaps).filter((r) => r.type === "feature");
@@ -2996,6 +3089,7 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
   });
   runDoctor(LOCAL_DOCTOR_CHECKS);
   const lookup = prefetchedLookup(await prefetch);
+  const logs = await metricsLogs;
 
   const document = {
     status: "ok",
@@ -3004,6 +3098,7 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
     // statusDocument adds fields to its items; the initiatives read the records unchanged.
     deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
     initiatives,
+    metrics: section("metrics", () => metricsDocument({ roadmaps: valueOf(roadmaps), plan: valueOf(metricsPlanned), logs })),
   };
   timings.total = Math.round(performance.now() - started);
   return { ...document, timings, root, configSource: source };
@@ -3179,6 +3274,13 @@ switch (command) {
     const slug = rest[0] ? requireSlug(rest[0]) : null;
     const roadmaps = initiativeRoadmaps();
     const document = slug ? initiativeDetailDocument(slug, roadmaps) : initiativeListDocument(roadmaps);
+    emit(document, document.status === "ok" ? 0 : 3);
+    break;
+  }
+
+  case "metrics": {
+    if (rest.length > 1) usage(`metrics takes at most one slug, got ${JSON.stringify(rest.slice(1).join(" "))}`);
+    const document = metricsDocument({ slugFilter: rest[0] ? requireSlug(rest[0]) : null });
     emit(document, document.status === "ok" ? 0 : 3);
     break;
   }

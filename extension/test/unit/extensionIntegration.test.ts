@@ -73,6 +73,7 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.doesNotMatch(refresh, /client\.run\(\["(session|doctor|status|initiative)"/);
   assert.doesNotMatch(refresh, /\["doctor"/);
   assert.match(source, /splitDashboardDocument\(result\.json\)/);
+  assert.match(refresh, /createDeliveryTreeModel\(status, metrics === null \? null : createTimelineRows\(metrics\)\)/, "Timeline rows come from the same dashboard document");
   assert.equal(source.match(/new LatestDeliveryRefresh\(\)/g)?.length, 1);
   assert.doesNotMatch(source, /latestInitiativeRefresh/);
   assert.match(source, /registerCommand\("agento\.selectModelProfile"/);

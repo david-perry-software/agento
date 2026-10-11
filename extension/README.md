@@ -18,7 +18,9 @@ group in CLI order. Delivery rows keep the label compact: slug, type, roadmap
 progress, status, and pull request state. Hover over a row for the full product and
 companion pull request, worktree owner, workspace, companion checkout, and initiative
 details supplied by the CLI. Selecting a delivery opens its roadmap beside the active
-editor.
+editor. Expand a delivery for its Timeline row: phase durations, review rounds,
+pauses, and post-ship latency from the dashboard's `metrics` section (git history
+only), with every timestamp in the tooltip.
 
 The view refreshes after roadmap, review, and Git changes or when you run the Refresh
 command. Empty results and load failures appear directly in the tree; CLI warnings

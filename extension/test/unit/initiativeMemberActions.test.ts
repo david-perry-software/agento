@@ -24,6 +24,7 @@ function delivery(slug: string, actions: CommandAction[]): DeliveryTreeItem {
     description: "",
     tooltip: "",
     actions,
+    timeline: null,
   };
 }
 
