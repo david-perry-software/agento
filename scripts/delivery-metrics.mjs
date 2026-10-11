@@ -9,6 +9,10 @@ const COMMIT_MARK = "\u0000commit ";
 
 const unquote = (value) => value.replace(/\s+#.*$/, "").trim().replace(/^["']|["']$/g, "");
 
+// Git renders %cI in the committer's offset, and newer git prints `Z` where older
+// prints `+00:00`; every emitted timestamp is UTC, second precision, `Z`-suffixed.
+const canonicalTime = (at) => new Date(Date.parse(at)).toISOString().replace(/\.\d{3}Z$/, "Z");
+
 // `git log --reverse --format='%x00commit %H %cI' -p --unified=0 -- <roadmap.md and
 // review.md pathspecs>` → Map<dir, event[]>, oldest first. Events: `status` per
 // `+status:` line of a roadmap.md; `review` per commit touching a review.md, valued
@@ -21,7 +25,7 @@ export function parseArtifactLog(text) {
     const newline = chunk.indexOf("\n");
     const [sha, at] = (newline === -1 ? chunk : chunk.slice(0, newline)).trim().split(" ");
     if (!sha || !at || Number.isNaN(Date.parse(at))) continue;
-    commits.push({ sha, at, files: parseFiles(newline === -1 ? "" : chunk.slice(newline + 1)) });
+    commits.push({ sha, at: canonicalTime(at), files: parseFiles(newline === -1 ? "" : chunk.slice(newline + 1)) });
   }
   commits.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 
@@ -118,7 +122,7 @@ export function parseMergeLog(text) {
     const [sha, at, ...subject] = line.split("\t");
     const match = subject.join("\t").trim().match(MERGE_SUBJECT);
     if (!sha || !at || !match || Number.isNaN(Date.parse(at))) continue;
-    const entry = { at, sha, pr: Number(match[1]) };
+    const entry = { at: canonicalTime(at), sha, pr: Number(match[1]) };
     const previous = merged.get(match[2]);
     if (!previous || Date.parse(at) < Date.parse(previous.at)) merged.set(match[2], entry);
   }

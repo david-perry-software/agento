@@ -5806,7 +5806,7 @@ test("dashboard --plugin-root reaches the doctor section's model-profile check l
 // --- metrics: git history only ------------------------------------------------
 
 const atUtc = (hhmm) => `2026-09-01T${hhmm}:00Z`;
-const isoUtc = (hhmm) => `2026-09-01T${hhmm}:00+00:00`;
+const isoUtc = atUtc;
 const postShipSteps = (ticked) => `- [x] 1.1 done — verify: x\n- [${ticked ? "x" : " "}] 2.1 (manual, post-ship) confirm the release — verify: y\n`;
 const METRICS_X = "features/2026/09/xray";
 const METRICS_Y = "features/2026/09/yank";

@@ -300,7 +300,8 @@ pauseSeconds, reviewRounds, postShipLatencySeconds } }`, each median over closed
 samples only and `null` without one. Every derived field is nullable: a squashed or
 rewritten history collapses transitions into one commit, so phases read as zero or
 `null`, `merged` is `null`, and `warnings[]` names what is missing — `no in-progress
-transition`, `no merge commit names <branch>`; timestamps are committer dates; an
+transition`, `no merge commit names <branch>`; timestamps are committer dates in UTC,
+`YYYY-MM-DDTHH:MM:SSZ`, whatever the committer's offset or git version; an
 unknown slug is `status: "missing"`, exit 3),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
 `code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile` — each `{ id, status, detail, fallback }` with

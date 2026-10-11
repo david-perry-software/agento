@@ -42,16 +42,28 @@ const lifecycle = [
 test("full lifecycle: planned → in-progress → in-review → complete with exact seconds", () => {
   const m = metricsOf(lifecycle);
   assert.deepEqual(m.phases, {
-    planned: { start: "2026-10-01T10:00:00+00:00", end: "2026-10-01T11:00:00+00:00", seconds: 3600, open: false },
-    build: { start: "2026-10-01T11:00:00+00:00", end: "2026-10-02T11:00:00+00:00", seconds: 86400, open: false },
-    review: { start: "2026-10-02T11:00:00+00:00", end: "2026-10-02T13:00:00+00:00", seconds: 7200, open: false },
+    planned: { start: "2026-10-01T10:00:00Z", end: "2026-10-01T11:00:00Z", seconds: 3600, open: false },
+    build: { start: "2026-10-01T11:00:00Z", end: "2026-10-02T11:00:00Z", seconds: 86400, open: false },
+    review: { start: "2026-10-02T11:00:00Z", end: "2026-10-02T13:00:00Z", seconds: 7200, open: false },
   });
-  assert.deepEqual(m.cycle, { start: "2026-10-01T10:00:00+00:00", end: "2026-10-02T13:00:00+00:00", seconds: 97200, open: false });
+  assert.deepEqual(m.cycle, { start: "2026-10-01T10:00:00Z", end: "2026-10-02T13:00:00Z", seconds: 97200, open: false });
   assert.deepEqual(m.events.map((e) => [e.sha, e.kind, e.value]), [["a1", "status", "planned"], ["a2", "status", "in-progress"], ["a3", "status", "in-review"], ["a4", "status", "complete"]]);
   assert.deepEqual(m.pauses, { count: 0, seconds: 0, open: false });
   assert.equal(m.reviewRounds, 0);
   assert.equal(m.ref, "origin/main");
   assert.deepEqual(m.warnings, ["no merge commit names feature/x"]);
+});
+
+test("timestamps serialize as UTC `Z` whatever offset or git version rendered %cI", () => {
+  const text = [
+    commit("t1", "2026-10-01T10:00:00+00:00", [status(null, "planned")]),
+    commit("t2", "2026-10-01T11:00:00Z", [status("planned", "in-progress")]),
+    commit("t3", "2026-10-01T14:00:00+02:00", [status("in-progress", "in-review")]),
+    commit("t4", "2026-10-01T09:00:00-04:00", [status("in-review", "complete")]),
+  ].join("");
+  assert.deepEqual(eventsOf(text).map((e) => e.at), ["2026-10-01T10:00:00Z", "2026-10-01T11:00:00Z", "2026-10-01T12:00:00Z", "2026-10-01T13:00:00Z"]);
+  const merged = parseMergeLog("m1\t2026-10-01T15:30:00+05:30\tMerge pull request #7 from owner/feature/x\nm2\t2026-10-01T10:00:00+00:00\tMerge pull request #8 from owner/feature/y\n");
+  assert.deepEqual([...merged.values()].map((e) => e.at), ["2026-10-01T10:00:00Z", "2026-10-01T10:00:00Z"]);
 });
 
 test("a pause and its end: the interval up to the next status of another value", () => {
