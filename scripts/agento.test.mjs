@@ -5113,6 +5113,29 @@ test("ship --confirm: pending checks return exit 2 with the same --confirm comma
   assert.equal(failStub.state().product.prs[failing.branch].state, "OPEN");
   assert.ok(failStub.calls().every((c) => !/ pr merge/.test(c)));
   assert.ok(fs.existsSync(failing.owner));
+  // The failing check reopened the roadmap, so the next send runs the audit (#107).
+  assert.ok(stepsOf(failed.json).includes("roadmap-reopened"), JSON.stringify(failed.json.actions));
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${failing.branch}:${failing.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(repo, "log", "-1", "--format=%s", `origin/${failing.branch}`), /^docs\(feature\): reopen broken \(checks-failed\)$/);
+  assert.equal(git(failing.owner, "status", "--porcelain"), "");
+  assert.equal(shipRun(repo, failStub.env, "feature", "broken").json.resumedAt, "audit");
+
+  // No owner: the primary is switched onto the branch for the reopen and back; the handoff resumes a session.
+  const orphan = shippable(fixture, "orphan", { owner: false, extra: writeFile("src.js", "code\n") });
+  const orphanStub = shipStub({ product: { prs: { [orphan.branch]: { number: 17, rollups: [[{ name: "Unit tests", status: "COMPLETED", conclusion: "FAILURE" }]] } } } });
+  const orphanToken = shipRun(repo, orphanStub.env, "feature", "orphan").json.confirmToken;
+  const orphaned = shipRun(repo, orphanStub.env, "feature", "orphan", "--confirm", orphanToken, "--wait", "0");
+  assert.equal(orphaned.json.status, "failed", JSON.stringify(orphaned.json));
+  assert.equal(orphaned.json.reason, "checks-failed");
+  assert.deepEqual(orphaned.json.rejectTo, { command: "/agento start-session feature/orphan --resume", window: "primary" });
+  assert.ok(stepsOf(orphaned.json).includes("roadmap-reopened"));
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${orphan.branch}:${orphan.dir}/roadmap.md`), /^status: in-review$/m);
+});
+
 test("reopenRoadmap restores in-review, sets last-updated and next-step, and removes only the accepted-at-ship follow-ups", () => {
   const original = '```yaml\nstatus: in-review\nbranch: feature/widget\nlast-updated: 2026-10-01\nnext-step: "review"\n```\n\n## Phase 1\n\n- [x] 1.1 done — verify: x\n\n## Follow-ups\n\n- later\n';
   const completed = completeRoadmap(original, { date: "2026-10-10", followups: [{ code: "pr-behind", detail: "PR #15 is behind main" }, { code: "untracked-byproducts", detail: "1 untracked file(s)", paths: ["a.png"] }] });

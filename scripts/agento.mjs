@@ -2347,7 +2347,10 @@ function ship() {
     }
     const checks = waitForChecks("pr", pr.number, root);
     if (checks.code === 2) pending("checks", `PR #${pr.number}: ${checks.last}`);
-    if (checks.code === 1) fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); fix it in the build window, then re-send`, { rejectTo: owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : null });
+    if (checks.code === 1) {
+      reopen(["checks-failed"]);
+      fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); the roadmap was reopened to in-review — fix it in the build window, then re-review and re-send`, { rejectTo: out.rejectTo });
+    }
     if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
 
     out.phase = "merge-code";
