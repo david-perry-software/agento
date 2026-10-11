@@ -81,7 +81,7 @@ companion mode the same branch name in the companion clone as `companionPr`
 (`null` with no extra `gh` call in the in-repo layout), reports lookup failures in
 `warnings[]`, and appends the companion PR's problems to `companionGaps[]` —
 `missing-pr` (no companion PR), `pr-not-open` (`CLOSED`), `conflicting-pr`
-(`mergeStateStatus: CONFLICTING`); a `MERGED` companion PR is not a gap), `paths <kind> <id>`
+(`mergeable: CONFLICTING` or `mergeStateStatus: DIRTY`); a `MERGED` companion PR is not a gap), `paths <kind> <id>`
 (worktree and branch names plus `artifactsRoot` and the absolute `artifactRoot`
 under it; `worktreeState` for the product half and, in companion mode,
 `companion.state` for the companion half, each `{ onDisk, registeredIn, origin,
@@ -187,7 +187,8 @@ companion, companionGaps, companionTree }`; `gaps.hard[]` (`unticked-steps`,
 `review-missing`, `review-stale`, `review-request-changes`, `owner-tree-dirty`,
 `owner-ahead`, `owner-tree-unreadable`, `companion-dirty` / `-unpushed` / `-behind`
 / `-missing-pr` / `-pr-not-open` / `-pr-conflicting`, `pr-conflicting`,
-`changelog-heading-without-version`, `post-ship-unjustified`) → `status:
+`changelog-heading-without-version`, `post-ship-unjustified`; a PR conflicts when
+GitHub reports `mergeable: CONFLICTING` or `mergeStateStatus: DIRTY`) → `status:
 "rejected"`, `reason: "audit-gaps"`, `rejectTo { command, window }` (`review-<type>`
 when the review is the only gap, else `build-<type>` with an owner or
 `start-session <type>/<slug> --resume` without); `gaps.confirm[]`
@@ -197,7 +198,11 @@ over the canonical JSON of `{ slug, pr, companionPr, confirm }`, so it survives 
 CLI's own commits and dies with any change to the gap set — → `status: "ok"`,
 `phase: "audit"`, `outcome: "awaiting-confirm"`; an issue PR body without `Fixes
 #<n>` gets it through `gh api … -X PATCH` (`actions[]: fixes-line-added`), the one
-audit-time write. `--confirm <token>` must equal the recomputed token (else
+audit-time write; `pr` and `companionPr` carry GitHub's `mergeable` beside
+`mergeStateStatus` (as do the `--pr` lookups of `session`, `status`,
+`ship-preflight`, and `dashboard`), and an open PR with `mergeable: UNKNOWN` (GitHub
+has not computed it yet) is a `pr-mergeable-unknown` /
+`companion-pr-mergeable-unknown` entry in `warnings[]`, not a gap. `--confirm <token>` must equal the recomputed token (else
 `confirm-stale` with both tokens and the current list) and performs, in order: `git
 --literal-pathspecs clean -f -- <paths>` for accepted byproducts (exactly the
 listed paths, then the owner tree must be `{ tracked: [], untracked: [], ahead: 0 }`
@@ -211,7 +216,19 @@ ready` for both PRs, `scripts/wait-for-checks.sh pr <n>` bounded by the remainin
 `--wait` budget (exit 2 → `status: "pending"`, `phase: "checks"`, CLI exit 2, `next`
 the same `--confirm` command; exit 1 → `failed` / `checks-failed`), `gh pr merge <n>
 --merge` (never `--admin`, `--squash`, `--rebase`, or `--delete-branch`), `git push
-origin --delete <branch>` from the primary; then `merge-companion` (`wait-for-checks.sh
+origin --delete <branch>` from the primary. At `checks`, three findings **reopen**
+the roadmap instead of leaving it `complete`: a conflicting code or companion PR
+found before any write (`pr-conflicting` / `companion-pr-conflicting`), a `gh pr
+merge` refused as not mergeable (`pr-conflicting`), and a failing required check
+(`checks-failed`). The reopen sets `status: in-review`, `last-updated`, and
+`next-step: "ship reopened (<codes>): resolve in the build window, then
+re-review"`, drops `## Follow-ups (accepted at ship)`, commits `docs(<type>): reopen
+<slug> (<codes>)` in the artifact checkout (the companion half in companion mode),
+pushes it, and reports `actions[]: roadmap-reopened`; the conflicts are `rejected` /
+`audit-gaps` and the failing check stays `failed` / `checks-failed`, both with
+`rejectTo` `build-<type>` (owner) or `start-session <type>/<slug> --resume` (no
+owner). Pending checks never reopen; the next send derives `audit` again. Then
+`merge-companion` (`wait-for-checks.sh
 pr <m> --repo <nameWithOwner>` from inside the clone, `gh pr merge <m> --merge`, the
 companion remote branch delete; a failure here is `failed` / `companion-merge` with
 the message `code PR #<n> merged, companion PR #<m> open at <url>; re-send /agento
