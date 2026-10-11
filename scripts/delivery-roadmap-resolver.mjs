@@ -4,6 +4,39 @@ import path from "node:path";
 import { loadAgentoConfig } from "./agento-config.mjs";
 import { findOwner, parseWorktreeList } from "./session-state.mjs";
 
+const ACCEPTED_AT_SHIP = "## Follow-ups (accepted at ship)";
+
+function setRoadmapHeader(text, key, value) {
+  const line = new RegExp(`(^|\\n)${key}:[^\\n]*`);
+  return line.test(text) ? text.replace(line, `$1${key}: ${value}`) : text.replace(/(^|\n)(status:[^\n]*)/, `$1$2\n${key}: ${value}`);
+}
+
+// roadmap.md → status complete, last-updated today, next-step cleared, and the
+// accepted confirm gaps recorded under `## Follow-ups (accepted at ship)`.
+export function completeRoadmap(content, { date, followups }) {
+  let next = setRoadmapHeader(content, "status", "complete");
+  next = setRoadmapHeader(next, "last-updated", date);
+  next = setRoadmapHeader(next, "next-step", '""');
+  if (followups.length) {
+    const lines = followups.map((g) => `- ${g.code}: ${g.detail}${g.paths?.length ? ` (${g.paths.join(", ")})` : ""} — accepted ${date}`);
+    next = `${next.replace(/\s+$/, "")}\n\n${ACCEPTED_AT_SHIP}\n\n${lines.join("\n")}\n`;
+  }
+  return next;
+}
+
+// The inverse at ship's checks phase: status in-review with a reopen next-step, and
+// the section completeRoadmap appended removed; every other line is kept.
+export function reopenRoadmap(content, { date, codes }) {
+  let next = setRoadmapHeader(content, "status", "in-review");
+  next = setRoadmapHeader(next, "last-updated", date);
+  next = setRoadmapHeader(next, "next-step", `"ship reopened (${codes.join(", ")}): resolve in the build window, then re-review"`);
+  const start = next.indexOf(`\n${ACCEPTED_AT_SHIP}\n`);
+  if (start === -1) return next;
+  const after = next.slice(start + 1 + ACCEPTED_AT_SHIP.length);
+  const following = after.search(/\n## /);
+  return following === -1 ? `${next.slice(0, start).replace(/\s+$/, "")}\n` : `${next.slice(0, start).replace(/\s+$/, "")}\n${after.slice(following)}`;
+}
+
 function artifactRoots(config) {
   return {
     feature: config.artifacts.features,

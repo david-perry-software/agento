@@ -39,7 +39,9 @@ import { promisify } from "node:util";
 import { loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
   closeBuildSessionDecision,
+  completeRoadmap,
   evaluateShipPreflight,
+  reopenRoadmap,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
@@ -637,7 +639,7 @@ function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
   }
 }
 
-const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,url"];
+const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,mergeable,url"];
 const ghMissingLookup = (label) => ({ pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] });
 
 function failedLookup(label, branch, error) {
@@ -1922,7 +1924,10 @@ function shipPrLookup(branch, cwd, label) {
   }
 }
 
-const prSummary = (pr) => (pr ? { number: pr.number, state: pr.state, isDraft: Boolean(pr.isDraft), mergeStateStatus: pr.mergeStateStatus ?? null, url: pr.url ?? null, mergeCommit: pr.mergeCommit?.oid ?? null } : null);
+const prSummary = (pr) => (pr ? { number: pr.number, state: pr.state, isDraft: Boolean(pr.isDraft), mergeStateStatus: pr.mergeStateStatus ?? null, mergeable: pr.mergeable ?? null, url: pr.url ?? null, mergeCommit: pr.mergeCommit?.oid ?? null } : null);
+
+// GitHub reports a conflict as mergeable CONFLICTING / mergeStateStatus DIRTY; mergeStateStatus is never CONFLICTING.
+const isConflicting = (pr) => pr?.mergeable === "CONFLICTING" || pr?.mergeStateStatus === "DIRTY";
 
 const utcDate = () => new Date().toISOString().slice(0, 10);
 
@@ -2050,6 +2055,8 @@ function ship() {
   if (!pr) reject("pr-missing", { message: `no pull request found for ${branch} in the product repository; the Builder opens the draft PR on its first push` });
   if (pr.state === "CLOSED") reject("pr-closed", { message: `pull request #${pr.number} for ${branch} is closed without a merge; reopen it or start the delivery over` });
   out.mergeSha = pr.mergeCommit?.oid ?? null;
+  const conflictGap = () => ({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
+  const companionConflictGap = () => ({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
 
   // Artifact reads: the branch while the PR is open, the artifact default once merged.
   const artifactRef = pr.state === "MERGED" ? `origin/${artifactDefault}` : refFor(branch, layout.agit).ref;
@@ -2147,9 +2154,9 @@ function ship() {
     if (external) {
       if (!companionPr) hard.push({ code: "companion-missing-pr", detail: `no pull request for ${branch} in the companion repository at ${artifactsClone}; open it from the companion half` });
       else if (companionPr.state !== "OPEN") hard.push({ code: "companion-pr-not-open", detail: `companion PR #${companionPr.number} is ${companionPr.state.toLowerCase()} (${companionPr.url}); the code PR is still open` });
-      else if (companionPr.mergeStateStatus === "CONFLICTING") hard.push({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
+      else if (isConflicting(companionPr)) hard.push(companionConflictGap());
     }
-    if (pr.mergeStateStatus === "CONFLICTING") hard.push({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
+    if (isConflicting(pr)) hard.push(conflictGap());
     if (changelog.headingWithoutVersionChange) hard.push({ code: "changelog-heading-without-version", detail: `CHANGELOG.md carries "## ${changelog.unreleasedHeading} (unreleased)" but the branch does not change "version" in .claude-plugin/plugin.json or package.json` });
     if (postShipSteps.length && !/post-ship/i.test(risks)) hard.push({ code: "post-ship-unjustified", detail: `${postShipSteps.length} (manual, post-ship) step(s) without a post-ship justification under plan.md ## Risks: ${postShipSteps.map((s) => s.id).join(", ")}` });
     if (ownerTree && !ownerTree.tracked.length && ownerTree.ahead === 0 && ownerTree.untracked.length) {
@@ -2158,6 +2165,8 @@ function ship() {
     if (changelog.needsStamp) confirmGaps.push({ code: "changelog-unstamped", detail: `CHANGELOG.md "## ${changelog.unreleasedHeading} (unreleased)" will be stamped with today's UTC date in the product` });
     if (pr.mergeStateStatus === "BEHIND") confirmGaps.push({ code: "pr-behind", detail: `PR #${pr.number} is behind ${defaultBranch}; origin/${defaultBranch} will be merged into ${branch} (never rebased)` });
     if (external && companionPr?.mergeStateStatus === "BEHIND") confirmGaps.push({ code: "companion-pr-behind", detail: `companion PR #${companionPr.number} is behind ${artifactDefault}; origin/${artifactDefault} will be merged into the companion half` });
+    if (pr.mergeable === "UNKNOWN") out.warnings.push(`pr-mergeable-unknown: GitHub has not computed mergeability for PR #${pr.number} yet; re-send to re-check`);
+    if (external && companionPr?.state === "OPEN" && companionPr.mergeable === "UNKNOWN") out.warnings.push(`companion-pr-mergeable-unknown: GitHub has not computed mergeability for companion PR #${companionPr.number} yet; re-send to re-check`);
 
     out.gaps = { hard, confirm: confirmGaps };
     out.confirmToken = confirmTokenFor({ slug, pr: pr.number, companionPr: companionPr?.number ?? null, confirm: confirmGaps });
@@ -2231,10 +2240,45 @@ function ship() {
     if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
     fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
   };
+  // Reopen at checks: the roadmap goes back to in-review on origin/<branch>, so the next send re-audits.
+  const reopen = (codes) => {
+    const target = !external ? (owner ? owner.path : primary) : companion?.registered ? companion.path : artifactsClone;
+    if (target === primary || target === artifactsClone) switchTo(target, branch, external ? "companion" : "primary");
+    const ref = `origin/${branch}`;
+    if (git(target, "rev-parse", "--verify", "--quiet", ref)) {
+      const ff = gitRun(target, ["merge", "--ff-only", ref]);
+      if (!ff.ok) fail("owner-diverged", `${target} cannot fast-forward to ${ref} to reopen the roadmap: ${ff.stderr.split("\n")[0]}; reconcile it in the build window`);
+    }
+    const roadmapFile = path.join(target, roadmapRel);
+    const current = fs.readFileSync(roadmapFile, "utf8");
+    const reopened = reopenRoadmap(current, { date: utcDate(), codes });
+    if (reopened !== current) {
+      fs.writeFileSync(roadmapFile, reopened);
+      gitRun(target, ["add", "--", roadmapRel]);
+      const commit = gitRun(target, ["commit", "-q", "-m", `docs(${type}): reopen ${slug} (${codes.join(", ")})`]);
+      if (!commit.ok) fail("commit-failed", `git -C ${target} commit (roadmap reopen): ${commit.stderr}`);
+    }
+    if (git(target, "rev-parse", "HEAD") !== git(target, "rev-parse", ref)) push(target, external ? "companion" : "product");
+    for (const restore of restores.splice(0)) restore();
+    act("roadmap-reopened", `roadmap status: in-review (${codes.join(", ")}) on origin/${branch} from ${target}`);
+    out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+  };
+  const rejectReopened = (hard) => {
+    out.gaps = { hard, confirm: [] };
+    reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-review`, next: [out.rejectTo.command] });
+  };
   let shippedHere = false;
 
   // ---- confirm → checks → merge-code (the PR is still open) ----
   if (phase === "audit" || phase === "checks") {
+    // A conflict found after the confirm writes landed: reopen before anything else is written.
+    if (phase === "checks") {
+      const hard = [...(isConflicting(pr) ? [conflictGap()] : []), ...(external && isConflicting(companionPr) ? [companionConflictGap()] : [])];
+      if (hard.length) {
+        reopen(hard.map((g) => g.code));
+        rejectReopened(hard);
+      }
+    }
     const accepted = new Set(acceptedGaps.map((g) => g.code));
     const productTarget = owner ? owner.path : primary;
     const artifactTarget = !external ? productTarget : companion?.registered ? companion.path : artifactsClone;
@@ -2303,11 +2347,18 @@ function ship() {
     }
     const checks = waitForChecks("pr", pr.number, root);
     if (checks.code === 2) pending("checks", `PR #${pr.number}: ${checks.last}`);
-    if (checks.code === 1) fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); fix it in the build window, then re-send`, { rejectTo: owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : null });
+    if (checks.code === 1) {
+      reopen(["checks-failed"]);
+      fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); the roadmap was reopened to in-review — fix it in the build window, then re-review and re-send`, { rejectTo: out.rejectTo });
+    }
     if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
 
     out.phase = "merge-code";
     const merge = ghRun(root, ["pr", "merge", String(pr.number), "--merge"], 120000);
+    if (!merge.ok && /not mergeable|merge conflict/i.test(merge.stderr)) {
+      reopen(["pr-conflicting"]);
+      rejectReopened([conflictGap()]);
+    }
     if (!merge.ok) ghFailure(merge, `gh pr merge ${pr.number} --merge`);
     act("merge-code", `PR #${pr.number} merged into ${defaultBranch} with a merge commit`);
     shippedHere = true;
@@ -2534,20 +2585,6 @@ function ship() {
     shippedHere = true;
   }
   finish({ phase: "done", outcome: shippedHere ? "shipped" : "already-shipped", next: [] });
-}
-
-// roadmap.md → status complete, last-updated today, next-step cleared, and the
-// accepted confirm gaps recorded under `## Follow-ups (accepted at ship)`.
-function completeRoadmap(content, { date, followups }) {
-  const setHeader = (text, key, value) => (new RegExp(`(^|\\n)${key}:[^\\n]*`).test(text) ? text.replace(new RegExp(`(^|\\n)${key}:[^\\n]*`), `$1${key}: ${value}`) : text.replace(/(^|\n)(status:[^\n]*)/, `$1$2\n${key}: ${value}`));
-  let next = setHeader(content, "status", "complete");
-  next = setHeader(next, "last-updated", date);
-  next = setHeader(next, "next-step", '""');
-  if (followups.length) {
-    const lines = followups.map((g) => `- ${g.code}: ${g.detail}${g.paths?.length ? ` (${g.paths.join(", ")})` : ""} — accepted ${date}`);
-    next = `${next.replace(/\s+$/, "")}\n\n## Follow-ups (accepted at ship)\n\n${lines.join("\n")}\n`;
-  }
-  return next;
 }
 
 // `## <version> (unreleased)` → `## <version> (<date>)` in CHANGELOG.md, one product commit.
@@ -3193,7 +3230,7 @@ switch (command) {
     if (layout.artifacts.external) {
       if (!companionPr) gaps.push("missing-pr");
       else if (companionPr.state === "CLOSED") gaps.push("pr-not-open");
-      else if (companionPr.mergeStateStatus === "CONFLICTING") gaps.push("conflicting-pr");
+      else if (isConflicting(companionPr)) gaps.push("conflicting-pr");
     }
     withExit(withLayout({ ...preflight, companion, companionGaps: gaps, ownerTree, companionTree, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] }, layout));
     break;

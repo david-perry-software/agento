@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Fixed.** `/agento ship` now detects a pull request that conflicts with the
+  default branch: the `pr-conflicting` / `companion-pr-conflicting` audit gaps and
+  `ship-preflight`'s `conflicting-pr` test `mergeable: CONFLICTING` or
+  `mergeStateStatus: DIRTY` (GitHub never reports `mergeStateStatus: CONFLICTING`),
+  and `mergeable` joins the `pr` / `companionPr` summaries (`UNKNOWN` is a
+  `pr-mergeable-unknown` warning). A conflict, a merge refused as not mergeable, or a
+  failing required check found at the `checks` phase reopens the roadmap to
+  `status: in-review` (`actions[]: roadmap-reopened`) and rejects back to the build
+  window, so a failed merge no longer strands the delivery at `complete` (#107)
+
 - **Added.** `agento.mjs metrics [<slug>]` derives delivery metrics from git history
   alone — no `gh`, no network, nothing persisted: per delivery the planned, build,
   and review phase durations and the cycle (from the roadmap's `status:` header

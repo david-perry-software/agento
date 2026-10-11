@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1238,7 +1239,7 @@ test("status --pr looks up PRs for non-complete items only, warns per slug on fa
   assert.deepEqual(withPr.json.items.map((i) => i.slug), ["alpha", "bug", "done"]);
   for (const slug of ["alpha", "bug"]) {
     const item = withPr.json.items.find((i) => i.slug === slug);
-    assert.deepEqual(item.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
+    assert.deepEqual(item.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", url: "https://example.test/pr/15" });
     assert.equal(item.companionPr, null);
   }
   const done = withPr.json.items.find((i) => i.slug === "done");
@@ -1248,7 +1249,7 @@ test("status --pr looks up PRs for non-complete items only, warns per slug on fa
   assert.deepEqual(withPr.json.warnings, []);
   assert.deepEqual(
     calls().sort(),
-    [`${repo} pr view feature/alpha --json number,state,isDraft,mergeStateStatus,url`, `${repo} pr view issue/bug --json number,state,isDraft,mergeStateStatus,url`],
+    [`${repo} pr view feature/alpha --json number,state,isDraft,mergeStateStatus,mergeable,url`, `${repo} pr view issue/bug --json number,state,isDraft,mergeStateStatus,mergeable,url`],
   );
 
   // A failing gh: pr null plus one slug-prefixed warning; exit code and lifecycle unchanged.
@@ -1280,7 +1281,7 @@ test("status --pr looks up PRs for non-complete items only, warns per slug on fa
   assert.equal(pairDone.companionPr, null);
   assert.deepEqual(
     fs.readFileSync(pairMarker, "utf8").trim().split("\n").sort(),
-    [`${pair.repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`, `${pair.docs} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url`],
+    [`${pair.repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,mergeable,url`, `${pair.docs} pr view feature/widget --json number,state,isDraft,mergeStateStatus,mergeable,url`],
   );
   assert.deepEqual(both.json.warnings, []);
 
@@ -1799,7 +1800,7 @@ test("session never invokes gh without --pr and reads its JSON with --pr", () =>
   assert.equal(withPr.code, 0);
   assert.deepEqual(withPr.json.pr, { number: 15, state: "OPEN", isDraft: true, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
   assert.deepEqual(withPr.json.warnings, []);
-  assert.match(fs.readFileSync(marker, "utf8"), /pr view feature\/widget --json number,state,isDraft,mergeStateStatus,url/);
+  assert.match(fs.readFileSync(marker, "utf8"), /pr view feature\/widget --json number,state,isDraft,mergeStateStatus,mergeable,url/);
 
   // A gh that fails (exit 99) is reported as a warning, not an error.
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 0; fi\necho 'no pull requests found for branch' >&2\nexit 99\n", { mode: 0o755 });
@@ -1878,9 +1879,9 @@ test("session --pr: companionPr is null with no extra gh call in-repo, and the c
 // A stub gh answering `pr view` with a per-repo state: `product` for the product
 // checkout, `companion` for anything under project-docs. Logs `$PWD $*` to marker;
 // `logVersion` logs the `--version` probe too.
-function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN", logVersion = false } = {}) {
+function prStub(marker, { product = "OPEN", companion = "OPEN", companionMerge = "CLEAN", companionMergeable = "MERGEABLE", logVersion = false } = {}) {
   const versionLog = logVersion ? `echo "$PWD $*" >> ${JSON.stringify(marker)}; ` : "";
-  return `#!/bin/sh\nif [ "$1" = "--version" ]; then ${versionLog}exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge};; *) n=15; s=${product}; m=CLEAN;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
+  return `#!/bin/sh\nif [ "$1" = "--version" ]; then ${versionLog}exit 0; fi\necho "$PWD $*" >> ${JSON.stringify(marker)}\ncase "$PWD" in *project-docs*) n=7; s=${companion}; m=${companionMerge}; g=${companionMergeable};; *) n=15; s=${product}; m=CLEAN; g=MERGEABLE;; esac\nif [ "$s" = "NONE" ]; then echo 'no pull requests found for branch' >&2; exit 1; fi\necho "{\\"number\\":$n,\\"state\\":\\"$s\\",\\"isDraft\\":false,\\"mergeStateStatus\\":\\"$m\\",\\"mergeable\\":\\"$g\\",\\"url\\":\\"https://example.test/pr/$n\\"}"\n`;
 }
 
 test("ship-preflight --pr: in-repo one gh call with companionPr null; companion mode both PRs and PR gaps; no --pr means no pr key", () => {
@@ -1904,7 +1905,7 @@ test("ship-preflight --pr: in-repo one gh call with companionPr null; companion 
   assert.deepEqual(inRepo.json.warnings, []);
   const inRepoCalls = fs.readFileSync(marker, "utf8").trim().split("\n");
   assert.equal(inRepoCalls.length, 1, "in-repo mode runs gh pr view once");
-  assert.match(inRepoCalls[0], new RegExp(`^${repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,url$`));
+  assert.match(inRepoCalls[0], new RegExp(`^${repo} pr view feature/widget --json number,state,isDraft,mergeStateStatus,mergeable,url$`));
 
   // Companion mode: both PRs, the companion one looked up from inside the clone.
   const pair = makePairRepo();
@@ -1921,8 +1922,8 @@ test("ship-preflight --pr: in-repo one gh call with companionPr null; companion 
   };
   const both = shipWith({});
   assert.equal(both.json.status, "ok");
-  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/15" });
-  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", url: "https://example.test/pr/7" });
+  assert.deepEqual(both.json.pr, { number: 15, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", url: "https://example.test/pr/15" });
+  assert.deepEqual(both.json.companionPr, { number: 7, state: "OPEN", isDraft: false, mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", url: "https://example.test/pr/7" });
   assert.deepEqual(both.json.companionGaps, []);
   assert.deepEqual(both.json.warnings, []);
   assert.equal(both.json.companion.path, half);
@@ -1937,7 +1938,7 @@ test("ship-preflight --pr: in-repo one gh call with companionPr null; companion 
   assert.equal(missing.json.warnings.length, 1);
   assert.match(missing.json.warnings[0], /^companionPr: gh pr view feature\/widget failed/);
   assert.deepEqual(shipWith({ companion: "CLOSED" }).json.companionGaps, ["pr-not-open"]);
-  assert.deepEqual(shipWith({ companionMerge: "CONFLICTING" }).json.companionGaps, ["conflicting-pr"]);
+  assert.deepEqual(shipWith({ companionMerge: "DIRTY", companionMergeable: "CONFLICTING" }).json.companionGaps, ["conflicting-pr"]);
   const merged = shipWith({ product: "MERGED", companion: "MERGED" });
   assert.equal(merged.json.companionPr.state, "MERGED");
   assert.deepEqual(merged.json.companionGaps, [], "a merged companion PR is the resume-at-teardown case, not a gap");
@@ -4246,7 +4247,7 @@ test("close-session is idempotent: a re-send is nothing-to-close or already-clos
 // --- ship -------------------------------------------------------------------------
 
 // A scriptable `gh` for the ship tests. `prs` is `{ "<branch>": { number, state, isDraft,
-// mergeStateStatus, body, title, rollups: [ [ { name, status, conclusion } ] … ] } }`
+// mergeStateStatus, mergeable, body, title, refuseMerge, rollups: [ [ { name, status, conclusion } ] … ] } }`
 // per repo (`product`, `companion`); the repo is chosen by `$PWD` (anything under
 // project-docs is the companion). `pr merge <n> --merge` performs a real merge of the
 // branch into the repo's bare origin default, so later fetches and `pr view` report
@@ -4305,6 +4306,7 @@ if (args[0] === "pr" && args[1] === "merge") {
   if (pr.state !== "OPEN") die("Pull request #" + pr.number + " is not open");
   if (pr.isDraft) die("Pull request #" + pr.number + " is still a draft");
   if (args.includes("--admin") || args.includes("--squash") || args.includes("--rebase") || args.includes("--delete-branch")) die("forbidden merge flag: " + args.slice(3).join(" "));
+  if (pr.refuseMerge) die(typeof pr.refuseMerge === "string" ? pr.refuseMerge : "Pull request #" + pr.number + " is not mergeable: the merge commit cannot be cleanly created.");
   const branch = Object.keys(repo.prs).find((b) => repo.prs[b] === pr);
   const origin = repo.origin || git("-C", process.cwd(), "remote", "get-url", "origin");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gh-merge-"));
@@ -4819,7 +4821,7 @@ test("ship audit: every hard gap code in the in-repo layout rejects with the rig
   expectHard("gone", ["owner-tree-unreadable"]);
 
   shippable(fixture, "conflict");
-  const conflict = expectHard("conflict", ["pr-conflicting"], { pr: { mergeStateStatus: "CONFLICTING" } });
+  const conflict = expectHard("conflict", ["pr-conflicting"], { pr: { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" } });
   assert.match(conflict.gaps.hard[0].detail, /conflicts with main/);
 
   shippable(fixture, "heading", { extra: writeFile("CHANGELOG.md", "# Changelog\n\n## 1.2.0 (unreleased)\n\n- thing\n") });
@@ -4931,7 +4933,7 @@ test("ship audit in companion mode: companion half and companion PR gaps are har
   const behind = audit("clean", { mergeStateStatus: "BEHIND" });
   assert.deepEqual(codes(behind.gaps.confirm), ["companion-pr-behind"]);
   assert.notEqual(behind.confirmToken, ok.confirmToken);
-  assert.deepEqual(codes(audit("clean", { mergeStateStatus: "CONFLICTING" }).gaps.hard), ["companion-pr-conflicting"]);
+  assert.deepEqual(codes(audit("clean", { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" }).gaps.hard), ["companion-pr-conflicting"]);
   assert.deepEqual(codes(audit("clean", { state: "CLOSED" }).gaps.hard), ["companion-pr-not-open"]);
   const missing = audit("clean", null);
   assert.deepEqual(codes(missing.gaps.hard), ["companion-missing-pr"]);
@@ -4951,6 +4953,47 @@ test("ship audit in companion mode: companion half and companion PR gaps are har
   const lagging = audit("clean");
   assert.deepEqual(codes(lagging.gaps.hard), ["companion-behind"]);
   assert.match(lagging.gaps.hard[0].detail, /merge origin\/feature\/clean \(a fast-forward\)/);
+});
+
+test("ship audit rejects a PR GitHub reports as conflicting (#107 ship-conflict-gate)", () => {
+  // GitHub reports a conflict as mergeable: CONFLICTING / mergeStateStatus: DIRTY.
+  const CONFLICT = { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" };
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch } = shippable(fixture, "conflict107");
+  const stub = shipStub({ product: { prs: { [branch]: CONFLICT } } });
+  const before = [refState(repo), JSON.stringify(stub.state())];
+  const { code, json } = shipRun(repo, stub.env, "feature", "conflict107");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "audit-gaps");
+  assert.deepEqual(codes(json.gaps.hard), ["pr-conflicting"]);
+  assert.deepEqual(json.rejectTo, { command: "/agento build-feature conflict107", window: "build" });
+  assert.deepEqual(json.actions, []);
+  assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before, "the rejected audit wrote something");
+
+  const pair = makePairRepo();
+  const paired = pairShippable(pair, "conflict107");
+  const pairedStub = shipStub({ product: { prs: { [paired.branch]: {} } }, companion: { prs: { [paired.branch]: { number: 7, ...CONFLICT } } } });
+  const pairedBefore = [refState(pair.repo, pair.docs), JSON.stringify(pairedStub.state())];
+  const companion = shipRun(pair.repo, pairedStub.env, "feature", "conflict107");
+  assert.equal(companion.code, 3, JSON.stringify(companion.json));
+  assert.equal(companion.json.status, "rejected");
+  assert.equal(companion.json.reason, "audit-gaps");
+  assert.deepEqual(codes(companion.json.gaps.hard), ["companion-pr-conflicting"]);
+  assert.deepEqual(companion.json.rejectTo, { command: "/agento build-feature conflict107", window: "build" });
+  assert.deepEqual([refState(pair.repo, pair.docs), JSON.stringify(pairedStub.state())], pairedBefore, "the rejected companion audit wrote something");
+});
+
+test("ship audit: an open PR whose mergeability GitHub has not computed yet is a warning, not a gap", () => {
+  const fixture = makeWorktreeRepo();
+  const { branch } = shippable(fixture, "unknown");
+  const { code, json } = shipRun(fixture.repo, shipStub({ product: { prs: { [branch]: { mergeStateStatus: "UNKNOWN", mergeable: "UNKNOWN" } } } }).env, "feature", "unknown");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "awaiting-confirm");
+  assert.deepEqual(json.gaps, { hard: [], confirm: [] });
+  assert.equal(json.pr.mergeable, "UNKNOWN");
+  assert.deepEqual(json.warnings, ["pr-mergeable-unknown: GitHub has not computed mergeability for PR #15 yet; re-send to re-check"]);
 });
 
 const PASSING = [[{ name: "Unit tests", status: "COMPLETED", conclusion: "SUCCESS" }]];
@@ -5070,6 +5113,147 @@ test("ship --confirm: pending checks return exit 2 with the same --confirm comma
   assert.equal(failStub.state().product.prs[failing.branch].state, "OPEN");
   assert.ok(failStub.calls().every((c) => !/ pr merge/.test(c)));
   assert.ok(fs.existsSync(failing.owner));
+  // The failing check reopened the roadmap, so the next send runs the audit (#107).
+  assert.ok(stepsOf(failed.json).includes("roadmap-reopened"), JSON.stringify(failed.json.actions));
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${failing.branch}:${failing.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(repo, "log", "-1", "--format=%s", `origin/${failing.branch}`), /^docs\(feature\): reopen broken \(checks-failed\)$/);
+  assert.equal(git(failing.owner, "status", "--porcelain"), "");
+  assert.equal(shipRun(repo, failStub.env, "feature", "broken").json.resumedAt, "audit");
+
+  // No owner: the primary is switched onto the branch for the reopen and back; the handoff resumes a session.
+  const orphan = shippable(fixture, "orphan", { owner: false, extra: writeFile("src.js", "code\n") });
+  const orphanStub = shipStub({ product: { prs: { [orphan.branch]: { number: 17, rollups: [[{ name: "Unit tests", status: "COMPLETED", conclusion: "FAILURE" }]] } } } });
+  const orphanToken = shipRun(repo, orphanStub.env, "feature", "orphan").json.confirmToken;
+  const orphaned = shipRun(repo, orphanStub.env, "feature", "orphan", "--confirm", orphanToken, "--wait", "0");
+  assert.equal(orphaned.json.status, "failed", JSON.stringify(orphaned.json));
+  assert.equal(orphaned.json.reason, "checks-failed");
+  assert.deepEqual(orphaned.json.rejectTo, { command: "/agento start-session feature/orphan --resume", window: "primary" });
+  assert.ok(stepsOf(orphaned.json).includes("roadmap-reopened"));
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${orphan.branch}:${orphan.dir}/roadmap.md`), /^status: in-review$/m);
+});
+
+test("reopenRoadmap restores in-review, sets last-updated and next-step, and removes only the accepted-at-ship follow-ups", () => {
+  const original = '```yaml\nstatus: in-review\nbranch: feature/widget\nlast-updated: 2026-10-01\nnext-step: "review"\n```\n\n## Phase 1\n\n- [x] 1.1 done — verify: x\n\n## Follow-ups\n\n- later\n';
+  const completed = completeRoadmap(original, { date: "2026-10-10", followups: [{ code: "pr-behind", detail: "PR #15 is behind main" }, { code: "untracked-byproducts", detail: "1 untracked file(s)", paths: ["a.png"] }] });
+  assert.match(completed, /^status: complete$/m);
+  assert.match(completed, /## Follow-ups \(accepted at ship\)\n\n- pr-behind: .*\n- untracked-byproducts: /);
+  const reopened = reopenRoadmap(completed, { date: "2026-10-11", codes: ["pr-conflicting"] });
+  assert.equal(reopened, original.replace("last-updated: 2026-10-01", "last-updated: 2026-10-11").replace('next-step: "review"', 'next-step: "ship reopened (pr-conflicting): resolve in the build window, then re-review"'));
+
+  // Without the section only the three header fields change.
+  const done = original.replace("status: in-review", "status: complete");
+  const plain = reopenRoadmap(done, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] });
+  const before = done.split("\n");
+  const after = plain.split("\n");
+  assert.equal(after.length, before.length);
+  assert.deepEqual(after.filter((line, i) => line !== before[i]), ["status: in-review", "last-updated: 2026-10-11", 'next-step: "ship reopened (checks-failed, pr-conflicting): resolve in the build window, then re-review"']);
+  assert.equal(reopenRoadmap(plain, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] }), plain, "idempotent");
+});
+
+test("ship --confirm at checks with a conflicting PR reopens the roadmap and rejects (#107 ship-conflict-gate)", () => {
+  const PENDING = [[{ name: "Unit tests", status: "IN_PROGRESS", conclusion: null }]];
+  const CONFLICT = { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" };
+
+  // In-repo, owner: the confirm lands the complete roadmap, then the PR turns conflicting.
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PENDING } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const pending = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(pending.json.status, "pending", JSON.stringify(pending.json));
+  assert.match(git(repo, "show", `origin/${branch}:${dir}/roadmap.md`), /^status: complete$/m);
+  stub.update((s) => Object.assign(s.product.prs[branch], CONFLICT));
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "audit-gaps");
+  assert.equal(json.resumedAt, "checks");
+  assert.deepEqual(codes(json.gaps.hard), ["pr-conflicting"]);
+  assert.ok(stepsOf(json).includes("roadmap-reopened"), JSON.stringify(json.actions));
+  assert.deepEqual(json.rejectTo, { command: "/agento build-feature widget", window: "build" });
+  assert.deepEqual(json.next, ["/agento build-feature widget"]);
+  git(repo, "fetch", "-q", "origin");
+  const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: in-review$/m);
+  assert.doesNotMatch(roadmap, /## Follow-ups \(accepted at ship\)/);
+  assert.match(git(repo, "log", "-1", "--format=%s", `origin/${branch}`), /^docs\(feature\): reopen widget \(pr-conflicting\)$/);
+  assert.ok(stub.calls().every((c) => !/ pr merge/.test(c)), stub.calls().join("\n"));
+  assert.equal(stub.state().product.prs[branch].state, "OPEN");
+  assert.ok(fs.existsSync(owner));
+  assert.equal(git(owner, "status", "--porcelain"), "");
+  assert.equal(git(owner, "rev-parse", "HEAD"), git(repo, "rev-parse", `origin/${branch}`));
+
+  // The third send derives the audit again and writes nothing.
+  const before = [refState(repo), JSON.stringify(stub.state())];
+  const third = shipRun(repo, stub.env, "feature", "widget");
+  assert.equal(third.json.resumedAt, "audit", JSON.stringify(third.json));
+  assert.equal(third.json.reason, "audit-gaps");
+  assert.deepEqual(codes(third.json.gaps.hard), ["pr-conflicting"]);
+  assert.deepEqual(third.json.actions, []);
+  assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before);
+
+  // Companion mode, owner: the companion PR conflicts; the reopen commit lands in the half, the product branch is untouched.
+  const pair = makePairRepo();
+  const paired = pairShippable(pair, "widget");
+  const pairedStub = pairStub(paired.branch, { rollups: PENDING });
+  const pairedToken = shipRun(pair.repo, pairedStub.env, "feature", "widget").json.confirmToken;
+  assert.equal(shipRun(pair.repo, pairedStub.env, "feature", "widget", "--confirm", pairedToken, "--wait", "0").json.status, "pending");
+  const productHead = git(pair.repo, "rev-parse", `origin/${paired.branch}`);
+  pairedStub.update((s) => Object.assign(s.companion.prs[paired.branch], CONFLICT));
+  const companion = shipRun(pair.repo, pairedStub.env, "feature", "widget", "--confirm", pairedToken, "--wait", "0");
+  assert.equal(companion.code, 3, JSON.stringify(companion.json));
+  assert.equal(companion.json.reason, "audit-gaps");
+  assert.equal(companion.json.resumedAt, "checks");
+  assert.deepEqual(codes(companion.json.gaps.hard), ["companion-pr-conflicting"]);
+  assert.ok(stepsOf(companion.json).includes("roadmap-reopened"));
+  git(pair.repo, "fetch", "-q", "origin");
+  git(pair.docs, "fetch", "-q", "origin");
+  assert.equal(git(pair.repo, "rev-parse", `origin/${paired.branch}`), productHead, "the product branch is untouched");
+  assert.match(git(pair.docs, "show", `origin/${paired.branch}:${paired.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(pair.docs, "log", "-1", "--format=%s", `origin/${paired.branch}`), /^docs\(feature\): reopen widget \(companion-pr-conflicting\)$/);
+  assert.equal(git(paired.half, "status", "--porcelain"), "");
+  assert.ok(pairedStub.calls().every((c) => !/ pr merge/.test(c)));
+  assert.equal(shipRun(pair.repo, pairedStub.env, "feature", "widget").json.resumedAt, "audit");
+});
+
+test("ship --confirm: a merge refused as not mergeable reopens the roadmap on the no-owner path; any other merge failure does not (#107 ship-conflict-gate)", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  // Clean when audited and when the checks pass, refused by GitHub at the merge itself.
+  const { branch, dir } = shippable(fixture, "widget", { owner: false, extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING, refuseMerge: true } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "audit-gaps");
+  assert.deepEqual(codes(json.gaps.hard), ["pr-conflicting"]);
+  assert.ok(stepsOf(json).includes("roadmap-reopened"), JSON.stringify(json.actions));
+  assert.deepEqual(json.rejectTo, { command: "/agento start-session feature/widget --resume", window: "primary" });
+  assert.equal(git(repo, "branch", "--show-current"), "main", "the primary is switched back");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  git(repo, "fetch", "-q", "origin");
+  const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: in-review$/m);
+  assert.doesNotMatch(roadmap, /## Follow-ups \(accepted at ship\)/);
+  assert.equal(stub.state().product.prs[branch].state, "OPEN");
+
+  // Any other merge failure keeps gh-error and the complete roadmap.
+  const other = shippable(fixture, "other", { owner: false, extra: writeFile("src.js", "code\n") });
+  const otherStub = shipStub({ product: { prs: { [other.branch]: { number: 16, rollups: PASSING, refuseMerge: "GraphQL: Something went wrong while executing your query (mergePullRequest)" } } } });
+  const otherToken = shipRun(repo, otherStub.env, "feature", "other").json.confirmToken;
+  const failed = shipRun(repo, otherStub.env, "feature", "other", "--confirm", otherToken, "--wait", "0");
+  assert.equal(failed.json.status, "failed", JSON.stringify(failed.json));
+  assert.equal(failed.json.reason, "gh-error");
+  assert.ok(!stepsOf(failed.json).includes("roadmap-reopened"));
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${other.branch}:${other.dir}/roadmap.md`), /^status: complete$/m);
+  assert.equal(git(repo, "branch", "--show-current"), "main");
 });
 
 test("ship --confirm (in-repo, no owner): the primary is switched onto the branch for the writes and back; a behind PR is integrated by merge; a conflicting integration aborts and rejects", () => {
