@@ -75,6 +75,11 @@ The CLI path is announced in the session context as `Agento CLI:`.
     preceded by one line naming `rejectTo.window`; when it is the build or review
     command, follow it with `/agento ap <slug>` in its own block as the unattended
     alternative.
+    When `resumedAt` is `checks` (a conflict found after the confirm writes, or a
+    merge GitHub refused as not mergeable), this rejection did write: `actions[]`
+    carries `roadmap-reopened` — the roadmap is back at `status: in-review` on
+    `origin/<branch>`. Say so, and that after the fix in the build window and a
+    fresh review the next `/agento ship <slug>` re-runs the full audit.
   - `confirm-stale`: show `providedToken`, the fresh `confirmToken`, and the current
     `gaps.confirm[]`; go back to step 4 with the new list.
   - `integration-conflict`: quote `message` (the merge was aborted and the tree is
@@ -104,7 +109,9 @@ The CLI path is announced in the session context as `Agento CLI:`.
     terminal (§1), then re-sends.
   - `checks-failed`: a required check failed before the merge; emit
     `rejectTo.command` in its own §12 block for the build window (with
-    `/agento ap <slug>` after it) when set.
+    `/agento ap <slug>` after it) when set. `actions[]` carries
+    `roadmap-reopened`: the roadmap is back at `status: in-review`, so after the fix
+    and a fresh review the next `/agento ship <slug>` re-runs the full audit.
   - `companion-merge`: the code PR is merged and the companion PR is not; the
     result line's state and next step are the CLI's `message` verbatim (it names
     both PRs and says the re-send resumes at the companion merge).
