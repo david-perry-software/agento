@@ -5130,6 +5130,73 @@ test("reopenRoadmap restores in-review, sets last-updated and next-step, and rem
   assert.equal(reopenRoadmap(plain, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] }), plain, "idempotent");
 });
 
+test("ship --confirm at checks with a conflicting PR reopens the roadmap and rejects (#107 ship-conflict-gate)", () => {
+  const PENDING = [[{ name: "Unit tests", status: "IN_PROGRESS", conclusion: null }]];
+  const CONFLICT = { mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" };
+
+  // In-repo, owner: the confirm lands the complete roadmap, then the PR turns conflicting.
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PENDING } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const pending = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(pending.json.status, "pending", JSON.stringify(pending.json));
+  assert.match(git(repo, "show", `origin/${branch}:${dir}/roadmap.md`), /^status: complete$/m);
+  stub.update((s) => Object.assign(s.product.prs[branch], CONFLICT));
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "audit-gaps");
+  assert.equal(json.resumedAt, "checks");
+  assert.deepEqual(codes(json.gaps.hard), ["pr-conflicting"]);
+  assert.ok(stepsOf(json).includes("roadmap-reopened"), JSON.stringify(json.actions));
+  assert.deepEqual(json.rejectTo, { command: "/agento build-feature widget", window: "build" });
+  assert.deepEqual(json.next, ["/agento build-feature widget"]);
+  git(repo, "fetch", "-q", "origin");
+  const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: in-review$/m);
+  assert.doesNotMatch(roadmap, /## Follow-ups \(accepted at ship\)/);
+  assert.match(git(repo, "log", "-1", "--format=%s", `origin/${branch}`), /^docs\(feature\): reopen widget \(pr-conflicting\)$/);
+  assert.ok(stub.calls().every((c) => !/ pr merge/.test(c)), stub.calls().join("\n"));
+  assert.equal(stub.state().product.prs[branch].state, "OPEN");
+  assert.ok(fs.existsSync(owner));
+  assert.equal(git(owner, "status", "--porcelain"), "");
+  assert.equal(git(owner, "rev-parse", "HEAD"), git(repo, "rev-parse", `origin/${branch}`));
+
+  // The third send derives the audit again and writes nothing.
+  const before = [refState(repo), JSON.stringify(stub.state())];
+  const third = shipRun(repo, stub.env, "feature", "widget");
+  assert.equal(third.json.resumedAt, "audit", JSON.stringify(third.json));
+  assert.equal(third.json.reason, "audit-gaps");
+  assert.deepEqual(codes(third.json.gaps.hard), ["pr-conflicting"]);
+  assert.deepEqual(third.json.actions, []);
+  assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before);
+
+  // Companion mode, owner: the companion PR conflicts; the reopen commit lands in the half, the product branch is untouched.
+  const pair = makePairRepo();
+  const paired = pairShippable(pair, "widget");
+  const pairedStub = pairStub(paired.branch, { rollups: PENDING });
+  const pairedToken = shipRun(pair.repo, pairedStub.env, "feature", "widget").json.confirmToken;
+  assert.equal(shipRun(pair.repo, pairedStub.env, "feature", "widget", "--confirm", pairedToken, "--wait", "0").json.status, "pending");
+  const productHead = git(pair.repo, "rev-parse", `origin/${paired.branch}`);
+  pairedStub.update((s) => Object.assign(s.companion.prs[paired.branch], CONFLICT));
+  const companion = shipRun(pair.repo, pairedStub.env, "feature", "widget", "--confirm", pairedToken, "--wait", "0");
+  assert.equal(companion.code, 3, JSON.stringify(companion.json));
+  assert.equal(companion.json.reason, "audit-gaps");
+  assert.equal(companion.json.resumedAt, "checks");
+  assert.deepEqual(codes(companion.json.gaps.hard), ["companion-pr-conflicting"]);
+  assert.ok(stepsOf(companion.json).includes("roadmap-reopened"));
+  git(pair.repo, "fetch", "-q", "origin");
+  git(pair.docs, "fetch", "-q", "origin");
+  assert.equal(git(pair.repo, "rev-parse", `origin/${paired.branch}`), productHead, "the product branch is untouched");
+  assert.match(git(pair.docs, "show", `origin/${paired.branch}:${paired.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(pair.docs, "log", "-1", "--format=%s", `origin/${paired.branch}`), /^docs\(feature\): reopen widget \(companion-pr-conflicting\)$/);
+  assert.equal(git(paired.half, "status", "--porcelain"), "");
+  assert.ok(pairedStub.calls().every((c) => !/ pr merge/.test(c)));
+  assert.equal(shipRun(pair.repo, pairedStub.env, "feature", "widget").json.resumedAt, "audit");
+});
+
 });
 
 test("ship --confirm (in-repo, no owner): the primary is switched onto the branch for the writes and back; a behind PR is integrated by merge; a conflicting integration aborts and rejects", () => {

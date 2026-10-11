@@ -2055,6 +2055,8 @@ function ship() {
   if (!pr) reject("pr-missing", { message: `no pull request found for ${branch} in the product repository; the Builder opens the draft PR on its first push` });
   if (pr.state === "CLOSED") reject("pr-closed", { message: `pull request #${pr.number} for ${branch} is closed without a merge; reopen it or start the delivery over` });
   out.mergeSha = pr.mergeCommit?.oid ?? null;
+  const conflictGap = () => ({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
+  const companionConflictGap = () => ({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
 
   // Artifact reads: the branch while the PR is open, the artifact default once merged.
   const artifactRef = pr.state === "MERGED" ? `origin/${artifactDefault}` : refFor(branch, layout.agit).ref;
@@ -2152,9 +2154,9 @@ function ship() {
     if (external) {
       if (!companionPr) hard.push({ code: "companion-missing-pr", detail: `no pull request for ${branch} in the companion repository at ${artifactsClone}; open it from the companion half` });
       else if (companionPr.state !== "OPEN") hard.push({ code: "companion-pr-not-open", detail: `companion PR #${companionPr.number} is ${companionPr.state.toLowerCase()} (${companionPr.url}); the code PR is still open` });
-      else if (isConflicting(companionPr)) hard.push({ code: "companion-pr-conflicting", detail: `companion PR #${companionPr.number} (${companionPr.url}) conflicts with ${artifactDefault}; resolve it in the companion half` });
+      else if (isConflicting(companionPr)) hard.push(companionConflictGap());
     }
-    if (isConflicting(pr)) hard.push({ code: "pr-conflicting", detail: `PR #${pr.number} (${pr.url}) conflicts with ${defaultBranch}; resolve it in the build window per the concurrent-delivery hotspot recipes` });
+    if (isConflicting(pr)) hard.push(conflictGap());
     if (changelog.headingWithoutVersionChange) hard.push({ code: "changelog-heading-without-version", detail: `CHANGELOG.md carries "## ${changelog.unreleasedHeading} (unreleased)" but the branch does not change "version" in .claude-plugin/plugin.json or package.json` });
     if (postShipSteps.length && !/post-ship/i.test(risks)) hard.push({ code: "post-ship-unjustified", detail: `${postShipSteps.length} (manual, post-ship) step(s) without a post-ship justification under plan.md ## Risks: ${postShipSteps.map((s) => s.id).join(", ")}` });
     if (ownerTree && !ownerTree.tracked.length && ownerTree.ahead === 0 && ownerTree.untracked.length) {
@@ -2238,10 +2240,45 @@ function ship() {
     if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
     fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
   };
+  // Reopen at checks: the roadmap goes back to in-review on origin/<branch>, so the next send re-audits.
+  const reopen = (codes) => {
+    const target = !external ? (owner ? owner.path : primary) : companion?.registered ? companion.path : artifactsClone;
+    if (target === primary || target === artifactsClone) switchTo(target, branch, external ? "companion" : "primary");
+    const ref = `origin/${branch}`;
+    if (git(target, "rev-parse", "--verify", "--quiet", ref)) {
+      const ff = gitRun(target, ["merge", "--ff-only", ref]);
+      if (!ff.ok) fail("owner-diverged", `${target} cannot fast-forward to ${ref} to reopen the roadmap: ${ff.stderr.split("\n")[0]}; reconcile it in the build window`);
+    }
+    const roadmapFile = path.join(target, roadmapRel);
+    const current = fs.readFileSync(roadmapFile, "utf8");
+    const reopened = reopenRoadmap(current, { date: utcDate(), codes });
+    if (reopened !== current) {
+      fs.writeFileSync(roadmapFile, reopened);
+      gitRun(target, ["add", "--", roadmapRel]);
+      const commit = gitRun(target, ["commit", "-q", "-m", `docs(${type}): reopen ${slug} (${codes.join(", ")})`]);
+      if (!commit.ok) fail("commit-failed", `git -C ${target} commit (roadmap reopen): ${commit.stderr}`);
+    }
+    if (git(target, "rev-parse", "HEAD") !== git(target, "rev-parse", ref)) push(target, external ? "companion" : "product");
+    for (const restore of restores.splice(0)) restore();
+    act("roadmap-reopened", `roadmap status: in-review (${codes.join(", ")}) on origin/${branch} from ${target}`);
+    out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+  };
+  const rejectReopened = (hard) => {
+    out.gaps = { hard, confirm: [] };
+    reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-review`, next: [out.rejectTo.command] });
+  };
   let shippedHere = false;
 
   // ---- confirm → checks → merge-code (the PR is still open) ----
   if (phase === "audit" || phase === "checks") {
+    // A conflict found after the confirm writes landed: reopen before anything else is written.
+    if (phase === "checks") {
+      const hard = [...(isConflicting(pr) ? [conflictGap()] : []), ...(external && isConflicting(companionPr) ? [companionConflictGap()] : [])];
+      if (hard.length) {
+        reopen(hard.map((g) => g.code));
+        rejectReopened(hard);
+      }
+    }
     const accepted = new Set(acceptedGaps.map((g) => g.code));
     const productTarget = owner ? owner.path : primary;
     const artifactTarget = !external ? productTarget : companion?.registered ? companion.path : artifactsClone;
