@@ -15,7 +15,8 @@
   (`chat.includeReferencedInstructions: false`); in target repositories this adds one
   policy read per agent or command run, where the policy was previously not loaded at
   all. The always-on payload in Agento's own windows drops from 32 063 bytes
-  (`delivery-policy`, `command-invocation`, `ai-skills`). In plugin mode the
+  (`delivery-policy`, `command-invocation`, `ai-skills`) to 3 090 bytes
+  (`agento-core`, `ai-skills`). In plugin mode the
   SessionStart hook now stays silent when the repository carries Agento's own
   workspace-mode wiring, so a registered clone no longer injects the context twice,
   and `agento.mjs doctor` gains the informational `hook-wiring` check (`warn` when the
