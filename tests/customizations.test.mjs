@@ -520,6 +520,29 @@ test("every command opens with one agento.mjs preflight <name> call and no hand-
   }
 });
 
+// Each agent's preflight runs under the command that dispatches it.
+const AGENT_COMMANDS = {
+  "copilot-mechanic": "fix-copilot",
+  "delivery-autopilot": "ap",
+  "delivery-builder": "build-feature",
+  "delivery-planner": "new-feature",
+  "delivery-reviewer": "review-feature",
+  "initiative-architect": "new-initiative",
+};
+
+test("every agent opens with one agento.mjs preflight call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
+  assert.deepEqual(agentFiles.map((file) => path.basename(file, ".agent.md")), Object.keys(AGENT_COMMANDS).sort(), "AGENT_COMMANDS must list every agent");
+  for (const file of agentFiles) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
+    const command = AGENT_COMMANDS[path.basename(file, ".agent.md")];
+    const stem = command.replace(/-(?:feature|issue)$/, "-<type>");
+    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs preflight (?:${command}|${stem})(?![\\\\w-])`), `${label}: never runs agento.mjs preflight ${command}`);
+    assert.match(body, /`receipt`[^.]*`preflightLines`/, `${label}: must print the preflight's receipt and preflightLines`);
+    for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
+  }
+});
+
 // The roles, branch conditions, and slug roles a "Window check per §11: requires role …"
 // sentence states, in WINDOW_ROLES' shape.
 function windowRuleOf(file) {
@@ -545,8 +568,8 @@ test("the CLI WINDOW_ROLES table agrees with every command's window check line",
   const { WINDOW_ROLES } = await import(pathToFileURL(rel("scripts", "session-state.mjs")).href);
   const names = promptFiles.map((file) => path.basename(file, ".prompt.md"));
   assert.deepEqual(Object.keys(WINDOW_ROLES).sort(), [...names].sort(), "WINDOW_ROLES must list exactly the slash commands");
-  for (const file of promptFiles) {
-    const name = path.basename(file, ".prompt.md");
+  for (const file of [...promptFiles, ...agentFiles]) {
+    const name = file.endsWith(".agent.md") ? AGENT_COMMANDS[path.basename(file, ".agent.md")] : path.basename(file, ".prompt.md");
     const rule = WINDOW_ROLES[name];
     const cli = { roles: [...rule.roles].sort(), branch: rule.branch ?? null, clean: Boolean(rule.clean), slugRoles: [...(rule.slugRoles ?? [])].sort() };
     assert.deepEqual(windowRuleOf(file), cli, `${path.relative(repoRoot, file)}: window check line disagrees with WINDOW_ROLES.${name}`);
