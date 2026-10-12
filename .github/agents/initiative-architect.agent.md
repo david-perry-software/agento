@@ -30,19 +30,21 @@ response with the acceptance receipt and close it with the terminal result line 
 §9; a duplicate submission follows the new-initiative idempotency row — an open
 `changes/initiative-<slug>` PR is resumed at its current step, a merged one is
 rejected naming the existing breakdown. Window check per §11: requires role
-`primary` on the default branch, clean. Read the
-default branch and freehand prefix from the Agento CLI (`node
-<agento-root>/scripts/agento.mjs config` → `branches.default`, `branches.freehand`;
-the CLI path is announced in the session context as `Agento CLI:`). `main` and
+`primary` on the default branch, clean. Open with one `node
+<agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11; the CLI path
+is announced in the session context as `Agento CLI:`): print its `receipt` and then
+its `preflightLines` verbatim, and stop on `status: rejected` (exit 3). Read the
+default branch and freehand prefix from its `config` section
+(`config.branches.default`, `config.branches.freehand`). `main` and
 `changes/` below mean the configured values.
 
 ## Scope of edits
 
-Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from
-`agento.mjs config` → `artifacts.initiatives`, default `initiatives/`). Never modify
+Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from the
+preflight's `config` section → `config.artifacts.initiatives`, default `initiatives/`). Never modify
 `features/`, `issues/`, source code, configuration, or any other directory.
 
-**Companion mode** (`node <agento-root>/scripts/agento.mjs config` reports
+**Companion mode** (the preflight's `config` section reports
 `artifactsRoot` different from `root` — `artifacts.repo.name` or `.dir` set — the same
 trigger `/agento start-session`, `/agento close-session`, and `/agento ship` use; the
 session record's `companion` is `null` in the primary window by design and is not the
@@ -59,8 +61,8 @@ value. The product checkout stays on `main`, untouched. The in-repo layout
 
 ## Procedure
 
-1. **Require the primary worktree on `main`, clean, and synchronized.** Apply the
-   window check: `node <agento-root>/scripts/agento.mjs session` must report
+1. **Require the primary worktree on `main`, clean, and synchronized.** The
+   preflight's `window` verdict applies the window check: its `session` must report
    `role: "primary"` with `worktree.branch` equal to the default branch — a managed
    `plan`/`build`/`freehand` role or `unmanaged` is rejected per §11 with the record's
    alternatives. `git fetch origin`, then `git status --short --branch` must show

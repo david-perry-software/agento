@@ -23,9 +23,9 @@ delivery-policy.instructions.md §9; a duplicate submission follows this command
 idempotency row (existing files are kept unless `--force`; an existing companion
 repository or clone is adopted; with `--migrate`, roots already moved report nothing
 to migrate and existing `changes/agento-init` PRs in either repository are resumed).
-Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for agento-init` and map
-`fail`/`warn` per §10. `<agento-root>` comes from the session context line
+Open with one `node <agento-root>/scripts/agento.mjs preflight agento-init` call
+(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
+`status: rejected` (exit 3), writing nothing. `<agento-root>` comes from the session context line
 `Agento CLI: node <agento-root>/scripts/agento.mjs` (fallback: the user-level
 `chat.pluginLocations` setting — it is machine-scoped, so only user settings carry it).
 Window check per §11: requires role `any` (read-only / not window-sensitive).
@@ -34,8 +34,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 1. **Product repository.** Confirm the workspace root is a git repository, is
    **not** the Agento plugin clone itself (no `.claude-plugin/plugin.json` with
-   `"name": "agento"`), and is the **primary checkout**: `node
-   <agento-root>/scripts/agento.mjs session` must report `worktree.isPrimary: true`.
+   `"name": "agento"`), and is the **primary checkout**: the preflight's `session`
+   section must report `worktree.isPrimary: true`.
    The companion is cloned to `../<name>` relative to the primary checkout (that is
    where every `agento.mjs` reader resolves it); running from a managed worktree
    would put the clone in the worktrees directory, so stop and name the primary

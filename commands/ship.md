@@ -23,16 +23,18 @@ delivery-policy.instructions.md §9, its `next:` command repeated in its own blo
 directly above the result line per §12; a duplicate submission follows this
 command's §9 idempotency row — re-sending `/agento ship <slug>` resumes wherever
 the CLI's phase derivation says the ship stands, creating nothing a second time.
-The CLI runs the `doctor --for ship` checks itself before its first write and
-reports them in `preflight[]`. Window check per §11: requires role `primary`.
+The ship subcommand repeats the ship capability checks itself before its first write
+and reports them in `preflight[]`. Window check per §11: requires role `primary`.
 
 ## Calls
 
 The CLI path is announced in the session context as `Agento CLI:`.
 
-1. `node <agento-root>/scripts/agento.mjs find <slug>` — the delivery `type`
-   (`feature` or `issue`). A `conflict`, `branch-mismatch`, or `missing` result is
-   reported verbatim with the §9 rejected receipt; stop.
+1. `node <agento-root>/scripts/agento.mjs preflight ship <slug>` — print its
+   `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+   (exit 3). Its `resolve` section gives the delivery `type` (`feature` or `issue`);
+   a `conflict`, `branch-mismatch`, or `missing` resolution is reported verbatim with
+   the §9 rejected receipt; stop.
 2. `node <agento-root>/scripts/agento.mjs ship <type> <slug>` — the audit call. It
    never writes to any repository (the one exception: an issue PR body missing its
    `Fixes #<n>` line is completed through the GitHub API and reported in

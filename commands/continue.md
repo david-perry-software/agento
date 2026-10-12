@@ -23,18 +23,20 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: it re-derives from git + roadmap state and performs whatever
 transition is now legal — never a second worktree, branch, or PR — and the dispatched
-command's own row governs the rest. Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for continue` and map `fail`/`warn`
-per §10; the needs above are the union of what the dispatched commands declare.
+command's own row governs the rest. Open with one `node
+<agento-root>/scripts/agento.mjs preflight continue [<slug>]` call (§9–§11), the slug
+argument appended verbatim when one was given: print its `receipt` and then its
+`preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing nothing;
+the needs above are the union of what the dispatched commands declare.
 Window check per §11: requires role `primary`, `plan`, or `build` (in `build` or
 `plan`, a slug argument must equal the record's `delivery.slug`; `freehand` and
 `unmanaged` reject with the record's alternatives).
 
 ## Procedure
 
-1. **Session.** Run `node <agento-root>/scripts/agento.mjs session` and apply the
-   window check above from its `role`, `worktree`, and `delivery`. Never inspect
-   worktrees yourself; the record is the only source.
+1. **Session.** The preflight's `session` section is the record and its `window`
+   verdict the window check above (from `role`, `worktree`, and `delivery`). Never
+   inspect worktrees yourself; the record is the only source.
 2. **Derive.** Run `node <agento-root>/scripts/agento.mjs next` — with the slug
    argument appended verbatim when one was given — and read `status`, `next`,
    `candidates`, `dispatch`, `reviewFresh`, `reason`, and `warnings`. Surface every
@@ -56,7 +58,7 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      and, when non-null, `dispatch.agent` (the agent file whose `name:` the prompt's
      `agent:` frontmatter selects). Carry that command out exactly as those files
      say, with `next.args` as its arguments, applying the agent file's rules verbatim
-     — its resume protocol, its own `doctor --for <command>` call, its own window
+     — its resume protocol, its own `preflight` call, its own window
      check, its evidence and hand-off rules. Nothing in this command overrides them.
      For `start-session`, `next.args` may be empty (plan mode) or
      `<type>/<slug> [--resume]` (build mode); when `next.then` is set, that command

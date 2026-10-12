@@ -15,9 +15,9 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (already-installed skills are excluded from the batch, step 3).
-Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for install-skills` and map
-`fail`/`warn` per §10.
+Open with one `node <agento-root>/scripts/agento.mjs preflight install-skills` call
+(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
+`status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Preconditions:**

@@ -18,17 +18,18 @@ none of the plan → build → review → two-window choreography. This invocati
 authorizes creating and deleting a branch, committing, pushing, opening and merging a
 pull request, and synchronizing the default branch.
 
-Read the default branch and freehand prefix from the Agento CLI (`node
-<agento-root>/scripts/agento.mjs config` → `branches.default`, `branches.freehand`;
-the CLI path is announced in the session context as `Agento CLI:`). `main` below
+Read the default branch and freehand prefix from the preflight call's `config`
+section (`config.branches.default`, `config.branches.freehand`). `main` below
 means the configured default.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
-its current step; see step 2 for the suffix rule). Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for quick-fix` and map
-`fail`/`warn` per §10.
+its current step; see step 2 for the suffix rule). Open with one
+`node <agento-root>/scripts/agento.mjs preflight quick-fix` call (§9–§11; the CLI
+path is announced in the session context as `Agento CLI:`): print its `receipt` and
+then its `preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing
+nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 ## Refuse when the change does not fit
@@ -47,8 +48,8 @@ named command is emitted as its own block per policy §12 (one block per command
 
 ## Steps
 
-1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
-   `role: "primary"` with `worktree.branch` equal to `main`, otherwise reject per §11
+1. The preflight's `window` verdict applies the window check: `role: "primary"` with
+   `worktree.branch` equal to `main` and a clean checkout, otherwise it rejects per §11
    with the record's alternatives. Then require clean and synchronized: `git fetch
    origin` then `git status --short --branch` shows nothing and zero ahead/behind.
    Authentication failures halt per the target repository's AGENTS.md.

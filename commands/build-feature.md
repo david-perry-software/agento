@@ -8,18 +8,19 @@ Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 
-Build the **feature** named by the slug in the argument. Resolve its roadmap with the
-Agento CLI — `node <agento-root>/scripts/agento.mjs resolve feature <slug>` (the CLI
-path is announced in the session context as `Agento CLI:`) — and act on the JSON:
-`status: ok` gives `path` and `branch`; `conflict`, `branch-mismatch`, or `missing`
-are hard stops — report the `message` verbatim.
+Build the **feature** named by the slug in the argument. Its roadmap resolution is
+the `resolve` section of the preflight call below — act on it: `status: ok` gives
+`path` and `branch`; `conflict`, `branch-mismatch`, or `missing` are hard stops —
+report the `message` verbatim.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (the Builder resume/audit protocol below — ticked steps are audited,
-never redone). Before the first write, run `node <agento-root>/scripts/agento.mjs
-doctor --for build-feature` and map `fail`/`warn` per §10.
+never redone). Open with one `node <agento-root>/scripts/agento.mjs preflight
+build-feature feature <slug>` call (§9–§11; the CLI path is announced in the session
+context as `Agento CLI:`): print its `receipt` and then its `preflightLines`
+verbatim, and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
 - If the argument is blank, run `agento.mjs status feature`, list each item's slug,

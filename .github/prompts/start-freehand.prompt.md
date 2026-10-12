@@ -25,16 +25,16 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row: a registered worktree for the same slug is resumed with `--resume`
 semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
-Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for start-freehand` and map
-`fail`/`warn` per §10.
+Open with one `node <agento-root>/scripts/agento.mjs preflight start-freehand` call
+(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
+`status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 **Preconditions:**
 
-1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must report
-   `role: "primary"` with `worktree.branch` equal to the configured default branch;
-   otherwise reject per §11 with the record's alternatives.
+1. The preflight's `window` verdict applies the window check: `role: "primary"` with
+   `worktree.branch` equal to the configured default branch and a clean checkout;
+   otherwise it rejects per §11 with the record's alternatives.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately
    under the repository policy.
 3. Managed worktrees live under the managed worktrees directory: the `worktrees.dir`

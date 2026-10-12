@@ -20,11 +20,14 @@ valid (ship then takes its no-owner path).
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this
-command's §9 idempotency row. Window check per §11: requires role `primary`.
+command's §9 idempotency row. Open with one `node <agento-root>/scripts/agento.mjs
+preflight close-session` call (§9–§11): print its `receipt` and then its
+`preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing nothing.
+Window check per §11: requires role `primary`.
 
 ## One call
 
-Run exactly one command, passing the user's argument through unchanged and adding
+Then run exactly one command, passing the user's argument through unchanged and adding
 `--dry-run` or `--ignore-occupants` only when the user asked for them (the CLI path is
 announced in the session context as `Agento CLI:`):
 

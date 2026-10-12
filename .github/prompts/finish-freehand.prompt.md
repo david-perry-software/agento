@@ -19,12 +19,13 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 2 recovers it from repository state). Before the first write, run `node
-<agento-root>/scripts/agento.mjs doctor --for finish-freehand` and map `fail`/`warn`
-per §10.
+step 2 recovers it from repository state). Open with one `node
+<agento-root>/scripts/agento.mjs preflight finish-freehand` call (§9–§11): print its
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+(exit 3), writing nothing.
 Window check per §11: requires role `freehand` with `delivery.slug` equal to this session's slug.
 
-1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must
+1. The preflight's `window` verdict applies the window check: its `session` must
    report `role: "freehand"` (a managed `freehand-<slug>` worktree on branch
    `changes/<slug>`, per the record's `worktree` and `delivery`); otherwise reject
    per §11 with the record's alternatives — on `main`, `feature/*`, or `issue/*` they

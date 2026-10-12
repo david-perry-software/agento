@@ -19,7 +19,9 @@ in the Agento repository.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row.
+idempotency row. Open with one `node <agento-root>/scripts/agento.mjs preflight
+models` call (§9–§11): print its `receipt` and then its `preflightLines` verbatim,
+and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (not window-sensitive: it rewrites the
 plugin clone, never the current checkout's delivery state).
 

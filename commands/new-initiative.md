@@ -16,13 +16,15 @@ delivery-policy.instructions.md §9, its `next:` command repeated in its own blo
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; a
 merged one is rejected naming the existing breakdown), which takes precedence over
-the slug reservation in step 5. Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for new-initiative` and map
-`fail`/`warn` per §10.
+the slug reservation in step 5. Open with one
+`node <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11): print
+its `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+(exit 3), writing nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 
-1. Apply the window check (`agento.mjs session` → `role: "primary"`, `worktree.branch`
-   = `main`; otherwise reject per §11 with the record's alternatives), then require
+1. The preflight's `window` verdict applies the window check (`role: "primary"`,
+   `worktree.branch` = `main`, a clean checkout; otherwise it rejects per §11 with the
+   record's alternatives), then require
    the tree clean and synchronized.
 2. Read the brief: inline text, or a repository-relative path to an existing file.
    Record the original argument or path in `brief.md`'s `Source:` line and preserve

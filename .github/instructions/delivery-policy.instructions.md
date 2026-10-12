@@ -26,9 +26,9 @@ below means the configured `branches.default` (`agento.mjs config`).
 - Authentication failure: stop, name the exact reauth command (per AGENTS.md), wait.
   Never ask the user to run the command on your behalf.
 - Never print, request, or log secrets; screenshots must not show them.
-- Capabilities are checked before work starts, not discovered mid-command: a command
-  whose `Needs:` line includes `gh`, `code`, or `network` runs `agento.mjs doctor
-  --for <command>` before its first write (§10). For a CLI `doctor` does not cover,
+- Capabilities are checked before work starts, not discovered mid-command: every
+  command opens with `agento.mjs preflight <command>`, which runs the command's
+  `doctor` checks before its first write (§10). For a CLI `doctor` does not cover,
   check it with `command -v` (or the project's documented presence check) before the
   first invocation; report a missing prerequisite instead of producing exit 127.
 
@@ -252,6 +252,12 @@ derived from git + roadmap state (no journal) per the table at the end of this s
   the literal `HEAD`.
 - `<short-sha>` is `git rev-parse --short HEAD` at acceptance.
 
+`node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]` derives
+the ID (`opId`, with its `subject`) and returns the receipt and preflight lines ready
+to print (`receipt`, `preflightLines`) in the spellings above; commands print them
+verbatim instead of assembling them. A duplicate submission prints the duplicate
+form of the accepted receipt with that `opId`.
+
 The ID is deterministic: the same command on the same subject at the same HEAD is a
 duplicate submission and receives the duplicate receipt. Nothing is persisted; the
 command recognises the duplicate from what the first submission left in git and the
@@ -344,27 +350,34 @@ followed by a one-sentence pointer to this section. Tokens come from the vocabul
 above; the CLI's `doctor --for <command>` table lists the same needs for every
 command, and `tests/customizations.test.mjs` fails on any disagreement.
 
-**When `doctor` runs.** A command whose `Needs:` include `gh`, `code`, or `network`
-runs `node <agento-root>/scripts/agento.mjs doctor --for <command>` before its first
-write. Overall `fail` (exit 3) → the §9 preflight rejection receipt quoting the
-failing check's `detail` and `fallback`; `warn` (exit 0) → one `Preflight:` line per
-warning check, then proceed. Terminal-only commands and `/agento doctor` itself skip
-the call; `doctor` reports and never repairs (no installs, no logins — §1).
+**When `doctor` runs.** Every command opens with `node
+<agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`, which runs the
+`doctor --for <command>` checks in process before the first write. Overall `fail` →
+`status: rejected` (exit 3) with the §9 preflight rejection receipt quoting the
+failing check's `detail` and `fallback`; `warn` → `status: ok` (exit 0) with one
+`Preflight:` line per warning check in `preflightLines`, then proceed. `doctor --for
+<command>` stays available standalone; `/agento doctor` runs the full `doctor` after
+its own preflight; `doctor` reports and never repairs (no installs, no logins — §1).
 
 ## 11. Window check
 
 Which window a command runs in is data, not prose. Every command and agent carries one
 line of the form `Window check per §11: requires role <roles>` and applies this
 procedure before reading delivery state or writing anything; the roles table itself
-lives in the CLI (`deriveAllowed`), never here or in a prompt.
+lives in the CLI (`WINDOW_ROLES` and `deriveAllowed` in `scripts/session-state.mjs`),
+never here or in a prompt.
 
-1. Run `node <agento-root>/scripts/agento.mjs session` (the SessionStart hook's
-   `Session:` line is a hint; the CLI call is the check). The record carries `role`
+1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`
+   (the SessionStart hook's `Session:` line is a hint; the CLI call is the check).
+   Its `session` section is the session record (`agento.mjs session` returns the same
+   document) and its `window` section the verdict (`role`, `required`, `match`,
+   `reason`, `allowed`, `elsewhere`). The record carries `role`
    (`primary` | `plan` | `build` | `freehand` | `unmanaged`), `hosted`, `worktree`
    (`path`, `branch`, `detached`, `isPrimary`, `isManaged`, `dirPrefix`, `id`),
    `worktrees[]` (every registered checkout classified the same way), `delivery`,
    `lifecycle`, `allowed[]`, `elsewhere[]`, and `warnings[]`.
-2. Compare `role` with the roles the command's line names. Match → proceed; from here
+2. Compare `role` with the roles the command's line names (`window.match`). Match →
+   proceed; from here
    on the record's `worktree`, `delivery`, and `worktrees[]` replace any further
    worktree inspection. Only commands that create or remove worktrees
    (`/agento start-session`, `/agento start-freehand`, `/agento close-session`, and
@@ -375,7 +388,8 @@ lives in the CLI (`deriveAllowed`), never here or in a prompt.
    delivery branch comes from `worktrees[]` or from `close-decision` /
    `ship-preflight` `owner` (`{ path, role, dirPrefix, id } | null`; reasons
    `managed-worktree-present`, `primary-owns-branch`, `remote-roadmap-only`).
-3. Mismatch → the §9 `rejected` receipt with reason `wrong window: role=<role>
+3. Mismatch → the §9 `rejected` receipt (the preflight's `receipt`) with reason
+   `wrong window: role=<role>
    (<worktree.path>, branch <worktree.branch|detached>)` and the alternatives copied
    from the record per §9. `role: unmanaged` always rejects delivery commands
    (its `allowed[]` is empty by design) and the rejection adds the fix: open the

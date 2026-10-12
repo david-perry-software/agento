@@ -20,12 +20,13 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 1 recovers it from repository state). Before the first write, run `node
-<agento-root>/scripts/agento.mjs doctor --for commit-current-changes` and map
-`fail`/`warn` per §10.
+step 1 recovers it from repository state). Open with one `node
+<agento-root>/scripts/agento.mjs preflight commit-current-changes` call (§9–§11):
+print its `receipt` and then its `preflightLines` verbatim, and stop on `status:
+rejected` (exit 3), writing nothing.
 Window check per §11: requires role `primary` on a non-default branch.
 
-1. Apply the window check: `node <agento-root>/scripts/agento.mjs session` must
+1. The preflight's `window` verdict applies the window check: its `session` must
 	report `role: "primary"` with `worktree.branch` different from the configured
 	default branch (a stray primary-window change). A `plan`, `build`, or `freehand`
 	role is rejected per §11 with the record's alternatives — they already name the

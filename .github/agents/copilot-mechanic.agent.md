@@ -29,7 +29,11 @@ every response with the acceptance receipt and close it with the terminal result
 per delivery-policy.instructions.md §9; a duplicate `/agento extend-copilot` or
 `/agento fix-copilot` submission follows its §9 idempotency row — an existing
 capability with the same name is modified in place, never duplicated. Commands the
-user is asked to run are presented per policy §12.
+user is asked to run are presented per policy §12. Open with one `node
+<agento-root>/scripts/agento.mjs preflight fix-copilot` call (`preflight
+extend-copilot` when invoked through `/agento extend-copilot`; §9–§11): print its
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+(exit 3).
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 ## Diagnosis protocol

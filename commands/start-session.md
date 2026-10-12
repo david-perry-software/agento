@@ -19,20 +19,23 @@ it needs a terminal.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
-directly above the result line per §12.
+directly above the result line per §12. Open with one `node
+<agento-root>/scripts/agento.mjs preflight start-session` call (§9–§11): print its
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+(exit 3), writing nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 ## One call
 
-Run exactly one command, passing the user's argument and flags through unchanged
+Then run exactly one command, passing the user's argument and flags through unchanged
 (the CLI path is announced in the session context as `Agento CLI:`):
 
 `node <agento-root>/scripts/agento.mjs start-session [<feature|issue>/<slug> | <session-id>] [--resume] [--no-open]`
 
 The CLI performs the whole start deterministically and prints one JSON document:
 the §11 window check from the session record (role `primary`, the default branch, a
-clean `git status --porcelain`); the capability checks of
-`agento.mjs doctor --for start-session` (§10); a bounded `git fetch origin` in the
+clean `git status --porcelain`); the §10 capability checks for start-session; a
+bounded `git fetch origin` in the
 product clone and, in companion mode, the companion clone; the session ID (generated
 `YYYYMMDD-HHMMSS` with `-2`, `-3` suffixes in plan mode) or the roadmap resolution
 and branch ownership (build mode); `git worktree add` for each missing half (plan:

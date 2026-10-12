@@ -328,6 +328,17 @@ the named command's `Needs:` line requires and echoes them as `for.needs`;
 `model-profile` is informational, never part of a `--for` run: `ok` with no plugin
 clone at `--plugin-root`, nothing pinned, or a named profile applied, `warn` on an
 invalid profiles file, `custom` pins, the BYOK tier conflict, or unqualified pins),
+`preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
+`/agento` command in one call: `{ status, command, opId, subject, receipt,
+preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
+`session` is `session`, `doctor` is `doctor --for <command>`, `resolve` is `resolve
+<type> <slug>` (`find <slug>` for a bare slug; `null` without one), `config` is
+`config`, `window` is the §11 verdict `{ role, required { roles, branch, clean,
+slugRoles }, match, reason, allowed, elsewhere }` from the CLI's `WINDOW_ROLES` table,
+`opId` the §9 operation ID `<command>:<subject>:<short-sha>`, and `receipt` /
+`preflightLines` the §9 receipt and preflight lines ready to print; a window mismatch
+or a hard doctor `fail` is `status: "rejected"` with the rejected receipt, exit 3;
+warn checks become `preflightLines`, exit 0),
 `dashboard [--pr] [--plugin-root <dir>]` (everything the VS Code extension renders
 in one process: `{ status: "ok", session, doctor, deliveries, initiatives: { list,
 details: { <slug>: … } }, metrics, timings, root, configSource }`, where `session` is
@@ -390,13 +401,13 @@ document; exit 0 = usable result (`doctor`: `ok` or `warn`; `next`: `ok` or `non
 2 = `release` still `pending` or `dispatch-required` (rerun, or dispatch once),
 3 = resolution failure
 (`missing`, `conflict`, `branch-mismatch`, `invalid` breakdown, `doctor` `fail`,
-`metrics` `missing`,
+`preflight` `rejected`, `metrics` `missing`,
 `next` `ambiguous | blocked | unsupported | missing`, `models` `not-found | invalid |
 dirty | failed`, `release` `gh-missing | auth | unknown-sha | gh-error`),
 4 = `release` `failed` or `no-run`,
-1 = usage error. Every window-sensitive command runs `session` first and compares
-`role` with its `Window check per §11: requires role …` line (policy §11); a mismatch
-is a `rejected` receipt listing the record's alternatives.
+1 = usage error. Every command opens with `preflight <command>`, whose `window`
+verdict compares `role` with its `Window check per §11: requires role …` line (policy
+§11); a mismatch is a `rejected` receipt listing the record's alternatives.
 
 ### Mirrored artifact branches (companion mode)
 
@@ -483,8 +494,8 @@ proceeds, arguments unchanged, without asking for confirmation — per
 Every command opens with one receipt line and closes with one result line, in the
 fixed spellings defined once in `delivery-policy.instructions.md` §9 (execution
 receipts). The receipt names a deterministic operation ID
-(`<command>:<subject>:<short-sha>`); a rejection lists the alternatives from
-`agento.mjs session`; the result names the resulting state and the concrete next
+(`<command>:<subject>:<short-sha>`); a rejection lists the alternatives from the
+session record; `agento.mjs preflight` returns both ready to print; the result names the resulting state and the concrete next
 command. Re-sending any command is safe: §9's idempotency table says, per command,
 what a duplicate submission does, all derived from git + roadmap state. Every
 `/agento …` command the user is asked to run — the result's `next:`, handoff and
@@ -501,8 +512,9 @@ when a soft need is absent). Hard needs (`terminal`; `gh` and `network` for anyt
 that pushes or touches GitHub) missing produce a rejection receipt naming the
 fallback instead of a half-started command; soft needs (`ask-questions`, `browser`,
 `code`) missing add one `Preflight:` line and the command proceeds with
-the standard fallback. Commands that need `gh`, `code`, or `network` run
-`agento.mjs doctor --for <name>` before their first write; `/agento doctor` runs the
+the standard fallback. Every command opens with one `agento.mjs preflight <name>`
+call that runs the `doctor --for <name>` checks with the window check and the slug
+resolution; `/agento doctor` runs the
 same checks on demand and only reports — installs and logins stay with the user.
 
 ## The standard flow
