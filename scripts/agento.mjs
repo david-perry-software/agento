@@ -2321,6 +2321,14 @@ const SHIP_EXIT = { ok: 0, pending: 2, rejected: 3, blocked: 3, failed: 3 };
 const SHIP_PR_FIELDS = "number,state,isDraft,mergeStateStatus,mergeable,url,title,body,mergeCommit,baseRefName";
 const WAIT_FOR_CHECKS = path.join(PLUGIN_ROOT, "scripts", "wait-for-checks.sh");
 
+// scripts/wait-for-checks.sh in the foreground, bounded by the caller's seconds budget.
+function waitForChecks(kind, target, cwd, { repo = null, maxSeconds = 50 } = {}) {
+  const args = [WAIT_FOR_CHECKS, kind, String(target), "--max-seconds", String(Math.max(0, maxSeconds)), "--interval", "10", ...(repo ? ["--repo", repo] : [])];
+  const result = spawnSync("bash", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GH_PROMPT_DISABLED: "1" } });
+  const lines = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.split("\n").filter(Boolean);
+  return { code: result.status ?? 3, last: lines.at(-1) ?? (result.error?.message ?? "wait-for-checks.sh produced no output") };
+}
+
 function shipArgs() {
   const type = requireType(rest[0]);
   const slug = requireSlug(rest[1]);
@@ -2637,13 +2645,7 @@ function ship() {
     if (!result.ok) fail("gh-error", `gh repo view --json nameWithOwner in ${cwd}: ${result.stderr}`);
     return result.stdout;
   };
-  // scripts/wait-for-checks.sh in the foreground, bounded by the remaining budget.
-  const waitForChecks = (kind, target, cwd, { repo = null } = {}) => {
-    const args = [WAIT_FOR_CHECKS, kind, String(target), "--max-seconds", String(remainingSeconds()), "--interval", "10", ...(repo ? ["--repo", repo] : [])];
-    const result = spawnSync("bash", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GH_PROMPT_DISABLED: "1" } });
-    const lines = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.split("\n").filter(Boolean);
-    return { code: result.status ?? 3, last: lines.at(-1) ?? (result.error?.message ?? "wait-for-checks.sh produced no output") };
-  };
+  const waitChecks = (kind, target, cwd, opts = {}) => waitForChecks(kind, target, cwd, { ...opts, maxSeconds: remainingSeconds() });
   const pending = (atPhase, message) => finish({ status: "pending", phase: atPhase, message, next: [shipCommand(atPhase === "checks" ? confirm : null)] });
   const ghFailure = (result, what) => {
     if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
@@ -2754,7 +2756,7 @@ function ship() {
       companionPr.isDraft = false;
       act("companion-pr-ready", `companion PR #${companionPr.number} marked ready for review`);
     }
-    const checks = waitForChecks("pr", pr.number, root);
+    const checks = waitChecks("pr", pr.number, root);
     if (checks.code === 2) pending("checks", `PR #${pr.number}: ${checks.last}`);
     if (checks.code === 1) {
       reopen(["checks-failed"]);
@@ -2792,7 +2794,7 @@ function ship() {
       if (!ready.ok) companionFail(`gh pr ready ${companionPr.number}: ${ready.stderr}`);
       act("companion-pr-ready", `companion PR #${companionPr.number} marked ready for review`);
     }
-    const checks = waitForChecks("pr", companionPr.number, artifactsClone, { repo: nameWithOwner(artifactsClone) });
+    const checks = waitChecks("pr", companionPr.number, artifactsClone, { repo: nameWithOwner(artifactsClone) });
     if (checks.code === 2) pending("merge-companion", `companion PR #${companionPr.number}: ${checks.last}`);
     if (checks.code !== 0) companionFail(`wait-for-checks.sh pr ${companionPr.number}: ${checks.last}`);
     const merge = ghRun(artifactsClone, ["pr", "merge", String(companionPr.number), "--merge"], 120000);
@@ -2887,7 +2889,7 @@ function ship() {
       }
       out.release.run = { id: run.databaseId, event: "workflow_dispatch", status: run.status ?? null, conclusion: run.conclusion ?? null, url: run.url ?? null, headSha: null };
       if (run.status !== "completed") {
-        const follow = waitForChecks("run", run.databaseId, root);
+        const follow = waitChecks("run", run.databaseId, root);
         if (follow.code === 2) pending("release", `release run ${run.url ?? run.databaseId}: ${follow.last}`);
         if (follow.code === 1) fail("release-failed", `release run ${run.url ?? run.databaseId} failed: ${follow.last}`);
         if (follow.code !== 0) fail("gh-auth", `wait-for-checks.sh run ${run.databaseId}: ${follow.last}`, { reauth: "gh auth login" });
@@ -2976,7 +2978,7 @@ function ship() {
       act("post-ship-pr", `opened PR #${postPr.number} for ${postBranch} (${postPr.url})`);
     }
     out.postShip.pr = prSummary(postPr);
-    const checks = waitForChecks("pr", postPr.number, checkout, external ? { repo: nameWithOwner(checkout) } : {});
+    const checks = waitChecks("pr", postPr.number, checkout, external ? { repo: nameWithOwner(checkout) } : {});
     if (checks.code === 2) pending("epilogue", `post-ship PR #${postPr.number}: ${checks.last}`);
     if (checks.code === 1) fail("post-ship-checks-failed", `post-ship PR #${postPr.number} has a failing required check (${checks.last})`);
     if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${postPr.number}: ${checks.last}`, { reauth: "gh auth login" });
