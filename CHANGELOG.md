@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Added.** `agento.mjs preflight <command> [<type> <slug>]` returns the opening of
+  every `/agento` command in one call: the session record, the §11 window verdict
+  (from a new `WINDOW_ROLES` table in `scripts/session-state.mjs`), `doctor --for
+  <command>`, the slug's resolution, the config, the §9 operation ID, and the
+  receipt and preflight lines ready to print (exit 3 on a window mismatch or a hard
+  doctor `fail`). Every prompt and agent now opens with that one call instead of
+  separate `session`, `doctor --for`, `resolve`, and `git rev-parse` round-trips;
+  policy §9–§11 describe it, and a customizations test keeps `WINDOW_ROLES` in
+  agreement with every window check line. `doctor --for` stays available standalone
+
 - **Changed.** The delivery policy is no longer always-on. A new ≤ 40-line
   `.github/instructions/agento-core.instructions.md` (`applyTo: "**"`) carries the
   policy pointer, the work boundary, secrets, git musts, the receipt one-liner, and

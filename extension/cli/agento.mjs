@@ -21,6 +21,7 @@
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
+//   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
@@ -48,13 +49,13 @@ import {
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
 import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
-import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
+import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 30);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 31);
   emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
@@ -3048,6 +3049,99 @@ function doctorDocument(command = null) {
   return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
 }
 
+// What `config` emits.
+function configDocument() {
+  return {
+    status: "ok",
+    root,
+    repoName,
+    configSource: source,
+    pluginRoot: PLUGIN_ROOT,
+    currentBranch,
+    artifactsRoot,
+    config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: primaryWorktreesDir() } },
+  };
+}
+
+// --- preflight: the §9–§11 opening of every command in one call ---------------
+
+// §9 operation ID `<command>:<subject>:<short-sha>`: the slug when one was passed;
+// else the managed session id; else the branch; else, detached and unmanaged, HEAD.
+function opIdFor(command, slug, worktree) {
+  const subject = slug ?? (worktree.isManaged && worktree.dirPrefix && worktree.id ? `${worktree.dirPrefix}-${worktree.id}` : !worktree.detached && worktree.branch ? worktree.branch : "HEAD");
+  const sha = git(root, "rev-parse", "--short", "HEAD") || "HEAD";
+  return { subject, opId: `${command}:${subject}:${sha}` };
+}
+
+function preflightArgs() {
+  const command = rest[0];
+  if (!command) usage(`preflight needs a command; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+  if (!COMMAND_NEEDS[command]) usage(`preflight: unknown command ${command}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+  const args = rest.slice(1);
+  if (args.length > 2) usage(`preflight takes <command> [<type> <slug> | <type>/<slug> | <slug>], got ${JSON.stringify(rest.join(" "))}`);
+  if (args.length === 2) return { command, type: requireType(args[0]), slug: requireSlug(args[1]) };
+  const typed = args[0]?.match(/^(feature|issue)\/(.*)$/);
+  if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]) };
+  return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null };
+}
+
+// `resolve <type> <slug>`, or `find <slug>` when no type was passed.
+function resolveDocument(type, slug) {
+  if (type) {
+    const { result, layout } = resolveWithLayout(type, slug);
+    return { ...withLayout(result, layout), root, configSource: source };
+  }
+  const found = ["feature", "issue"]
+    .map((t) => {
+      const { result, layout } = resolveWithLayout(t, slug);
+      return { type: t, ...withLayout(result, layout) };
+    })
+    .filter((r) => r.status !== "missing");
+  if (found.length === 0) return { status: "missing", message: `No roadmap for slug ${slug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin.`, root, configSource: source };
+  if (found.length > 1) return { status: "conflict", candidates: found, message: `Slug ${slug} exists as both a feature and an issue; specify the type.`, root, configSource: source };
+  return { ...found[0], root, configSource: source };
+}
+
+// The §9 receipt and preflight lines, spelled exactly as the policy does.
+function receiptLines({ opId, window, doctor }) {
+  if (!window.match) {
+    const alternatives = [...window.allowed, ...window.elsewhere.map((e) => `${e.command} (${e.window} window)`)];
+    return { status: "rejected", receipt: `Receipt: rejected — ${window.reason}; allowed: ${alternatives.length ? alternatives.join(", ") : "none"}`, preflightLines: [] };
+  }
+  const failed = doctor.checks.find((c) => c.status === "fail");
+  if (failed) return { status: "rejected", receipt: `Receipt: rejected — ${capabilityOf(failed.id)}: ${failed.detail}; fallback: ${failed.fallback}`, preflightLines: [] };
+  const preflightLines = doctor.checks.filter((c) => c.status === "warn").map((c) => `Preflight: ${capabilityOf(c.id)} warn — ${c.fallback}`);
+  return { status: "ok", receipt: `Receipt: accepted ${opId}`, preflightLines };
+}
+
+// What `preflight <command> [<type> <slug>]` emits: the session record, the §11
+// window verdict, `doctor --for <command>`, the slug's resolution (null without a
+// slug), the config document, and the §9 op-id, receipt, and preflight lines.
+function preflightDocument({ command, type, slug }) {
+  const session = sessionRecord();
+  const rule = WINDOW_ROLES[command];
+  const clean = rule.clean ? git(session.worktree.path, "status", "--porcelain") === "" : true;
+  const window = windowVerdict({ command, record: session, slug, clean, defaultBranch: config.branches.default });
+  const doctor = doctorDocument(command);
+  const { subject, opId } = opIdFor(command, slug, session.worktree);
+  const { status, receipt, preflightLines } = receiptLines({ opId, window, doctor });
+  return {
+    status,
+    command,
+    opId,
+    subject,
+    receipt,
+    preflightLines,
+    session,
+    window,
+    doctor,
+    resolve: slug ? resolveDocument(type, slug) : null,
+    config: configDocument(),
+    root,
+    configSource: source,
+  };
+}
+
 // --- metrics: git history only, never gh, never network ------------------------
 
 // Fixed diff output whatever the user's git config says (prefixes, colour, external diff, renames).
@@ -3209,36 +3303,18 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
 
 switch (command) {
   case "config":
-    emit({
-      status: "ok",
-      root,
-      repoName,
-      configSource: source,
-      pluginRoot: PLUGIN_ROOT,
-      currentBranch,
-      artifactsRoot,
-      config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: primaryWorktreesDir() } },
-    });
+    emit(configDocument());
     break;
 
   case "resolve": {
     const type = requireType(rest[0]);
     const slug = requireSlug(rest[1]);
-    const { result, layout } = resolveWithLayout(type, slug);
-    withExit(withLayout(result, layout));
+    withExit(resolveDocument(type, slug));
     break;
   }
 
   case "find": {
-    const slug = requireSlug(rest[0]);
-    const results = ["feature", "issue"].map((type) => {
-      const { result, layout } = resolveWithLayout(type, slug);
-      return { type, ...withLayout(result, layout) };
-    });
-    const found = results.filter((r) => r.status !== "missing");
-    if (found.length === 0) withExit({ status: "missing", message: `No roadmap for slug ${slug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin.` });
-    if (found.length > 1) withExit({ status: "conflict", candidates: found, message: `Slug ${slug} exists as both a feature and an issue; specify the type.` });
-    withExit(found[0]);
+    withExit(resolveDocument(null, requireSlug(rest[0])));
     break;
   }
 
@@ -3415,6 +3491,12 @@ switch (command) {
     const document = doctorDocument(options.for ?? null);
     // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
     emit(document, document.status === "fail" ? 3 : 0);
+    break;
+  }
+
+  case "preflight": {
+    const document = preflightDocument(preflightArgs());
+    emit(document, document.status === "ok" ? 0 : 3);
     break;
   }
 
