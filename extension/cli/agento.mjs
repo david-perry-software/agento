@@ -32,11 +32,12 @@
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
+import { hasAgentoWorkspaceWiring, loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import {
   closeBuildSessionDecision,
   completeRoadmap,
@@ -942,7 +943,72 @@ const DOCTOR_CHECKS = {
       fallback: `re-pin with \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\` or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\`; before a git pull that touches pinned files: clear, then git pull, then apply`,
     };
   },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  "hook-wiring"() {
+    if (!hasAgentoWorkspaceWiring(root)) return { status: "ok", detail: "no Agento workspace-mode hook wiring in this repository", fallback: null };
+    const file = vscodeSettingsPath();
+    let settings;
+    try {
+      settings = parseJsonc(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+      return { status: "ok", detail: `workspace-mode hook wiring present; ${file} unreadable (${error.code ?? error.message}), plugin registration unknown`, fallback: null };
+    }
+    const locations = settings?.["chat.pluginLocations"];
+    const common = gitCommonDir(root);
+    const registered = common && locations && typeof locations === "object" && !Array.isArray(locations)
+      ? Object.entries(locations).filter(([dir, on]) => on === true && gitCommonDir(expandHome(dir)) === common).map(([dir]) => dir)
+      : [];
+    if (!registered.length) return { status: "ok", detail: `workspace-mode hook wiring present; this repository is not registered in chat.pluginLocations (${file})`, fallback: null };
+    return {
+      status: "warn",
+      detail: `${registered.join(", ")} (this repository) is registered in chat.pluginLocations (${file}): plugin-mode and workspace-mode hooks both fire — SessionStart is deduplicated, the delivery guard runs twice; a per-workspace plugin disable is not visible to the CLI`,
+      fallback: "disable the Agento plugin for this workspace (Extensions → Agent Plugins – Installed) in each worktree window, or remove the clone from chat.pluginLocations (docs/install.md)",
+    };
+  },
 };
+
+// VS Code's user settings.json; AGENTO_VSCODE_SETTINGS overrides the platform default.
+function vscodeSettingsPath(env = process.env) {
+  if (env.AGENTO_VSCODE_SETTINGS) return env.AGENTO_VSCODE_SETTINGS;
+  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Code", "User", "settings.json");
+  return path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "Code", "User", "settings.json");
+}
+
+const expandHome = (dir) => (dir === "~" || dir.startsWith("~/") ? path.join(os.homedir(), dir.slice(1)) : dir);
+
+function gitCommonDir(dir) {
+  const common = git(dir, "rev-parse", "--path-format=absolute", "--git-common-dir");
+  if (!common) return "";
+  try {
+    return fs.realpathSync(common);
+  } catch {
+    return common;
+  }
+}
+
+// JSON with // and /* */ comments and trailing commas, as VS Code writes settings.json.
+function parseJsonc(text) {
+  let out = "";
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (ch === "/" && text[i + 1] === "/") {
+      while (i + 1 < text.length && text[i + 1] !== "\n") i += 1;
+    } else if (ch === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end === -1 ? text.length : end + 1;
+    } else if (ch === "," && /^\s*[}\]]/.test(text.slice(i + 1).replace(/^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/, ""))) {
+      continue;
+    } else {
+      out += ch;
+    }
+  }
+  return JSON.parse(out);
+}
 
 // A root still holds artifacts when any file other than the scaffold's .gitkeep is under it.
 function holdsArtifacts(base) {
@@ -1031,7 +1097,7 @@ function runDoctor(ids) {
 }
 
 // The checks that run no external probe (doctorProbes) and so need no network.
-const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"];
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring"];
 
 // --- initiatives -----------------------------------------------------------
 
