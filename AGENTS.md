@@ -10,9 +10,10 @@ delivery system. Layout:
   Autopilot, Mechanic).
 - `.github/prompts/` — the slash commands (`/agento continue` performs the one
   transition `agento.mjs next` derives by following the dispatched command's files).
-- `.github/instructions/` — the shared delivery policy (single source of the rules;
-  agents cite `§N`), the artifact format contract, the skills-first policy, and the
-  concurrent-delivery mechanics.
+- `.github/instructions/` — the always-on core (`agento-core`: the policy pointer,
+  the safety musts, and the canonical command spelling), the shared delivery policy
+  (single source of the rules, loaded on demand; agents cite `§N`), the artifact
+  format contract, the skills-first policy, and the concurrent-delivery mechanics.
 - `.github/hooks/` — workspace-mode hook wiring (relative `./scripts/hooks` paths)
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,

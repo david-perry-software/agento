@@ -7,6 +7,7 @@ agent: "agent"
 Needs: terminal, gh, network
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
 Review the current Git changes in this repository, commit them with the best
 possible commit message, and publish that commit through the protected pull-request

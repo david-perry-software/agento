@@ -23,6 +23,22 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+// Agento's own workspace-mode SessionStart wiring is present at `root`: the
+// `.github/hooks/session-start.json` entry running ./scripts/hooks/session-context.sh plus that script.
+export function hasAgentoWorkspaceWiring(root) {
+  try {
+    const wiring = JSON.parse(fs.readFileSync(path.join(root, ".github", "hooks", "session-start.json"), "utf8"));
+    const entries = wiring?.hooks?.SessionStart;
+    return (
+      Array.isArray(entries) &&
+      entries.some((entry) => entry?.command === "./scripts/hooks/session-context.sh") &&
+      fs.statSync(path.join(root, "scripts", "hooks", "session-context.sh")).isFile()
+    );
+  } catch {
+    return false;
+  }
+}
+
 function mergeConfig(base, override) {
   const merged = { ...base };
   for (const [key, value] of Object.entries(override)) {

@@ -42,6 +42,17 @@ validated. From a managed product worktree `<kind>-<id>` whose companion half
 its branch, and the roadmaps are walked there; the primary and an unpaired worktree
 still name the clone. With `artifacts.repo` unset the output is byte-identical to before.
 
+In plugin mode the hook stays silent when the session repository carries Agento's own
+workspace-mode wiring (`.github/hooks/session-start.json` running
+`./scripts/hooks/session-context.sh`, plus that script) — the Agento clone and its
+worktrees while the clone is also registered in `chat.pluginLocations`. The
+workspace-mode run emits the context once; without the dedupe every chat got two
+blocks. Plugin mode is recognised by `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT` in the
+hook's environment, which VS Code sets only for plugin hooks. Caveat: if workspace
+hooks do not run (an untrusted workspace) while the wiring file exists, neither run
+injects context; `agento.mjs doctor` reports the double registration as its
+`hook-wiring` check. The PreToolUse guard is not deduplicated.
+
 ## PreToolUse — `scripts/hooks/delivery-guard.sh`
 
 **What it is:** a slip guard for an LLM operator. It pattern-matches the shell text

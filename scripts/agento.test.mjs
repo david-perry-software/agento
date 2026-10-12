@@ -78,6 +78,8 @@ delete baseEnv.CODESPACES;
 delete baseEnv.GITHUB_ACTIONS;
 // Never read the real ~/.config/agento/model-profiles.json.
 baseEnv.AGENTO_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-config-home-"));
+// Never read the real VS Code user settings (doctor hook-wiring).
+baseEnv.AGENTO_VSCODE_SETTINGS = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-settings.json");
 
 function runWith({ cwd, env }, ...args) {
   const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
@@ -1433,14 +1435,14 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports eight checks and includes session-workspace and model-profile", () => {
+test("doctor reports nine checks and includes session-workspace, model-profile, and hook-wiring", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   const { code, json } = runWith({ cwd: repo, env }, "doctor");
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1553,7 +1555,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -3083,6 +3085,56 @@ test("doctor --for models needs only the terminal checks", () => {
   assert.equal(code, 0);
   assert.deepEqual(json.for, { command: "models", needs: ["terminal"] });
   assert.deepEqual(json.checks.map((c) => c.id), ["node", "worktrees-dir", "session-workspace", "artifact-repo"]);
+});
+
+test("doctor hook-wiring: ok without wiring, unregistered, false, or unreadable settings; warn when the clone is registered", () => {
+  const repo = makeRepo();
+  const settings = path.join(path.dirname(repo), "vscode-settings.json");
+  const env = { ...restrictedPath(okStubs).env, AGENTO_VSCODE_SETTINGS: settings };
+  const check = (cwd = repo) => byId(runWith({ cwd, env }, "doctor").json)["hook-wiring"];
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [repo]: true } }));
+  assert.deepEqual(check(), { id: "hook-wiring", status: "ok", detail: "no Agento workspace-mode hook wiring in this repository", fallback: null });
+
+  fs.mkdirSync(path.join(repo, ".github", "hooks"), { recursive: true });
+  fs.writeFileSync(
+    path.join(repo, ".github", "hooks", "session-start.json"),
+    JSON.stringify({ hooks: { SessionStart: [{ type: "command", command: "./scripts/hooks/session-context.sh", timeout: 10 }] } }),
+  );
+  fs.mkdirSync(path.join(repo, "scripts", "hooks"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "scripts", "hooks", "session-context.sh"), "#!/usr/bin/env bash\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "workspace wiring");
+
+  // JSONC as VS Code writes it: comments and trailing commas.
+  fs.writeFileSync(settings, `{\n  // user settings\n  "chat.pluginLocations": {\n    ${JSON.stringify(repo)}: true, /* the clone */\n  },\n  "editor.tabSize": 2,\n}\n`);
+  const warn = check();
+  assert.equal(warn.status, "warn");
+  assert.match(warn.detail, new RegExp(`^${escape(repo)} \\(this repository\\) is registered in chat\\.pluginLocations \\(${escape(settings)}\\): `));
+  assert.match(warn.detail, /SessionStart is deduplicated.*not visible to the CLI/);
+  assert.match(warn.fallback, /Agent Plugins – Installed.*chat\.pluginLocations/);
+
+  // A linked worktree of the registered clone shares its git common directory.
+  const wt = path.join(path.dirname(repo), "wt-hook");
+  git(repo, "worktree", "add", "-q", "-b", "feature/hook", wt);
+  const fromWorktree = check(wt);
+  assert.equal(fromWorktree.status, "warn");
+  assert.match(fromWorktree.detail, new RegExp(`^${escape(repo)} \\(this repository\\)`));
+
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [repo]: false, "/elsewhere/plugin": true } }));
+  const off = check();
+  assert.equal(off.status, "ok");
+  assert.match(off.detail, /not registered in chat\.pluginLocations/);
+
+  fs.writeFileSync(settings, "{}");
+  assert.match(check().detail, /not registered in chat\.pluginLocations/);
+
+  fs.rmSync(settings);
+  const unreadable = check();
+  assert.equal(unreadable.status, "ok");
+  assert.match(unreadable.detail, /unreadable \(ENOENT\), plugin registration unknown$/);
+  assert.equal(unreadable.fallback, null);
 });
 
 // --- release ---------------------------------------------------------------------

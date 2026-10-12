@@ -37,7 +37,13 @@ and they are the only wiring whose `./scripts/hooks/…` paths resolve inside a
 worktree. If the clone must stay registered because it serves other repositories,
 disable the plugin per workspace from the Extensions view → **Agent Plugins –
 Installed** → context menu on Agento (or the Agent Customizations editor) — in each
-worktree window too.
+worktree window too. While both wirings are active, the plugin-mode SessionStart hook
+stays silent so the session context arrives once, but the delivery guard still runs
+twice. `agento.mjs doctor` reports this as its informational `hook-wiring` check:
+`warn` when `chat.pluginLocations` in your VS Code user settings maps this clone (or
+any checkout sharing its git directory) to `true`. It cannot see a per-workspace
+disable, so the warning stays until the clone is unregistered; `doctor --for` never
+runs it. `AGENTO_VSCODE_SETTINGS` overrides the settings path.
 
 ## Option B — install from source
 

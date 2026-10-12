@@ -47,8 +47,17 @@ flowchart TD
   dependency-gated initiative intake, the Builder's work loop and verification
   gates, review scoring, autopilot orchestration, and the mechanic that maintains
   the system itself.
-- **Instructions** (`.github/instructions/`) are always-on contracts. The
-  **delivery policy** (`delivery-policy.instructions.md`, `applyTo: "**"`) is the
+- **Instructions** (`.github/instructions/`) are contracts. Only two apply to every
+  request (`applyTo: "**"`): the **always-on core** (`agento-core.instructions.md`,
+  ≤ 40 lines — where the policy lives and when to read it, the work boundary,
+  secrets, git musts, the receipt one-liner, and the canonical spelling and redirect
+  rule for slash commands: `/agento <name>`; old forms are read as the canonical
+  command and proceed without confirmation) and **ai-skills** (the skills-first
+  policy). The **delivery policy** (`delivery-policy.instructions.md`) is loaded on
+  demand: every agent and every built-in-agent command reads it once through an
+  explicit `Policy: read <agento-root>/…` line (VS Code does not follow instruction
+  links by default), and it auto-attaches only while Agento's own agents, prompts,
+  commands, and instructions are edited. It is the
   single source for the rules every role shares — who does the work, verification
   targets, manual/post-ship steps and evidence, the lint gate, shell hygiene, git
   rules, the cross-window handoff, and execution receipts with per-command
@@ -65,10 +74,7 @@ flowchart TD
   cite its numbered sections
   (`§2`) instead of restating them, and a test fails if a rule is spelled out twice.
   The **artifact contract** holds only formats; **concurrent-delivery** holds only
-  mechanics (ports, previews, shared resources, integration recipes); **ai-skills**
-  is the skills-first policy; **command-invocation** is the canonical spelling and
-  redirect rule for slash commands (`/agento <name>`; old forms are read as the
-  canonical command and proceed without confirmation).
+  mechanics (ports, previews, shared resources, integration recipes).
 - **Hooks** run outside the model. `session-context.sh` injects branch, resumable
   work, and the Agento CLI path at session start; `delivery-guard.sh` can
   `allow`/`ask`/`deny` any tool call (default-branch protection, force-push and hook

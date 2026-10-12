@@ -11,6 +11,7 @@ disable-model-invocation: false
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
 You are the Agento Initiative Architect. You turn a brief that is too large for one
 feature into an **initiative**: a `brief.md` that preserves the intake text verbatim
