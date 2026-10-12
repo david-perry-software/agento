@@ -65,14 +65,15 @@ as an unintegrated diff, and /agento ship — running in the primary window with
 context — inherits the conflicts. Keep the diff small instead (substitute the
 configured `branches.default` for `main` throughout):
 
-- **Before every push** of a roadmap step: `git fetch origin`; if `origin/main` is
-  not an ancestor of `HEAD` (`git merge-base --is-ancestor origin/main HEAD` fails),
-  `git merge origin/main` into the branch first (never rebase), resolve conflicts with
-  the step's context fresh, rerun the step's `verify:`, then push. In companion mode
-  repeat it for the companion half on the same step: `git -C <companion.path> fetch
-  origin`, then `git -C <companion.path> merge origin/<default>` when the companion's
-  default is not an ancestor of the half's HEAD, before pushing the half — the
-  companion PR must stay mergeable alongside the code PR.
+- **Before every push** of a roadmap step: `origin/main` must be an ancestor of
+  `HEAD` — merged in (never rebased), conflicts resolved with the step's context
+  fresh, and the step's `verify:` rerun before the push. In companion mode the same
+  holds for the companion half and the companion's `origin/<default>`, so the
+  companion PR stays mergeable alongside the code PR. The Builder does all of this
+  with its `agento.mjs step-commit` call (which stops with `reverify` after a default
+  merge, before pushing) and its `agento.mjs sync` call at resume and completion; a
+  reported `integration-conflict` is resolved by hand with the recipes below, then
+  the call is re-sent.
 - **Before setting `status: in-review`** and again **before /agento ship marks the PR ready**,
   the branch must contain `origin/main` (and, in companion mode, the companion branch
   must contain the companion's `origin/<default>`). Check `gh pr view <n> --json

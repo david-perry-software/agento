@@ -349,6 +349,38 @@ test("only the ship prompt and its mirror reference agento.mjs ship", () => {
   for (const label of allowed) assert.match(fs.readFileSync(rel(...label.split("/")), "utf8"), /agento\.mjs ship\b(?!-preflight)/, `${label} must call agento.mjs ship`);
 });
 
+test("the Builder integrates through one agento.mjs sync call and commits through one agento.mjs step-commit call with no hand-run fallback", () => {
+  const body = splitFrontmatter(rel(".github", "agents", "delivery-builder.agent.md")).body;
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs sync\s+<type> <slug>/);
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs step-commit <type>\s+<slug> \[--step N\.M\] --message-file -/);
+  for (const [pattern, why] of [
+    [/git (?:-C \S+ )?push\b/, "step-commit and sync push"],
+    [/git -C <companion\.path> (?:commit|fetch|merge)/, "step-commit commits and integrates the companion half"],
+    [/merge-base --is-ancestor/, "the CLI checks ancestry"],
+    [/gh pr create/, "step-commit opens the draft PRs"],
+    [/git fetch origin/, "sync and step-commit fetch"],
+  ]) {
+    assert.doesNotMatch(body, pattern, `${why}; the Builder must not (${pattern})`);
+  }
+});
+
+test("only the Builder agent references agento.mjs step-commit and agento.mjs sync", () => {
+  // The two subcommands commit and push on a delivery branch outside the guard's
+  // sight; any other caller would bypass the Builder's roadmap discipline.
+  const allowed = new Set([".github/agents/delivery-builder.agent.md"]);
+  const offenders = [];
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+    const label = path.relative(repoRoot, file);
+    if (allowed.has(label)) continue;
+    if (/agento\.mjs (?:step-commit|sync)\b/.test(fs.readFileSync(file, "utf8"))) offenders.push(label);
+  }
+  for (const file of instructionFiles) {
+    const label = path.relative(repoRoot, file);
+    if (/(?:node |scripts\/)[^\n]*agento\.mjs (?:step-commit|sync)\b/.test(fs.readFileSync(file, "utf8"))) offenders.push(`${label} (runs it)`);
+  }
+  assert.deepEqual(offenders, [], `files that reference agento.mjs step-commit or sync outside the Builder:\n${offenders.join("\n")}`);
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). start-session, close-session,
   // and ship delegate to agento.mjs but stay listed: §11 lets the commands that create
