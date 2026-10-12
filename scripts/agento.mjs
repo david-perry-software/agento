@@ -1966,6 +1966,36 @@ function removeSessionPair({ halves, workspace = null, branches = { product: nul
   return out;
 }
 
+// --- shared integration helpers (ship, sync, step-commit) -------------------
+
+// Result-returning, never emitting: each caller reports a failure in its own contract.
+function fetchOrigin(dir) {
+  const result = gitRun(dir, ["fetch", "--prune", "origin"]);
+  if (result.ok) return { ok: true };
+  const url = originOf(dir);
+  const auth = !result.timedOut && classifyFetchFailure(result.stderr) === "auth";
+  const stderr = result.stderr.split("\n")[0];
+  return { ok: false, auth, url, stderr, reauth: auth ? reauthFor(url) : null, message: `git -C ${dir} fetch --prune origin: ${stderr}` };
+}
+
+// `merge --no-edit`, never a rebase; a conflict is aborted and reported with its files.
+function mergeRef(dir, ref) {
+  const merge = gitRun(dir, ["merge", "--no-edit", ref], 120000);
+  if (merge.ok) return { ok: true, merged: !/Already up to date/.test(merge.stdout) };
+  const conflicts = git(dir, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
+  gitRun(dir, ["merge", "--abort"]);
+  return { ok: false, conflicts, clean: git(dir, "status", "--porcelain") === "", stderr: merge.stderr.split("\n")[0] };
+}
+
+// A plain push, never forced; `-u` only when the caller asks for it.
+function pushRef(dir, refspec, { setUpstream = false } = {}) {
+  const args = ["push", ...(setUpstream ? ["-u"] : []), "origin", refspec];
+  const result = gitRun(dir, args, 120000);
+  if (result.ok) return { ok: true };
+  const auth = classifyFetchFailure(result.stderr) === "auth";
+  return { ok: false, reason: auth ? "push-auth" : "push-failed", reauth: auth ? reauthFor(originOf(dir)) : null, message: `git -C ${dir} ${args.join(" ")}: ${result.stderr.split("\n")[0]}` };
+}
+
 // --- ship ------------------------------------------------------------------
 
 const SHIP_EXIT = { ok: 0, pending: 2, rejected: 3, blocked: 3, failed: 3 };
@@ -2062,13 +2092,10 @@ function ship() {
   const fetch = (dir, label) => {
     if (fetched.has(path.resolve(dir))) return;
     fetched.add(path.resolve(dir));
-    const result = gitRun(dir, ["fetch", "--prune", "origin"]);
+    const result = fetchOrigin(dir);
     if (result.ok) return;
-    const url = originOf(dir);
-    if (!result.timedOut && classifyFetchFailure(result.stderr) === "auth") {
-      fail("fetch-auth", `git -C ${dir} fetch --prune origin: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(url) });
-    }
-    out.warnings.push(`fetch: ${label} ${url ?? "origin"} not fetched (${result.stderr.split("\n")[0]}); continuing from local refs`);
+    if (result.auth) fail("fetch-auth", result.message, { reauth: result.reauth });
+    out.warnings.push(`fetch: ${label} ${result.url ?? "origin"} not fetched (${result.stderr}); continuing from local refs`);
   };
   fetch(primary, "product");
   if (artifacts.external) fetch(artifactsRoot, "companion");
@@ -2272,22 +2299,18 @@ function ship() {
     restores.push(() => gitRun(clone, ["switch", back || layout.config.branches.default]));
   };
   const integrate = (dir, defaultRef, label) => {
-    const merge = gitRun(dir, ["merge", "--no-edit", defaultRef], 120000);
+    const merge = mergeRef(dir, defaultRef);
     if (merge.ok) {
-      if (!/Already up to date/.test(merge.stdout)) act("integrate", `${label}: merged ${defaultRef} into ${branch} at ${dir}`);
+      if (merge.merged) act("integrate", `${label}: merged ${defaultRef} into ${branch} at ${dir}`);
       return;
     }
-    gitRun(dir, ["merge", "--abort"]);
-    const clean = git(dir, "status", "--porcelain") === "";
+    const { clean, conflicts } = merge;
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
-    reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr.split("\n")[0]}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, next: [out.rejectTo.command] });
+    reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, conflicts, next: [out.rejectTo.command] });
   };
   const push = (dir, label, refspec = branch) => {
-    const result = gitRun(dir, ["push", "origin", refspec], 120000);
-    if (!result.ok) {
-      if (classifyFetchFailure(result.stderr) === "auth") fail("push-auth", `git -C ${dir} push origin ${refspec}: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(originOf(dir)) });
-      fail("push-failed", `git -C ${dir} push origin ${refspec}: ${result.stderr.split("\n")[0]}`);
-    }
+    const result = pushRef(dir, refspec);
+    if (!result.ok) fail(result.reason, result.message, result.reauth ? { reauth: result.reauth } : {});
     act("push", `${label}: pushed ${refspec} from ${dir}`);
   };
   const nameWithOwner = (cwd) => {
