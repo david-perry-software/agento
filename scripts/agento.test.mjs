@@ -1629,6 +1629,113 @@ test("doctor --for runs only the command's declared checks and reports its needs
   assert.match(unknown.json.message, /unknown command nope/);
 });
 
+// --- preflight -------------------------------------------------------------------
+
+test("preflight returns the named sections, the op-id, and an accepted receipt in one call", () => {
+  const { repo } = makeWorktreeRepo();
+  const { env } = restrictedPath(okStubs);
+  const sha = git(repo, "rev-parse", "--short", "HEAD");
+  const { code, json } = runWith({ cwd: repo, env }, "preflight", "delivery-status");
+  assert.equal(code, 0);
+  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "session", "window", "doctor", "resolve", "config", "root", "configSource"]);
+  assert.equal(json.status, "ok");
+  assert.equal(json.command, "delivery-status");
+  assert.equal(json.subject, "main");
+  assert.equal(json.opId, `delivery-status:main:${sha}`);
+  assert.equal(json.receipt, `Receipt: accepted delivery-status:main:${sha}`);
+  assert.deepEqual(json.preflightLines, []);
+  // Each section is the standalone subcommand's document.
+  const { worktrees, ...session } = json.session;
+  const { worktrees: standaloneWorktrees, ...standalone } = run(repo, "session").json;
+  assert.deepEqual(session, standalone);
+  assert.deepEqual(json.doctor, runWith({ cwd: repo, env }, "doctor", "--for", "delivery-status").json);
+  assert.deepEqual(json.config, run(repo, "config").json);
+  assert.equal(json.resolve, null);
+  assert.deepEqual(json.window, { role: "primary", required: { roles: ["any"], branch: null, clean: false, slugRoles: [] }, match: true, reason: null, allowed: json.session.allowed, elsewhere: json.session.elsewhere });
+  assert.match(run(repo).json.usage.join("\n"), /preflight <command> \[<type> <slug> \| <slug>\]/);
+});
+
+test("preflight rejects a window mismatch with the §9 receipt and the record's alternatives (exit 3)", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const { env } = restrictedPath(okStubs);
+  const wrong = runWith({ cwd: repo, env }, "preflight", "new-feature");
+  assert.equal(wrong.code, 3);
+  assert.equal(wrong.json.status, "rejected");
+  assert.equal(wrong.json.window.match, false);
+  assert.equal(wrong.json.window.reason, `wrong window: role=primary (${repo}, branch main)`);
+  const alternatives = [...wrong.json.session.allowed, ...wrong.json.session.elsewhere.map((e) => `${e.command} (${e.window} window)`)];
+  assert.equal(wrong.json.receipt, `Receipt: rejected — wrong window: role=primary (${repo}, branch main); allowed: ${alternatives.join(", ")}`);
+  assert.deepEqual(wrong.json.preflightLines, []);
+
+  // §11 step 5 branch conditions: on the default branch; clean; on a work branch.
+  assert.equal(runWith({ cwd: repo, env }, "preflight", "start-session").code, 0);
+  assert.match(runWith({ cwd: repo, env }, "preflight", "commit-current-changes").json.window.reason, /^primary checkout must be on a work branch, not main/);
+  fs.writeFileSync(path.join(repo, "scratch.txt"), "wip\n");
+  const dirty = runWith({ cwd: repo, env }, "preflight", "quick-fix");
+  assert.equal(dirty.code, 3);
+  assert.match(dirty.json.receipt, /^Receipt: rejected — primary checkout is dirty \(/);
+  fs.rmSync(path.join(repo, "scratch.txt"));
+  git(repo, "switch", "-q", "-c", "changes/tidy");
+  assert.match(runWith({ cwd: repo, env }, "preflight", "new-initiative").json.window.reason, /^primary checkout not on main/);
+  assert.equal(runWith({ cwd: repo, env }, "preflight", "commit-current-changes").code, 0);
+  git(repo, "switch", "-q", "main");
+
+  // A build window: the slug must be this window's delivery.
+  const build = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", build);
+  writeRoadmap(build, "features/2026/09/widget", "status: in-progress\nbranch: feature/widget\nnext-step: \"1.2\"");
+  const sha = git(build, "rev-parse", "--short", "HEAD");
+  const own = runWith({ cwd: build, env }, "preflight", "build-feature", "feature", "widget");
+  assert.equal(own.code, 0);
+  assert.equal(own.json.opId, `build-feature:widget:${sha}`);
+  assert.equal(own.json.resolve.status, "ok");
+  assert.equal(own.json.resolve.branch, "feature/widget");
+  const other = runWith({ cwd: build, env }, "preflight", "review-feature", "feature", "gadget");
+  assert.equal(other.code, 3);
+  assert.equal(other.json.window.reason, `wrong window: this build window holds widget, not gadget (${build}, branch feature/widget)`);
+  assert.equal(other.json.resolve.status, "missing");
+  // A bare slug resolves type-agnostically (find); no slug means no resolve and the session id as subject.
+  const bare = runWith({ cwd: build, env }, "preflight", "ap", "widget").json;
+  assert.equal(bare.resolve.type, "feature");
+  assert.equal(bare.resolve.status, "ok");
+  assert.deepEqual(runWith({ cwd: build, env }, "preflight", "ap", "feature/widget").json.resolve.status, "ok");
+  const blank = runWith({ cwd: build, env }, "preflight", "build-feature").json;
+  assert.equal(blank.status, "ok");
+  assert.equal(blank.resolve, null);
+  assert.equal(blank.subject, "feature-widget");
+  assert.equal(blank.opId, `build-feature:feature-widget:${sha}`);
+});
+
+test("preflight turns doctor warn into preflight lines (exit 0) and a hard fail into the capability receipt (exit 3)", () => {
+  const { repo } = makeWorktreeRepo();
+  const sha = git(repo, "rev-parse", "--short", "HEAD");
+  const noCode = runWith({ cwd: repo, env: restrictedPath({ gh: okStubs.gh }).env }, "preflight", "start-session");
+  assert.equal(noCode.code, 0);
+  assert.equal(noCode.json.status, "ok");
+  assert.equal(noCode.json.doctor.status, "warn");
+  assert.equal(noCode.json.receipt, `Receipt: accepted start-session:main:${sha}`);
+  assert.deepEqual(noCode.json.preflightLines, ["Preflight: code warn — keep the worktree and print `code --new-window <worktree-path>` for the user to run"]);
+
+  const noGh = runWith({ cwd: repo, env: restrictedPath({ code: okStubs.code }).env }, "preflight", "ship");
+  assert.equal(noGh.code, 3);
+  assert.equal(noGh.json.status, "rejected");
+  assert.equal(noGh.json.window.match, true);
+  assert.equal(noGh.json.receipt, "Receipt: rejected — gh: gh CLI not found on PATH; fallback: install GitHub CLI (https://cli.github.com) — the user installs it; the agent does not");
+  assert.deepEqual(noGh.json.preflightLines, []);
+  // A terminal-only command never probes gh, so it is unaffected.
+  assert.equal(runWith({ cwd: repo, env: restrictedPath({ code: okStubs.code }).env }, "preflight", "close-session").code, 0);
+});
+
+test("preflight usage errors exit 1", () => {
+  const repo = makeRepo();
+  for (const args of [["preflight"], ["preflight", "nope"], ["preflight", "ap", "Bad_Slug"], ["preflight", "ap", "thing", "x"], ["preflight", "ap", "feature", "a", "b"]]) {
+    const { code, json } = run(repo, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error");
+  }
+  assert.match(run(repo, "preflight", "nope").json.message, /unknown command nope/);
+});
+
 // Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).
 function makeWorktreeRepo() {
   const repo = makeRepo({ config: { worktrees: { dir: "../wt" } } });
