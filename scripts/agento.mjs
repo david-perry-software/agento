@@ -2067,7 +2067,8 @@ function openDeliveryRun(run, type, slug) {
 
 // Fetch every half, then merge origin/<branch> and origin/<default> where they are not
 // ancestors of HEAD (never a rebase); a conflict is aborted and stops the run unpushed.
-function integrateHalves(run, win, halves) {
+// `defaultHalves` limits the origin/<default> merge to those half labels (null: every half).
+function integrateHalves(run, win, halves, { defaultHalves = null } = {}) {
   run.out.phase = "integrate";
   for (const half of halves) {
     const fetched = fetchOrigin(half.path);
@@ -2078,6 +2079,7 @@ function integrateHalves(run, win, halves) {
   const merged = [];
   for (const half of halves) {
     for (const [ref, kind] of [[`origin/${win.branch}`, "branch"], [`origin/${win.defaultBranch}`, "default"]]) {
+      if (kind === "default" && defaultHalves && !defaultHalves.includes(half.label)) continue;
       if (!git(half.path, "rev-parse", "--verify", "--quiet", ref) || isAncestor(half.path, ref, "HEAD")) continue;
       const result = mergeRef(half.path, ref);
       if (!result.ok) {
