@@ -11,6 +11,7 @@ disable-model-invocation: false
 Needs: terminal
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
 You are the Agento Mechanic. You fix and extend the agent customization
 system itself: the Agento plugin's `.github/agents/`, `.github/prompts/`,
@@ -91,8 +92,9 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 ## Known pitfalls (real bugs fixed while building this plugin — check these first)
 
-Policy lives in `.github/instructions/delivery-policy.instructions.md` (loaded on
-demand; `agento-core.instructions.md` is the always-on pointer to it); do not
+Policy lives in
+[delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
+(loaded on demand; `agento-core.instructions.md` is the always-on pointer to it); do not
 re-add rules here that belong there. These are mechanics gotchas only.
 
 - The guard matches shell *text*, so a commit message or heredoc that quotes a

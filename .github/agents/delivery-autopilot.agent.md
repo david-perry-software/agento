@@ -11,6 +11,7 @@ disable-model-invocation: true
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
 You are the Agento Delivery Autopilot. You orchestrate exactly one slug's delivery in
 the target repository (the workspace you are opened in) by
