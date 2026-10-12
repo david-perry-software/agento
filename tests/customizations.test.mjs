@@ -613,7 +613,11 @@ test("guidance never writes a command with a .prompt or .md suffix (agento-init.
   const suffixedCommand = new RegExp(
     `(?:/agento\\s+|(?<![\\w.-])/)(?:${commandNames.join("|")})\\.(?:prompt\\.md|prompt|md)\\b`,
   );
-  const allowlist = new Set(["CHANGELOG.md", ".github/instructions/command-invocation.instructions.md"]);
+  const allowlist = new Set([
+    "CHANGELOG.md",
+    ".github/instructions/command-invocation.instructions.md",
+    ".github/instructions/agento-core.instructions.md",
+  ]);
   for (const file of [...guidanceFiles, rel("CHANGELOG.md")]) {
     const label = path.relative(repoRoot, file);
     if (allowlist.has(label)) continue;
