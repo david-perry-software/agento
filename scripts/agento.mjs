@@ -2627,12 +2627,84 @@ function publishPr() {
       run.act("pr-create", `opened PR #${pr.number} for ${branch} (${pr.url})`);
     }
     out.pr = prSummary(pr);
-    out.phase = "done";
-    finish({ outcome: "opened" });
+    if (!options.merge) {
+      out.phase = "done";
+      finish({ outcome: "opened" });
+    }
+
+    // checks: a BEHIND PR takes the default by merge (never a rebase), then the bounded wait.
+    out.phase = "checks";
+    if (pr.mergeStateStatus === "BEHIND" && !isAncestor(checkout, defaultRef, "HEAD")) {
+      const merged = mergeRef(checkout, defaultRef);
+      if (!merged.ok) {
+        const files = merged.conflicts.length ? merged.conflicts.join(", ") : "(no paths reported)";
+        run.reject("integration-conflict", { conflicts: merged.conflicts, message: `merging ${defaultRef} into ${branch} at ${checkout} conflicts in ${files} (${merged.stderr || "merge failed"}); the merge was aborted${merged.clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; nothing was merged — resolve it by hand, push, and re-send`, fix: `git -C ${checkout} merge ${defaultRef}` });
+      }
+      run.act("integrate", `merged ${defaultRef} into ${branch} at ${checkout}`);
+      push();
+    }
+    let repoArg = null;
+    if (repo === "companion") {
+      const nwo = ghRun(checkout, ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], 15000);
+      if (!nwo.ok) ghFail(nwo, `gh repo view --json nameWithOwner in ${checkout}`);
+      repoArg = nwo.stdout;
+    }
+    const checks = waitForChecks("pr", pr.number, checkout, { repo: repoArg, maxSeconds: options.wait ?? 50 });
+    const resend = `node <agento-root>/scripts/agento.mjs publish-pr ${process.argv.slice(3).map((a) => (/^[\w./:@=-]+$/.test(a) ? a : JSON.stringify(a))).join(" ")}`.trim();
+    if (checks.code === 2) finish({ status: "pending", message: `PR #${pr.number}: ${checks.last}`, next: [resend] });
+    if (checks.code === 1) finish({ status: "blocked", reason: "checks-failed", message: `PR #${pr.number} has a failing required check (${checks.last}); nothing was merged — fix it on ${branch}, push, and re-send` });
+    if (checks.code !== 0) run.fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
+
+    // merge: a normal merge commit through the ruleset; never --admin, --squash, --rebase, or --auto.
+    out.phase = "merge";
+    const merge = ghRun(checkout, ["pr", "merge", String(pr.number), "--merge"], 120000);
+    if (!merge.ok) ghFail(merge, `gh pr merge ${pr.number} --merge`);
+    run.act("merge", `PR #${pr.number} merged into ${defaultBranch} with a merge commit`);
+    pr = prLookup() ?? pr;
   }
   out.pr = prSummary(pr);
+  out.mergeSha = pr.mergeCommit?.oid ?? null;
+
+  // delete-branch: the remote branch goes once merged; already gone is a warning.
+  out.phase = "delete-branch";
+  if (gitRun(checkout, ["ls-remote", "--exit-code", "--heads", "origin", branch]).ok) {
+    const del = gitRun(checkout, ["push", "origin", "--delete", branch], 60000);
+    if (del.ok) run.act("delete-branch", `origin/${branch} deleted`);
+    else out.warnings.push(`delete-branch: git push origin --delete ${branch} failed (${del.stderr.split("\n")[0]})`);
+  }
+
+  // sync: the default fast-forwarded and the merged branch deleted — except in a linked
+  // worktree, which keeps its branch until /agento close-session removes it.
+  out.phase = "sync";
+  gitRun(checkout, ["fetch", "--prune", "origin"]);
+  out.sync = { switched: false, fastForwarded: false, branchDeleted: false, skipped: null };
+  if (linked) {
+    out.sync.skipped = `linked worktree ${checkout} stays on ${branch}; /agento close-session removes it and deletes the merged branch`;
+    out.next = [`/agento close-session ${branch}`];
+  } else {
+    if (git(checkout, "branch", "--show-current") !== defaultBranch) {
+      const sw = gitRun(checkout, ["switch", defaultBranch]);
+      if (!sw.ok) run.fail("sync-failed", `git -C ${checkout} switch ${defaultBranch}: ${sw.stderr.split("\n")[0]}; switch by hand, then re-send`);
+      out.sync.switched = true;
+      run.act("switch", `switched ${checkout} to ${defaultBranch}`);
+    }
+    const before = git(checkout, "rev-parse", "HEAD");
+    const ff = gitRun(checkout, ["merge", "--ff-only", defaultRef], 120000);
+    if (!ff.ok) run.fail("sync-failed", `git -C ${checkout} merge --ff-only ${defaultRef}: ${ff.stderr.split("\n")[0]}; reconcile ${defaultBranch} by hand, then re-send`);
+    if (git(checkout, "rev-parse", "HEAD") !== before) {
+      out.sync.fastForwarded = true;
+      run.act("sync", `${defaultBranch} fast-forwarded to ${defaultRef} at ${checkout}`);
+    }
+    if (git(checkout, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
+      const deletion = gitRun(checkout, ["branch", "-d", branch]);
+      if (deletion.ok) {
+        out.sync.branchDeleted = true;
+        run.act("delete-local-branch", `local ${branch} deleted at ${checkout}`);
+      } else out.warnings.push(`delete-local-branch: git branch -d ${branch} failed: ${deletion.stderr.split("\n")[0]}`);
+    }
+  }
   out.phase = "done";
-  finish({ outcome: "already-merged" });
+  finish({ outcome: out.actions.some((a) => a.step === "merge") ? "merged" : "already-merged" });
 }
 
 // --- ship ------------------------------------------------------------------
