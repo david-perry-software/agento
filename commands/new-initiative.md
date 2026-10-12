@@ -40,8 +40,11 @@ Window check per §11: requires role `primary` on the default branch, clean.
    artifact contract, with no checkboxes.
 7. Validate with `agento.mjs initiative <slug>` → `status: ok`, every member
    `unplanned`, `next` as intended.
-8. Commit, push with upstream, open a PR to `main`, wait for required checks with the
-   bounded poller, merge through the ruleset, delete the branch, and return to a
+8. Commit, then publish with one `node <agento-root>/scripts/agento.mjs publish-pr
+   --title "docs(initiative): add <slug> breakdown" --body-file - --merge` call (with
+   `--dir <artifactsRoot>` in companion mode), re-sent from its `next[]` on exit 2:
+   it pushes, opens the PR to `main`, waits for required checks within its bounded
+   budget, merges through the ruleset, deletes the branch, and returns to a
    synchronized `main`.
 9. Report the slug, PR number, features by wave, `next`, and the follow-up
    `/agento next-feature <slug>`.
@@ -52,10 +55,8 @@ the default branch. It does not authorize planning any member feature or creatin
 worktrees. In companion mode (`agento.mjs config` reports `artifactsRoot` different
 from `root` — `artifacts.repo.name` or `.dir` set; the session record's `companion`
 is `null` in the primary window and is not the trigger) all of that happens in the
-companion clone at `artifactsRoot` — `git -C <artifactsRoot>` and `gh` run from
-inside the clone (`cd <artifactsRoot> && gh …`) or with `--repo <companion-repo>`
-derived there via `gh repo view --json nameWithOwner -q .nameWithOwner`; never
-`artifacts.repo.name`, a directory basename, as the `--repo` value — and the product
+companion clone at `artifactsRoot` — `git -C <artifactsRoot>` for the branch and the
+commit, and `--dir <artifactsRoot>` on the `publish-pr` call — and the product
 checkout is not touched.
 
 If the argument is empty, ask for the brief (text or file path) and stop.

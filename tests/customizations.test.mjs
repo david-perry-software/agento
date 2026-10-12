@@ -459,6 +459,22 @@ test("commit-current-changes, quick-fix, and finish-freehand publish through one
   assert.match(splitFrontmatter(rel(".github", "prompts", "finish-freehand.prompt.md")).body, /returns `\/agento close-session changes\/<slug>` in `next\[\]`/);
 });
 
+test("the Architect, new-initiative, and triage-followups publish through one agento.mjs publish-pr call (--dir in companion mode) with no hand-run fallback", () => {
+  assertMirrors(["new-initiative", "triage-followups"]);
+  const call = /node <agento-root>\/scripts\/agento\.mjs publish-pr --title "[^"]+" --body-file - --merge/;
+  assertOneCall([rel(".github", "agents", "initiative-architect.agent.md"), rel(".github", "prompts", "new-initiative.prompt.md"), rel("commands", "new-initiative.md"), rel(".github", "prompts", "triage-followups.prompt.md"), rel("commands", "triage-followups.md")], call);
+  for (const file of [rel(".github", "agents", "initiative-architect.agent.md"), rel(".github", "prompts", "new-initiative.prompt.md"), rel(".github", "prompts", "triage-followups.prompt.md")]) {
+    const text = fs.readFileSync(file, "utf8");
+    assert.match(text.replace(/\s+/g, " "), /`--dir <artifactsRoot>`/, `${path.relative(repoRoot, file)}: companion mode passes --dir <artifactsRoot>`);
+    assert.doesNotMatch(text, /--repo <companion-repo>/, `${path.relative(repoRoot, file)}: publish-pr derives the companion repository itself`);
+  }
+});
+
+test("only the five flows' prompts, their mirrors, and the Architect reference agento.mjs publish-pr", () => {
+  const prompts = ["commit-current-changes", "quick-fix", "finish-freehand", "new-initiative", "triage-followups"];
+  assertOnlyReferencedBy("publish-pr", new Set([...prompts.flatMap((n) => [`.github/prompts/${n}.prompt.md`, `commands/${n}.md`]), ".github/agents/initiative-architect.agent.md"]));
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). start-session, close-session,
   // and ship delegate to agento.mjs but stay listed: §11 lets the commands that create

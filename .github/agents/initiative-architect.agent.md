@@ -49,15 +49,12 @@ preflight's `config` section → `config.artifacts.initiatives`, default `initia
 trigger `/agento start-session`, `/agento close-session`, and `/agento ship` use; the
 session record's `companion` is `null` in the primary window by design and is not the
 trigger): the initiative files live in the companion clone at `artifactsRoot` (its
-`artifacts.initiatives` root), never in the product checkout. The branch, commit, PR,
-and merge in steps 5, 7, and 8 all happen in that clone — `git -C <artifactsRoot>`
-for every git command and, for every `gh` command, either run it from inside the
-clone (`cd <artifactsRoot> && gh …`, which infers the repository from `origin`) or
-pass `--repo <companion-repo>` where `<companion-repo>` is derived once with `cd
-<artifactsRoot> && gh repo view --json nameWithOwner -q .nameWithOwner`.
-`artifacts.repo.name` is the companion directory's basename, never a `gh --repo`
-value. The product checkout stays on `main`, untouched. The in-repo layout
-(`artifactsRoot` equal to `root`) keeps the single-repo flow below.
+`artifacts.initiatives` root), never in the product checkout. The branch and commit
+in steps 5 and 8 happen in that clone (`git -C <artifactsRoot>` for every git
+command), and step 8's `publish-pr` call takes `--dir <artifactsRoot>` so the PR,
+wait, merge, and sync run against the companion repository. The product checkout
+stays on `main`, untouched. The in-repo layout (`artifactsRoot` equal to `root`)
+keeps the single-repo flow below.
 
 ## Procedure
 
@@ -117,20 +114,19 @@ value. The product checkout stays on `main`, untouched. The in-repo layout
    the breakdown (unknown `Requires:` slugs, cycles, duplicate blocks, wrong waves)
    until it does; never commit a breakdown the CLI rejects.
 8. **Publish.** One Conventional Commit (`docs(initiative): add <slug> breakdown`)
-   containing only the two files; push with upstream; open a PR to `main` whose body
-   lists the member features by wave and the intended `next`. Wait for every required
-   check with `scripts/wait-for-checks.sh pr <n>` in the foreground (exit 2 = still
-   pending: rerun it). If `main` advanced meanwhile, merge `origin/main` into the
-   branch (never rebase), push, and wait again. Failing checks are a resumable
-   blocker — report the PR and stop. Then merge with a normal merge commit through
-   the ruleset (no admin, no squash, no rebase), delete the branch, switch to `main`,
-   fetch, fast-forward, and confirm a clean tree with zero ahead/behind. Companion
-   mode: every one of these commands runs in the companion clone (`git -C
-   <artifactsRoot> …`, `gh pr create --repo <companion-repo> …`,
-   `scripts/wait-for-checks.sh pr <n> --repo <companion-repo>`, `gh pr merge
-   --repo <companion-repo> …`, with `<companion-repo>` derived as above), the PR
-   targets the companion's default branch, and the clone ends back on that default,
-   clean, with zero ahead/behind.
+   containing only the two files, then one `node <agento-root>/scripts/agento.mjs
+   publish-pr --title "docs(initiative): add <slug> breakdown" --body-file - --merge`
+   call (companion mode: with `--dir <artifactsRoot>`) whose body, on stdin, lists
+   the member features by wave and the intended `next`. It pushes with upstream,
+   opens or reuses the PR to the default branch, waits for every required check
+   within its bounded budget, merges the default into the branch when it falls
+   behind (never a rebase), merges with a normal merge commit through the ruleset
+   (no admin, no squash, no rebase), deletes the branch, switches the checkout back
+   to the default branch, and fast-forwards it. Exit 2 (`status: pending`) means
+   checks are still running: re-send the identical call from its `next[]`. Exit 3
+   stops: failing checks (`checks-failed`) are a resumable blocker — report the PR
+   and stop; otherwise report `message` and `reauth`. Confirm the checkout ends on
+   its default branch, clean, with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
    the §9 result line's `next:` command, emitted as its own block per policy §12:
