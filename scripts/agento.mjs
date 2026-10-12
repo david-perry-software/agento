@@ -18,6 +18,7 @@
 //   node scripts/agento.mjs ship <feature|issue> <slug> [--confirm <token>] [--wait N]   (audit → --confirm → ready, checks, merge, companion merge, sync, release wait, teardown, epilogue; resumes from git + GitHub state; exit 0 ok, 2 pending, 3 rejected/blocked/failed)
 //   node scripts/agento.mjs sync <feature|issue> <slug>   (build window: fetch both halves, merge origin/<branch> then origin/<default> where not ancestors — never rebase; a conflict aborts with its files, nothing pushed; push halves left ahead, product first; merged: true → re-verify; exit 0 ok, 3 rejected/failed)
 //   node scripts/agento.mjs step-commit <feature|issue> <slug> [--step N.M] --message-file <file|->   (build window: product commit, then the companion tick scoped to the slug dir; roadmap rule; integrate both defaults — exit 2 reverify when one merged; push product then companion; open missing draft PRs; end clean with ahead 0)
+//   node scripts/agento.mjs plan-publish <feature|issue> <slug>   (planning window on the roadmap branch: commit the slug dir (docs(delivery|<type>): plan, or revise plan); companion mode opens the product branch with one empty commit; integrate, push product then companion, open the draft PRs, cross-link, artifact-pr:; never readies or merges; exit 0 ok, 3 rejected/failed)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs metrics [<slug>]           (phase durations, review rounds, pauses, merge date, post-ship latency from git history; + aggregate medians)
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
@@ -2015,14 +2016,14 @@ const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The slug's build window (§11) on the roadmap's branch in every half; never the
 // default branch, never detached — the guard cannot see the git this CLI runs.
-function buildWindow(type, slug) {
+function buildWindow(type, slug, command = `build-${type}`) {
   const record = sessionRecord();
-  const verdict = windowVerdict({ command: `build-${type}`, record, slug, defaultBranch: config.branches.default });
+  const verdict = windowVerdict({ command, record, slug, defaultBranch: config.branches.default });
   const base = { record, allowed: verdict.allowed, elsewhere: verdict.elsewhere, warnings: [...record.warnings] };
   const reject = (reason, message = reason) => ({ ok: false, reason, message, ...base });
   if (!verdict.match) return reject(verdict.reason);
   const { worktree, delivery, companion } = record;
-  if (delivery?.type !== type || !delivery.roadmap) return reject(`wrong window: this build window holds no roadmap for ${type}/${slug} (${worktree.path})`);
+  if (delivery?.type !== type || !delivery.roadmap) return reject(`wrong window: this ${record.role} window holds no roadmap for ${type}/${slug} (${worktree.path})`);
   const { branch } = delivery;
   const defaultBranch = config.branches.default;
   const halves = [{ label: "product", path: worktree.path, branch: worktree.branch, detached: worktree.detached }];
@@ -2055,9 +2056,9 @@ function deliveryRun(command, type, slug, fields) {
   };
 }
 
-// The window check shared by both subcommands; returns the halves as live result entries.
-function openDeliveryRun(run, type, slug) {
-  const win = buildWindow(type, slug);
+// The window check shared by the delivery subcommands; returns the halves as live result entries.
+function openDeliveryRun(run, type, slug, command = `build-${type}`) {
+  const win = buildWindow(type, slug, command);
   Object.assign(run.out, { allowed: win.allowed, elsewhere: win.elsewhere, warnings: win.warnings });
   if (!win.ok) run.reject(win.reason, { message: win.message });
   run.out.branch = win.branch;
@@ -2242,16 +2243,100 @@ function stepCommit() {
   }
   pushHalves(run, win, halves);
   ensureDeliveryPrs(run, win, { type, slug, commit, messageDir });
+  cleanHandoff(run, halves);
+  run.out.phase = "done";
+  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-pushed" });
+}
 
-  // Clean handoff: nothing uncommitted, nothing unpushed, in every half.
+// Clean handoff: nothing uncommitted, nothing unpushed, in every half.
+function cleanHandoff(run, halves) {
   run.out.phase = "check";
   const dirty = halves.map((h) => ({ half: h, tree: treeState(h.path) })).filter(({ tree }) => !tree || tree.tracked.length || tree.untracked.length || tree.ahead);
   if (dirty.length) {
     run.fail("not-clean", dirty.map(({ half, tree }) => `${half.label} half ${half.path}: ${tree ? `tracked ${tree.tracked.join(", ") || "none"}; untracked ${tree.untracked.join(", ") || "none"}; ahead ${tree.ahead}` : "unreadable"}`).join("; "), { paths: dirty.flatMap(({ tree }) => (tree ? [...tree.tracked, ...tree.untracked] : [])) });
   }
-  run.out.phase = "done";
-  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-pushed" });
 }
+
+// A temporary directory for commit messages, removed on exit.
+function messageScratch(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+// Every changed path in a half: tracked, untracked, and staged (a rename's origin too).
+function changedPaths(half) {
+  const tree = treeState(half.path);
+  const staged = git(half.path, "diff", "--cached", "--name-only", "--no-renames", "-z").split("\0").filter(Boolean);
+  return [...new Set([...(tree ? [...tree.tracked, ...tree.untracked] : []), ...staged])].sort();
+}
+
+// Reject changes outside the slug directory (artifact half) and any change in the other half.
+function rejectOutsideSlug(run, win, halves, artifactHalf) {
+  for (const half of halves) {
+    const paths = changedPaths(half);
+    const outside = half === artifactHalf ? paths.filter((p) => !p.startsWith(`${win.slugDir}/`)) : paths;
+    if (outside.length) run.reject("outside-slug", { half: half.label, paths: outside, message: `the ${half.label} half ${half.path} has changes outside ${half === artifactHalf ? `${win.slugDir}/` : "the delivery artifacts (it must be clean)"}: ${outside.join(", ")}; commit, move, or delete them, then re-send` });
+  }
+}
+
+// `add -A` and a plain commit (hooks run) limited to `pathspec`; null pathspec with `allowEmpty` makes an empty commit.
+function commitHalf(run, half, pathspec, file, { allowEmpty = false } = {}) {
+  if (pathspec) {
+    const add = gitRun(half.path, ["add", "-A", "--", pathspec]);
+    if (!add.ok) run.fail("stage-failed", `git -C ${half.path} add -A -- ${pathspec}: ${add.stderr}`);
+  }
+  const result = gitRun(half.path, ["commit", "-q", "-F", file, ...(allowEmpty ? ["--allow-empty"] : []), ...(pathspec ? ["--", pathspec] : [])], 300000);
+  if (!result.ok) run.fail("commit-failed", `git -C ${half.path} commit: ${result.stderr || result.stdout}; nothing was pushed — fix it and re-send`, { half: half.label });
+  const sha = git(half.path, "rev-parse", "HEAD");
+  const files = git(half.path, "show", "--name-only", "--format=", "HEAD").split("\n").filter(Boolean);
+  run.act("commit", `${half.label}: ${sha.slice(0, 7)} ${git(half.path, "log", "-1", "--format=%s")}${files.length ? ` (${files.join(", ")})` : ""}`);
+  return sha;
+}
+
+function writeMessage(dir, name, text) {
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, `${text}\n`);
+  return file;
+}
+
+// The Planner's publish: commit the plan, publish both halves, open the draft PRs.
+function planPublish() {
+  const { type, slug } = deliveryArgs("plan-publish");
+  const run = deliveryRun("plan-publish", type, slug, { commits: { product: null, companion: null }, integrated: [], pushed: [], pr: null, companionPr: null });
+  const { win, halves } = openDeliveryRun(run, type, slug, `new-${type}`);
+  const [product, companion = null] = halves;
+  const artifactHalf = companion ?? product;
+
+  run.out.phase = "validate";
+  for (const name of ["plan.md", "roadmap.md"]) {
+    if (!fs.existsSync(path.join(artifactHalf.path, win.slugDir, name))) run.reject("artifact-missing", { message: `${win.slugDir}/${name} is missing in the ${artifactHalf.label} half ${artifactHalf.path}; write plan.md and roadmap.md before publishing` });
+  }
+  const roadmapBranch = header(fs.readFileSync(path.join(artifactHalf.path, win.roadmapRel), "utf8"), "branch");
+  if (roadmapBranch !== win.branch) run.reject("branch-mismatch", { message: `${win.roadmapRel} names branch ${JSON.stringify(roadmapBranch)}, but the halves are on ${win.branch}` });
+  rejectOutsideSlug(run, win, halves, artifactHalf);
+
+  // Commits: the slug directory in the artifact half; companion mode opens the product branch empty.
+  run.out.phase = "commit";
+  const messageDir = messageScratch("agento-plan-publish-");
+  if (changedPaths(artifactHalf).length) {
+    const published = Boolean(git(artifactHalf.path, "ls-tree", "--name-only", "HEAD", "--", `${win.slugDir}/plan.md`));
+    const message = published ? `docs(${type}): revise plan ${slug}` : companion ? `docs(${type}): plan ${slug}` : `docs(delivery): plan ${slug}`;
+    run.out.commits[artifactHalf.label] = commitHalf(run, artifactHalf, win.slugDir, writeMessage(messageDir, "plan", message));
+  }
+  if (companion && (Number.parseInt(git(product.path, "rev-list", "--count", `origin/${win.defaultBranch}..HEAD`), 10) || 0) === 0) {
+    run.out.commits.product = commitHalf(run, product, null, writeMessage(messageDir, "open", `chore(${type}): open ${slug}`), { allowEmpty: true });
+  }
+  const committed = Boolean(run.out.commits.product || run.out.commits.companion);
+
+  run.out.integrated = integrateHalves(run, win, halves);
+  pushHalves(run, win, halves);
+  ensureDeliveryPrs(run, win, { type, slug, commit: (half, pathspec, file) => commitHalf(run, half, pathspec, file), messageDir });
+  cleanHandoff(run, halves);
+  run.out.phase = "done";
+  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-published" });
+}
+
 
 function ghFailOf(run) {
   return (result, what) => {
@@ -3850,6 +3935,11 @@ switch (command) {
 
   case "step-commit": {
     stepCommit();
+    break;
+  }
+
+  case "plan-publish": {
+    planPublish();
     break;
   }
 
