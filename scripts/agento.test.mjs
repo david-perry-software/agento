@@ -6644,3 +6644,145 @@ test("step-commit reports a gh authentication failure with the re-login command 
   const pushes = fs.readFileSync(log, "utf8").split("\n").filter((l) => / push /.test(` ${l} `));
   assert.deepEqual(pushes.map((l) => l.replace(/^-C \S+ /, "")), [`push origin refs/heads/${branch}:refs/heads/${branch}`]);
 });
+
+// --- plan-publish -------------------------------------------------------------------
+
+// A promoted planning worktree (in-repo) or pair (companion) on <type>/<slug> holding
+// unpublished plan.md and roadmap.md in the artifact half.
+function planningDelivery({ companion = false, type = "feature", slug = "widget", issue = null } = {}) {
+  const fixture = companion ? makePairRepo() : makeWorktreeRepo();
+  const id = "20261012-000000";
+  const branch = `${type}/${slug}`;
+  const product = path.join(fixture.wt, `plan-${id}`);
+  git(fixture.repo, "worktree", "add", "-q", "--detach", product, "origin/main");
+  git(product, "switch", "-q", "-c", branch);
+  let half = null;
+  if (companion) {
+    half = path.join(fixture.docsWt, `plan-${id}`);
+    git(fixture.docs, "worktree", "add", "-q", "--detach", half, "origin/main");
+    git(half, "switch", "-q", "-c", branch);
+    fs.writeFileSync(path.join(fixture.wt, `plan-${id}.code-workspace`), "{}\n");
+  }
+  const dir = `${type === "feature" ? "features" : "issues"}/2026/10/${slug}`;
+  const artifactHalf = half ?? product;
+  writeRoadmap(artifactHalf, dir, `status: planned\nbranch: ${branch}\nlast-updated: 2026-10-12\nnext-step: "1.1"${issue ? `\ngithub-issue: "#${issue}"` : ""}`);
+  fs.writeFileSync(path.join(artifactHalf, dir, "plan.md"), `# ${slug}\n`);
+  return { ...fixture, product, half, artifactHalf, branch, dir };
+}
+
+const planPublishRun = (cwd, env, type = "feature", slug = "widget") => runWith({ cwd, env }, "plan-publish", type, slug);
+const neverReadiesOrMerges = (stub) => assert.ok(stub.calls().every((c) => !/ pr (ready|merge)\b/.test(c)), stub.calls().join("\n"));
+
+test("plan-publish is listed in the usage header and validates its arguments", () => {
+  const { repo } = makeWorktreeRepo();
+  assert.match(run(repo).json.usage.join("\n"), /plan-publish <feature\|issue> <slug> /);
+  for (const args of [["plan-publish"], ["plan-publish", "feature"], ["plan-publish", "chore", "x"], ["plan-publish", "feature", "widget", "extra"]]) {
+    const { code, json } = run(repo, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+});
+
+test("plan-publish (companion): the plan commit in the half, one empty product commit, both draft PRs, the cross-link, and artifact-pr:; a re-send creates nothing; an edit is a revise commit", () => {
+  const d = planningDelivery({ companion: true });
+  const stub = shipStub();
+  const { code, json } = planPublishRun(d.product, stub.env);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "companion");
+  assert.equal(json.outcome, "committed");
+  assert.deepEqual(json.actions.map((a) => a.step), ["commit", "commit", "push", "push", "pr-create", "companion-pr-create", "pr-cross-link", "commit", "push"]);
+  assert.match(json.actions[0].detail, /^companion: [0-9a-f]{7} docs\(feature\): plan widget \(/);
+  assert.match(json.actions[1].detail, /^product: [0-9a-f]{7} chore\(feature\): open widget$/);
+  assert.match(json.actions[2].detail, /^product: pushed/);
+  assert.match(json.actions[3].detail, /^companion: pushed/);
+  assert.equal(git(d.product, "diff", "--name-only", "HEAD~1", "HEAD"), "", "the product commit is empty");
+  assert.equal(git(d.half, "log", "-1", "--format=%s", "HEAD~1"), "docs(feature): plan widget");
+  assert.equal(git(d.half, "log", "-1", "--format=%s"), "docs(feature): record artifact PR for widget");
+  const state = stub.state();
+  assert.equal(state.product.prs[d.branch].isDraft, true);
+  assert.equal(state.companion.prs[d.branch].isDraft, true);
+  assert.equal(state.companion.prs[d.branch].title, "docs(feature): widget");
+  assert.match(state.product.prs[d.branch].body, new RegExp(`^Plan: .*/blob/${d.branch}/${d.dir}/plan\\.md\\n\\nCompanion PR: ${state.companion.prs[d.branch].url}$`));
+  assert.equal(fs.readFileSync(path.join(d.half, d.dir, "roadmap.md"), "utf8").match(/^artifact-pr: "#\d+"$/gm).length, 1);
+  assert.equal(json.pr.number, state.product.prs[d.branch].number);
+  assert.equal(json.companionPr.number, state.companion.prs[d.branch].number);
+  cleanAndPushed(d.product, d.branch);
+  cleanAndPushed(d.half, d.branch);
+  neverReadiesOrMerges(stub);
+
+  stub.reset();
+  const heads = [git(d.product, "rev-parse", "HEAD"), git(d.half, "rev-parse", "HEAD")];
+  const again = planPublishRun(d.product, stub.env);
+  assert.equal(again.code, 0, JSON.stringify(again.json));
+  assert.equal(again.json.outcome, "already-published");
+  assert.deepEqual(again.json.actions, []);
+  assert.deepEqual([git(d.product, "rev-parse", "HEAD"), git(d.half, "rev-parse", "HEAD")], heads);
+  assert.ok(stub.calls().every((c) => !/ pr create| api /.test(c)), stub.calls().join("\n"));
+
+  fs.appendFileSync(path.join(d.half, d.dir, "plan.md"), "More detail.\n");
+  const revised = planPublishRun(d.product, stub.env);
+  assert.equal(revised.code, 0, JSON.stringify(revised.json));
+  assert.equal(revised.json.outcome, "committed");
+  assert.deepEqual(revised.json.actions.map((a) => a.step), ["commit", "push"]);
+  assert.equal(git(d.half, "log", "-1", "--format=%s"), "docs(feature): revise plan widget");
+  assert.equal(git(d.product, "rev-parse", "HEAD"), heads[0], "no second empty product commit");
+  assert.equal(Object.keys(stub.state().product.prs).length, 1);
+  assert.equal(Object.keys(stub.state().companion.prs).length, 1);
+  cleanAndPushed(d.half, d.branch);
+  neverReadiesOrMerges(stub);
+});
+
+test("plan-publish (in-repo): one docs(delivery) commit, the push, and a draft PR whose issue body starts with Fixes #<n>", () => {
+  const d = planningDelivery({ type: "issue", slug: "crash", issue: 42 });
+  const stub = shipStub();
+  const { code, json } = planPublishRun(d.product, stub.env, "issue", "crash");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "in-repo");
+  assert.deepEqual(json.actions.map((a) => a.step), ["commit", "push", "pr-create"]);
+  assert.equal(git(d.product, "log", "-1", "--format=%s"), "docs(delivery): plan crash");
+  assert.deepEqual(git(d.product, "show", "--name-only", "--format=", "HEAD").split("\n").sort(), [`${d.dir}/plan.md`, `${d.dir}/roadmap.md`]);
+  const pr = stub.state().product.prs[d.branch];
+  assert.equal(pr.isDraft, true);
+  assert.equal(pr.title, "crash");
+  assert.equal(pr.body, `Fixes #42\n\nPlan: ${d.dir}/plan.md`);
+  assert.equal(json.companionPr, null);
+  cleanAndPushed(d.product, d.branch);
+  neverReadiesOrMerges(stub);
+});
+
+test("plan-publish rejections write nothing: wrong window, detached or default-branch half, outside-slug changes, missing plan.md", () => {
+  const d = planningDelivery({ companion: true });
+  const stub = shipStub();
+  const snapshot = () => [refState(d.repo, d.docs), git(d.product, "status", "--porcelain", "--untracked-files=all"), git(d.half, "status", "--porcelain", "--untracked-files=all")];
+  const rejects = (cwd, reason, prepare = null, undo = null) => {
+    prepare?.();
+    const before = snapshot();
+    const { code, json } = planPublishRun(cwd, stub.env);
+    assert.equal(code, 3, `${reason}: ${JSON.stringify(json)}`);
+    assert.equal(json.status, "rejected", String(reason));
+    if (reason instanceof RegExp) assert.match(json.reason, reason);
+    else assert.equal(json.reason, reason);
+    assert.deepEqual(json.actions, [], String(reason));
+    assert.deepEqual(snapshot(), before, `${reason}: nothing written`);
+    undo?.();
+    return json;
+  };
+
+  rejects(d.repo, /^wrong window: role=primary /);
+  rejects(d.product, "detached-head", () => git(d.half, "switch", "-q", "--detach"), () => git(d.half, "switch", "-q", d.branch));
+  rejects(d.product, "default-branch", () => git(d.half, "checkout", "-q", "--ignore-other-worktrees", "main"), () => git(d.half, "checkout", "-q", d.branch));
+  const stray = path.join(d.half, "stray.md");
+  const strayJson = rejects(d.product, "outside-slug", () => fs.writeFileSync(stray, "x\n"), () => fs.rmSync(stray));
+  assert.deepEqual([strayJson.half, strayJson.paths], ["companion", ["stray.md"]]);
+  const code = path.join(d.product, "src.js");
+  const codeJson = rejects(d.product, "outside-slug", () => fs.writeFileSync(code, "x\n"), () => fs.rmSync(code));
+  assert.deepEqual([codeJson.half, codeJson.paths], ["product", ["src.js"]]);
+  const plan = path.join(d.half, d.dir, "plan.md");
+  const aside = path.join(os.tmpdir(), `agento-plan-${process.pid}.md`);
+  rejects(d.product, "artifact-missing", () => fs.renameSync(plan, aside), () => fs.renameSync(aside, plan));
+  assert.ok(stub.calls().every((c) => !/ pr create| api /.test(c)), stub.calls().join("\n"));
+
+  const accepted = planPublishRun(d.product, stub.env);
+  assert.equal(accepted.code, 0, JSON.stringify(accepted.json));
+  neverReadiesOrMerges(stub);
+});
