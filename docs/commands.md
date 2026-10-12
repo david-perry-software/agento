@@ -5,24 +5,24 @@
 | `/agento agento-init [--force] [--migrate]` | default | Scaffold Agento into the current project (companion artifact repository created and cloned, config, AGENTS.md section, CI poller); `--migrate` also moves an existing in-repo artifact tree into the companion through a companion PR and a product PR |
 | `/agento install-skills` | default | Detect the project stack, propose matching agent skills, install approved ones, update the AGENTS.md skills table |
 | `/agento start-session [type/slug \| session-id] [--resume] [--no-open]` | default | Create/resume an isolated sibling worktree + new VS Code window (plan mode or build mode); one `agento.mjs start-session` call does the work and the prompt only formats its JSON |
-| `/agento new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR |
-| `/agento new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test |
-| `/agento new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window |
+| `/agento new-feature <description>` | 📋 Agento Planner | Research, ask clarifying questions, write plan.md + roadmap.md, publish branch + draft PR through one `agento.mjs plan-publish` call |
+| `/agento new-issue <description>` | 📋 Agento Planner | Verify the defect, file a GitHub issue, plan with an exposing regression test, publish through one `agento.mjs plan-publish` call |
+| `/agento new-initiative <brief \| path>` | 🏛️ Agento Architect | Clarify and decompose a large brief into 2–8 independently shippable features; write `brief.md` + `breakdown.md`; publish through a merged PR from the primary window with one `agento.mjs publish-pr --merge` call |
 | `/agento next-feature <initiative-slug>` | default | Read-only report of an initiative's members (ready, blocked with `blockedBy`, in flight, complete, anomalies), the CLI's `next`, and the exact `/agento start-session` → `/agento new-feature initiative:<i>/<f>` commands to plan it |
 | `/agento build-feature <slug>` · `/agento build-issue <slug>` | 🔨 Agento Builder | Execute roadmap steps with verification; commit + push each step |
-| `/agento review-feature <slug>` · `/agento review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md |
+| `/agento review-feature <slug>` · `/agento review-issue <slug>` | 🔍 Agento Reviewer | Score the acceptance checklist, audit the roadmap, write review.md, publish it with one verdict comment through one `agento.mjs review-publish` call |
 | `/agento ap <slug>` | 🤖 Agento Autopilot | Unattended build → review → fix loop (stops at approve, manual steps, or auth failures — never ships) |
 | `/agento ship <slug>` | default | Acceptance gate: audit in place while the build worktree is open, reject back to that window on a real gap, else required checks green, merge PR, sync main, optional release workflow, tear the worktree down, post-ship epilogue; one `agento.mjs ship` state machine (audit → `--confirm <token>` → merge → companion merge → sync → release → teardown → epilogue) whose JSON the prompt formats and whose `pending` the prompt re-sends |
 | `/agento continue [<slug>]` | default | Derive the one legal next transition from the session record (`agento.mjs next`) and perform it: build, review, or ship here by following that command's own prompt and agent files, or open the worktree window that owns the next step and name the command for it; rejects with the choices when several deliveries are in flight |
 | `/agento close-session <session-id \| type/slug \| changes/slug> [--dry-run] [--ignore-occupants]` | default | Remove a plan/freehand worktree or abandon a build (ship tears down finished builds); one `agento.mjs close-session` call whose JSON the prompt formats |
-| `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, PR, checks, merge; refuses work that needs a plan |
+| `/agento quick-fix <description>` | default | Lite tier: small change in the current window — branch, implement, verify, commit, then one `agento.mjs publish-pr --merge` call (PR, checks, merge, sync); refuses work that needs a plan |
 | `/agento start-freehand <slug>` | default | Lightweight `changes/<slug>` worktree, no artifacts |
-| `/agento finish-freehand` | default | Commit, PR, merge freehand work |
-| `/agento commit-current-changes` | default | Commit everything on the current worktree, PR, merge |
+| `/agento finish-freehand` | default | Commit freehand work, then PR and merge through one `agento.mjs publish-pr --merge` call |
+| `/agento commit-current-changes` | default | Commit everything on the current worktree, then PR, merge, and sync through one `agento.mjs publish-pr --merge` call |
 | `/agento delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
 | `/agento doctor [--for <command>]` | default | Environment readiness: Node, git remote, gh auth, code CLI, worktrees dir — each with status and fallback; fixes nothing |
 | `/agento models [list \| show <name> \| apply <name> \| clear \| init]` | default | Pin agents and built-in-agent commands to models from a named profile in `~/.config/agento/model-profiles.json`; rewrites the plugin clone's `model:` lines under skip-worktree ([model-profiles.md](model-profiles.md)) |
-| `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` |
+| `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` and merge the annotations through one `agento.mjs publish-pr --merge` call |
 | `/agento extend-copilot` · `/agento fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
 
 Prompts never re-derive slug resolution or config lookups in prose; they call the
@@ -295,6 +295,59 @@ type, slug, branch, mode, step, commits { product, companion }, integrated[],
 pushed[], pr, companionPr, halves, conflicts, actions, reason, message, fix, reauth,
 allowed, elsewhere, warnings }`; a re-send resumes from git state — the guard cannot
 see this in-process git, so the CLI enforces the same rules),
+`plan-publish <type> <slug>` (the Planner's publish, from the planning window promoted
+onto the roadmap's branch — the `/agento new-<type>` window verdict, both halves on
+that branch, never the default branch or detached: requires plan.md and roadmap.md,
+rejects changes outside the slug directory as `outside-slug` (in companion mode the
+product half must be clean); commits the slug directory — `docs(delivery): plan
+<slug>` in-repo, `docs(<type>): plan <slug>` in the companion half, `docs(<type>):
+revise plan <slug>` on a later edit — and, in companion mode, one empty
+`chore(<type>): open <slug>` product commit when the product branch has none;
+integrates and pushes like `step-commit`, opens the same draft PRs, cross-link, and
+`artifact-pr:` header, and ends clean with `ahead: 0`; never readies or merges.
+Output adds `commits`, `integrated[]`, `pushed[]`, `pr`, `companionPr`; outcome
+`committed | pushed | already-published`; exit 0 ok, 3 rejected/failed),
+`review-publish <type> <slug> [--body-file <file|->]` (the Reviewer's publish, same
+window check as `step-commit`: review.md must open with `# Review: <slug>` and carry
+exactly one `Verdict: approve|request-changes` line (`review-missing`,
+`review-heading`, `verdict-invalid`), changes only inside the slug directory, and an
+open code PR (`pr-missing`, `pr-not-open`) — all checked before any write; commits
+`docs(<type>): review <slug> — <verdict>` in the artifact half, merges
+`origin/<branch>` into every half and `origin/<default>` into the companion half only
+(the reviewed code is not merged under the verdict), pushes, and upserts exactly one
+verdict comment on the code PR — `Verdict:`, the review.md link on the branch, the
+optional `--body-file` summary, and a hidden `<!-- agento:review <type>/<slug> -->`
+marker — found through the REST comments list by marker and author, then PATCHed or
+POSTed (never a second thread; a re-review edits it). Output adds `verdict`,
+`commits`, `integrated[]`, `pushed[]`, `pr`, `comment { id, url, action: posted |
+updated | unchanged }`; exit 0 ok, 3 rejected/failed),
+`publish-pr [--dir <path>] [--branch <name>] [--title <text>] [--body-file <file|->]
+[--merge] [--wait N]` (the push → PR → wait → merge → sync of `/agento
+commit-current-changes`, `/agento quick-fix`, `/agento finish-freehand`, `/agento
+new-initiative`, and `/agento triage-followups`, after the prompt's own commit:
+`--dir` (default: the current directory) must be a checkout of the product or the
+configured companion repository by `origin` URL (`unknown-repo`); refuses the default
+branch, a detached HEAD, and every configured feature, issue, and post-ship prefix
+(`delivery-branch` — those PRs merge only through `/agento ship`), tracked dirt
+(`dirty`), a branch with no commits beyond `origin/<default>`
+(`nothing-to-publish`), and a `--body-file` inside the checkout; pushes with a full
+refspec (`-u` on the first push, never forced), reuses or opens a non-draft PR, and
+without `--merge` stops with `outcome: opened`; with `--merge` merges
+`origin/<default>` into a `BEHIND` branch (a conflict aborts as
+`integration-conflict` with `conflicts[]`), waits with `wait-for-checks.sh` bounded
+by `--wait` (0–60, default 50; `--repo` for a companion checkout) — `status:
+pending`, exit 2, with the identical re-send in `next[]`; a failing check is
+`blocked` / `checks-failed` with nothing merged — then `gh pr merge <n> --merge`
+(never `--admin`, `--squash`, `--rebase`, or `--auto`), deletes the remote branch,
+and syncs: a primary checkout or the companion clone switches to the default,
+fast-forwards, and deletes the merged local branch; a linked worktree stays on its
+branch and returns the session-closing handoff for that branch in `next[]`. A re-send after the
+merge — on the branch, or from the default with `--branch <name>` — resumes at
+delete-branch and sync. `gh` and push authentication failures carry `reauth`.
+Output `{ status: ok | pending | rejected | blocked | failed, phase, outcome: opened
+| merged | already-merged, checkout { path, repo, linked, defaultBranch }, branch,
+merge, pr, mergeSha, sync { switched, fastForwarded, branchDeleted, skipped },
+conflicts, actions, reason, message, fix, reauth, next[], warnings }`),
 `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
