@@ -7,6 +7,7 @@ agent: "agent"
 Needs: terminal, ask-questions, browser, gh, code, network
 Fallback: ask-questions, browser, code → §10 standard fallbacks (the dispatched command's own soft needs apply once it runs)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
 Continue the delivery lifecycle from wherever it stands. The Agento CLI derives the
 single transition that is legal right now — `node <agento-root>/scripts/agento.mjs

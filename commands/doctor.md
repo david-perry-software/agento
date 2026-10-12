@@ -8,6 +8,7 @@ tools: [read, execute]
 Needs: terminal
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
 Report the environment's readiness for Agento commands, read-only. Do not install,
 log in, create directories, or change any file, branch, or setting — `doctor`
