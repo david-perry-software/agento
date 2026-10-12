@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **Changed.** The delivery policy is no longer always-on. A new ≤ 40-line
+  `.github/instructions/agento-core.instructions.md` (`applyTo: "**"`) carries the
+  policy pointer, the work boundary, secrets, git musts, the receipt one-liner, and
+  the canonical `/agento <name>` spelling with the redirect rule;
+  `delivery-policy.instructions.md` keeps its path and all twelve `§N` sections but
+  applies only to Agento's own agents, prompts, commands, and instructions, and is
+  discoverable by its description. `command-invocation.instructions.md` is folded
+  into the core and removed. Every agent and the 11 built-in-agent commands gain a
+  `Policy: read <agento-root>/.github/instructions/delivery-policy.instructions.md`
+  line, because VS Code skips linked instruction files by default
+  (`chat.includeReferencedInstructions: false`); in target repositories this adds one
+  policy read per agent or command run, where the policy was previously not loaded at
+  all. The always-on payload in Agento's own windows drops from 32 063 bytes
+  (`delivery-policy`, `command-invocation`, `ai-skills`). In plugin mode the
+  SessionStart hook now stays silent when the repository carries Agento's own
+  workspace-mode wiring, so a registered clone no longer injects the context twice,
+  and `agento.mjs doctor` gains the informational `hook-wiring` check (`warn` when the
+  clone is registered in `chat.pluginLocations`)
+
 - **Fixed.** `/agento ship` now detects a pull request that conflicts with the
   default branch: the `pr-conflicting` / `companion-pr-conflicting` audit gaps and
   `ship-preflight`'s `conflicting-pr` test `mergeable: CONFLICTING` or
