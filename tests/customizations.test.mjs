@@ -435,6 +435,20 @@ test("only the Planner files reference agento.mjs plan-publish", () => {
   assertOnlyReferencedBy("plan-publish", new Set(PLANNER_FILES));
 });
 
+const REVIEWER_FILES = [".github/agents/delivery-reviewer.agent.md", ".github/prompts/review-feature.prompt.md", ".github/prompts/review-issue.prompt.md", "commands/review-feature.md", "commands/review-issue.md"];
+
+test("the Reviewer publishes through one agento.mjs review-publish call with no hand-run fallback", () => {
+  assertMirrors(["review-feature", "review-issue"]);
+  assertOneCall([rel(".github", "agents", "delivery-reviewer.agent.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish <type> <slug>/);
+  assertOneCall([rel(".github", "prompts", "review-feature.prompt.md"), rel("commands", "review-feature.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish feature <slug>/);
+  assertOneCall([rel(".github", "prompts", "review-issue.prompt.md"), rel("commands", "review-issue.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish issue <slug>/);
+  for (const label of REVIEWER_FILES) assert.doesNotMatch(fs.readFileSync(rel(...label.split("/")), "utf8"), /git -C <companion\.path> (?:add|commit)/, `${label}: the CLI commits the review`);
+});
+
+test("only the Reviewer files reference agento.mjs review-publish", () => {
+  assertOnlyReferencedBy("review-publish", new Set(REVIEWER_FILES));
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). start-session, close-session,
   // and ship delegate to agento.mjs but stay listed: §11 lets the commands that create
