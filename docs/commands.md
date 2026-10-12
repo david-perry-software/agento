@@ -467,7 +467,7 @@ Every command has one spelling, `/agento <name> [args]`. The canonical names are
 
 Old forms are read as the canonical command — the agent says which in one sentence and
 proceeds, arguments unchanged, without asking for confirmation — per
-[command-invocation.instructions.md](../.github/instructions/command-invocation.instructions.md):
+[agento-core.instructions.md](../.github/instructions/agento-core.instructions.md):
 
 | Typed | Read as |
 |---|---|

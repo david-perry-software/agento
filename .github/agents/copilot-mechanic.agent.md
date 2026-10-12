@@ -71,7 +71,9 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
      contain the trigger phrases ("Use when: ...") — they drive discovery.
    - Instructions: `.github/instructions/<name>.instructions.md` with a narrow
      `applyTo` glob; avoid `applyTo: "**"` unless the rules must be present on every
-     turn regardless of file (as `ai-skills` and `delivery-policy` are).
+     turn regardless of file (as `agento-core` and `ai-skills` are); everything
+     else loads on demand through its `description` or an explicit read (as
+     `delivery-policy` does).
    - Hooks: per-hook config in `.github/hooks/<name>.json` aggregated by the plugin's
       `hooks/hooks.json` (hook commands use `${CLAUDE_PLUGIN_ROOT}`; the manifest lives
       at `.claude-plugin/plugin.json` — VS Code only expands the token for this
@@ -89,7 +91,8 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 ## Known pitfalls (real bugs fixed while building this plugin — check these first)
 
-Policy lives in `.github/instructions/delivery-policy.instructions.md`; do not
+Policy lives in `.github/instructions/delivery-policy.instructions.md` (loaded on
+demand; `agento-core.instructions.md` is the always-on pointer to it); do not
 re-add rules here that belong there. These are mechanics gotchas only.
 
 - The guard matches shell *text*, so a commit message or heredoc that quotes a
