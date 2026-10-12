@@ -668,6 +668,18 @@ test("the core states the canonical form and the six redirected forms", () => {
   }
 });
 
+test("every agent and built-in-agent command loads the policy explicitly", () => {
+  // VS Code skips linked instruction files by default, so the read must be an instruction.
+  const policyRead = /^Policy: read `<agento-root>\/\.github\/instructions\/delivery-policy\.instructions\.md` once /m;
+  const builtIn = promptFiles.filter((file) => parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file)).agent === "agent");
+  assert.ok(builtIn.length >= 11, `expected at least 11 built-in-agent prompts, got ${builtIn.length}`);
+  const mirrors = builtIn.map((file) => rel("commands", `${path.basename(file, ".prompt.md")}.md`));
+  const missing = [...agentFiles, ...builtIn, ...mirrors]
+    .filter((file) => !policyRead.test(splitFrontmatter(file).body))
+    .map((file) => path.relative(repoRoot, file));
+  assert.deepEqual(missing, [], `files that do not read delivery-policy.instructions.md explicitly:\n${missing.join("\n")}`);
+});
+
 test("plugin manifest uses suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
