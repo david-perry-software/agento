@@ -282,3 +282,46 @@ test("companion: a worktree whose branch sets artifacts.repo resolves the compan
   assert.doesNotMatch(primary, /^Artifacts: /m);
   assert.doesNotMatch(primary, /Delivery work: features\/2026\/09\/widget/);
 });
+
+// Agento's own workspace-mode SessionStart wiring, as in the Agento clone and its worktrees.
+function writeWorkspaceWiring(root) {
+  fs.mkdirSync(path.join(root, ".github", "hooks"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, ".github", "hooks", "session-start.json"),
+    JSON.stringify({ hooks: { SessionStart: [{ type: "command", command: "./scripts/hooks/session-context.sh", timeout: 10 }] } }),
+  );
+  fs.mkdirSync(path.join(root, "scripts", "hooks"), { recursive: true });
+  fs.writeFileSync(path.join(root, "scripts", "hooks", "session-context.sh"), "#!/usr/bin/env bash\n");
+}
+
+function envWithout(...names) {
+  const env = { ...process.env };
+  for (const name of names) delete env[name];
+  return env;
+}
+
+test("plugin mode stays silent when the session repo carries Agento's workspace-mode wiring", () => {
+  const repo = makeRepo();
+  writeWorkspaceWiring(repo);
+  for (const name of ["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"]) {
+    const env = { ...envWithout("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"), [name]: repoRoot };
+    const result = spawnSync("bash", [hook], { input: JSON.stringify({ cwd: repo }), encoding: "utf8", timeout: 20000, env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "", `${name} set: expected no output`);
+  }
+});
+
+test("plugin mode emits the context when the session repo has no workspace-mode wiring", () => {
+  const repo = makeRepo();
+  const context = run(repo, { ...envWithout("PLUGIN_ROOT"), CLAUDE_PLUGIN_ROOT: repoRoot });
+  assert.match(context, /^Current git branch: feature\/widget$/m);
+  assert.match(context, /^Agento CLI: node /m);
+});
+
+test("workspace mode emits the context when the session repo carries the wiring", () => {
+  const repo = makeRepo();
+  writeWorkspaceWiring(repo);
+  const context = run(repo, envWithout("CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT"));
+  assert.match(context, /^Current git branch: feature\/widget$/m);
+  assert.match(context, /^Agento CLI: node /m);
+});

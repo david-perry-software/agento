@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasAgentoWorkspaceWiring } from "../agento-config.mjs";
 import { emit, loadHookConfig, readPayload, realpath, resolveArtifacts, runGit } from "./hook-lib.mjs";
 
 const SESSION_TIMEOUT_MS = 5000;
@@ -135,9 +136,19 @@ export function buildSessionContext({ payload = {}, agentoRoot = AGENTO_ROOT, no
   return lines;
 }
 
+// VS Code sets PLUGIN_ROOT/CLAUDE_PLUGIN_ROOT only for plugin hooks; when the session repo
+// also wires this hook in workspace mode, that run already emits the context once.
+export function isDuplicatePluginRun({ env = process.env, payload = {} } = {}) {
+  if (!env.CLAUDE_PLUGIN_ROOT && !env.PLUGIN_ROOT) return false;
+  const cwd = payload.cwd || payload.workingDirectory || process.cwd();
+  return hasAgentoWorkspaceWiring(runGit(cwd, "rev-parse", "--show-toplevel") || cwd);
+}
+
 export function main() {
   try {
-    const lines = buildSessionContext({ payload: readPayload() });
+    const payload = readPayload();
+    if (isDuplicatePluginRun({ payload })) return;
+    const lines = buildSessionContext({ payload });
     emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: lines.join("\n") } });
   } catch (error) {
     // A crashing hook must not fail session start: report it and add no context.
