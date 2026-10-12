@@ -19,6 +19,7 @@
 //   node scripts/agento.mjs sync <feature|issue> <slug>   (build window: fetch both halves, merge origin/<branch> then origin/<default> where not ancestors — never rebase; a conflict aborts with its files, nothing pushed; push halves left ahead, product first; merged: true → re-verify; exit 0 ok, 3 rejected/failed)
 //   node scripts/agento.mjs step-commit <feature|issue> <slug> [--step N.M] --message-file <file|->   (build window: product commit, then the companion tick scoped to the slug dir; roadmap rule; integrate both defaults — exit 2 reverify when one merged; push product then companion; open missing draft PRs; end clean with ahead 0)
 //   node scripts/agento.mjs plan-publish <feature|issue> <slug>   (planning window on the roadmap branch: commit the slug dir (docs(delivery|<type>): plan, or revise plan); companion mode opens the product branch with one empty commit; integrate, push product then companion, open the draft PRs, cross-link, artifact-pr:; never readies or merges; exit 0 ok, 3 rejected/failed)
+//   node scripts/agento.mjs review-publish <feature|issue> <slug> [--body-file <file|->]   (build window: review.md with one Verdict: line; commit docs(<type>): review <slug> — <verdict> in the artifact half; merge origin/<branch> everywhere and origin/<default> in the companion half only; push; upsert one marked verdict comment on the code PR (REST list + PATCH/POST); exit 0 ok, 3 rejected/failed)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs metrics [<slug>]           (phase durations, review rounds, pauses, merge date, post-ship latency from git history; + aggregate medians)
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
@@ -113,6 +114,10 @@ function parseArgs(argv) {
     else if (arg === "--message-file") {
       options.messageFile = argv[++i];
       if (!options.messageFile || (options.messageFile.startsWith("--"))) usage("--message-file takes a file path or - (stdin)");
+    }
+    else if (arg === "--body-file") {
+      options.bodyFile = argv[++i];
+      if (!options.bodyFile || options.bodyFile.startsWith("--")) usage("--body-file takes a file path or - (stdin)");
     }
     else if (arg === "--for") {
       options.for = argv[++i];
@@ -2337,6 +2342,101 @@ function planPublish() {
   run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-published" });
 }
 
+// `--body-file <file|->`: stdin, or a file outside every one of `dirs` (a later `add -A` would commit it).
+function readBodyFile(dirs) {
+  if (!options.bodyFile) return { text: null, inside: null };
+  if (options.bodyFile === "-") return { text: fs.readFileSync(0, "utf8"), inside: null };
+  const file = path.resolve(startDir, options.bodyFile);
+  const inside = dirs.find((d) => insideDir(file, d)) ?? null;
+  if (inside) return { text: null, inside, file };
+  if (!fs.existsSync(file)) usage(`--body-file ${file} does not exist`);
+  return { text: fs.readFileSync(file, "utf8"), inside: null, file };
+}
+
+function ghJson(run, cwd, args, what) {
+  const result = ghRun(cwd, args, 30000);
+  if (!result.ok) ghFailOf(run)(result, what);
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return run.fail("gh-error", `${what} returned non-JSON output`);
+  }
+}
+
+// The Reviewer's publish: commit review.md, integrate, push, and upsert one verdict comment on the code PR.
+function reviewPublish() {
+  const { type, slug } = deliveryArgs("review-publish", " [--body-file <file|->]");
+  const run = deliveryRun("review-publish", type, slug, { verdict: null, commits: { product: null, companion: null }, integrated: [], pushed: [], pr: null, comment: null });
+  const { win, halves } = openDeliveryRun(run, type, slug);
+  const [product, companion = null] = halves;
+  const artifactHalf = companion ?? product;
+
+  run.out.phase = "validate";
+  const body = readBodyFile(halves.map((h) => h.path));
+  if (body.inside) run.reject("body-file-inside-half", { message: `${body.file} is inside ${body.inside}, so it would be committed; write it outside both halves or pass --body-file - on stdin` });
+  const reviewRel = `${win.slugDir}/review.md`;
+  const reviewFile = path.join(artifactHalf.path, reviewRel);
+  if (!fs.existsSync(reviewFile)) run.reject("review-missing", { message: `${reviewRel} is missing in the ${artifactHalf.label} half ${artifactHalf.path}; write the review first` });
+  const review = fs.readFileSync(reviewFile, "utf8");
+  if (!new RegExp(`^# Review: ${escapeRe(slug)}\\s*$`, "m").test(review)) run.reject("review-heading", { message: `${reviewRel} must open with "# Review: ${slug}"` });
+  const verdicts = [...review.matchAll(/^Verdict:\s*(.*?)\s*$/gm)].map((m) => m[1]);
+  if (verdicts.length !== 1 || !["approve", "request-changes"].includes(verdicts[0])) {
+    run.reject("verdict-invalid", { verdicts, message: `${reviewRel} must carry exactly one "Verdict: approve" or "Verdict: request-changes" line; found ${verdicts.length ? verdicts.map((v) => JSON.stringify(v)).join(", ") : "none"}` });
+  }
+  const verdict = verdicts[0];
+  run.out.verdict = verdict;
+  rejectOutsideSlug(run, win, halves, artifactHalf);
+
+  // The code PR must exist before anything is written.
+  const prResult = ghRun(product.path, ["pr", "view", win.branch, "--json", "number,state,url,isDraft"], 20000);
+  if (!prResult.ok && !/no pull requests found/i.test(prResult.stderr)) ghFailOf(run)(prResult, `gh pr view ${win.branch}`);
+  const pr = prResult.ok ? JSON.parse(prResult.stdout) : null;
+  if (!pr) run.reject("pr-missing", { message: `no pull request for ${win.branch} in the product repository; the Builder opens the draft PR on its first step-commit` });
+  if (pr.state !== "OPEN") run.reject("pr-not-open", { message: `PR #${pr.number} for ${win.branch} is ${pr.state.toLowerCase()} (${pr.url}); a review is posted on an open PR only` });
+  run.out.pr = { number: pr.number, state: pr.state, isDraft: Boolean(pr.isDraft), url: pr.url ?? null };
+
+  run.out.phase = "commit";
+  const messageDir = messageScratch("agento-review-publish-");
+  if (changedPaths(artifactHalf).length) {
+    run.out.commits[artifactHalf.label] = commitHalf(run, artifactHalf, win.slugDir, writeMessage(messageDir, "review", `docs(${type}): review ${slug} — ${verdict}`));
+  }
+  const committed = Boolean(run.out.commits.product || run.out.commits.companion);
+  // The reviewed code never changes under the verdict: only the companion half takes its default.
+  run.out.integrated = integrateHalves(run, win, halves, { defaultHalves: ["companion"] });
+  pushHalves(run, win, halves);
+
+  // One verdict comment per delivery, found by its marker and author; a re-review edits it.
+  run.out.phase = "comment";
+  const repoField = (cwd, field) => {
+    const result = ghRun(cwd, ["repo", "view", "--json", field, "-q", `.${field}`], 15000);
+    if (!result.ok) ghFailOf(run)(result, `gh repo view --json ${field} in ${cwd}`);
+    return result.stdout;
+  };
+  const nwo = repoField(product.path, "nameWithOwner");
+  const marker = `<!-- agento:review ${type}/${slug} -->`;
+  const text = [`Verdict: ${verdict}`, `Review: ${repoField(artifactHalf.path, "url")}/blob/${win.branch}/${reviewRel}`, ...(body.text?.trim() ? [body.text.trim()] : []), marker].join("\n\n");
+  const login = ghJson(run, product.path, ["api", "user"], "gh api user").login;
+  let existing = null;
+  for (let page = 1; !existing; page += 1) {
+    const list = ghJson(run, product.path, ["api", `repos/${nwo}/issues/${pr.number}/comments?per_page=100&page=${page}`], `gh api repos/${nwo}/issues/${pr.number}/comments`);
+    existing = list.find((c) => c.user?.login === login && (c.body ?? "").includes(marker)) ?? null;
+    if (list.length < 100) break;
+  }
+  if (!existing) {
+    const posted = ghJson(run, product.path, ["api", `repos/${nwo}/issues/${pr.number}/comments`, "-X", "POST", "-f", `body=${text}`], `gh api repos/${nwo}/issues/${pr.number}/comments -X POST`);
+    run.out.comment = { id: posted.id, url: posted.html_url ?? null, action: "posted" };
+    run.act("comment-post", `verdict comment posted on PR #${pr.number} (${verdict})`);
+  } else if (existing.body !== text) {
+    const edited = ghJson(run, product.path, ["api", `repos/${nwo}/issues/comments/${existing.id}`, "-X", "PATCH", "-f", `body=${text}`], `gh api repos/${nwo}/issues/comments/${existing.id} -X PATCH`);
+    run.out.comment = { id: existing.id, url: edited.html_url ?? existing.html_url ?? null, action: "updated" };
+    run.act("comment-update", `verdict comment ${existing.id} on PR #${pr.number} updated (${verdict})`);
+  } else run.out.comment = { id: existing.id, url: existing.html_url ?? null, action: "unchanged" };
+
+  cleanHandoff(run, halves);
+  run.out.phase = "done";
+  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-published" });
+}
+
 
 function ghFailOf(run) {
   return (result, what) => {
@@ -3940,6 +4040,11 @@ switch (command) {
 
   case "plan-publish": {
     planPublish();
+    break;
+  }
+
+  case "review-publish": {
+    reviewPublish();
     break;
   }
 
