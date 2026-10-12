@@ -33,10 +33,26 @@ in this product worktree and the artifacts — plan.md, roadmap.md, review.md,
 `evidence/` — live in the companion half at `companion.path`, on the mirrored branch
 (`companion.branch` must equal the roadmap's `branch:`; a detached or differently
 named half is a hard stop naming the half). Every artifact read and write below
-happens there, every artifact commit uses `git -C <companion.path>`, and
+happens there, every artifact commit lands there through `step-commit`, and
 `session.delivery` already reflects that half. The in-repo layout (`companion:
 null`) keeps the single-repo flow: artifacts and code share this worktree and one
 commit.
+
+**Git goes through two CLI calls.** `node <agento-root>/scripts/agento.mjs sync
+<type> <slug>` integrates; `node <agento-root>/scripts/agento.mjs step-commit <type>
+<slug> [--step N.M] --message-file -` commits, integrates, and pushes, reading the
+Conventional Commit message on stdin (`printf '%s\n' "<message>" | …`), so no message
+file lands in a worktree. Both check this build window, both halves on the roadmap's
+branch, and refuse the default branch and a detached HEAD; neither ever rebases,
+forces, amends, or skips hooks. They answer one JSON document: `status` `ok`,
+`reverify` (exit 2), `rejected`, or `failed`, with `reason`, `message`, `actions[]`,
+and `reauth` on an authentication failure (stop and name it, policy §1). A
+`rejected` call wrote nothing: fix what `message` names and re-send. Re-sending
+either call resumes from git state. `integration-conflict` is the one case for
+hand-run git: the merge was aborted and `conflicts[]` names the files, so run `git
+merge <ref>` in the named `half`, resolve per the hotspot recipes in
+[concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md),
+commit the merge, rerun the step's `verify:`, and re-send.
 
 Follow the target repository's AGENTS.md at its root, the skills-first policy in
 [ai-skills.instructions.md](../instructions/ai-skills.instructions.md), the artifact
@@ -53,15 +69,16 @@ build-issue idempotency row, which is this protocol — ticked steps are audited
 never redone. Window check per §11: requires role `build` with `delivery.slug` equal
 to the slug being built.
 
-1. `git fetch origin`. From the session record, confirm `worktree.branch` is the
-   branch named in the roadmap header; never switch a shared or managed worktree to
-   another delivery branch. If the record's `worktrees[]` shows another entry on that
-   branch, stop and direct the user to the record's alternatives
-   (`/agento start-session <type>/<slug> --resume`). If `origin/<branch>` is ahead, merge
-   it (never rebase). If `origin/main` advanced, merge `origin/main` into the branch.
-   Companion mode: do the same in the half — `git -C <companion.path> fetch origin`,
-   merge its `origin/<branch>` when ahead and its `origin/<default>` when advanced
-   (never rebase) — so both halves start integrated.
+1. One `sync <type> <slug>` call: it fetches both halves and merges `origin/<branch>`
+   and then `origin/main` into each where they are not ancestors of `HEAD`, then pushes
+   any half left ahead, product first. From the session record, confirm
+   `worktree.branch` is the branch named in the roadmap header; never switch a shared
+   or managed worktree to another delivery branch. If the record's `worktrees[]` shows
+   another entry on that branch, stop and direct the user to the record's
+   alternatives (`/agento start-session <type>/<slug> --resume`). `merged: true` means
+   the audit in step 3 spot-checks the merged tree; `reason: dirty` is uncommitted work
+   from an interrupted session — finish or revert it as the audit decides, commit it
+   with `step-commit`, and re-send.
    A managed `plan-` worktree (`worktree.dirPrefix: "plan"`) already on the matching
    published branch may be promoted in place through the Planner handoff; its path
    does not need to be renamed or reopened.
@@ -69,8 +86,8 @@ to the slug being built.
 3. **Audit before trusting**: for each ticked step, spot-check the codebase evidence
    (files exist, tests pass, behavior present). Untick falsely ticked steps and note
    the repair. Add missing discovered work as new `(added <date>)` steps. Code is truth.
-4. Set `status: in-progress`, update `next-step`, commit and push the repaired roadmap
-   (in the companion half in companion mode) before writing any code.
+4. Set `status: in-progress`, update `next-step`, and commit and push the repaired
+   roadmap with one `step-commit` call without `--step` before writing any code.
 5. One active builder per slug: the branch's registered worktree is its reservation.
    Never start a second builder chat for an occupied slug unless the user explicitly
    chose `--resume` or this chat arrived through the Planner's in-place handoff in the
@@ -92,21 +109,20 @@ For each unchecked step, in order:
 3. Run the step's `verify:` check. Only when it passes: tick the checkbox, update
    `last-updated` and `next-step`. When the plan uses a scoped lint gate, run every
    component of it (policy §5).
-4. Commit the step (Conventional Commit) **including the roadmap.md update in the same
-   commit**. Before pushing, `git fetch origin`; if `origin/main` is not already an
-   ancestor of `HEAD`, merge it in now (never rebase), resolve any conflict with the
-   step's context fresh per the hotspot recipes in
-   [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md),
-   rerun the step's `verify:`, then push. Companion mode is the two-commit rule of
-   policy §7: the code commit in this product half, then the roadmap tick plus any
-   evidence in the companion half (`git -C <companion.path> commit`, same
-   Conventional Commit type and step reference); integrate both defaults, then push
-   product first, companion second, so the companion tick never precedes the code it
-   records. A step that changes no code (documentation living in the companion, a
-   `(manual)` step's evidence) is one companion commit.
-5. If the first push of the branch has no pull request yet, open a **draft** PR to `main`
-   (in companion mode also the draft `docs(<type>): <slug>` companion PR and the
-   `artifact-pr:` header, per the Planner's step 8, when the Planner left them out).
+4. Commit, integrate, and push the step with one `step-commit <type> <slug> --step
+   N.M` call (Conventional Commit message naming `N.M`). Delete byproducts first: it
+   stages everything in this worktree and, in companion mode, only the slug's artifact
+   directory in the half (anything else there is rejected); it requires the `- [x] N.M`
+   tick in this commit; it makes the code commit and then the companion commit — the
+   policy §7 two-commit rule (a step that changes no code is one companion commit;
+   in-repo it is one commit); it merges `origin/<branch>` and both defaults (never
+   rebase), pushes product first and companion second, opens the **draft** PR to
+   `main` when missing (in companion mode also the draft `docs(<type>): <slug>`
+   companion PR, its cross-link, and the `artifact-pr:` header), and ends `ok` only
+   with both halves clean and `ahead: 0`. `reverify` means a default merge came in
+   and nothing was pushed: rerun the step's `verify:`, then re-send the same call; a
+   fix the re-verify needs goes in with a roadmap.md note through a call without
+   `--step`.
 
 ## Pause protocol
 
@@ -115,17 +131,18 @@ the in-flight step (never commit half-broken state):
 
 - **Session break** — asked to pause, the session is long, a phase boundary is
   reached, and nothing needs the user: leave `status: in-progress`, set `next-step`
-  to the next unticked step, commit, push, and report the resume point. Never set
+  to the next unticked step, commit and push with one `step-commit` call without
+  `--step`, and report the resume point. Never set
   `status: paused` for a stop nobody has to act on; that would make `/agento ap`
   wait for the user instead of resuming you.
 - **Pause** — a `(manual)` step is reached or a blocker only the user can clear:
   set `status: paused` with `next-step` `"<N.M> (manual) <action>"` or `"<N.M>
-  blocked: <reason>"`, commit, push, and report the exact user instructions and
-  resume point.
+  blocked: <reason>"`, commit and push with one `step-commit` call without `--step`,
+  and report the exact user instructions and resume point.
 
-Push both halves in companion mode: the product half first, then the companion half
-carrying the roadmap — `agento.mjs session` must show `companion.dirty: false` and
-`companion.ahead: 0`. Either stop leaves this worktree — and, in companion mode,
+`step-commit` pushes the product half first, then the companion half carrying the
+roadmap, and ends `ok` only with both clean and `ahead: 0`. Either stop leaves this
+worktree — and, in companion mode,
 the companion half — clean per policy §7 clean handoff, and is a `completed` §9
 result (state `in-progress` or `paused`) whose `next:` names the resume command,
 emitted as a block per policy §12 directly above the result line, followed by
@@ -134,11 +151,10 @@ emitted as a block per policy §12 directly above the result line, followed by
 ## Completion
 
 When every step is ticked and verifications pass — `(manual, post-ship)` steps are
-exempt and stay unticked until /agento ship — fetch and confirm `origin/main` is an ancestor
-of `HEAD` (merge it and re-verify if not; in companion mode also that the companion's
-`origin/<default>` is an ancestor of the half's HEAD), then set `status: in-review`,
-commit, push (the companion half in companion mode, leaving `companion.ahead: 0`),
-confirm both trees are clean per policy §7 clean handoff,
+exempt and stay unticked until /agento ship — run one `sync` call (rerun the
+verifications when it reports `merged: true`), then set `status: in-review` and
+commit and push with one `step-commit` call without `--step`, whose `ok` confirms
+both trees clean with `ahead: 0` per policy §7 clean handoff,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the

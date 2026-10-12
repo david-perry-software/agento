@@ -5170,7 +5170,9 @@ test("ship --confirm (in-repo, owner): cleans the listed byproducts, completes t
   fs.writeFileSync(path.join(owner, "shot[1].png"), "bytes");
   fs.writeFileSync(path.join(owner, "shot1.png"), "bytes");
   git(owner, "add", "shot1.png");
-  git(owner, "commit", "-q", "-m", "tracked shot");
+  // Same second as the review commit: a later second would make the review stale.
+  const reviewSecond = `@${git(owner, "log", "-1", "--format=%ct")} +0000`;
+  execFileSync("git", ["-C", owner, "commit", "-q", "-m", "tracked shot"], { env: { ...process.env, GIT_AUTHOR_DATE: reviewSecond, GIT_COMMITTER_DATE: reviewSecond } });
   git(owner, "push", "-q");
   const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING } } } });
 
@@ -6310,4 +6312,335 @@ test("metrics never invokes gh and reads history only through git log in the art
     const productDir = fs.realpathSync(repo);
     assert.deepEqual(logs.sort(), [[docsDir, "origin/feature/yank"], [docsDir, "origin/main"], [productDir, "--first-parent"]].sort());
   }
+});
+
+// --- sync and step-commit ----------------------------------------------------------
+
+// Commit `file` = `text` on <branch> through a throwaway clone of `work`'s origin and push it.
+function advanceRemote(work, branch, file, text) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agento-other-"));
+  execFileSync("git", ["clone", "-q", "--branch", branch, git(work, "remote", "get-url", "origin"), tmp]);
+  git(tmp, "config", "user.email", "other@example.com");
+  git(tmp, "config", "user.name", "Other");
+  fs.writeFileSync(path.join(tmp, file), text);
+  git(tmp, "add", "-A");
+  git(tmp, "commit", "-q", "-m", `other: ${file}`);
+  git(tmp, "push", "-q", "origin", branch);
+}
+
+const syncRun = (cwd, env = baseEnv) => runWith({ cwd, env }, "sync", "feature", "widget");
+const remoteHead = (dir, branch) => git(dir, "ls-remote", "origin", `refs/heads/${branch}`).split(/\s/)[0];
+const parentsOf = (dir, rev = "HEAD") => git(dir, "log", "-1", "--format=%P", rev).split(" ").filter(Boolean);
+
+test("sync and step-commit are listed in the usage header and validate their arguments", () => {
+  const { repo } = makeWorktreeRepo();
+  const usage = run(repo).json.usage.join("\n");
+  assert.match(usage, /sync <feature\|issue> <slug> /);
+  assert.match(usage, /step-commit <feature\|issue> <slug> \[--step N\.M\] --message-file <file\|->/);
+  for (const args of [["sync"], ["sync", "feature"], ["sync", "chore", "x"], ["sync", "feature", "widget", "extra"], ["step-commit", "feature", "widget"], ["step-commit", "feature", "widget", "--step", "1", "--message-file", "-"], ["step-commit", "feature", "widget", "--message-file"]]) {
+    const { code, json } = run(repo, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+});
+
+test("sync (companion) merges an advanced origin/main into both halves with merge commits and pushes product first; a re-send is a no-op", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { branch, owner, half } = pairDelivery(pair, "widget", { status: "in-progress" });
+  advanceRemote(repo, "main", "main.txt", "product main\n");
+  advanceRemote(docs, "main", "main.md", "docs main\n");
+
+  const { code, json } = syncRun(owner);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.mode, "companion");
+  assert.equal(json.merged, true);
+  assert.deepEqual(json.halves.product.merged, ["origin/main"]);
+  assert.deepEqual(json.halves.companion.merged, ["origin/main"]);
+  assert.deepEqual(json.pushed, ["product", "companion"]);
+  assert.deepEqual(json.actions.map((a) => a.step), ["integrate", "integrate", "push", "push"]);
+  for (const dir of [owner, half]) {
+    assert.equal(parentsOf(dir).length, 2, `a merge commit, never a rebase, at ${dir}`);
+    assert.equal(remoteHead(dir, branch), git(dir, "rev-parse", "HEAD"));
+    assert.equal(git(dir, "status", "--porcelain"), "");
+  }
+  assert.ok(fs.existsSync(path.join(owner, "main.txt")) && fs.existsSync(path.join(half, "main.md")));
+
+  const again = syncRun(owner);
+  assert.equal(again.code, 0);
+  assert.equal(again.json.merged, false);
+  assert.equal(again.json.outcome, "up-to-date");
+  assert.deepEqual(again.json.actions, []);
+});
+
+test("sync (companion) merges a remote-ahead origin/<branch> into the half", () => {
+  const pair = makePairRepo();
+  const { docs } = pair;
+  const { branch, owner, half } = pairDelivery(pair, "widget", { status: "in-progress" });
+  advanceRemote(docs, branch, "note.md", "from another machine\n");
+  const { code, json } = syncRun(owner);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.deepEqual(json.halves.companion.merged, [`origin/${branch}`]);
+  assert.deepEqual(json.halves.product.merged, []);
+  assert.equal(json.merged, true);
+  assert.ok(fs.existsSync(path.join(half, "note.md")));
+  assert.equal(git(half, "rev-parse", "HEAD"), remoteHead(half, branch));
+});
+
+test("sync (in-repo) aborts a conflicting default merge with the conflicted files, a clean tree, and nothing pushed", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner } = inRepoDelivery(fixture, "widget", { status: "in-progress", write: writeFile("shared.txt", "branch\n") });
+  advanceRemote(repo, "main", "shared.txt", "main\n");
+  const before = remoteHead(owner, branch);
+  const head = git(owner, "rev-parse", "HEAD");
+  const { code, json } = syncRun(owner);
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "rejected");
+  assert.equal(json.reason, "integration-conflict");
+  assert.equal(json.half, "product");
+  assert.equal(json.ref, "origin/main");
+  assert.deepEqual(json.conflicts, ["shared.txt"]);
+  assert.match(json.message, /aborted and the tree is clean again; nothing was pushed/);
+  assert.equal(git(owner, "status", "--porcelain"), "");
+  assert.equal(git(owner, "rev-parse", "HEAD"), head);
+  assert.equal(remoteHead(owner, branch), before);
+});
+
+test("sync rejects from the primary, from a plan window, and with a dirty half, writing nothing", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt } = pair;
+  const { owner, half, dir } = pairDelivery(pair, "widget", { status: "in-progress" });
+  advanceRemote(repo, "main", "main.txt", "x\n");
+  const before = refState(repo, docs);
+
+  const primary = syncRun(repo);
+  assert.equal(primary.code, 3);
+  assert.match(primary.json.reason, /^wrong window: role=primary /);
+  assert.deepEqual(primary.json.allowed, run(repo, "session").json.allowed);
+
+  const plan = path.join(wt, "plan-20260101-000000");
+  git(repo, "worktree", "add", "-q", "--detach", plan);
+  const planned = syncRun(plan);
+  assert.equal(planned.code, 3);
+  assert.match(planned.json.reason, /^wrong window: role=plan /);
+
+  fs.appendFileSync(path.join(half, dir, "roadmap.md"), "\nedited\n");
+  const dirty = syncRun(owner);
+  assert.equal(dirty.code, 3);
+  assert.equal(dirty.json.reason, "dirty");
+  assert.equal(dirty.json.half, "companion");
+  assert.deepEqual(dirty.json.paths, [`${dir}/roadmap.md`]);
+  assert.deepEqual(dirty.json.actions, []);
+  git(repo, "worktree", "remove", "--force", plan);
+  assert.deepEqual(refState(repo, docs), before);
+});
+
+function stepCommitRun(cwd, env, message, ...args) {
+  const result = spawnSync("node", [cli, "step-commit", "feature", "widget", ...args, ...(args.includes("--message-file") ? [] : ["--message-file", "-"])], { cwd, encoding: "utf8", env, input: message });
+  let json;
+  try {
+    json = JSON.parse(result.stdout);
+  } catch {
+    assert.fail(`non-JSON output: ${result.stdout}\n${result.stderr}`);
+  }
+  return { code: result.status, json };
+}
+
+const tick = (dir, rel, id) => {
+  const file = path.join(dir, rel, "roadmap.md");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(`- [ ] ${id} `, `- [x] ${id} `));
+};
+const setNextStep = (dir, rel, value) => {
+  const file = path.join(dir, rel, "roadmap.md");
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/^next-step: .*$/m, `next-step: "${value}"`));
+};
+const cleanAndPushed = (dir, branch) => {
+  assert.equal(git(dir, "status", "--porcelain", "--untracked-files=all"), "", `clean at ${dir}`);
+  assert.equal(git(dir, "rev-parse", "HEAD"), remoteHead(dir, branch), `pushed from ${dir}`);
+};
+
+test("step-commit (companion): product commit and push precede the companion tick; missing draft PRs, the cross-link, and artifact-pr: are created once", () => {
+  const pair = makePairRepo();
+  const { branch, owner, half, dir } = pairDelivery(pair, "widget", { status: "in-progress" });
+  const stub = shipStub();
+  fs.writeFileSync(path.join(owner, "src.js"), "code\n");
+  tick(half, dir, "1.2");
+
+  const { code, json } = stepCommitRun(owner, stub.env, "feat(widget): add src (step 1.2)\n", "--step", "1.2");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "committed");
+  assert.deepEqual(json.actions.map((a) => a.step), ["commit", "commit", "push", "push", "pr-create", "companion-pr-create", "pr-cross-link", "commit", "push"]);
+  assert.match(json.actions[0].detail, /^product: [0-9a-f]{7} feat\(widget\): add src \(step 1\.2\) \(src\.js\)$/);
+  assert.match(json.actions[1].detail, new RegExp(`^companion: [0-9a-f]{7} feat\\(widget\\): add src \\(step 1\\.2\\) \\(${dir}/roadmap\\.md\\)$`));
+  assert.match(json.actions[2].detail, /^product: pushed/);
+  assert.match(json.actions[3].detail, /^companion: pushed/);
+  assert.equal(git(owner, "log", "-1", "--format=%s", "HEAD"), "feat(widget): add src (step 1.2)");
+  assert.equal(git(half, "log", "-1", "--format=%s", "HEAD"), "docs(feature): record artifact PR for widget");
+  assert.equal(git(half, "log", "-1", "--format=%s", "HEAD~1"), "feat(widget): add src (step 1.2)");
+  const state = stub.state();
+  assert.equal(state.product.prs[branch].isDraft, true);
+  assert.equal(state.product.prs[branch].title, "widget");
+  assert.equal(state.companion.prs[branch].title, "docs(feature): widget");
+  assert.match(state.product.prs[branch].body, new RegExp(`^Plan: .*/blob/${branch}/${dir}/plan\\.md\\n\\nCompanion PR: ${state.companion.prs[branch].url}$`));
+  const roadmap = fs.readFileSync(path.join(half, dir, "roadmap.md"), "utf8");
+  assert.match(roadmap, /- \[x\] 1\.2 /);
+  assert.equal(roadmap.match(/^artifact-pr: "#\d+"$/gm).length, 1);
+  assert.equal(json.pr.number, state.product.prs[branch].number);
+  assert.equal(json.companionPr.number, state.companion.prs[branch].number);
+  cleanAndPushed(owner, branch);
+  cleanAndPushed(half, branch);
+
+  // Re-send with nothing to do: already-pushed, no second PR or header.
+  stub.reset();
+  const again = stepCommitRun(owner, stub.env, "feat(widget): add src (step 1.2)\n", "--step", "1.2");
+  assert.equal(again.code, 0, JSON.stringify(again.json));
+  assert.equal(again.json.outcome, "already-pushed");
+  assert.deepEqual(again.json.actions, []);
+  assert.ok(stub.calls().every((c) => !/ pr create| api /.test(c)), stub.calls().join("\n"));
+
+  // A no-code step is one companion commit.
+  setNextStep(half, dir, "1.3 next");
+  const docsOnly = stepCommitRun(owner, stub.env, "docs(feature): session break for widget\n");
+  assert.equal(docsOnly.code, 0, JSON.stringify(docsOnly.json));
+  assert.equal(docsOnly.json.commits.product, null);
+  assert.equal(docsOnly.json.commits.companion, git(half, "rev-parse", "HEAD"));
+  assert.deepEqual(docsOnly.json.pushed, ["companion"]);
+  cleanAndPushed(owner, branch);
+  cleanAndPushed(half, branch);
+});
+
+test("step-commit (in-repo): one commit carries the code and the roadmap tick; Fixes-free body for a feature; an existing PR is reused", () => {
+  const fixture = makeWorktreeRepo();
+  const { branch, owner, dir } = inRepoDelivery(fixture, "widget", { status: "in-progress" });
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15 } } } });
+  fs.writeFileSync(path.join(owner, "src.js"), "code\n");
+  tick(owner, dir, "1.2");
+  const messageFile = path.join(os.tmpdir(), `agento-msg-${process.pid}.txt`);
+  fs.writeFileSync(messageFile, "feat(widget): add src (step 1.2)\n\nBody line.\n");
+  const { code, json } = stepCommitRun(owner, stub.env, "", "--step", "1.2", "--message-file", messageFile);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "in-repo");
+  assert.deepEqual(json.actions.map((a) => a.step), ["commit", "push"]);
+  assert.deepEqual(git(owner, "show", "--name-only", "--format=", "HEAD").split("\n").sort(), [`${dir}/roadmap.md`, "src.js"]);
+  assert.equal(git(owner, "log", "-1", "--format=%B").trim(), "feat(widget): add src (step 1.2)\n\nBody line.");
+  assert.equal(json.pr.number, 15);
+  assert.equal(json.companionPr, null);
+  assert.ok(stub.calls().every((c) => !/ pr create/.test(c)));
+  cleanAndPushed(owner, branch);
+  fs.rmSync(messageFile);
+});
+
+test("step-commit stops with reverify (exit 2, nothing pushed) when origin/main merged, and the re-send pushes; a conflicting default aborts with its files", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner, dir } = inRepoDelivery(fixture, "widget", { status: "in-progress", write: writeFile("shared.txt", "branch\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15 } } } });
+  advanceRemote(repo, "main", "other.txt", "main\n");
+  const before = remoteHead(owner, branch);
+  fs.writeFileSync(path.join(owner, "src.js"), "code\n");
+  tick(owner, dir, "1.2");
+  const first = stepCommitRun(owner, stub.env, "feat(widget): add src (step 1.2)", "--step", "1.2");
+  assert.equal(first.code, 2, JSON.stringify(first.json));
+  assert.equal(first.json.status, "reverify");
+  assert.deepEqual(first.json.integrated, [{ half: "product", ref: "origin/main", kind: "default" }]);
+  assert.equal(remoteHead(owner, branch), before, "nothing pushed before the re-verify");
+  assert.equal(parentsOf(owner).length, 2);
+
+  const resend = stepCommitRun(owner, stub.env, "feat(widget): add src (step 1.2)", "--step", "1.2");
+  assert.equal(resend.code, 0, JSON.stringify(resend.json));
+  assert.equal(resend.json.outcome, "pushed");
+  cleanAndPushed(owner, branch);
+
+  advanceRemote(repo, "main", "shared.txt", "main\n");
+  setNextStep(owner, dir, "1.3 next");
+  const pushed = remoteHead(owner, branch);
+  const conflict = stepCommitRun(owner, stub.env, "docs(feature): next step");
+  assert.equal(conflict.code, 3, JSON.stringify(conflict.json));
+  assert.equal(conflict.json.reason, "integration-conflict");
+  assert.deepEqual(conflict.json.conflicts, ["shared.txt"]);
+  assert.equal(git(owner, "status", "--porcelain"), "");
+  assert.equal(remoteHead(owner, branch), pushed, "nothing pushed on a conflict");
+});
+
+test("step-commit guard equivalence: every rejection leaves both halves unchanged", () => {
+  const pair = makePairRepo();
+  const { repo, docs, wt } = pair;
+  const { owner, half, dir } = pairDelivery(pair, "widget", { status: "in-progress", writeCompanion: writeFile("features/2026/10/other/plan.md", "other\n") });
+  const stub = shipStub();
+  const snapshot = () => [refState(repo, docs), git(owner, "status", "--porcelain", "--untracked-files=all"), git(half, "status", "--porcelain", "--untracked-files=all")];
+  const rejects = (cwd, message, args, reason, prepare = null, undo = null) => {
+    prepare?.();
+    const before = snapshot();
+    const { code, json } = stepCommitRun(cwd, stub.env, message, ...args);
+    assert.equal(code, 3, `${reason}: ${JSON.stringify(json)}`);
+    assert.equal(json.status, "rejected", reason);
+    if (reason instanceof RegExp) assert.match(json.reason, reason);
+    else assert.equal(json.reason, reason);
+    assert.deepEqual(json.actions, [], reason);
+    assert.deepEqual(snapshot(), before, `${reason}: nothing written`);
+    undo?.();
+    return json;
+  };
+  const ok = "feat(widget): add src (step 1.2)";
+  fs.writeFileSync(path.join(owner, "src.js"), "code\n");
+
+  // The default branch is the primary's; a plan window is not the slug's build window.
+  rejects(repo, ok, ["--step", "1.2"], /^wrong window: role=primary /);
+  const plan = path.join(wt, "plan-20260101-000000");
+  git(repo, "worktree", "add", "-q", "--detach", plan);
+  rejects(plan, ok, ["--step", "1.2"], /^wrong window: role=plan /);
+  git(repo, "worktree", "remove", "--force", plan);
+  rejects(owner, ok, ["--step", "1.2"], "detached-head", () => git(half, "switch", "-q", "--detach"), () => git(half, "switch", "-q", "feature/widget"));
+  // The half on the default branch still holding the slug's roadmap (staged from the branch).
+  const toDefault = () => {
+    git(half, "checkout", "-q", "--ignore-other-worktrees", "main");
+    git(half, "checkout", "-q", "feature/widget", "--", dir);
+  };
+  const onDefault = rejects(owner, ok, ["--step", "1.2"], "default-branch", toDefault, () => git(half, "checkout", "-q", "-f", "feature/widget"));
+  assert.match(onDefault.message, /the companion half .* is on main; never commit or push to the default branch/);
+  const mismatch = rejects(owner, ok, ["--step", "1.2"], "branch-mismatch", () => git(half, "switch", "-q", "-c", "feature/elsewhere"), () => {
+    git(half, "switch", "-q", "feature/widget");
+    git(half, "branch", "-q", "-D", "feature/elsewhere");
+  });
+  assert.match(mismatch.message, /the companion half .* is on feature\/elsewhere, but the roadmap names feature\/widget/);
+
+  // Unticked step, no roadmap change, messages, and companion byproducts.
+  rejects(owner, ok, ["--step", "1.2"], "step-not-ticked");
+  rejects(owner, ok, [], "roadmap-not-updated");
+  tick(half, dir, "1.2");
+  rejects(owner, "added src for 1.2", ["--step", "1.2"], "message-not-conventional");
+  rejects(owner, "feat(widget): add src", ["--step", "1.2"], "message-missing-step");
+  rejects(owner, "feat(widget): add src (step 1.1)", ["--step", "1.1"], "step-not-ticked");
+  const inside = path.join(half, "message.txt");
+  rejects(owner, "", ["--step", "1.2", "--message-file", inside], "message-file-inside-half", () => fs.writeFileSync(inside, ok), () => fs.rmSync(inside));
+  const stray = path.join(half, "stray.log");
+  const json = rejects(owner, ok, ["--step", "1.2"], "companion-outside-slug", () => fs.writeFileSync(stray, "x"), () => fs.rmSync(stray));
+  assert.deepEqual(json.paths, ["stray.log"]);
+  // A staged rename from outside into the slug directory: status -z shows only the destination.
+  const origin = "features/2026/10/other/plan.md";
+  const renamed = rejects(owner, ok, ["--step", "1.2"], "companion-outside-slug", () => git(half, "mv", origin, `${dir}/stolen.md`), () => git(half, "mv", `${dir}/stolen.md`, origin));
+  assert.deepEqual(renamed.paths, [origin]);
+
+  // The same state is accepted once the byproduct is gone.
+  const accepted = stepCommitRun(owner, stub.env, ok, "--step", "1.2");
+  assert.equal(accepted.code, 0, JSON.stringify(accepted.json));
+  assert.equal(git(half, "cat-file", "-t", `HEAD:${origin}`), "blob", "the file outside the slug directory is untouched");
+});
+
+test("step-commit reports a gh authentication failure with the re-login command after pushing", () => {
+  const fixture = makeWorktreeRepo();
+  const { branch, owner, dir } = inRepoDelivery(fixture, "widget", { status: "in-progress" });
+  const { log, env } = gitLoggingPath({ gh: "#!/bin/sh\necho 'HTTP 401: Bad credentials (https://api.github.com/graphql). Try authenticating with: gh auth login' >&2\nexit 1\n" });
+  tick(owner, dir, "1.2");
+  const { code, json } = stepCommitRun(owner, env, "docs(feature): tick (step 1.2)", "--step", "1.2");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "failed");
+  assert.equal(json.reason, "gh-auth");
+  assert.equal(json.reauth, "gh auth login");
+  cleanAndPushed(owner, branch);
+  // A full refspec on every push, so no branch name can turn into a forced push.
+  const pushes = fs.readFileSync(log, "utf8").split("\n").filter((l) => / push /.test(` ${l} `));
+  assert.deepEqual(pushes.map((l) => l.replace(/^-C \S+ /, "")), [`push origin refs/heads/${branch}:refs/heads/${branch}`]);
 });

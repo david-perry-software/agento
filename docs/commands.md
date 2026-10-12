@@ -263,6 +263,38 @@ elsewhere, warnings }`; exit 0 for `ok`, 2 for `pending`, 3 for
 `rejected`/`blocked`/`failed`, 1 for a usage error (`--wait` 0–60, default 50;
 `--confirm` needs a value). A re-send after any stop lands on the first unfinished
 phase: a merged PR is never merged, pushed, or readied again),
+`sync <type> <slug>` (the Builder's integration call, run from the slug's build
+window — the same §11 verdict as `/agento build-<type>`, both halves on the roadmap's
+branch, never the default branch or a detached HEAD: rejects `dirty` when a half has
+uncommitted tracked changes, fetches both halves, merges `origin/<branch>` and then
+`origin/<default>` into each where they are not ancestors of `HEAD` (`merge
+--no-edit`, never a rebase), aborts a conflicting merge as `integration-conflict`
+with `half`, `ref`, and `conflicts[]` and nothing pushed, then pushes every half left
+ahead, product first; output `{ status, phase, outcome: merged | pushed | up-to-date,
+type, slug, branch, mode, halves { product, companion: { path, head, merged[],
+pushed } | null }, merged, pushed[], conflicts, actions, reason, message, fix,
+reauth, allowed, elsewhere, warnings }` — `merged: true` tells the Builder to
+re-verify; exit 0 ok, 3 rejected/failed),
+`step-commit <type> <slug> [--step N.M] --message-file <file|->` (the Builder's
+per-step commit, same window check: the message is a Conventional Commit read from a
+file outside both halves or stdin, naming `N.M` with `--step`; stages everything in
+the product half and, in companion mode, only the slug's artifact directory in the
+half (`companion-outside-slug` otherwise); requires `- [x] N.M` ticked in this
+commit with `--step` (`step-not-ticked`) or a roadmap.md change without it
+(`roadmap-not-updated`); commits product then companion with plain `git commit -F`
+(hooks run; never `--no-verify` or `--amend`; a no-code step is one companion
+commit); integrates like `sync` and stops with `status: "reverify"` (exit 2, nothing
+pushed) when a default merge came in; pushes product then companion (`-u` on a first
+push); opens a missing draft code PR titled after the slug (issues: body starts
+`Fixes #<n>`) and, in companion mode, the draft `docs(<type>): <slug>` companion PR,
+the `Companion PR:` cross-link, and the `artifact-pr:` header commit; `gh` auth
+failures are `gh-auth` with `reauth: "gh auth login"`; ends with both halves clean
+and `ahead: 0` (`not-clean` otherwise). Output `{ status: ok | reverify | rejected |
+failed | usage-error, phase, outcome: committed | pushed | already-pushed | merged-default,
+type, slug, branch, mode, step, commits { product, companion }, integrated[],
+pushed[], pr, companionPr, halves, conflicts, actions, reason, message, fix, reauth,
+allowed, elsewhere, warnings }`; a re-send resumes from git state — the guard cannot
+see this in-process git, so the CLI enforces the same rules),
 `ports <slug>`,
 `session [--pr]` (the window's `role` — `primary`, `plan`, `build`, `freehand`, or
 `unmanaged` — its worktree, a `hosted` flag (`true` under `CODESPACES=true` or
