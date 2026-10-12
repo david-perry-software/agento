@@ -449,6 +449,16 @@ test("only the Reviewer files reference agento.mjs review-publish", () => {
   assertOnlyReferencedBy("review-publish", new Set(REVIEWER_FILES));
 });
 
+const PR_FLOW_PROMPTS = ["commit-current-changes", "quick-fix", "finish-freehand"];
+
+test("commit-current-changes, quick-fix, and finish-freehand publish through one agento.mjs publish-pr call with no hand-run fallback", () => {
+  assertMirrors(PR_FLOW_PROMPTS);
+  for (const name of PR_FLOW_PROMPTS) {
+    assertOneCall([rel(".github", "prompts", `${name}.prompt.md`), rel("commands", `${name}.md`)], /node <agento-root>\/scripts\/agento\.mjs publish-pr --title "<[a-z]+>" --body-file - --merge/);
+  }
+  assert.match(splitFrontmatter(rel(".github", "prompts", "finish-freehand.prompt.md")).body, /returns `\/agento close-session changes\/<slug>` in `next\[\]`/);
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). start-session, close-session,
   // and ship delegate to agento.mjs but stay listed: §11 lets the commands that create

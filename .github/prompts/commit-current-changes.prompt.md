@@ -60,22 +60,23 @@ Window check per §11: requires role `primary` on a non-default branch.
 	characters, and omit implementation trivia. Include an issue reference from the
 	argument when relevant.
 8. Before committing, ensure the proposed message describes everything staged and
-	makes no unsupported claims. Run `git commit` non-interactively, then push the
-	publication branch without force and open or reuse a pull request to `main`.
-9. Wait for every required check (from the repository's ruleset) to succeed using
-	`scripts/wait-for-checks.sh pr <n>` in the foreground; exit 2 means still
-	pending — rerun it. Never use `--watch` commands, background terminals, or tasks
-	to wait, and never end the turn to "wait".
-	Do not merge with checks pending, skipped, cancelled, or failing. Because this
-	prompt does not modify files or run verification, report a failed check as an
-	exact resumable blocker. If `main` advances, fetch and merge `origin/main` into
-	the publication branch without rebasing or rewriting history, push normally,
-	and wait for the required checks again; this ruleset-required integration merge
-	is the only permitted additional commit.
-10. Merge the pull request with a normal merge commit through the repository
-	 ruleset. Never use admin mode or a bypass actor. Delete the merged publication
-	 branch, switch to `main`, fetch, fast-forward to `origin/main`, and verify a
-	 clean tree with zero ahead/behind counts.
+	makes no unsupported claims. Run `git commit` non-interactively.
+9. Publish with one `node <agento-root>/scripts/agento.mjs publish-pr --title
+	"<subject>" --body-file - --merge` call, the pull-request body on stdin. It
+	pushes the publication branch without force, opens or reuses the pull request to
+	`main`, waits for every required check within its bounded budget, merges
+	`origin/main` into the branch when GitHub reports it behind (never a rebase; this
+	ruleset-required integration merge is the only permitted additional commit),
+	merges with a normal merge commit through the ruleset (never admin mode or a
+	bypass actor), deletes the merged branch, switches to `main`, and fast-forwards.
+	Exit 2 (`status: pending`) means checks are still running: re-send the identical
+	call from its `next[]`. Never use `--watch` commands, background terminals, or
+	tasks to wait, and never end the turn to "wait". Exit 3 stops with `message` (and
+	`reauth` on an authentication failure); because this prompt does not modify files
+	or run verification, report a failed check (`checks-failed`) as an exact
+	resumable blocker.
+10. Confirm from the call's `sync` and `git status --short --branch` a clean `main`
+	 with zero ahead/behind counts.
 11. Report the content commit hash and final subject, pull-request number, merge
 	 result, and synchronized `main` state. If execution stops, report the exact
 	 branch, pull request, or check phase so the next invocation can resume it.
