@@ -436,6 +436,75 @@ export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
   };
 }
 
+// --- window check (§11) as data -----------------------------------------------
+
+// Each command's "Window check per §11: requires role …" line: `roles` (`any` = not
+// window-sensitive), the §11 step 5 conditions — `branch` (`default` | `non-default`)
+// and `clean` — and `slugRoles`, the roles in which a passed slug must equal
+// `delivery.slug`. The customizations test keeps every prompt and agent in agreement.
+const ANY = Object.freeze({ roles: ["any"] });
+const PRIMARY_DEFAULT_CLEAN = Object.freeze({ roles: ["primary"], branch: "default", clean: true });
+const BUILD_SLUG = Object.freeze({ roles: ["build"], slugRoles: ["build"] });
+const PLAN_OR_PROMOTED = Object.freeze({ roles: ["plan", "build"], slugRoles: ["build"] });
+export const WINDOW_ROLES = Object.freeze({
+  "agento-init": ANY,
+  ap: BUILD_SLUG,
+  "build-feature": BUILD_SLUG,
+  "build-issue": BUILD_SLUG,
+  "close-session": Object.freeze({ roles: ["primary"] }),
+  "commit-current-changes": Object.freeze({ roles: ["primary"], branch: "non-default" }),
+  continue: Object.freeze({ roles: ["primary", "plan", "build"], slugRoles: ["plan", "build"] }),
+  "delivery-status": ANY,
+  doctor: ANY,
+  "extend-copilot": ANY,
+  "finish-freehand": Object.freeze({ roles: ["freehand"] }),
+  "fix-copilot": ANY,
+  "install-skills": ANY,
+  models: ANY,
+  "new-feature": PLAN_OR_PROMOTED,
+  "new-initiative": PRIMARY_DEFAULT_CLEAN,
+  "new-issue": PLAN_OR_PROMOTED,
+  "next-feature": ANY,
+  "quick-fix": PRIMARY_DEFAULT_CLEAN,
+  "review-feature": BUILD_SLUG,
+  "review-issue": BUILD_SLUG,
+  ship: Object.freeze({ roles: ["primary"] }),
+  "start-freehand": PRIMARY_DEFAULT_CLEAN,
+  "start-session": PRIMARY_DEFAULT_CLEAN,
+  "triage-followups": ANY,
+});
+
+// The §11 verdict for `command` against a session record. `slug` is the argument
+// (null when none was passed); `clean` is whether the current checkout has no
+// changes. `reason` is the §11 step 3 rejection reason, null on a match.
+export function windowVerdict({ command, record, slug = null, clean = true, defaultBranch }) {
+  const rule = WINDOW_ROLES[command];
+  const { role, worktree, delivery } = record;
+  const branch = worktree.detached || !worktree.branch ? "detached" : worktree.branch;
+  const where = `${worktree.path}, branch ${branch}`;
+  let reason = null;
+  if (!rule.roles.includes("any") && !rule.roles.includes(role)) {
+    reason = `wrong window: role=${role} (${where})`;
+    if (role === "unmanaged") reason += `; open the primary checkout at ${record.worktrees?.[0]?.path ?? "the primary checkout"} or a managed worktree from worktrees[]`;
+  } else if (rule.branch === "default" && worktree.branch !== defaultBranch) {
+    reason = `primary checkout not on ${defaultBranch} (${where})`;
+  } else if (rule.branch === "non-default" && (!worktree.branch || worktree.branch === defaultBranch)) {
+    reason = `primary checkout must be on a work branch, not ${branch} (${where})`;
+  } else if (rule.clean && !clean) {
+    reason = `primary checkout is dirty (${worktree.path}); commit, stash, or discard its changes first`;
+  } else if (slug && rule.slugRoles?.includes(role) && delivery?.slug !== slug) {
+    reason = `wrong window: this ${role} window holds ${delivery?.slug ?? "no delivery"}, not ${slug} (${where})`;
+  }
+  return {
+    role,
+    required: { roles: [...rule.roles], branch: rule.branch ?? null, clean: Boolean(rule.clean), slugRoles: [...(rule.slugRoles ?? [])] },
+    match: reason === null,
+    reason,
+    allowed: record.allowed ?? [],
+    elsewhere: record.elsewhere ?? [],
+  };
+}
+
 // --- next: the one legal transition -----------------------------------------
 
 export const NEXT_STATUSES = ["ok", "none", "ambiguous", "blocked", "unsupported", "missing"];
