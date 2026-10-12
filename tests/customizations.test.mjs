@@ -613,11 +613,7 @@ test("guidance never writes a command with a .prompt or .md suffix (agento-init.
   const suffixedCommand = new RegExp(
     `(?:/agento\\s+|(?<![\\w.-])/)(?:${commandNames.join("|")})\\.(?:prompt\\.md|prompt|md)\\b`,
   );
-  const allowlist = new Set([
-    "CHANGELOG.md",
-    ".github/instructions/command-invocation.instructions.md",
-    ".github/instructions/agento-core.instructions.md",
-  ]);
+  const allowlist = new Set(["CHANGELOG.md", ".github/instructions/agento-core.instructions.md"]);
   for (const file of [...guidanceFiles, rel("CHANGELOG.md")]) {
     const label = path.relative(repoRoot, file);
     if (allowlist.has(label)) continue;
@@ -647,17 +643,28 @@ test("guidance never sequences close-session before ship (ship-audit-first)", ()
   assert.deepEqual(offenders, [], `guidance that sequences close-session before ship:\n${offenders.join("\n")}`);
 });
 
-test("command-invocation instructions apply everywhere and list every command", () => {
-  const file = rel(".github", "instructions", "command-invocation.instructions.md");
-  const label = path.relative(repoRoot, file);
-  const { frontmatter, body } = splitFrontmatter(file);
-  assert.equal(parseFrontmatter(frontmatter, label).applyTo, "**", `${label}: applyTo must be "**"`);
-  for (const name of commandNames) {
-    assert.ok(body.includes(`/agento ${name}`), `${label} does not list /agento ${name}`);
+test("only the core and ai-skills are always-on", () => {
+  // Every applyTo: "**" file is re-sent on every request; the policy loads on demand.
+  const alwaysOn = instructionFiles
+    .filter((file) => parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file)).applyTo === "**")
+    .map((file) => path.basename(file));
+  assert.deepEqual(alwaysOn, ["agento-core.instructions.md", "ai-skills.instructions.md"], "applyTo: \"**\" set changed");
+  const core = fs.readFileSync(rel(".github", "instructions", "agento-core.instructions.md"), "utf8");
+  assert.ok(core.trimEnd().split(/\r?\n/).length <= 40, "agento-core.instructions.md exceeds 40 lines");
+  const policy = rel(".github", "instructions", "delivery-policy.instructions.md");
+  assert.notEqual(parseFrontmatter(splitFrontmatter(policy).frontmatter, "delivery-policy").applyTo, "**", "delivery-policy.instructions.md must not be always-on");
+});
+
+test("the core states the canonical form and the six redirected forms", () => {
+  const { body } = splitFrontmatter(rel(".github", "instructions", "agento-core.instructions.md"));
+  const forms = ["/agento <name> [args]", "/<name>", "/<name>.prompt", "/<name>.md", "/agento <name>.prompt", "/agento <name>.prompt.md", "/agento <name>.md"];
+  for (const form of forms) {
+    assert.ok(body.includes(`\`${form}\``), `agento-core.instructions.md does not state ${form}`);
   }
+  assert.match(body, /do\s+not ask\s+for confirmation/, "agento-core.instructions.md lost the proceed-without-confirmation rule");
   const known = new Set(commandNames);
   for (const [, token] of body.matchAll(/\/agento ([a-z0-9-]+)\b/g)) {
-    assert.ok(known.has(token), `${label} lists /agento ${token}, which has no .github/prompts/${token}.prompt.md`);
+    assert.ok(known.has(token), `agento-core.instructions.md names /agento ${token}, which has no .github/prompts/${token}.prompt.md`);
   }
 });
 
