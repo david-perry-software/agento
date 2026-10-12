@@ -6927,3 +6927,249 @@ test("review-publish rejections write nothing: missing review, a missing or dupl
   assert.equal(accepted.code, 0, JSON.stringify(accepted.json));
   assert.equal(stub.state().product.comments.length, 1);
 });
+
+// --- publish-pr ---------------------------------------------------------------------
+
+// A changes branch in `dir` with one commit adding `file`; the checkout stays on it.
+function changesBranch(dir, branch = "changes/tidy", file = "tidy.txt", text = "tidy\n") {
+  git(dir, "switch", "-q", "-c", branch);
+  fs.writeFileSync(path.join(dir, file), text);
+  git(dir, "add", "-A");
+  git(dir, "commit", "-q", "-m", `chore: add ${file}`);
+  return branch;
+}
+
+const publishPrRun = (cwd, env, ...args) => runWith({ cwd, env }, "publish-pr", ...args);
+const ciCheck = (name, conclusion) => ({ name, status: conclusion ? "COMPLETED" : "IN_PROGRESS", conclusion });
+const mergeCalls = (stub) => stub.calls().filter((c) => / pr merge /.test(c)).map((c) => c.replace(/^\S+ /, ""));
+
+test("publish-pr is listed in the usage header and validates its arguments", () => {
+  const { repo } = makeWorktreeRepo();
+  assert.match(run(repo).json.usage.join("\n"), /publish-pr \[--dir <path>\] \[--branch <name>\] \[--title <text>\] \[--body-file <file\|->\] \[--merge\] \[--wait N\]/);
+  for (const args of [["publish-pr", "extra"], ["publish-pr", "--wait", "61"], ["publish-pr", "--dir"], ["publish-pr", "--title"], ["publish-pr", "--branch", "--merge"]]) {
+    const { code, json } = run(repo, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+});
+
+test("publish-pr refuses the default branch, a detached HEAD, every delivery prefix, an unknown repo, dirt, an empty branch, and a body file inside the checkout, writing nothing", () => {
+  const { repo } = makeWorktreeRepo();
+  const stub = shipStub();
+  const snapshot = () => [refState(repo), git(repo, "status", "--porcelain", "--untracked-files=all")];
+  const refuses = (reason, args = [], prepare = null, undo = null) => {
+    prepare?.();
+    const before = snapshot();
+    const { code, json } = publishPrRun(repo, stub.env, "--merge", ...args);
+    assert.equal(code, 3, `${reason}: ${JSON.stringify(json)}`);
+    assert.equal(json.status, "rejected", reason);
+    assert.equal(json.reason, reason);
+    assert.deepEqual(json.actions, [], reason);
+    assert.deepEqual(snapshot(), before, `${reason}: nothing written`);
+    undo?.();
+    return json;
+  };
+
+  refuses("default-branch");
+  for (const branch of ["feature/x", "issue/x", "post-ship/x"]) {
+    const json = refuses("delivery-branch", [], () => git(repo, "switch", "-q", "-c", branch), () => {
+      git(repo, "switch", "-q", "main");
+      git(repo, "branch", "-q", "-D", branch);
+    });
+    assert.match(json.message, /merged only by \/agento ship/);
+  }
+  refuses("detached-head", [], () => git(repo, "switch", "-q", "--detach"), () => git(repo, "switch", "-q", "main"));
+  refuses("unknown-repo", ["--dir", makeRepo()]);
+  refuses("nothing-to-publish", [], () => git(repo, "switch", "-q", "-c", "changes/empty"), () => {
+    git(repo, "switch", "-q", "main");
+    git(repo, "branch", "-q", "-D", "changes/empty");
+  });
+  changesBranch(repo);
+  const dirty = refuses("dirty", [], () => fs.writeFileSync(path.join(repo, "tidy.txt"), "edited\n"), () => git(repo, "checkout", "-q", "--", "tidy.txt"));
+  assert.deepEqual(dirty.paths, ["tidy.txt"]);
+  const inside = path.join(repo, "body.md");
+  refuses("body-file-inside-checkout", ["--body-file", inside], () => fs.writeFileSync(inside, "x\n"), () => fs.rmSync(inside));
+  assert.ok(stub.calls().every((c) => !/ pr (create|merge)/.test(c)), stub.calls().join("\n"));
+});
+
+test("publish-pr without --merge pushes and opens one non-draft PR; a re-send reuses it", () => {
+  const { repo } = makeWorktreeRepo();
+  const stub = shipStub();
+  const branch = changesBranch(repo);
+  const bodyFile = path.join(os.tmpdir(), `agento-pr-body-${process.pid}.md`);
+  fs.writeFileSync(bodyFile, "Why: tidy.\n");
+  const { code, json } = publishPrRun(repo, stub.env, "--title", "chore: tidy the repo", "--body-file", bodyFile);
+  fs.rmSync(bodyFile);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "opened");
+  assert.deepEqual(json.checkout, { path: repo, repo: "product", linked: false, defaultBranch: "main" });
+  assert.deepEqual(json.actions.map((a) => a.step), ["push", "pr-create"]);
+  const pr = stub.state().product.prs[branch];
+  assert.equal(pr.isDraft, false);
+  assert.equal(pr.title, "chore: tidy the repo");
+  assert.equal(pr.body, "Why: tidy.\n");
+  assert.equal(json.pr.number, pr.number);
+  assert.equal(remoteHead(repo, branch), git(repo, "rev-parse", "HEAD"));
+  assert.equal(git(repo, "rev-parse", "--abbrev-ref", "@{upstream}"), `origin/${branch}`);
+
+  const again = publishPrRun(repo, stub.env);
+  assert.equal(again.code, 0, JSON.stringify(again.json));
+  assert.equal(again.json.outcome, "opened");
+  assert.deepEqual(again.json.actions, []);
+  assert.equal(Object.keys(stub.state().product.prs).length, 1);
+  neverReadiesOrMerges(stub);
+});
+
+test("publish-pr --merge: pending (exit 2) names the identical re-send, which merges with --merge only, deletes the remote branch, and syncs the default; --branch resumes after the merge", () => {
+  const { repo } = makeWorktreeRepo();
+  const branch = changesBranch(repo);
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15, isDraft: false, rollups: [[ciCheck("Unit tests", null)], [ciCheck("Unit tests", "SUCCESS")]] } } } });
+
+  const first = publishPrRun(repo, stub.env, "--merge", "--wait", "0");
+  assert.equal(first.code, 2, JSON.stringify(first.json));
+  assert.equal(first.json.status, "pending");
+  assert.equal(first.json.phase, "checks");
+  assert.deepEqual(first.json.next, ["node <agento-root>/scripts/agento.mjs publish-pr --merge --wait 0"]);
+  assert.deepEqual(first.json.actions.map((a) => a.step), ["push"]);
+  assert.equal(stub.state().product.prs[branch].state, "OPEN");
+
+  const second = publishPrRun(repo, stub.env, "--merge", "--wait", "0");
+  assert.equal(second.code, 0, JSON.stringify(second.json));
+  assert.equal(second.json.outcome, "merged");
+  assert.deepEqual(second.json.actions.map((a) => a.step), ["merge", "delete-branch", "switch", "sync", "delete-local-branch"]);
+  assert.deepEqual(mergeCalls(stub), ["pr merge 15 --merge"]);
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(second.json.mergeSha, git(repo, "rev-parse", "HEAD"));
+  assert.ok(fs.existsSync(path.join(repo, "tidy.txt")));
+  assert.equal(git(repo, "branch", "--list", branch), "");
+  assert.equal(git(repo, "ls-remote", "--heads", "origin", branch), "");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  assert.deepEqual(second.json.sync, { switched: true, fastForwarded: true, branchDeleted: true, skipped: null });
+
+  const resumed = publishPrRun(repo, stub.env, "--branch", branch, "--merge");
+  assert.equal(resumed.code, 0, JSON.stringify(resumed.json));
+  assert.equal(resumed.json.outcome, "already-merged");
+  assert.deepEqual(resumed.json.actions, []);
+  assert.deepEqual(mergeCalls(stub), ["pr merge 15 --merge"], "a merged PR is never merged again");
+});
+
+test("publish-pr --branch resumes an interrupted publish at delete-branch and sync", () => {
+  const { repo } = makeWorktreeRepo();
+  const branch = changesBranch(repo);
+  const stub = shipStub();
+  assert.equal(publishPrRun(repo, stub.env).code, 0);
+  spawnSync("gh", ["pr", "merge", "100", "--merge"], { cwd: repo, env: stub.env });
+  git(repo, "switch", "-q", "main");
+  const { code, json } = publishPrRun(repo, stub.env, "--branch", branch, "--merge");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "already-merged");
+  assert.deepEqual(json.actions.map((a) => a.step), ["delete-branch", "sync", "delete-local-branch"]);
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assert.equal(git(repo, "branch", "--list", branch), "");
+  const unmerged = publishPrRun(repo, stub.env, "--branch", "changes/never", "--merge");
+  assert.equal(unmerged.code, 3);
+  assert.equal(unmerged.json.reason, "default-branch");
+});
+
+test("publish-pr --merge stops blocked on a failing check with nothing merged", () => {
+  const { repo } = makeWorktreeRepo();
+  const branch = changesBranch(repo);
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15, isDraft: false, rollups: [[ciCheck("Unit tests", "FAILURE")]] } } } });
+  const main = git(repo, "rev-parse", "origin/main");
+  const { code, json } = publishPrRun(repo, stub.env, "--merge", "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "blocked");
+  assert.equal(json.reason, "checks-failed");
+  assert.match(json.message, /^PR #15 has a failing required check \(RESULT: failed\); nothing was merged/);
+  assert.deepEqual(mergeCalls(stub), []);
+  assert.equal(stub.state().product.prs[branch].state, "OPEN");
+  git(repo, "fetch", "-q", "origin");
+  assert.equal(git(repo, "rev-parse", "origin/main"), main);
+  assert.equal(git(repo, "branch", "--show-current"), branch);
+});
+
+test("publish-pr merges origin/<default> into a BEHIND branch (a merge commit, pushed) and keeps waiting; a conflict aborts with its files", () => {
+  const { repo } = makeWorktreeRepo();
+  const branch = changesBranch(repo);
+  advanceRemote(repo, "main", "other.txt", "main\n");
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15, isDraft: false, mergeStateStatus: "BEHIND" } } } });
+  const first = publishPrRun(repo, stub.env, "--merge", "--wait", "0");
+  assert.equal(first.code, 2, JSON.stringify(first.json));
+  assert.deepEqual(first.json.actions.map((a) => a.step), ["push", "integrate", "push"]);
+  assert.equal(parentsOf(repo).length, 2, "a merge commit, never a rebase");
+  assert.equal(remoteHead(repo, branch), git(repo, "rev-parse", "HEAD"));
+  stub.update((s) => Object.assign(s.product.prs[branch], { mergeStateStatus: "CLEAN" }));
+  const second = publishPrRun(repo, stub.env, "--merge", "--wait", "0");
+  assert.equal(second.code, 0, JSON.stringify(second.json));
+  assert.equal(second.json.outcome, "merged");
+  assert.ok(fs.existsSync(path.join(repo, "other.txt")) && fs.existsSync(path.join(repo, "tidy.txt")));
+
+  const clash = makeWorktreeRepo().repo;
+  const clashBranch = changesBranch(clash, "changes/clash", "shared.txt", "branch\n");
+  advanceRemote(clash, "main", "shared.txt", "main\n");
+  const clashStub = shipStub({ product: { prs: { [clashBranch]: { number: 15, isDraft: false, mergeStateStatus: "BEHIND" } } } });
+  const head = git(clash, "rev-parse", "HEAD");
+  const conflict = publishPrRun(clash, clashStub.env, "--merge", "--wait", "0");
+  assert.equal(conflict.code, 3, JSON.stringify(conflict.json));
+  assert.equal(conflict.json.reason, "integration-conflict");
+  assert.deepEqual(conflict.json.conflicts, ["shared.txt"]);
+  assert.equal(git(clash, "status", "--porcelain"), "");
+  assert.equal(git(clash, "rev-parse", "HEAD"), head);
+  assert.deepEqual(mergeCalls(clashStub), []);
+});
+
+test("publish-pr in a linked worktree merges but leaves the worktree on its branch with the close-session handoff", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const free = path.join(wt, "freehand-tidy");
+  git(repo, "worktree", "add", "-q", "-b", "changes/tidy", free, "origin/main");
+  fs.writeFileSync(path.join(free, "tidy.txt"), "tidy\n");
+  git(free, "add", "-A");
+  git(free, "commit", "-q", "-m", "chore: tidy");
+  const stub = shipStub();
+  const { code, json } = publishPrRun(free, stub.env, "--merge", "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "merged");
+  assert.equal(json.checkout.linked, true);
+  assert.deepEqual(json.actions.map((a) => a.step), ["push", "pr-create", "merge", "delete-branch"]);
+  assert.deepEqual(json.next, ["/agento close-session changes/tidy"]);
+  assert.match(json.sync.skipped, /linked worktree .* stays on changes\/tidy/);
+  assert.equal(git(free, "branch", "--show-current"), "changes/tidy");
+  assert.notEqual(git(repo, "branch", "--list", "changes/tidy"), "");
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+});
+
+test("publish-pr --dir publishes a companion clone branch through the companion repository", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const branch = changesBranch(docs, "changes/initiative-x", "x.md", "x\n");
+  const stub = shipStub();
+  const before = refState(repo);
+  const { code, json } = publishPrRun(repo, stub.env, "--dir", docs, "--merge", "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.checkout.repo, "companion");
+  assert.equal(json.outcome, "merged");
+  assert.equal(stub.state().companion.prs[branch].state, "MERGED");
+  assert.deepEqual(Object.keys(stub.state().product.prs), []);
+  assert.ok(stub.calls().some((c) => / --repo acme\/project-docs/.test(c)), stub.calls().join("\n"));
+  assert.equal(git(docs, "branch", "--show-current"), "main");
+  assert.equal(git(docs, "rev-parse", "HEAD"), git(docs, "rev-parse", "origin/main"));
+  assert.deepEqual(refState(repo), before, "the product checkout is untouched");
+});
+
+test("publish-pr reports gh and push authentication failures with a reauth command", () => {
+  const { repo } = makeWorktreeRepo();
+  changesBranch(repo);
+  const { env } = gitLoggingPath({ gh: "#!/bin/sh\necho 'HTTP 401: Bad credentials (https://api.github.com/graphql). Try authenticating with: gh auth login' >&2\nexit 1\n" });
+  const gh = publishPrRun(repo, env, "--merge");
+  assert.equal(gh.code, 3, JSON.stringify(gh.json));
+  assert.equal(gh.json.status, "failed");
+  assert.equal(gh.json.reason, "gh-auth");
+  assert.equal(gh.json.reauth, "gh auth login");
+
+  fs.writeFileSync(path.join(repo, ".git", "hooks", "pre-push"), "#!/bin/sh\necho 'git@example.invalid: Permission denied (publickey).' >&2\nexit 1\n", { mode: 0o755 });
+  const push = publishPrRun(repo, shipStub().env, "--merge");
+  assert.equal(push.code, 3, JSON.stringify(push.json));
+  assert.equal(push.json.reason, "push-auth");
+  assert.ok(push.json.reauth, "a reauth command");
+});
