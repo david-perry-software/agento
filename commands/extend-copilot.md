@@ -14,8 +14,10 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (an existing capability with the same name is modified in place,
-never duplicated). Window check per §11: requires role `any` (read-only / not
-window-sensitive).
+never duplicated). Open with one `node <agento-root>/scripts/agento.mjs preflight
+extend-copilot` call (§9–§11): print its `receipt` and then its `preflightLines`
+verbatim, and stop on `status: rejected` (exit 3), writing nothing.
+Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 Follow your creation protocol: load the `agent-customization` skill, pick the right
 primitive with its decision flow, interview me for anything ambiguous (trigger

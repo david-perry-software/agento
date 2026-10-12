@@ -15,9 +15,10 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (a slug that already has a roadmap enters your resume protocol — no
 second branch, worktree, or PR; an existing GitHub issue is linked, not duplicated).
-Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for new-issue` and map
-`fail`/`warn` per §10.
+Open with one `node <agento-root>/scripts/agento.mjs preflight new-issue` call
+(§9–§11), with `issue <slug>` appended when resuming a promoted planning worktree:
+print its `receipt` and then its `preflightLines` verbatim, and stop on `status:
+rejected` (exit 3), writing nothing.
 Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 
 The argument takes three forms — detect which applies:

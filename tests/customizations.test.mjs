@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Structural checks for the Copilot customization files. One malformed agent file
 // silently drops every custom agent, and a mistyped agent name silently breaks a
@@ -311,7 +311,7 @@ test("ship is one agento.mjs ship call with no hand-run fallback procedure", () 
   const prompt = rel(".github", "prompts", "ship.prompt.md");
   const body = splitFrontmatter(prompt).body;
   assert.equal(fs.readFileSync(rel("commands", "ship.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/ship.md must mirror the prompt byte for byte");
-  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs find <slug>/);
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs preflight ship <slug>/);
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs ship <type> <slug>/);
   assert.match(body, /--confirm <confirmToken>/, "the confirmation reaches the CLI as --confirm <token>");
   for (const [pattern, why] of [
@@ -498,16 +498,58 @@ test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-
   }
 });
 
-test("exactly the commands that need gh, code, or network run doctor --for themselves", () => {
+// The hand-run opening calls one `agento.mjs preflight` call replaces (session,
+// doctor --for, resolve, rev-parse for the op-id); `session --pr` stays a data read.
+const HAND_RUN_OPENING = [
+  [/doctor --for [a-z<]/, "doctor --for"],
+  [/agento\.mjs resolve\b/, "agento.mjs resolve"],
+  [/node <agento-root>\/scripts\/agento\.mjs session\b(?! --pr)/, "agento.mjs session"],
+  [/rev-parse --short HEAD/, "git rev-parse --short HEAD"],
+];
+
+test("every command opens with one agento.mjs preflight <name> call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
   for (const file of promptFiles) {
     const name = path.basename(file, ".prompt.md");
-    const { label, needs } = declarations(file);
-    const body = splitFrontmatter(file).body;
-    const mustRun = needs.some((n) => ["gh", "code", "network"].includes(n));
-    const cites = new RegExp(`doctor --for ${name}\\b`).test(body);
-    assert.equal(cites, mustRun, mustRun ? `${label}: needs gh/code/network but never runs doctor --for ${name}` : `${label}: runs doctor --for but declares none of gh, code, network`);
-    const others = [...body.matchAll(/doctor --for ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name && n !== "<command>");
-    assert.deepEqual(others, [], `${label}: runs doctor --for another command`);
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
+    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs preflight ${name}\\b`), `${label}: never runs agento.mjs preflight ${name}`);
+    const others = [...body.matchAll(/agento\.mjs preflight ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name);
+    assert.deepEqual(others, [], `${label}: runs preflight for another command`);
+    assert.match(body, /`receipt`[^.]*`preflightLines`/, `${label}: must print the preflight's receipt and preflightLines`);
+    for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
+  }
+});
+
+// The roles, branch conditions, and slug roles a "Window check per §11: requires role …"
+// sentence states, in WINDOW_ROLES' shape.
+function windowRuleOf(file) {
+  const label = path.relative(repoRoot, file);
+  const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
+  const sentence = body.match(/Window check per §11: requires role (.*?)\.(?=\s|$)/)?.[1];
+  assert.ok(sentence, `${label}: no window check sentence`);
+  const main = sentence.replace(/\([^)]*\)/g, "");
+  const roleTokens = (text) => [...text.matchAll(/`([a-z]+)`/g)].map((m) => m[1]).filter((r) => ["any", "primary", "plan", "build", "freehand", "unmanaged"].includes(r));
+  const roles = roleTokens(main);
+  const inParens = sentence.match(/\(in ((?:`[a-z]+`(?:,? or |, )?)+), a slug argument/)?.[1];
+  const resuming = main.match(/`([a-z]+)` when resuming this slug's/)?.[1];
+  const slugRoles = /with `delivery\.slug` equal/.test(main) ? roles : inParens ? roleTokens(inParens) : resuming ? [resuming] : [];
+  return {
+    roles: [...roles].sort(),
+    branch: /non-default branch/.test(main) ? "non-default" : /default branch/.test(main) ? "default" : null,
+    clean: /\bclean\b/.test(main),
+    slugRoles: [...slugRoles].sort(),
+  };
+}
+
+test("the CLI WINDOW_ROLES table agrees with every command's window check line", async () => {
+  const { WINDOW_ROLES } = await import(pathToFileURL(rel("scripts", "session-state.mjs")).href);
+  const names = promptFiles.map((file) => path.basename(file, ".prompt.md"));
+  assert.deepEqual(Object.keys(WINDOW_ROLES).sort(), [...names].sort(), "WINDOW_ROLES must list exactly the slash commands");
+  for (const file of promptFiles) {
+    const name = path.basename(file, ".prompt.md");
+    const rule = WINDOW_ROLES[name];
+    const cli = { roles: [...rule.roles].sort(), branch: rule.branch ?? null, clean: Boolean(rule.clean), slugRoles: [...(rule.slugRoles ?? [])].sort() };
+    assert.deepEqual(windowRuleOf(file), cli, `${path.relative(repoRoot, file)}: window check line disagrees with WINDOW_ROLES.${name}`);
   }
 });
 

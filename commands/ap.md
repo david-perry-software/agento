@@ -14,14 +14,16 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (re-enter the build or review resume protocol wherever the roadmap
-stands). Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for ap` and map `fail`/`warn` per §10.
+stands). Open with one `node <agento-root>/scripts/agento.mjs preflight ap <argument>`
+call (§9–§11; the path is in the session context line `Agento CLI:`): print its
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+(exit 3), writing nothing.
 Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
-- Accept `feature/<slug>`, `issue/<slug>`, or a bare slug. Resolve it with the Agento
-  CLI (`node <agento-root>/scripts/agento.mjs resolve <type> <slug>`, or `find <slug>`
-  for a bare slug; the path is in the session context line `Agento CLI:`) and stop on
-  any `status` other than `ok`, reporting its `message`.
+- Accept `feature/<slug>`, `issue/<slug>`, or a bare slug and pass it to the preflight
+  call unchanged; its `resolve` section is the roadmap resolution (a bare slug is
+  resolved type-agnostically). Stop on any `resolve.status` other than `ok`,
+  reporting its `message`.
 - If the argument is blank, run `agento.mjs status`, list the `resumable` items with
   their `status`, `steps`, and `nextStep`, recommend the best candidate, and ask which
   to run.

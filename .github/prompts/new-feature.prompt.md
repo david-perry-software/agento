@@ -14,9 +14,11 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (a slug that already has a roadmap enters your resume protocol — no
 second branch, worktree, or PR; the slug rejection in step 4 is for a different
-feature colliding on the same slug). Before the first write, run
-`node <agento-root>/scripts/agento.mjs doctor --for new-feature` and map
-`fail`/`warn` per §10.
+feature colliding on the same slug). Open with one
+`node <agento-root>/scripts/agento.mjs preflight new-feature` call (§9–§11), with
+`feature <slug>` appended when resuming a promoted planning worktree: print its
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+(exit 3), writing nothing.
 Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 
 **Initiative member intake.** When the whole argument has the form
