@@ -6565,7 +6565,7 @@ test("step-commit stops with reverify (exit 2, nothing pushed) when origin/main 
 test("step-commit guard equivalence: every rejection leaves both halves unchanged", () => {
   const pair = makePairRepo();
   const { repo, docs, wt } = pair;
-  const { owner, half, dir } = pairDelivery(pair, "widget", { status: "in-progress" });
+  const { owner, half, dir } = pairDelivery(pair, "widget", { status: "in-progress", writeCompanion: writeFile("features/2026/10/other/plan.md", "other\n") });
   const stub = shipStub();
   const snapshot = () => [refState(repo, docs), git(owner, "status", "--porcelain", "--untracked-files=all"), git(half, "status", "--porcelain", "--untracked-files=all")];
   const rejects = (cwd, message, args, reason, prepare = null, undo = null) => {
@@ -6591,6 +6591,18 @@ test("step-commit guard equivalence: every rejection leaves both halves unchange
   rejects(plan, ok, ["--step", "1.2"], /^wrong window: role=plan /);
   git(repo, "worktree", "remove", "--force", plan);
   rejects(owner, ok, ["--step", "1.2"], "detached-head", () => git(half, "switch", "-q", "--detach"), () => git(half, "switch", "-q", "feature/widget"));
+  // The half on the default branch still holding the slug's roadmap (staged from the branch).
+  const toDefault = () => {
+    git(half, "checkout", "-q", "--ignore-other-worktrees", "main");
+    git(half, "checkout", "-q", "feature/widget", "--", dir);
+  };
+  const onDefault = rejects(owner, ok, ["--step", "1.2"], "default-branch", toDefault, () => git(half, "checkout", "-q", "-f", "feature/widget"));
+  assert.match(onDefault.message, /the companion half .* is on main; never commit or push to the default branch/);
+  const mismatch = rejects(owner, ok, ["--step", "1.2"], "branch-mismatch", () => git(half, "switch", "-q", "-c", "feature/elsewhere"), () => {
+    git(half, "switch", "-q", "feature/widget");
+    git(half, "branch", "-q", "-D", "feature/elsewhere");
+  });
+  assert.match(mismatch.message, /the companion half .* is on feature\/elsewhere, but the roadmap names feature\/widget/);
 
   // Unticked step, no roadmap change, messages, and companion byproducts.
   rejects(owner, ok, ["--step", "1.2"], "step-not-ticked");
@@ -6604,16 +6616,21 @@ test("step-commit guard equivalence: every rejection leaves both halves unchange
   const stray = path.join(half, "stray.log");
   const json = rejects(owner, ok, ["--step", "1.2"], "companion-outside-slug", () => fs.writeFileSync(stray, "x"), () => fs.rmSync(stray));
   assert.deepEqual(json.paths, ["stray.log"]);
+  // A staged rename from outside into the slug directory: status -z shows only the destination.
+  const origin = "features/2026/10/other/plan.md";
+  const renamed = rejects(owner, ok, ["--step", "1.2"], "companion-outside-slug", () => git(half, "mv", origin, `${dir}/stolen.md`), () => git(half, "mv", `${dir}/stolen.md`, origin));
+  assert.deepEqual(renamed.paths, [origin]);
 
   // The same state is accepted once the byproduct is gone.
   const accepted = stepCommitRun(owner, stub.env, ok, "--step", "1.2");
   assert.equal(accepted.code, 0, JSON.stringify(accepted.json));
+  assert.equal(git(half, "cat-file", "-t", `HEAD:${origin}`), "blob", "the file outside the slug directory is untouched");
 });
 
 test("step-commit reports a gh authentication failure with the re-login command after pushing", () => {
   const fixture = makeWorktreeRepo();
   const { branch, owner, dir } = inRepoDelivery(fixture, "widget", { status: "in-progress" });
-  const { env } = restrictedPath({ gh: "#!/bin/sh\necho 'HTTP 401: Bad credentials (https://api.github.com/graphql). Try authenticating with: gh auth login' >&2\nexit 1\n" });
+  const { log, env } = gitLoggingPath({ gh: "#!/bin/sh\necho 'HTTP 401: Bad credentials (https://api.github.com/graphql). Try authenticating with: gh auth login' >&2\nexit 1\n" });
   tick(owner, dir, "1.2");
   const { code, json } = stepCommitRun(owner, env, "docs(feature): tick (step 1.2)", "--step", "1.2");
   assert.equal(code, 3, JSON.stringify(json));
@@ -6621,4 +6638,7 @@ test("step-commit reports a gh authentication failure with the re-login command 
   assert.equal(json.reason, "gh-auth");
   assert.equal(json.reauth, "gh auth login");
   cleanAndPushed(owner, branch);
+  // A full refspec on every push, so no branch name can turn into a forced push.
+  const pushes = fs.readFileSync(log, "utf8").split("\n").filter((l) => / push /.test(` ${l} `));
+  assert.deepEqual(pushes.map((l) => l.replace(/^-C \S+ /, "")), [`push origin refs/heads/${branch}:refs/heads/${branch}`]);
 });

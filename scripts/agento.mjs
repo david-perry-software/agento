@@ -2099,7 +2099,8 @@ function pushHalves(run, win, halves) {
     const upstream = git(half.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
     const remote = git(half.path, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${win.branch}`);
     if (upstream && remote && remote === git(half.path, "rev-parse", "HEAD")) continue;
-    const result = pushRef(half.path, win.branch, { setUpstream: !upstream });
+    // A full refspec, so a branch named `+x` can never become a forced push.
+    const result = pushRef(half.path, `refs/heads/${win.branch}:refs/heads/${win.branch}`, { setUpstream: !upstream });
     if (!result.ok) run.fail(result.reason, `${result.message}; pushed so far: ${halves.filter((h) => h.pushed).map((h) => h.label).join(", ") || "nothing"} — re-send to resume`, result.reauth ? { reauth: result.reauth } : {});
     half.pushed = true;
     run.out.pushed?.push(half.label);
@@ -2182,8 +2183,11 @@ function stepCommit() {
   run.out.phase = "stage";
   const productTree = treeState(product.path);
   const companionTree = companion ? treeState(companion.path) : null;
+  // `--no-renames` lists a staged rename's origin as a deletion, which status -z hides.
+  const staged = (half) => git(half.path, "diff", "--cached", "--name-only", "--no-renames", "-z").split("\0").filter(Boolean);
+  const outsideSlug = (paths) => [...new Set(paths)].filter((p) => !p.startsWith(`${win.slugDir}/`)).sort();
   if (companionTree) {
-    const outside = [...companionTree.tracked, ...companionTree.untracked].filter((p) => !p.startsWith(`${win.slugDir}/`));
+    const outside = outsideSlug([...companionTree.tracked, ...companionTree.untracked, ...staged(companion)]);
     if (outside.length) run.reject("companion-outside-slug", { paths: outside, message: `the companion half ${companion.path} has changes outside ${win.slugDir}/: ${outside.join(", ")}; delete byproducts or move them out, then re-send` });
   }
   const changed = (tree) => Boolean(tree && tree.tracked.length + tree.untracked.length);
@@ -2212,7 +2216,11 @@ function stepCommit() {
   const commit = (half, pathspec, file = messageFile) => {
     const add = gitRun(half.path, ["add", "-A", "--", pathspec]);
     if (!add.ok) run.fail("stage-failed", `git -C ${half.path} add -A -- ${pathspec}: ${add.stderr}`);
-    const result = gitRun(half.path, ["commit", "-q", "-F", file], 300000);
+    if (half === companion) {
+      const escaped = outsideSlug(staged(half));
+      if (escaped.length) run.fail("companion-outside-slug", `the companion index at ${half.path} holds paths outside ${win.slugDir}/ (${escaped.join(", ")}); nothing was committed there — unstage them, then re-send`, { half: half.label, paths: escaped });
+    }
+    const result = gitRun(half.path, ["commit", "-q", "-F", file, "--", pathspec], 300000);
     if (!result.ok) run.fail("commit-failed", `git -C ${half.path} commit: ${result.stderr || result.stdout}; nothing was pushed — fix it and re-send`, { half: half.label });
     const sha = git(half.path, "rev-parse", "HEAD");
     const files = git(half.path, "show", "--name-only", "--format=", "HEAD").split("\n").filter(Boolean);
