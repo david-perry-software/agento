@@ -16,6 +16,8 @@
 //   node scripts/agento.mjs start-session [<feature|issue>/<slug> | <session-id>] [--resume] [--no-open]   (window check, doctor, fetch, worktree pair, post-add check, workspace file, code --new-window)
 //   node scripts/agento.mjs close-session <feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]   (window check, fetch --prune, close decision, clean/pushed checks, occupant gate, remove pair + workspace file, delete merged local branches)
 //   node scripts/agento.mjs ship <feature|issue> <slug> [--confirm <token>] [--wait N]   (audit → --confirm → ready, checks, merge, companion merge, sync, release wait, teardown, epilogue; resumes from git + GitHub state; exit 0 ok, 2 pending, 3 rejected/blocked/failed)
+//   node scripts/agento.mjs sync <feature|issue> <slug>   (build window: fetch both halves, merge origin/<branch> then origin/<default> where not ancestors — never rebase; a conflict aborts with its files, nothing pushed; push halves left ahead, product first; merged: true → re-verify; exit 0 ok, 3 rejected/failed)
+//   node scripts/agento.mjs step-commit <feature|issue> <slug> [--step N.M] --message-file <file|->   (build window: product commit, then the companion tick scoped to the slug dir; roadmap rule; integrate both defaults — exit 2 reverify when one merged; push product then companion; open missing draft PRs; end clean with ahead 0)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs metrics [<slug>]           (phase durations, review rounds, pauses, merge date, post-ship latency from git history; + aggregate medians)
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
@@ -55,8 +57,9 @@ import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 function usage(message) {
-  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 31);
-  emit({ status: "usage-error", message, usage: lines.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1);
+  const comments = lines.slice(0, lines.findIndex((l) => !l.startsWith("//")));
+  emit({ status: "usage-error", message, usage: comments.map((l) => l.replace(/^\/\/ ?/, "")) }, 1);
 }
 
 function emit(result, code = 0) {
@@ -101,6 +104,14 @@ function parseArgs(argv) {
     else if (arg === "--plugin-root") {
       options.pluginRoot = argv[++i];
       if (!options.pluginRoot) usage("--plugin-root takes a directory");
+    }
+    else if (arg === "--step") {
+      options.step = argv[++i];
+      if (!/^\d+\.\d+$/.test(options.step ?? "")) usage(`--step takes a roadmap step id N.M, got ${JSON.stringify(options.step ?? "")}`);
+    }
+    else if (arg === "--message-file") {
+      options.messageFile = argv[++i];
+      if (!options.messageFile || (options.messageFile.startsWith("--"))) usage("--message-file takes a file path or - (stdin)");
     }
     else if (arg === "--for") {
       options.for = argv[++i];
@@ -1966,6 +1977,336 @@ function removeSessionPair({ halves, workspace = null, branches = { product: nul
   return out;
 }
 
+// --- shared integration helpers (ship, sync, step-commit) -------------------
+
+// Result-returning, never emitting: each caller reports a failure in its own contract.
+function fetchOrigin(dir) {
+  const result = gitRun(dir, ["fetch", "--prune", "origin"]);
+  if (result.ok) return { ok: true };
+  const url = originOf(dir);
+  const auth = !result.timedOut && classifyFetchFailure(result.stderr) === "auth";
+  const stderr = result.stderr.split("\n")[0];
+  return { ok: false, auth, url, stderr, reauth: auth ? reauthFor(url) : null, message: `git -C ${dir} fetch --prune origin: ${stderr}` };
+}
+
+// `merge --no-edit`, never a rebase; a conflict is aborted and reported with its files.
+function mergeRef(dir, ref) {
+  const merge = gitRun(dir, ["merge", "--no-edit", ref], 120000);
+  if (merge.ok) return { ok: true, merged: !/Already up to date/.test(merge.stdout) };
+  const conflicts = git(dir, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
+  gitRun(dir, ["merge", "--abort"]);
+  return { ok: false, conflicts, clean: git(dir, "status", "--porcelain") === "", stderr: merge.stderr.split("\n")[0] };
+}
+
+// A plain push, never forced; `-u` only when the caller asks for it.
+function pushRef(dir, refspec, { setUpstream = false } = {}) {
+  const args = ["push", ...(setUpstream ? ["-u"] : []), "origin", refspec];
+  const result = gitRun(dir, args, 120000);
+  if (result.ok) return { ok: true };
+  const auth = classifyFetchFailure(result.stderr) === "auth";
+  return { ok: false, reason: auth ? "push-auth" : "push-failed", reauth: auth ? reauthFor(originOf(dir)) : null, message: `git -C ${dir} ${args.join(" ")}: ${result.stderr.split("\n")[0]}` };
+}
+
+// --- sync and step-commit: the Builder's integration and commit choreography --
+
+const STEP_EXIT = { ok: 0, reverify: 2, rejected: 3, failed: 3 };
+const CONVENTIONAL = /^[a-z]+(\([^)]+\))?!?: \S/;
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// The slug's build window (§11) on the roadmap's branch in every half; never the
+// default branch, never detached — the guard cannot see the git this CLI runs.
+function buildWindow(type, slug) {
+  const record = sessionRecord();
+  const verdict = windowVerdict({ command: `build-${type}`, record, slug, defaultBranch: config.branches.default });
+  const base = { record, allowed: verdict.allowed, elsewhere: verdict.elsewhere, warnings: [...record.warnings] };
+  const reject = (reason, message = reason) => ({ ok: false, reason, message, ...base });
+  if (!verdict.match) return reject(verdict.reason);
+  const { worktree, delivery, companion } = record;
+  if (delivery?.type !== type || !delivery.roadmap) return reject(`wrong window: this build window holds no roadmap for ${type}/${slug} (${worktree.path})`);
+  const { branch } = delivery;
+  const defaultBranch = config.branches.default;
+  const halves = [{ label: "product", path: worktree.path, branch: worktree.branch, detached: worktree.detached }];
+  if (artifacts.external) {
+    if (!companion?.registered || !fs.existsSync(companion.path)) return reject("companion-missing", `the companion half for ${type}/${slug} is not a registered worktree on disk (${companion?.path ?? "none"})`);
+    halves.push({ label: "companion", path: companion.path, branch: companion.branch, detached: companion.detached });
+  }
+  for (const half of halves) {
+    if (half.detached || !half.branch) return reject("detached-head", `the ${half.label} half ${half.path} is on a detached HEAD; switch it to ${branch} first`);
+    if (half.branch === defaultBranch) return reject("default-branch", `the ${half.label} half ${half.path} is on ${defaultBranch}; never commit or push to the default branch`);
+    if (half.branch !== branch) return reject("branch-mismatch", `the ${half.label} half ${half.path} is on ${half.branch}, but the roadmap names ${branch}`);
+  }
+  return { ok: true, ...base, branch, defaultBranch, delivery, halves: halves.map(({ label, path: p }) => ({ label, path: p })), artifactHalf: halves.at(-1).path, slugDir: delivery.dir, roadmapRel: delivery.roadmap };
+}
+
+// One JSON document per call; every stop emits it with the exit code of its status.
+function deliveryRun(command, type, slug, fields) {
+  const out = { status: "ok", command, phase: "window", outcome: null, type, slug, branch: deliveryBranch(type, slug), mode: artifacts.external ? "companion" : "in-repo", ...fields, halves: { product: null, companion: null }, conflicts: [], actions: [], reason: null, message: null, fix: null, reauth: null, next: [], allowed: [], elsewhere: [], warnings: [], root, configSource: source };
+  const finish = (extra = {}) => {
+    for (const half of Object.values(out.halves)) if (half) half.head = git(half.path, "rev-parse", "HEAD") || null;
+    const result = { ...out, ...extra };
+    emit(result, STEP_EXIT[result.status]);
+  };
+  return {
+    out,
+    finish,
+    reject: (reason, extra = {}) => finish({ status: "rejected", reason, ...extra }),
+    fail: (reason, message, extra = {}) => finish({ status: "failed", reason, message, ...extra }),
+    act: (step, detail) => out.actions.push({ step, detail }),
+  };
+}
+
+// The window check shared by both subcommands; returns the halves as live result entries.
+function openDeliveryRun(run, type, slug) {
+  const win = buildWindow(type, slug);
+  Object.assign(run.out, { allowed: win.allowed, elsewhere: win.elsewhere, warnings: win.warnings });
+  if (!win.ok) run.reject(win.reason, { message: win.message });
+  run.out.branch = win.branch;
+  const halves = win.halves.map((h) => (run.out.halves[h.label] = { label: h.label, path: h.path, head: null, merged: [], pushed: false }));
+  return { win, halves };
+}
+
+// Fetch every half, then merge origin/<branch> and origin/<default> where they are not
+// ancestors of HEAD (never a rebase); a conflict is aborted and stops the run unpushed.
+function integrateHalves(run, win, halves) {
+  run.out.phase = "integrate";
+  for (const half of halves) {
+    const fetched = fetchOrigin(half.path);
+    if (fetched.ok) continue;
+    if (fetched.auth) run.fail("fetch-auth", `${fetched.message}; nothing was pushed`, { reauth: fetched.reauth });
+    run.fail("fetch-failed", `${fetched.message}; nothing was pushed — re-send once origin is reachable`);
+  }
+  const merged = [];
+  for (const half of halves) {
+    for (const [ref, kind] of [[`origin/${win.branch}`, "branch"], [`origin/${win.defaultBranch}`, "default"]]) {
+      if (!git(half.path, "rev-parse", "--verify", "--quiet", ref) || isAncestor(half.path, ref, "HEAD")) continue;
+      const result = mergeRef(half.path, ref);
+      if (!result.ok) {
+        const files = result.conflicts.length ? result.conflicts.join(", ") : "(no paths reported)";
+        run.reject("integration-conflict", { half: half.label, ref, conflicts: result.conflicts, message: `merging ${ref} into ${win.branch} at ${half.path} conflicts in ${files} (${result.stderr || "merge failed"}); the merge was aborted${result.clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; nothing was pushed — resolve it by hand per the concurrent-delivery hotspot recipes, then re-send`, fix: `git -C ${half.path} merge ${ref}` });
+      }
+      half.merged.push(ref);
+      merged.push({ half: half.label, ref, kind });
+      run.act("integrate", `${half.label}: merged ${ref} into ${win.branch} at ${half.path}`);
+    }
+  }
+  return merged;
+}
+
+// Push every half whose HEAD is not on origin/<branch> yet (or has no upstream), product first.
+function pushHalves(run, win, halves) {
+  run.out.phase = "push";
+  for (const half of halves) {
+    const upstream = git(half.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+    const remote = git(half.path, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${win.branch}`);
+    if (upstream && remote && remote === git(half.path, "rev-parse", "HEAD")) continue;
+    const result = pushRef(half.path, win.branch, { setUpstream: !upstream });
+    if (!result.ok) run.fail(result.reason, `${result.message}; pushed so far: ${halves.filter((h) => h.pushed).map((h) => h.label).join(", ") || "nothing"} — re-send to resume`, result.reauth ? { reauth: result.reauth } : {});
+    half.pushed = true;
+    run.out.pushed?.push(half.label);
+    run.act("push", `${half.label}: pushed ${win.branch} from ${half.path}`);
+  }
+}
+
+function deliveryArgs(command, extra = "") {
+  const type = requireType(rest[0]);
+  const slug = requireSlug(rest[1]);
+  if (rest.length > 2) usage(`${command} takes <feature|issue> <slug>${extra}, got extra ${JSON.stringify(rest.slice(2).join(" "))}`);
+  return { type, slug };
+}
+
+function sync() {
+  const { type, slug } = deliveryArgs("sync");
+  const run = deliveryRun("sync", type, slug, { merged: false, pushed: [] });
+  const { win, halves } = openDeliveryRun(run, type, slug);
+  for (const half of halves) {
+    const tree = treeState(half.path);
+    if (tree?.tracked.length) run.reject("dirty", { half: half.label, paths: tree.tracked, message: `the ${half.label} half ${half.path} has uncommitted tracked changes (${tree.tracked.join(", ")}); commit them with step-commit, or discard them, then re-send` });
+  }
+  const merged = integrateHalves(run, win, halves);
+  run.out.merged = merged.length > 0;
+  pushHalves(run, win, halves);
+  run.out.phase = "done";
+  run.finish({ outcome: merged.length ? "merged" : run.out.pushed.length ? "pushed" : "up-to-date", message: merged.length ? `merged ${merged.map((m) => `${m.ref} (${m.half})`).join(", ")}; re-verify before the next commit` : null });
+}
+
+// The message file must sit outside both halves, or `add -A` would commit it.
+function insideDir(file, dir) {
+  const real = (p) => {
+    try {
+      return fs.realpathSync(p);
+    } catch {
+      return path.resolve(p);
+    }
+  };
+  const rel = path.relative(real(dir), path.join(real(path.dirname(file)), path.basename(file)));
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+// `artifact-pr: "#<n>"` into the roadmap's YAML header, after github-issue when present.
+function withArtifactPr(content, number) {
+  const lines = content.split("\n");
+  const open = lines.findIndex((l) => /^```ya?ml\s*$/.test(l));
+  const close = open === -1 ? -1 : lines.findIndex((l, i) => i > open && /^```\s*$/.test(l));
+  if (close === -1) return null;
+  const issue = lines.findIndex((l, i) => i > open && i < close && /^github-issue:/.test(l));
+  lines.splice(issue === -1 ? close : issue + 1, 0, `artifact-pr: "#${number}"`);
+  return lines.join("\n");
+}
+
+function stepCommit() {
+  const { type, slug } = deliveryArgs("step-commit", " [--step N.M] --message-file <file|->");
+  if (!options.messageFile) usage("step-commit needs --message-file <file|-> (- reads the message from stdin)");
+  const step = options.step ?? null;
+  const run = deliveryRun("step-commit", type, slug, { step, commits: { product: null, companion: null }, integrated: [], pushed: [], pr: null, companionPr: null });
+  const { win, halves } = openDeliveryRun(run, type, slug);
+  const [product, companion = null] = halves;
+  const artifactHalf = companion ?? product;
+
+  // The message: a Conventional Commit naming the step, from outside both halves.
+  run.out.phase = "message";
+  let message;
+  if (options.messageFile === "-") message = fs.readFileSync(0, "utf8");
+  else {
+    const file = path.resolve(startDir, options.messageFile);
+    const holder = halves.find((h) => insideDir(file, h.path));
+    if (holder) run.reject("message-file-inside-half", { message: `${file} is inside the ${holder.label} half ${holder.path}, so it would be committed; write it outside both halves or pass --message-file - on stdin` });
+    if (!fs.existsSync(file)) usage(`--message-file ${file} does not exist`);
+    message = fs.readFileSync(file, "utf8");
+  }
+  message = message.replace(/\s+$/, "");
+  const subject = message.split("\n")[0];
+  if (!CONVENTIONAL.test(subject)) run.reject("message-not-conventional", { message: `the first message line ${JSON.stringify(subject)} is not a Conventional Commit (<type>[(<scope>)][!]: <description>)` });
+  if (step && !new RegExp(`(^|[^0-9.])${escapeRe(step)}(?![0-9])`).test(message)) run.reject("message-missing-step", { message: `--step ${step} is set but the commit message does not name ${step}` });
+
+  // Staging (Q1): everything in the product half; in companion mode only the slug directory.
+  run.out.phase = "stage";
+  const productTree = treeState(product.path);
+  const companionTree = companion ? treeState(companion.path) : null;
+  if (companionTree) {
+    const outside = [...companionTree.tracked, ...companionTree.untracked].filter((p) => !p.startsWith(`${win.slugDir}/`));
+    if (outside.length) run.reject("companion-outside-slug", { paths: outside, message: `the companion half ${companion.path} has changes outside ${win.slugDir}/: ${outside.join(", ")}; delete byproducts or move them out, then re-send` });
+  }
+  const changed = (tree) => Boolean(tree && tree.tracked.length + tree.untracked.length);
+  const productChanged = changed(productTree);
+  const companionChanged = changed(companionTree);
+
+  // The roadmap rule (Q2): a step's tick lands in this commit; otherwise roadmap.md changed.
+  if (productChanged || companionChanged) {
+    const roadmapFile = path.join(artifactHalf.path, win.roadmapRel);
+    const working = fs.existsSync(roadmapFile) ? fs.readFileSync(roadmapFile, "utf8") : "";
+    const committed = git(artifactHalf.path, "show", `HEAD:${win.roadmapRel}`);
+    if (step) {
+      const tick = new RegExp(`^\\s*- \\[[xX]\\] ${escapeRe(step)}(?=\\s)`, "m");
+      if (!tick.test(working) || tick.test(committed)) run.reject("step-not-ticked", { message: `${win.roadmapRel} must tick - [x] ${step} in this commit (${tick.test(committed) ? "it is already ticked at HEAD" : "it is not ticked"}); tick it after its verify: passes, or send without --step for a roadmap-only update` });
+    } else if (gitRun(artifactHalf.path, ["diff", "--quiet", "HEAD", "--", win.roadmapRel]).ok) {
+      run.reject("roadmap-not-updated", { message: `${win.roadmapRel} is unchanged; every delivery commit carries its roadmap.md update (next-step, status, or last-updated)` });
+    }
+  }
+
+  // Commits: product first, then the companion's tick; plain commits, hooks run.
+  run.out.phase = "commit";
+  const messageDir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-step-commit-"));
+  process.on("exit", () => fs.rmSync(messageDir, { recursive: true, force: true }));
+  const messageFile = path.join(messageDir, "message");
+  fs.writeFileSync(messageFile, `${message}\n`);
+  const commit = (half, pathspec, file = messageFile) => {
+    const add = gitRun(half.path, ["add", "-A", "--", pathspec]);
+    if (!add.ok) run.fail("stage-failed", `git -C ${half.path} add -A -- ${pathspec}: ${add.stderr}`);
+    const result = gitRun(half.path, ["commit", "-q", "-F", file], 300000);
+    if (!result.ok) run.fail("commit-failed", `git -C ${half.path} commit: ${result.stderr || result.stdout}; nothing was pushed — fix it and re-send`, { half: half.label });
+    const sha = git(half.path, "rev-parse", "HEAD");
+    const files = git(half.path, "show", "--name-only", "--format=", "HEAD").split("\n").filter(Boolean);
+    run.act("commit", `${half.label}: ${sha.slice(0, 7)} ${git(half.path, "log", "-1", "--format=%s")} (${files.join(", ")})`);
+    return sha;
+  };
+  if (productChanged) run.out.commits.product = commit(product, ".");
+  if (companionChanged) run.out.commits.companion = commit(companion, win.slugDir);
+  const committed = Boolean(run.out.commits.product || run.out.commits.companion);
+
+  // Integrate both defaults; a default merge means the step's verify: runs again first.
+  const merged = integrateHalves(run, win, halves);
+  run.out.integrated = merged;
+  const defaults = merged.filter((m) => m.kind === "default");
+  if (defaults.length) {
+    run.finish({ status: "reverify", outcome: "merged-default", message: `merged ${defaults.map((m) => `${m.ref} (${m.half})`).join(", ")}; nothing was pushed — rerun the step's verify:, then re-send the same step-commit to push` });
+  }
+  pushHalves(run, win, halves);
+
+  // Draft PRs when missing: the code PR, the companion PR, their cross-link, and artifact-pr:.
+  run.out.phase = "pr";
+  const ghFail = (result, what) => {
+    if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) run.fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
+    run.fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
+  };
+  const prView = (cwd) => {
+    const result = ghRun(cwd, ["pr", "view", win.branch, "--json", "number,state,url,body,isDraft"], 20000);
+    if (!result.ok) {
+      if (/no pull requests found/i.test(result.stderr)) return null;
+      ghFail(result, `gh pr view ${win.branch} in ${cwd}`);
+    }
+    try {
+      return JSON.parse(result.stdout);
+    } catch {
+      return run.fail("gh-error", `gh pr view ${win.branch} in ${cwd} returned non-JSON output`);
+    }
+  };
+  const prCreate = (cwd, base, title, body, label) => {
+    const result = ghRun(cwd, ["pr", "create", "--draft", "--base", base, "--head", win.branch, "--title", title, "--body", body], 60000);
+    if (!result.ok) ghFail(result, `gh pr create --draft --head ${win.branch} in ${cwd}`);
+    const created = prView(cwd);
+    if (!created) run.fail("gh-error", `gh pr create for ${win.branch} in ${cwd} returned but the PR cannot be looked up`);
+    run.act(label, `opened draft PR #${created.number} for ${win.branch} (${created.url})`);
+    return created;
+  };
+  const repoView = (cwd, field) => {
+    const result = ghRun(cwd, ["repo", "view", "--json", field, "-q", `.${field}`], 15000);
+    if (!result.ok) ghFail(result, `gh repo view --json ${field} in ${cwd}`);
+    return result.stdout;
+  };
+  const roadmapFile = path.join(artifactHalf.path, win.roadmapRel);
+  const issueNumber = type === "issue" ? header(fs.readFileSync(roadmapFile, "utf8"), "github-issue").match(/\d+/)?.[0] ?? null : null;
+  let pr = prView(product.path);
+  if (!pr) {
+    const plan = `${win.slugDir}/plan.md`;
+    const planLink = companion ? `${repoView(companion.path, "url")}/blob/${win.branch}/${plan}` : plan;
+    pr = prCreate(product.path, win.defaultBranch, slug, `${issueNumber ? `Fixes #${issueNumber}\n\n` : ""}Plan: ${planLink}`, "pr-create");
+  }
+  let companionPr = null;
+  if (companion) {
+    companionPr = prView(companion.path) ?? prCreate(companion.path, win.defaultBranch, `docs(${type}): ${slug}`, `Delivery artifacts for ${slug}. Code PR: ${pr.url}`, "companion-pr-create");
+    if (!(pr.body ?? "").includes(companionPr.url)) {
+      const body = `${(pr.body ?? "").replace(/\s+$/, "")}\n\nCompanion PR: ${companionPr.url}`.replace(/^\n+/, "");
+      const nwo = repoView(product.path, "nameWithOwner");
+      const patch = ghRun(product.path, ["api", `repos/${nwo}/pulls/${pr.number}`, "-X", "PATCH", "-f", `body=${body}`], 20000);
+      if (!patch.ok) ghFail(patch, `gh api repos/${nwo}/pulls/${pr.number} -X PATCH`);
+      pr.body = body;
+      run.act("pr-cross-link", `Companion PR: ${companionPr.url} appended to the body of PR #${pr.number}`);
+    }
+    const content = fs.readFileSync(roadmapFile, "utf8");
+    if (!header(content, "artifact-pr")) {
+      const updated = withArtifactPr(content, companionPr.number);
+      if (updated === null) run.fail("roadmap-header", `${win.roadmapRel} has no YAML header block to record artifact-pr: in`);
+      fs.writeFileSync(roadmapFile, updated);
+      const headerMessage = path.join(messageDir, "artifact-pr");
+      fs.writeFileSync(headerMessage, `docs(${type}): record artifact PR for ${slug}\n`);
+      run.out.commits.companion = commit(companion, win.roadmapRel, headerMessage);
+      pushHalves(run, win, [companion]);
+    }
+  }
+  const summary = (p) => (p ? { number: p.number, state: p.state, isDraft: Boolean(p.isDraft), url: p.url ?? null } : null);
+  run.out.pr = summary(pr);
+  run.out.companionPr = summary(companionPr);
+
+  // Clean handoff: nothing uncommitted, nothing unpushed, in every half.
+  run.out.phase = "check";
+  const dirty = halves.map((h) => ({ half: h, tree: treeState(h.path) })).filter(({ tree }) => !tree || tree.tracked.length || tree.untracked.length || tree.ahead);
+  if (dirty.length) {
+    run.fail("not-clean", dirty.map(({ half, tree }) => `${half.label} half ${half.path}: ${tree ? `tracked ${tree.tracked.join(", ") || "none"}; untracked ${tree.untracked.join(", ") || "none"}; ahead ${tree.ahead}` : "unreadable"}`).join("; "), { paths: dirty.flatMap(({ tree }) => (tree ? [...tree.tracked, ...tree.untracked] : [])) });
+  }
+  run.out.phase = "done";
+  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-pushed" });
+}
+
 // --- ship ------------------------------------------------------------------
 
 const SHIP_EXIT = { ok: 0, pending: 2, rejected: 3, blocked: 3, failed: 3 };
@@ -2062,13 +2403,10 @@ function ship() {
   const fetch = (dir, label) => {
     if (fetched.has(path.resolve(dir))) return;
     fetched.add(path.resolve(dir));
-    const result = gitRun(dir, ["fetch", "--prune", "origin"]);
+    const result = fetchOrigin(dir);
     if (result.ok) return;
-    const url = originOf(dir);
-    if (!result.timedOut && classifyFetchFailure(result.stderr) === "auth") {
-      fail("fetch-auth", `git -C ${dir} fetch --prune origin: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(url) });
-    }
-    out.warnings.push(`fetch: ${label} ${url ?? "origin"} not fetched (${result.stderr.split("\n")[0]}); continuing from local refs`);
+    if (result.auth) fail("fetch-auth", result.message, { reauth: result.reauth });
+    out.warnings.push(`fetch: ${label} ${result.url ?? "origin"} not fetched (${result.stderr}); continuing from local refs`);
   };
   fetch(primary, "product");
   if (artifacts.external) fetch(artifactsRoot, "companion");
@@ -2272,22 +2610,18 @@ function ship() {
     restores.push(() => gitRun(clone, ["switch", back || layout.config.branches.default]));
   };
   const integrate = (dir, defaultRef, label) => {
-    const merge = gitRun(dir, ["merge", "--no-edit", defaultRef], 120000);
+    const merge = mergeRef(dir, defaultRef);
     if (merge.ok) {
-      if (!/Already up to date/.test(merge.stdout)) act("integrate", `${label}: merged ${defaultRef} into ${branch} at ${dir}`);
+      if (merge.merged) act("integrate", `${label}: merged ${defaultRef} into ${branch} at ${dir}`);
       return;
     }
-    gitRun(dir, ["merge", "--abort"]);
-    const clean = git(dir, "status", "--porcelain") === "";
+    const { clean, conflicts } = merge;
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
-    reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr.split("\n")[0]}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, next: [out.rejectTo.command] });
+    reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, conflicts, next: [out.rejectTo.command] });
   };
   const push = (dir, label, refspec = branch) => {
-    const result = gitRun(dir, ["push", "origin", refspec], 120000);
-    if (!result.ok) {
-      if (classifyFetchFailure(result.stderr) === "auth") fail("push-auth", `git -C ${dir} push origin ${refspec}: ${result.stderr.split("\n")[0]}`, { reauth: reauthFor(originOf(dir)) });
-      fail("push-failed", `git -C ${dir} push origin ${refspec}: ${result.stderr.split("\n")[0]}`);
-    }
+    const result = pushRef(dir, refspec);
+    if (!result.ok) fail(result.reason, result.message, result.reauth ? { reauth: result.reauth } : {});
     act("push", `${label}: pushed ${refspec} from ${dir}`);
   };
   const nameWithOwner = (cwd) => {
@@ -3482,6 +3816,16 @@ switch (command) {
 
   case "ship": {
     ship();
+    break;
+  }
+
+  case "sync": {
+    sync();
+    break;
+  }
+
+  case "step-commit": {
+    stepCommit();
     break;
   }
 

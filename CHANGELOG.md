@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Added.** `agento.mjs sync <type> <slug>` and `agento.mjs step-commit <type>
+  <slug> [--step N.M] --message-file <file|->` replace the Builder's hand-run git.
+  `sync` fetches both halves, merges `origin/<branch>` and `origin/<default>` where
+  they are not ancestors (never a rebase; a conflict aborts with its files, nothing
+  pushed), and pushes halves left ahead, product first. `step-commit` performs the
+  two-commit rule (product code commit, then the companion commit scoped to the slug
+  directory), requires the step's roadmap tick in the commit, integrates both
+  defaults (exit 2 `reverify` when one merged, nothing pushed), pushes product before
+  companion, opens missing draft PRs with the cross-link and `artifact-pr:` header,
+  and ends with both halves clean and `ahead: 0`. Both run from the slug's build
+  window only and enforce the delivery guard's rules in process (no default-branch or
+  detached commit, no force, no rebase, no `--no-verify` or `--amend`). The Builder's
+  resume, work loop, pause, and completion now make one call each instead of 8–12
+  git and gh calls per step; customizations tests keep the two subcommands exclusive
+  to the Builder. Ship's fetch, merge, and push closures became shared module-level
+  helpers with no behaviour change.
+
 - **Added.** `agento.mjs preflight <command> [<type> <slug>]` returns the opening of
   every `/agento` command in one call: the session record, the §11 window verdict
   (from a new `WINDOW_ROLES` table in `scripts/session-state.mjs`), `doctor --for

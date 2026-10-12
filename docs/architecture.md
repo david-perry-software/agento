@@ -92,7 +92,12 @@ flowchart TD
   (`agento.mjs ship`: the read-only audit with its confirmation token, the
   `--confirm` writes, both merges, the default syncs, the release wait, the
   teardown through the same occupant gate, and the post-ship epilogue — every phase
-  derived from git and GitHub state so a re-send resumes), the bounded CI poller,
+  derived from git and GitHub state so a re-send resumes), the Builder's git
+  choreography (`agento.mjs sync` integrates both halves by merge;
+  `agento.mjs step-commit` performs the two-commit rule with the roadmap tick,
+  integrates, pushes product then companion, and opens missing draft PRs — both
+  enforce the guard's rules in process, since the guard cannot see their git), the
+  bounded CI poller,
   and the guard replay harness. Prompts call the
   CLI rather than re-deriving these algorithms in prose, so the configured branch
   names and artifact roots are honoured everywhere the hooks honour them.
