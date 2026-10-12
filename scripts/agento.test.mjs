@@ -5170,7 +5170,9 @@ test("ship --confirm (in-repo, owner): cleans the listed byproducts, completes t
   fs.writeFileSync(path.join(owner, "shot[1].png"), "bytes");
   fs.writeFileSync(path.join(owner, "shot1.png"), "bytes");
   git(owner, "add", "shot1.png");
-  git(owner, "commit", "-q", "-m", "tracked shot");
+  // Same second as the review commit: a later second would make the review stale.
+  const reviewSecond = `@${git(owner, "log", "-1", "--format=%ct")} +0000`;
+  execFileSync("git", ["-C", owner, "commit", "-q", "-m", "tracked shot"], { env: { ...process.env, GIT_AUTHOR_DATE: reviewSecond, GIT_COMMITTER_DATE: reviewSecond } });
   git(owner, "push", "-q");
   const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING } } } });
 
