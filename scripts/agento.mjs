@@ -20,6 +20,7 @@
 //   node scripts/agento.mjs step-commit <feature|issue> <slug> [--step N.M] --message-file <file|->   (build window: product commit, then the companion tick scoped to the slug dir; roadmap rule; integrate both defaults — exit 2 reverify when one merged; push product then companion; open missing draft PRs; end clean with ahead 0)
 //   node scripts/agento.mjs plan-publish <feature|issue> <slug>   (planning window on the roadmap branch: commit the slug dir (docs(delivery|<type>): plan, or revise plan); companion mode opens the product branch with one empty commit; integrate, push product then companion, open the draft PRs, cross-link, artifact-pr:; never readies or merges; exit 0 ok, 3 rejected/failed)
 //   node scripts/agento.mjs review-publish <feature|issue> <slug> [--body-file <file|->]   (build window: review.md with one Verdict: line; commit docs(<type>): review <slug> — <verdict> in the artifact half; merge origin/<branch> everywhere and origin/<default> in the companion half only; push; upsert one marked verdict comment on the code PR (REST list + PATCH/POST); exit 0 ok, 3 rejected/failed)
+//   node scripts/agento.mjs publish-pr [--dir <path>] [--branch <name>] [--title <text>] [--body-file <file|->] [--merge] [--wait N]   (a changes branch of the product or companion checkout at --dir: refuses the default branch, a detached HEAD, and the feature/issue/post-ship prefixes; push → non-draft PR → (--merge) bounded check wait, merge origin/<default> when BEHIND, gh pr merge --merge, delete the remote branch, sync the default (a linked worktree stays on its branch); resumes from git + GitHub state; exit 0 ok, 2 pending, 3 rejected/blocked/failed)
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs metrics [<slug>]           (phase durations, review rounds, pauses, merge date, post-ship latency from git history; + aggregate medians)
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
@@ -118,6 +119,12 @@ function parseArgs(argv) {
     else if (arg === "--body-file") {
       options.bodyFile = argv[++i];
       if (!options.bodyFile || options.bodyFile.startsWith("--")) usage("--body-file takes a file path or - (stdin)");
+    }
+    else if (arg === "--merge") options.merge = true;
+    else if (arg === "--dir" || arg === "--branch" || arg === "--title") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) usage(`${arg} takes a value`);
+      options[arg.slice(2)] = value;
     }
     else if (arg === "--for") {
       options.for = argv[++i];
@@ -2514,6 +2521,120 @@ function ensureDeliveryPrs(run, win, { type, slug, commit, messageDir }) {
 }
 
 
+// --- publish-pr: a changes branch's push → PR → wait → merge → sync --------------
+
+const normalizeRemote = (url) => (url ?? "").trim().replace(/^git@([^:]+):/, "https://$1/").replace(/\.git$/, "").replace(/\/+$/, "").toLowerCase();
+
+function publishPr() {
+  if (rest.length) usage(`publish-pr takes no positional arguments, got ${JSON.stringify(rest.join(" "))}`);
+  const requested = path.resolve(options.dir ?? startDir);
+  const checkout = git(requested, "rev-parse", "--show-toplevel") || null;
+  const out = { status: "ok", command: "publish-pr", phase: "checkout", outcome: null, checkout: { path: checkout ?? requested, repo: null, linked: false, defaultBranch: null }, branch: null, merge: Boolean(options.merge), pr: null, mergeSha: null, sync: null, conflicts: [], actions: [], reason: null, message: null, fix: null, reauth: null, next: [], warnings: [], root, configSource: source };
+  const finish = (extra = {}) => {
+    const result = { ...out, ...extra };
+    emit(result, SHIP_EXIT[result.status]);
+  };
+  const run = {
+    out,
+    finish,
+    reject: (reason, extra = {}) => finish({ status: "rejected", reason, ...extra }),
+    fail: (reason, message, extra = {}) => finish({ status: "failed", reason, message, ...extra }),
+    act: (step, detail) => out.actions.push({ step, detail }),
+  };
+  const ghFail = ghFailOf(run);
+
+  // The checkout: the product repository or the configured companion, by origin URL.
+  if (!checkout) run.reject("unknown-repo", { message: `${requested} is not a git checkout` });
+  const origin = normalizeRemote(originOf(checkout));
+  let repo = null;
+  if (origin && origin === normalizeRemote(originOf(root))) repo = "product";
+  else if (artifacts.external && origin && origin === normalizeRemote(originOf(artifactsRoot))) repo = "companion";
+  if (!repo) run.reject("unknown-repo", { message: `${checkout} (origin ${originOf(checkout) ?? "none"}) is a checkout of neither the product repository nor the configured companion` });
+  const defaultBranch = config.branches.default;
+  const absolute = (p) => path.resolve(checkout, p);
+  const linked = absolute(git(checkout, "rev-parse", "--git-dir")) !== absolute(git(checkout, "rev-parse", "--git-common-dir"));
+  out.checkout = { path: checkout, repo, linked, defaultBranch };
+
+  // The branch: the current one, or --branch once the checkout is back on the default.
+  out.phase = "branch";
+  const current = git(checkout, "branch", "--show-current");
+  if (!current) run.reject("detached-head", { message: `${checkout} is on a detached HEAD; switch to the branch to publish` });
+  let branch = current;
+  if (options.branch && options.branch !== current) {
+    if (current !== defaultBranch) run.reject("branch-mismatch", { message: `--branch ${options.branch} is not the checked-out ${current}; --branch only resumes from ${defaultBranch} after the merge` });
+    if (!gitRun(checkout, ["check-ref-format", "--branch", options.branch]).ok) usage(`--branch ${JSON.stringify(options.branch)} is not a valid branch name`);
+    branch = options.branch;
+  }
+  out.branch = branch;
+  if (branch === defaultBranch) run.reject("default-branch", { message: `${checkout} is on ${defaultBranch}; publish-pr never pushes or merges the default branch` });
+  const prefix = [config.branches.feature, config.branches.issue, config.branches.postShip].find((p) => p && branch.startsWith(p));
+  if (prefix) run.reject("delivery-branch", { message: `${branch} is a delivery branch (${prefix}…); its PR is merged only by /agento ship` });
+  const body = readBodyFile([checkout]);
+  if (body.inside) run.reject("body-file-inside-checkout", { message: `${body.file} is inside ${checkout}, so a later commit could pick it up; write it outside the checkout or pass --body-file -` });
+
+  // State: fetch, then the branch's PR decides where this send resumes.
+  out.phase = "fetch";
+  const fetched = fetchOrigin(checkout);
+  if (!fetched.ok) {
+    if (fetched.auth) run.fail("fetch-auth", fetched.message, { reauth: fetched.reauth });
+    run.fail("fetch-failed", `${fetched.message}; nothing was pushed — re-send once origin is reachable`);
+  }
+  const prLookup = () => {
+    const result = ghRun(checkout, ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,mergeable,url,mergeCommit,baseRefName"], 20000);
+    if (!result.ok) {
+      if (/no pull requests found/i.test(result.stderr)) return null;
+      ghFail(result, `gh pr view ${branch} in ${checkout}`);
+    }
+    try {
+      return JSON.parse(result.stdout);
+    } catch {
+      return run.fail("gh-error", `gh pr view ${branch} in ${checkout} returned non-JSON output`);
+    }
+  };
+  const defaultRef = `origin/${defaultBranch}`;
+  const aheadOfDefault = () => Number.parseInt(git(checkout, "rev-list", "--count", `${defaultRef}..HEAD`), 10) || 0;
+  let pr = prLookup();
+  if (pr?.state === "CLOSED") run.reject("pr-closed", { pr: prSummary(pr), message: `PR #${pr.number} for ${branch} was closed without a merge (${pr.url}); reopen it or publish from a new branch` });
+  if (pr?.state === "MERGED" && current === branch && aheadOfDefault()) run.reject("pr-merged", { pr: prSummary(pr), message: `PR #${pr.number} for ${branch} is already merged, yet ${branch} carries new commits; publish them from a new branch` });
+  if (pr?.state !== "MERGED" && current !== branch) run.reject("default-branch", { message: `${checkout} is on ${defaultBranch} and ${branch} has no merged PR to resume; switch to ${branch} first` });
+
+  if (pr?.state !== "MERGED") {
+    out.phase = "check";
+    const tree = treeState(checkout);
+    if (tree?.tracked.length) run.reject("dirty", { paths: tree.tracked, message: `${checkout} has uncommitted tracked changes (${tree.tracked.join(", ")}); commit them first` });
+    if (!aheadOfDefault()) run.reject("nothing-to-publish", { message: `${branch} has no commits beyond ${defaultRef}; commit first — publish-pr never opens an empty PR` });
+
+    // push: a full refspec, never forced; -u on the first push.
+    out.phase = "push";
+    const push = () => {
+      const upstream = git(checkout, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+      const remote = git(checkout, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`);
+      if (upstream && remote === git(checkout, "rev-parse", "HEAD")) return;
+      const result = pushRef(checkout, `refs/heads/${branch}:refs/heads/${branch}`, { setUpstream: !upstream });
+      if (!result.ok) run.fail(result.reason, result.message, result.reauth ? { reauth: result.reauth } : {});
+      run.act("push", `pushed ${branch} from ${checkout}`);
+    };
+    push();
+
+    // pr: reuse the open PR, or open one (never a draft).
+    out.phase = "pr";
+    if (!pr) {
+      const title = options.title ?? git(checkout, "log", "--reverse", "--format=%s", `${defaultRef}..HEAD`).split("\n")[0];
+      const create = ghRun(checkout, ["pr", "create", "--base", defaultBranch, "--head", branch, "--title", title, "--body", body.text ?? ""], 60000);
+      if (!create.ok) ghFail(create, `gh pr create --head ${branch} in ${checkout}`);
+      pr = prLookup();
+      if (!pr) run.fail("gh-error", `gh pr create for ${branch} in ${checkout} returned but the PR cannot be looked up`);
+      run.act("pr-create", `opened PR #${pr.number} for ${branch} (${pr.url})`);
+    }
+    out.pr = prSummary(pr);
+    out.phase = "done";
+    finish({ outcome: "opened" });
+  }
+  out.pr = prSummary(pr);
+  out.phase = "done";
+  finish({ outcome: "already-merged" });
+}
+
 // --- ship ------------------------------------------------------------------
 
 const SHIP_EXIT = { ok: 0, pending: 2, rejected: 3, blocked: 3, failed: 3 };
@@ -4045,6 +4166,11 @@ switch (command) {
 
   case "review-publish": {
     reviewPublish();
+    break;
+  }
+
+  case "publish-pr": {
+    publishPr();
     break;
   }
 
