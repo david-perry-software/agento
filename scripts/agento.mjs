@@ -2239,13 +2239,32 @@ function stepCommit() {
     run.finish({ status: "reverify", outcome: "merged-default", message: `merged ${defaults.map((m) => `${m.ref} (${m.half})`).join(", ")}; nothing was pushed — rerun the step's verify:, then re-send the same step-commit to push` });
   }
   pushHalves(run, win, halves);
+  ensureDeliveryPrs(run, win, { type, slug, commit, messageDir });
 
-  // Draft PRs when missing: the code PR, the companion PR, their cross-link, and artifact-pr:.
-  run.out.phase = "pr";
-  const ghFail = (result, what) => {
+  // Clean handoff: nothing uncommitted, nothing unpushed, in every half.
+  run.out.phase = "check";
+  const dirty = halves.map((h) => ({ half: h, tree: treeState(h.path) })).filter(({ tree }) => !tree || tree.tracked.length || tree.untracked.length || tree.ahead);
+  if (dirty.length) {
+    run.fail("not-clean", dirty.map(({ half, tree }) => `${half.label} half ${half.path}: ${tree ? `tracked ${tree.tracked.join(", ") || "none"}; untracked ${tree.untracked.join(", ") || "none"}; ahead ${tree.ahead}` : "unreadable"}`).join("; "), { paths: dirty.flatMap(({ tree }) => (tree ? [...tree.tracked, ...tree.untracked] : [])) });
+  }
+  run.out.phase = "done";
+  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-pushed" });
+}
+
+function ghFailOf(run) {
+  return (result, what) => {
     if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) run.fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
     run.fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
   };
+}
+
+// Draft PRs when missing: the code PR, the companion PR, their cross-link, and artifact-pr:.
+// `commit(half, pathspec, messageFile)` makes the companion header commit.
+function ensureDeliveryPrs(run, win, { type, slug, commit, messageDir }) {
+  run.out.phase = "pr";
+  const [product, companion = null] = win.halves;
+  const artifactHalf = companion ?? product;
+  const ghFail = ghFailOf(run);
   const prView = (cwd) => {
     const result = ghRun(cwd, ["pr", "view", win.branch, "--json", "number,state,url,body,isDraft"], 20000);
     if (!result.ok) {
@@ -2297,23 +2316,16 @@ function stepCommit() {
       fs.writeFileSync(roadmapFile, updated);
       const headerMessage = path.join(messageDir, "artifact-pr");
       fs.writeFileSync(headerMessage, `docs(${type}): record artifact PR for ${slug}\n`);
-      run.out.commits.companion = commit(companion, win.roadmapRel, headerMessage);
-      pushHalves(run, win, [companion]);
+      run.out.commits.companion = commit(run.out.halves.companion, win.roadmapRel, headerMessage);
+      pushHalves(run, win, [run.out.halves.companion]);
     }
   }
   const summary = (p) => (p ? { number: p.number, state: p.state, isDraft: Boolean(p.isDraft), url: p.url ?? null } : null);
   run.out.pr = summary(pr);
   run.out.companionPr = summary(companionPr);
-
-  // Clean handoff: nothing uncommitted, nothing unpushed, in every half.
-  run.out.phase = "check";
-  const dirty = halves.map((h) => ({ half: h, tree: treeState(h.path) })).filter(({ tree }) => !tree || tree.tracked.length || tree.untracked.length || tree.ahead);
-  if (dirty.length) {
-    run.fail("not-clean", dirty.map(({ half, tree }) => `${half.label} half ${half.path}: ${tree ? `tracked ${tree.tracked.join(", ") || "none"}; untracked ${tree.untracked.join(", ") || "none"}; ahead ${tree.ahead}` : "unreadable"}`).join("; "), { paths: dirty.flatMap(({ tree }) => (tree ? [...tree.tracked, ...tree.untracked] : [])) });
-  }
-  run.out.phase = "done";
-  run.finish({ outcome: committed ? "committed" : run.out.pushed.length ? "pushed" : "already-pushed" });
+  return { pr, companionPr };
 }
+
 
 // --- ship ------------------------------------------------------------------
 
