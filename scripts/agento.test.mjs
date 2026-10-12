@@ -4484,6 +4484,16 @@ if (args[0] === "pr" && args[1] === "create") {
   repo.prs[head] = { number, state: "OPEN", isDraft: args.includes("--draft"), mergeStateStatus: "CLEAN", mergeable: "MERGEABLE", title: opt("--title") || head, body: opt("--body") || "", baseRefName: opt("--base") || repo.defaultBranch, mergeCommit: null, rollups: [[]], rollupCalls: 0, url: "https://example.test/pull/" + number };
   save(); console.log(repo.prs[head].url); process.exit(0);
 }
+if (args[0] === "api" && args[1] === "user") { console.log(JSON.stringify({ login: "agento-bot" })); process.exit(0); }
+if (args[0] === "api" && (args[1] || "").split("?")[0].split("/")[3] === "issues") {
+  const parts = args[1].split("?")[0].split("/");
+  const method = opt("-X") || "GET";
+  const text = (args.find((a) => a.startsWith("body=")) || "").slice(5);
+  repo.comments = repo.comments || [];
+  if (parts[4] === "comments" && method === "PATCH") { const c = repo.comments.find((x) => String(x.id) === parts[5]); if (!c) die("Not Found (HTTP 404)"); c.body = text; save(); console.log(JSON.stringify(c)); process.exit(0); }
+  if (parts[5] === "comments" && method === "POST") { const id = 7000 + repo.comments.length; const c = { id, issue: Number(parts[4]), user: { login: "agento-bot" }, body: text, html_url: "https://example.test/comment/" + id }; repo.comments.push(c); save(); console.log(JSON.stringify(c)); process.exit(0); }
+  if (parts[5] === "comments") { console.log(JSON.stringify(repo.comments.filter((c) => c.issue === Number(parts[4])))); process.exit(0); }
+}
 if (args[0] === "api") {
   const target = args.filter((a) => !a.startsWith("-") && a !== "api" && !/^(Accept|body)=/.test(a) && !a.startsWith("Accept:"))[0];
   if (args.includes("-X") && opt("-X") === "PATCH") {
@@ -6785,4 +6795,135 @@ test("plan-publish rejections write nothing: wrong window, detached or default-b
   const accepted = planPublishRun(d.product, stub.env);
   assert.equal(accepted.code, 0, JSON.stringify(accepted.json));
   neverReadiesOrMerges(stub);
+});
+
+// --- review-publish -----------------------------------------------------------------
+
+const reviewPublishRun = (cwd, env, ...args) => runWith({ cwd, env }, "review-publish", "feature", "widget", ...args);
+const writeReview = (dir, rel, text) => fs.writeFileSync(path.join(dir, rel, "review.md"), text);
+const MARKED = /^Verdict: (approve|request-changes)\n\nReview: .*\/blob\/feature\/widget\/features\/2026\/10\/widget\/review\.md\n\n(?:[\s\S]*\n\n)?<!-- agento:review feature\/widget -->$/;
+
+test("review-publish is listed in the usage header and validates its arguments", () => {
+  const { repo } = makeWorktreeRepo();
+  assert.match(run(repo).json.usage.join("\n"), /review-publish <feature\|issue> <slug> \[--body-file <file\|->\]/);
+  for (const args of [["review-publish"], ["review-publish", "feature"], ["review-publish", "feature", "widget", "extra"], ["review-publish", "feature", "widget", "--body-file"]]) {
+    const { code, json } = run(repo, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error", args.join(" "));
+  }
+});
+
+test("review-publish (companion): one review commit in the half, only the companion default merged, one verdict comment; a re-review edits that same comment", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { branch, owner, half, dir } = pairDelivery(pair, "widget", { status: "in-review" });
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15 } } }, companion: { prs: { [branch]: { number: 16 } } } });
+  advanceRemote(repo, "main", "main.txt", "product main\n");
+  advanceRemote(docs, "main", "docs-main.md", "docs main\n");
+  const productHead = git(owner, "rev-parse", "HEAD");
+  writeReview(half, dir, "# Review: widget\n\nVerdict: request-changes\n");
+
+  const first = reviewPublishRun(owner, stub.env);
+  assert.equal(first.code, 0, JSON.stringify(first.json));
+  assert.equal(first.json.verdict, "request-changes");
+  assert.deepEqual(first.json.actions.map((a) => a.step), ["commit", "integrate", "push", "comment-post"]);
+  assert.deepEqual(first.json.integrated, [{ half: "companion", ref: "origin/main", kind: "default" }]);
+  assert.equal(git(half, "log", "-1", "--format=%s", "HEAD^1"), "docs(feature): review widget — request-changes");
+  assert.ok(fs.existsSync(path.join(half, "docs-main.md")), "the companion default is merged");
+  assert.equal(git(owner, "rev-parse", "HEAD"), productHead, "the reviewed code is not merged with main");
+  let comments = stub.state().product.comments;
+  assert.equal(comments.length, 1);
+  assert.equal(comments[0].issue, 15);
+  assert.match(comments[0].body, MARKED);
+  assert.equal(first.json.comment.action, "posted");
+  cleanAndPushed(owner, branch);
+  cleanAndPushed(half, branch);
+  neverReadiesOrMerges(stub);
+
+  writeReview(half, dir, "# Review: widget\n\nVerdict: approve\n");
+  const summary = path.join(os.tmpdir(), `agento-review-summary-${process.pid}.md`);
+  fs.writeFileSync(summary, "All acceptance items pass.\n");
+  const second = reviewPublishRun(owner, stub.env, "--body-file", summary);
+  fs.rmSync(summary);
+  assert.equal(second.code, 0, JSON.stringify(second.json));
+  assert.deepEqual(second.json.actions.map((a) => a.step), ["commit", "push", "comment-update"]);
+  assert.equal(git(half, "log", "-1", "--format=%s"), "docs(feature): review widget — approve");
+  comments = stub.state().product.comments;
+  assert.equal(comments.filter((c) => c.body.includes("<!-- agento:review feature/widget -->")).length, 1, "never a second comment");
+  assert.match(comments[0].body, /^Verdict: approve\n/);
+  assert.match(comments[0].body, /\n\nAll acceptance items pass\.\n\n<!-- agento:review/);
+  assert.equal(second.json.comment.id, first.json.comment.id);
+
+  stub.reset();
+  const third = reviewPublishRun(owner, stub.env, "--body-file", "/dev/null");
+  assert.equal(third.code, 0, JSON.stringify(third.json));
+  assert.equal(third.json.outcome, "already-published");
+  assert.deepEqual(third.json.actions.map((a) => a.step), ["comment-update"], "a changed summary edits the comment again");
+  const fourth = reviewPublishRun(owner, stub.env, "--body-file", "/dev/null");
+  assert.deepEqual(fourth.json.actions, []);
+  assert.equal(fourth.json.comment.action, "unchanged");
+  assert.equal(stub.state().product.comments.length, 1);
+  cleanAndPushed(half, branch);
+});
+
+test("review-publish (in-repo): the review commit is pushed without merging main, and another user's marked comment is left alone", () => {
+  const fixture = makeWorktreeRepo();
+  const { branch, owner, dir } = inRepoDelivery(fixture, "widget", { status: "in-review" });
+  const foreign = { id: 1, issue: 15, user: { login: "someone-else" }, body: "Verdict: approve\n\n<!-- agento:review feature/widget -->" };
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15 } }, comments: [foreign] } });
+  advanceRemote(fixture.repo, "main", "main.txt", "x\n");
+  writeReview(owner, dir, "# Review: widget\n\nVerdict: approve\n");
+  const { code, json } = reviewPublishRun(owner, stub.env);
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.mode, "in-repo");
+  assert.deepEqual(json.actions.map((a) => a.step), ["commit", "push", "comment-post"]);
+  assert.equal(git(owner, "log", "-1", "--format=%s"), "docs(feature): review widget — approve");
+  assert.ok(!fs.existsSync(path.join(owner, "main.txt")), "the in-repo product half is not merged with main");
+  const comments = stub.state().product.comments;
+  assert.equal(comments.length, 2);
+  assert.deepEqual(comments[0], foreign);
+  assert.match(comments[1].body, MARKED);
+  cleanAndPushed(owner, branch);
+});
+
+test("review-publish rejections write nothing: missing review, a missing or duplicated Verdict line, the heading, outside-slug changes, pr-missing, wrong window", () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const { branch, owner, half, dir } = pairDelivery(pair, "widget", { status: "in-review" });
+  const stub = shipStub({ product: { prs: { [branch]: { number: 15 } } } });
+  const snapshot = () => [refState(repo, docs), git(owner, "status", "--porcelain", "--untracked-files=all"), git(half, "status", "--porcelain", "--untracked-files=all")];
+  const rejects = (cwd, env, reason, prepare = null, undo = null) => {
+    prepare?.();
+    const before = snapshot();
+    const { code, json } = reviewPublishRun(cwd, env);
+    assert.equal(code, 3, `${reason}: ${JSON.stringify(json)}`);
+    assert.equal(json.status, "rejected", String(reason));
+    if (reason instanceof RegExp) assert.match(json.reason, reason);
+    else assert.equal(json.reason, reason);
+    assert.deepEqual(json.actions, [], String(reason));
+    assert.deepEqual(snapshot(), before, `${reason}: nothing written`);
+    undo?.();
+    return json;
+  };
+  const review = (text) => () => writeReview(half, dir, text);
+
+  rejects(repo, stub.env, /^wrong window: role=primary /);
+  rejects(owner, stub.env, "review-missing");
+  rejects(owner, stub.env, "verdict-invalid", review("# Review: widget\n\nNo verdict yet.\n"));
+  const twice = rejects(owner, stub.env, "verdict-invalid", review("# Review: widget\n\nVerdict: approve\n\nVerdict: request-changes\n"));
+  assert.deepEqual(twice.verdicts, ["approve", "request-changes"]);
+  rejects(owner, stub.env, "verdict-invalid", review("# Review: widget\n\nVerdict: maybe\n"));
+  rejects(owner, stub.env, "review-heading", review("# Review\n\nVerdict: approve\n"));
+  writeReview(half, dir, "# Review: widget\n\nVerdict: approve\n");
+  const stray = path.join(half, "stray.md");
+  rejects(owner, stub.env, "outside-slug", () => fs.writeFileSync(stray, "x\n"), () => fs.rmSync(stray));
+  const code = path.join(owner, "src.js");
+  const dirty = rejects(owner, stub.env, "outside-slug", () => fs.writeFileSync(code, "x\n"), () => fs.rmSync(code));
+  assert.equal(dirty.half, "product");
+  rejects(owner, shipStub().env, "pr-missing");
+  assert.ok(stub.calls().every((c) => !/comments/.test(c)), stub.calls().join("\n"));
+
+  const accepted = reviewPublishRun(owner, stub.env);
+  assert.equal(accepted.code, 0, JSON.stringify(accepted.json));
+  assert.equal(stub.state().product.comments.length, 1);
 });
