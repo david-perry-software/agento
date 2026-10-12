@@ -153,35 +153,28 @@ mode. Never modify source code, configuration, or other directories.
    under the companion half's artifact root (the `artifactRoot` of `agento.mjs paths
    <type> <slug>`, inside `companion.path`), never under the product checkout; the
    `artifact-pr:` header is added in step 8 once the companion PR exists.
-8. **Publish the branch.** Confirm from the session record that `worktree.branch` is
-   the branch named in the roadmap header. **In-repo layout:** commit only the
-   artifact files (Conventional Commit, e.g. `docs(delivery): plan <slug>`), push
-   with upstream, and open a **draft** pull request to `main` titled after the slug,
-   whose body links the plan — for issues, the body starts with `Fixes #<n>` so the
-   merge closes the GitHub issue. **Companion mode** (`companion` not `null` and
-   `companion.branch` equal to the roadmap branch): the artifacts are committed in
-   the companion half and the product branch is published empty so the code PR can
-   open — in this order:
-   1. `git -C <companion.path> add <artifact dir>` and `git -C <companion.path>
-      commit` (`docs(<type>): plan <slug>`), then `git -C <companion.path> push -u
-      origin <branch>`.
-   2. In the product half: `git commit --allow-empty -m "chore(<type>): open
-      <slug>"` (one empty Conventional Commit; the product branch carries no
-      artifact files), `git push -u origin <branch>`, and open the **draft** code PR
-      to `main` titled after the slug, whose body links the plan on the companion
-      branch (`<companion repo URL>/blob/<branch>/<path to plan.md>`) — for issues
-      starting with `Fixes #<n>`.
-   3. `cd <companion.path> && gh pr create --draft --head <branch> --base <default>
-      --title "docs(<type>): <slug>"` (run inside the companion half so `gh` infers
-      the companion repository from its `origin`; `artifacts.repo.name` is a directory
-      basename, never a `--repo` value) with a body linking the code PR by URL; then
-      update the product PR body via the REST PATCH endpoint in an idempotent check to
-      append the companion PR URL without re-adding it: `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`.
-   4. Write `artifact-pr: "#<n>"` (the companion PR number) into the roadmap header
-      next to `github-issue`, commit it in the companion half (`docs(<type>): record
-      artifact PR for <slug>`), and push. `agento.mjs session --pr` now reports both
-      `pr` and `companionPr`, and `delivery.artifactPr` equals the header.
-   Never commit to `main` in either repository.
+8. **Publish the branch** with one `node <agento-root>/scripts/agento.mjs
+   plan-publish <type> <slug>` call. It checks this window with both halves on the
+   roadmap's branch (never the default branch, never detached) and the artifacts
+   present, rejects changes outside the slug directory (`outside-slug`; in companion
+   mode the product half must be clean), then:
+   - commits the slug directory — `docs(delivery): plan <slug>` in-repo,
+     `docs(<type>): plan <slug>` in the companion half, `docs(<type>): revise plan
+     <slug>` for a later edit;
+   - in companion mode opens the product branch with one empty `chore(<type>): open
+     <slug>` commit (the product branch carries no artifact files);
+   - integrates by merge, pushes product first with upstream, and opens the **draft**
+     code PR to `main` titled after the slug whose body links the plan (for issues it
+     starts with `Fixes #<n>`); in companion mode also the draft `docs(<type>):
+     <slug>` companion PR, the idempotent `Companion PR:` cross-link, and the
+     `artifact-pr: "#<n>"` roadmap header commit;
+   - ends with both halves clean and `ahead: 0`, and never readies or merges a PR.
+
+   Print its `actions[]`. On `status: rejected` fix what `message` names and
+   re-send; on `failed` stop with `message` (and its `reauth` on an authentication
+   failure, §1). A re-send resumes from git and GitHub state and creates no second
+   commit, PR, or cross-link. Its `pr` and `companionPr` are the numbers step 9
+   reports.
 9. **Report** the slug, branch, PR number (the companion PR number too in companion
    mode; and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current

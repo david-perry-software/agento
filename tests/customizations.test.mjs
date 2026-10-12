@@ -381,6 +381,60 @@ test("only the Builder agent references agento.mjs step-commit and agento.mjs sy
   assert.deepEqual(offenders, [], `files that reference agento.mjs step-commit or sync outside the Builder:\n${offenders.join("\n")}`);
 });
 
+// Hand-run publish procedures the publish subcommands replace.
+const HAND_RUN_PUBLISH = [
+  [/gh pr create/, "opens the PR"],
+  [/gh pr merge/, "merges the PR"],
+  [/gh pr comment/, "posts the verdict comment"],
+  [/wait-for-checks\.sh/, "runs the bounded check wait"],
+  [/git (?:-C \S+ )?push\b/, "pushes"],
+  [/gh api [^\n`]*pulls[^\n`]*-X PATCH/, "cross-links the PRs"],
+];
+
+function assertOneCall(files, call) {
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const text = file.includes(`${path.sep}commands${path.sep}`) ? fs.readFileSync(file, "utf8") : splitFrontmatter(file).body;
+    assert.match(text.replace(/\s+/g, " "), call, `${label} must call ${call.source}`);
+    for (const [pattern, why] of HAND_RUN_PUBLISH) assert.doesNotMatch(text, pattern, `${label}: the CLI ${why}; the file must not (${pattern})`);
+  }
+}
+
+function assertMirrors(names) {
+  for (const name of names) {
+    assert.equal(fs.readFileSync(rel("commands", `${name}.md`), "utf8"), fs.readFileSync(rel(".github", "prompts", `${name}.prompt.md`), "utf8"), `commands/${name}.md must mirror the prompt byte for byte`);
+  }
+}
+
+// Files allowed to reference `agento.mjs <sub>`; instructions may describe it but never run it.
+function assertOnlyReferencedBy(sub, allowed) {
+  const pattern = new RegExp(`agento\\.mjs ${sub}\\b`);
+  const offenders = [];
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+    const label = path.relative(repoRoot, file);
+    if (!allowed.has(label) && pattern.test(fs.readFileSync(file, "utf8").replace(/\s+/g, " "))) offenders.push(label);
+  }
+  for (const file of instructionFiles) {
+    const label = path.relative(repoRoot, file);
+    if (new RegExp(`(?:node |scripts/)[^\\n]*agento\\.mjs ${sub}\\b`).test(fs.readFileSync(file, "utf8"))) offenders.push(`${label} (runs it)`);
+  }
+  assert.deepEqual(offenders, [], `files that reference agento.mjs ${sub} outside ${[...allowed].join(", ")}:\n${offenders.join("\n")}`);
+  for (const label of allowed) assert.match(fs.readFileSync(rel(...label.split("/")), "utf8").replace(/\s+/g, " "), pattern, `${label} must call agento.mjs ${sub}`);
+}
+
+const PLANNER_FILES = [".github/agents/delivery-planner.agent.md", ".github/prompts/new-feature.prompt.md", ".github/prompts/new-issue.prompt.md", "commands/new-feature.md", "commands/new-issue.md"];
+
+test("the Planner publishes through one agento.mjs plan-publish call with no hand-run fallback", () => {
+  assertMirrors(["new-feature", "new-issue"]);
+  assertOneCall([rel(".github", "agents", "delivery-planner.agent.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish <type> <slug>/);
+  assertOneCall([rel(".github", "prompts", "new-feature.prompt.md"), rel("commands", "new-feature.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish feature <slug>/);
+  assertOneCall([rel(".github", "prompts", "new-issue.prompt.md"), rel("commands", "new-issue.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish issue <slug>/);
+});
+
+test("only the Planner files reference agento.mjs plan-publish", () => {
+  assertOnlyReferencedBy("plan-publish", new Set(PLANNER_FILES));
+});
+
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
   // Everyone else reads the session record (policy §11). start-session, close-session,
   // and ship delegate to agento.mjs but stay listed: §11 lets the commands that create
@@ -521,8 +575,8 @@ test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-
     }
   }
 
-  // The ship prompt's Fixes #<n> patch moved into the CLI (its blank line is asserted in scripts/agento.test.mjs).
-  assert.equal(examples.length, 7, "expected every PR-body REST PATCH example and command mirror");
+  // The ship prompt's Fixes #<n> patch and the Planner's cross-link moved into the CLI (asserted in scripts/agento.test.mjs).
+  assert.equal(examples.length, 2, "expected every PR-body REST PATCH example and command mirror");
   for (const { label, expression } of examples) {
     const rendered = execFileSync("bash", ["-c", `current_body='Existing body'; printf '%s' ${expression}`], { encoding: "utf8" });
     assert.match(rendered, /^Existing body\n\n(?:Companion PR: |Product PR: |Fixes #)\S/, `${label}: body must contain a real blank line`);

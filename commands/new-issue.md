@@ -69,19 +69,14 @@ The argument takes three forms — detect which applies:
    acceptance checklist's first item MUST require that test to pass. The test's name
    or header comment must reference the GitHub issue number and slug so future readers
    can trace it back to the evidence.
-8. Commit the artifacts (including evidence/), push with upstream, and open a draft PR
-   to `main` whose body starts
-   with `Fixes #<n>` so the merge closes the issue. In companion mode follow the
-   Planner's step 8 order: commit and push the artifacts in the companion half (`git
-   -C <companion.path>`), publish the product branch with one empty Conventional
-   Commit and open the draft code PR (body starting with `Fixes #<n>`), open the
-   **draft** companion PR titled `docs(<type>): <slug>` whose body links the code PR,
-   append the companion PR URL to the code PR body via the REST PATCH endpoint in an
-   idempotent check (only when the URL is absent), then record `artifact-pr: "#<n>"`
-   in the roadmap header and push that second companion commit.
-
-   Example idempotent cross-link:
-   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`
+8. Publish with one `node <agento-root>/scripts/agento.mjs plan-publish issue <slug>`
+   call, per the Planner's step 8: it commits the artifacts (including `evidence/`),
+   publishes the branch (in companion mode both halves, the product branch opened
+   with one empty commit), and opens the draft PR to `main` whose body starts with
+   `Fixes #<n>` so the merge closes the issue — in companion mode also the draft
+   companion PR, their cross-link, and the `artifact-pr:` header. It never readies or
+   merges. Stop on `status: rejected` or `failed` with its `message` (and `reauth`);
+   a re-send resumes from git and GitHub state.
 9. Report slug, branch, GitHub issue number, PR number (and the companion PR number in
    companion mode), and roadmap step count. Offer
    **Build in this worktree** to hand off directly to the Builder without closing,
