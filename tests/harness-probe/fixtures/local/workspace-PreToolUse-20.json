@@ -1,0 +1,37 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-77>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-77>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-39>/GitHub.copilot-chat/transcripts/<UUID-78>.jsonl\",\n  \"tool_name\": \"tool_search\",\n  \"tool_input\": {\n    \"query\": \"runSubagent run a custom agent as a subagent\"\n  },\n  \"tool_use_id\": \"toolu_01UxdunUqoPe6J5Tq4Nn8SLh__vscode-<TS-78>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-79>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-79>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-40>/GitHub.copilot-chat/transcripts/<UUID-80>.jsonl",
+    "tool_name": "tool_search",
+    "tool_input": {
+      "query": "runSubagent run a custom agent as a subagent"
+    },
+    "tool_use_id": "toolu_01UxdunUqoPe6J5Tq4Nn8SLh__vscode-<TS-80>",
+    "cwd": "<PROBE_WS>"
+  }
+}

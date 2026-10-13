@@ -1,0 +1,39 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-81>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-81>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-41>/GitHub.copilot-chat/transcripts/<UUID-82>.jsonl\",\n  \"tool_name\": \"runSubagent\",\n  \"tool_input\": {\n    \"agentName\": \"probe-pinned\",\n    \"description\": \"Run probe-pinned agent\",\n    \"prompt\": \"Report your model and ask the user a question. Return verbatim: the model name you are running as, whether the ask-questions tool (vscode/askQuestions) was available to you, and the outcome of attempting to ask the user a question.\"\n  },\n  \"tool_use_id\": \"toolu_01EeqKEwCzgjqZbYvXWGecpJ__vscode-<TS-82>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-83>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-83>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-42>/GitHub.copilot-chat/transcripts/<UUID-84>.jsonl",
+    "tool_name": "runSubagent",
+    "tool_input": {
+      "agentName": "probe-pinned",
+      "description": "Run probe-pinned agent",
+      "prompt": "Report your model and ask the user a question. Return verbatim: the model name you are running as, whether the ask-questions tool (vscode/askQuestions) was available to you, and the outcome of attempting to ask the user a question."
+    },
+    "tool_use_id": "toolu_01EeqKEwCzgjqZbYvXWGecpJ__vscode-<TS-84>",
+    "cwd": "<PROBE_WS>"
+  }
+}

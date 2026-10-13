@@ -1,0 +1,40 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-33>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-33>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-17>/GitHub.copilot-chat/transcripts/<UUID-34>.jsonl\",\n  \"tool_name\": \"run_in_terminal\",\n  \"tool_input\": {\n    \"command\": \"node <HOME>/DP/agento-plugin/scripts/agento.mjs preflight delivery-status\",\n    \"explanation\": \"Run Agento preflight for delivery-status.\",\n    \"goal\": \"Acceptance receipt for delivery-status command\",\n    \"mode\": \"sync\"\n  },\n  \"tool_use_id\": \"call_01_0RP37jfSUZdeJz79xhgT7505__vscode-<TS-34>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-35>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-35>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-18>/GitHub.copilot-chat/transcripts/<UUID-36>.jsonl",
+    "tool_name": "run_in_terminal",
+    "tool_input": {
+      "command": "node <HOME>/DP/agento-plugin/scripts/agento.mjs preflight delivery-status",
+      "explanation": "Run Agento preflight for delivery-status.",
+      "goal": "Acceptance receipt for delivery-status command",
+      "mode": "sync"
+    },
+    "tool_use_id": "call_01_0RP37jfSUZdeJz79xhgT7505__vscode-<TS-36>",
+    "cwd": "<PROBE_WS>"
+  }
+}
