@@ -38,10 +38,18 @@ Then type `/agento-probe-copy hello` and report what it echoes.
 
 ## Prompt 5 — subagents
 
-Select `probe-pinned` and run it as a subagent; record the model shown, whether
-ask-user worked, and its answer. Then select `probe-unpinned` and run it; record
-the model shown, whether ask-user worked, and whether the nested `probe-pinned`
-subagent ran.
+If the model reports that it has no subagent tool, open **Configure Tools** and
+enable the subagent tool, then retry.
+
+5a. Select `probe-pinned` and run it as a subagent; record the model shown,
+whether ask-user worked, and its answer.
+
+5b. Select `probe-unpinned` and run it; record the model shown, whether ask-user
+worked, and whether the nested `probe-pinned` subagent ran.
+
+5c. Switch the parent model to a different one, then select `probe-pinned` and run
+it as a subagent; record the model shown. This separates the agent's model pin
+from parent-model inheritance.
 
 ## Prompt 6 — fail-closed marker (always last)
 
