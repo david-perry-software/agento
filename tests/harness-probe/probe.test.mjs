@@ -1,13 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, mkdirSync, writeFileSync, readlinkSync, lstatSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const logger = path.join(here, "log-payload.mjs");
+const probeCli = path.join(here, "probe.mjs");
 
 function runLogger({ source, event, stdin = "", env = {}, args = [] }) {
   const logDir = mkdtempSync(path.join(tmpdir(), "agento-probe-log-"));
@@ -125,4 +126,121 @@ test("unmarked PreToolUse exits 0 with no output but still logs", () => {
   assert.equal(res.stdout, "");
   assert.equal(logFiles(logDir).length, 1);
   rmSync(logDir, { recursive: true, force: true });
+});
+
+// --- probe.mjs (setup / status / teardown) ---
+
+function runProbe(args, { home: h, env = {} } = {}) {
+  const e = { ...process.env, HOME: h, ...env };
+  delete e.AGENTO_PROBE_LOG_DIR; // force the default cache/log layout under the temp HOME
+  const res = spawnSync(process.execPath, [probeCli, ...args], { encoding: "utf8", env: e });
+  return { res };
+}
+
+function mkHome() {
+  return mkdtempSync(path.join(tmpdir(), "agento-probe-home-"));
+}
+
+test("setup installs workspace, symlink, copy, and log dir in a temp HOME", () => {
+  const h = mkHome();
+  const { res } = runProbe(["setup"], { home: h });
+  assert.equal(res.status, 0, res.stderr);
+  const report = JSON.parse(res.stdout);
+  assert.ok(report.workspace.startsWith(path.join(h, ".cache")), "workspace not under the temp HOME cache");
+  const wsProbeJson = path.join(report.workspace, ".github", "hooks", "probe.json");
+  const probeJson = readFileSync(wsProbeJson, "utf8");
+  assert.ok(probeJson.includes("log-payload.mjs"), "probe.json not rewritten with the logger path");
+  assert.ok(!probeJson.includes("__AGENTO_PROBE_LOGGER__"), "placeholder left in probe.json");
+  assert.ok(existsSync(path.join(report.workspace, ".git")), "workspace not git-init'ed");
+  const link = path.join(h, ".copilot", "skills", "agento");
+  assert.ok(lstatSync(link).isSymbolicLink(), "agento skill is not a symlink");
+  assert.equal(readlinkSync(link), path.join(here, "skills", "agento"));
+  const copy = path.join(h, ".copilot", "skills", "agento-probe-copy");
+  assert.ok(existsSync(path.join(copy, ".agento-probe-owned")), "copy ownership marker missing");
+  assert.ok(report.promptsPath.endsWith("PROMPTS.md"));
+  assert.ok(report.pluginDir.endsWith("plugin"));
+  assert.ok(report.openCommand.startsWith("code --new-window"));
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("setup refuses a foreign ~/.copilot/skills/agento", () => {
+  const h = mkHome();
+  const skills = path.join(h, ".copilot", "skills");
+  mkdirSync(skills, { recursive: true });
+  mkdirSync(path.join(skills, "agento"));
+  const { res } = runProbe(["setup"], { home: h });
+  assert.notEqual(res.status, 0, "setup should refuse a foreign agento path");
+  assert.match(res.stderr, /refusing/);
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("teardown removes probe-owned entries and leaves foreign entries untouched", () => {
+  const h = mkHome();
+  const skills = path.join(h, ".copilot", "skills");
+  mkdirSync(skills, { recursive: true });
+  const foreignAgent = path.join(skills, "agento");
+  mkdirSync(foreignAgent);
+  writeFileSync(path.join(foreignAgent, "keep.txt"), "foreign\n");
+  const foreignCopy = path.join(skills, "agento-probe-copy");
+  mkdirSync(foreignCopy); // no ownership marker
+  writeFileSync(path.join(foreignCopy, "keep.txt"), "foreign\n");
+  const cache = path.join(h, ".cache", "agento-harness-probe");
+  mkdirSync(cache, { recursive: true });
+  writeFileSync(path.join(cache, "log.json"), "{}");
+
+  const { res } = runProbe(["teardown"], { home: h });
+  assert.equal(res.status, 0, res.stderr);
+  const report = JSON.parse(res.stdout);
+  assert.ok(report.removed.includes(cache), "cache dir not removed");
+  assert.ok(existsSync(path.join(foreignAgent, "keep.txt")), "foreign agento removed");
+  assert.ok(existsSync(path.join(foreignCopy, "keep.txt")), "foreign copy removed");
+  assert.ok(report.kept.some((k) => k.path === foreignAgent), "foreign agento not reported kept");
+  assert.ok(report.kept.some((k) => k.path === foreignCopy), "foreign copy not reported kept");
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("teardown after setup removes the probe's own symlink, copy, and cache", () => {
+  const h = mkHome();
+  runProbe(["setup"], { home: h });
+  const { res } = runProbe(["teardown"], { home: h });
+  assert.equal(res.status, 0, res.stderr);
+  const report = JSON.parse(res.stdout);
+  const link = path.join(h, ".copilot", "skills", "agento");
+  const copy = path.join(h, ".copilot", "skills", "agento-probe-copy");
+  const cache = path.join(h, ".cache", "agento-harness-probe");
+  assert.ok(report.removed.includes(link), "agento symlink not removed");
+  assert.ok(report.removed.includes(copy), "copy not removed");
+  assert.ok(report.removed.includes(cache), "cache not removed");
+  assert.ok(!existsSync(link));
+  assert.ok(!existsSync(copy));
+  assert.ok(!existsSync(cache));
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("teardown reports a leftover chat.pluginLocations entry without editing settings.json", () => {
+  const h = mkHome();
+  const cfgHome = path.join(h, ".config");
+  const userDir = path.join(cfgHome, "Code", "User");
+  mkdirSync(userDir, { recursive: true });
+  const settingsPath = path.join(userDir, "settings.json");
+  writeFileSync(settingsPath, JSON.stringify({ "chat.pluginLocations": [path.join(here, "plugin")] }));
+  const { res } = runProbe(["teardown"], { home: h, env: { XDG_CONFIG_HOME: cfgHome } });
+  assert.equal(res.status, 0, res.stderr);
+  const report = JSON.parse(res.stdout);
+  assert.ok(report.pluginLocations.entries.length >= 1, "leftover plugin location not reported");
+  assert.ok(readFileSync(settingsPath, "utf8").includes("chat.pluginLocations"), "settings.json was edited (must not be)");
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("status reports the installed state", () => {
+  const h = mkHome();
+  runProbe(["setup"], { home: h });
+  const { res } = runProbe(["status"], { home: h });
+  assert.equal(res.status, 0, res.stderr);
+  const report = JSON.parse(res.stdout);
+  assert.equal(report.installed.workspace, true);
+  assert.equal(typeof report.installed.agentoSymlink, "object");
+  assert.equal(report.installed.agentoProbeCopy, true);
+  assert.equal(report.installed.logDir, true);
+  rmSync(h, { recursive: true, force: true });
 });
