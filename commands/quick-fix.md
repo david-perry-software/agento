@@ -65,16 +65,19 @@ named command is emitted as its own block per policy §12 (one block per command
    fast). A failing check is a blocker — fix it or revert and report; never commit red.
 6. Commit once with a Conventional Commit subject (≤ 72 chars, imperative, no
    trailing period) and a body only if the subject cannot carry the motivation.
-7. Push with upstream and open a PR to `main` whose body states what changed, why,
-   and the verification you ran.
-8. Wait for every required check with `scripts/wait-for-checks.sh pr <n>` in the
-   foreground (exit 2 = still pending: rerun; never `--watch`, background terminals,
-   or tasks). If `main` advances meanwhile, merge `origin/main` into the branch
-   (never rebase), push, and wait again. Failing checks are a resumable blocker —
-   report the PR and stop.
-9. Merge with a normal merge commit through the ruleset (no `--admin`, no squash,
-   no rebase), delete the branch, switch to `main`, fetch, fast-forward, and confirm
-   a clean tree with zero ahead/behind.
+7. Publish with one `node <agento-root>/scripts/agento.mjs publish-pr --title
+   "<subject>" --body-file - --merge` call whose body, on stdin, states what changed,
+   why, and the verification you ran. It pushes with upstream, opens or reuses the PR
+   to `main`, waits for every required check within its bounded budget, merges
+   `origin/main` into the branch when it falls behind (never a rebase), and merges
+   with a normal merge commit through the ruleset (no `--admin`, no squash, no
+   rebase).
+8. Exit 2 (`status: pending`) means checks are still running: re-send the identical
+   call from its `next[]` (never `--watch`, background terminals, or tasks). Exit 3
+   stops: failing checks (`checks-failed`) are a resumable blocker — report the PR
+   and stop; otherwise report `message` and `reauth`.
+9. After the merge the call deletes the branch, switches to `main`, fetches, and
+   fast-forwards; confirm from its `sync` a clean tree with zero ahead/behind.
 10. Report the commit hash and subject, the PR number, the verification run, and the
     synchronized `main` state.
 

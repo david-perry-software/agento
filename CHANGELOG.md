@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Added.** `agento.mjs plan-publish <type> <slug>`, `agento.mjs review-publish
+  <type> <slug> [--body-file <file|->]`, and `agento.mjs publish-pr [--dir <path>]
+  [--branch <name>] [--title <text>] [--body-file <file|->] [--merge] [--wait N]`
+  replace the hand-run publish procedures. `plan-publish` performs the Planner's
+  publish (the slug-directory commit, the empty product commit in companion mode,
+  integration, push, both draft PRs, the cross-link, and `artifact-pr:`) and never
+  readies or merges. `review-publish` commits review.md, integrates (the companion
+  default only), pushes, and upserts exactly one marked verdict comment on the code
+  PR through the REST comments list. `publish-pr` is the shared push → PR → bounded
+  wait (exit 2 pending) → `--merge` → delete branch → sync used by
+  `/agento commit-current-changes`, `/agento quick-fix`, `/agento finish-freehand`,
+  `/agento new-initiative`, and `/agento triage-followups` (`--dir` for the companion
+  clone); it refuses the default branch, a detached HEAD, and every delivery prefix,
+  and leaves a linked worktree on its branch with the close-session handoff. Each
+  rewired file now publishes through one call instead of 2–14 git and gh tool calls;
+  customizations tests keep each subcommand to its callers. Behaviour notes: the
+  in-repo Reviewer now always posts the verdict comment (it was optional), and in the
+  companion layout `plan-publish` integrates the defaults before pushing, as policy
+  §7 requires (a freshly branched plan is normally a no-op merge). Ship's
+  `waitForChecks` and step-commit's PR phase became shared module-level helpers with
+  no behaviour change.
+
 - **Added.** `agento.mjs sync <type> <slug>` and `agento.mjs step-commit <type>
   <slug> [--step N.M] --message-file <file|->` replace the Builder's hand-run git.
   `sync` fetches both halves, merges `origin/<branch>` and `origin/<default>` where

@@ -54,28 +54,30 @@ Window check per §11: requires role `freehand` with `delivery.slug` equal to th
    never exceeds 72. Add a body only when it supplies motivation or behavioral
    consequences the subject cannot capture; wrap it at 72 characters and include an
    issue reference from the argument when relevant.
-7. Push the branch without force, setting its upstream on the first push, then open or
-   reuse a pull request to `main`. Give the pull request a title matching the session's
-   overall change and a body summarizing every commit on the branch.
-8. Wait for every required check (from the repository's ruleset) to succeed using
-   `scripts/wait-for-checks.sh pr <n>` in the foreground; exit 2 means still
-   pending — rerun it. Never use `--watch` commands, background terminals, or tasks
-   to wait, and never end the turn to "wait". Do
-   not merge with checks pending, skipped, cancelled, or failing. Because this prompt
-   does not modify files or run verification, report a failed check as an exact
-   resumable blocker. If `main` advances, fetch and merge `origin/main` into the
-   session branch without rebasing or rewriting history, push normally, and wait for
-   the required checks again; this ruleset-required integration merge is the only
-   permitted additional commit.
-9. Merge the pull request with a normal merge commit through the repository ruleset.
-   Never use admin mode or a bypass actor. Delete the merged remote branch. Do not
-   switch this worktree to `main` and do not delete the local branch from inside the
-   worktree that owns it.
+7. Publish with one `node <agento-root>/scripts/agento.mjs publish-pr --title
+   "<title>" --body-file - --merge` call: the title matches the session's overall
+   change and the body, on stdin, summarizes every commit on the branch. It pushes
+   without force (setting the upstream on the first push), opens or reuses the pull
+   request to `main`, waits for every required check within its bounded budget,
+   merges `origin/main` into the session branch when GitHub reports it behind
+   (never a rebase; this ruleset-required integration merge is the only permitted
+   additional commit), merges with a normal merge commit through the ruleset (never
+   admin mode or a bypass actor), and deletes the merged remote branch.
+8. Exit 2 (`status: pending`) means checks are still running: re-send the identical
+   call from its `next[]`. Never use `--watch` commands, background terminals, or
+   tasks to wait, and never end the turn to "wait". Exit 3 stops with `message` (and
+   `reauth` on an authentication failure); because this prompt does not modify
+   files or run verification, report a failed check (`checks-failed`) as an exact
+   resumable blocker.
+9. In this linked worktree the call never switches to `main` and never deletes the
+   local branch: it returns `/agento close-session changes/<slug>` in `next[]` for
+   the cleanup.
 10. Report every commit hash and subject published, the pull-request number, the merge
-    result, and the exact cleanup handoff: close this VS Code window, then run
-    `/agento close-session changes/<slug>` from the primary workspace window to remove the
-    worktree and delete the merged local branch. If execution stops, report the exact
-    branch, pull request, or check phase so the next invocation can resume it.
+    result, and the exact cleanup handoff from the call's `next[]`: close this VS Code
+    window, then run `/agento close-session changes/<slug>` from the primary workspace
+    window to remove the worktree and delete the merged local branch. If execution
+    stops, report the exact branch, pull request, or check phase so the next
+    invocation can resume it.
 
 Do not amend, rebase, squash, force-push, reset, discard changes, bypass hooks or the
 ruleset, or commit directly to `main`.

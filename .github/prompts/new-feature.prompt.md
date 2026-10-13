@@ -57,17 +57,13 @@ exact argument.
    delivery artifact format, with branch `feature/<slug>` in the roadmap header, under
    the `artifactRoot` of `node <agento-root>/scripts/agento.mjs paths feature <slug>`
    (the companion half in companion mode, the product checkout in-repo).
-5. Commit the two artifacts, push with upstream, and open a draft PR to `main`. In
-   companion mode follow the Planner's step 8 order: commit and push the artifacts in
-   the companion half (`git -C <companion.path>`), publish the product branch with one
-   empty Conventional Commit and open the draft code PR, open the **draft** companion
-   PR titled `docs(<type>): <slug>` whose body links the code PR, append the companion
-   PR URL to the code PR body using the REST PATCH endpoint (idempotent: only append it
-   when the URL is already absent), then record `artifact-pr: "#<n>"` in the roadmap
-   header and push that second companion commit.
-
-   Example idempotent cross-link:
-   `current_body=$(gh pr view <code PR> --json body --jq '.body'); if ! printf '%s' "$current_body" | grep -Fq "<companion PR URL>"; then gh api repos/<owner>/<repo>/pulls/<code PR> -X PATCH -f body="${current_body}"$'\n\nCompanion PR: <companion PR URL>'; fi`
+5. Publish with one `node <agento-root>/scripts/agento.mjs plan-publish feature
+   <slug>` call, per the Planner's step 8: it commits the two artifacts, publishes
+   the branch (in companion mode both halves, the product branch opened with one
+   empty commit), and opens the draft PR to `main` — in companion mode also the
+   draft companion PR, their cross-link, and the `artifact-pr:` header. It never
+   readies or merges. Stop on `status: rejected` or `failed` with its `message`
+   (and `reauth`); a re-send resumes from git and GitHub state.
 6. Report slug, branch, PR number (and the companion PR number in companion mode), and
    roadmap step count. Offer **Build in this
    worktree** to hand off directly to the Builder without closing, reopening, or

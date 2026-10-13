@@ -93,19 +93,21 @@ review, fixes belong to the Builder.
    acceptance items satisfiable only by it score `deferred to post-ship`.
 7. Write `review.md` per the artifact format with an explicit
    `Verdict: approve` or `Verdict: request-changes`.
-8. Commit review.md (+ roadmap repairs) to the work branch, push, and summarize the
-   verdict with the top findings. Companion mode: the commit is one companion commit
-   — `git -C <companion.path> add <slug dir>` and `git -C <companion.path> commit`
-   (`docs(<type>): review <slug> — <verdict>`), integrate the companion's
-   `origin/<default>` by merge, `git -C <companion.path> push`, and confirm
-   `agento.mjs session` shows `companion.dirty: false`, `companion.ahead: 0`. Then
-   post exactly one verdict comment on the **code** PR (`gh pr comment <code PR>
-   --body …`) stating `Verdict: <approve|request-changes>` and linking the review on
-   the companion branch (`<companion repo URL>/blob/<branch>/<path to review.md>`);
-   on a re-review update that same comment with `gh pr comment <code PR> --edit-last
-   --body …` — never a second thread. In the in-repo layout the review is committed
-   and pushed on the work branch and the PR comment is optional. Either way, leave
-   the trees clean per policy §7 clean handoff.
+8. Publish with one `node <agento-root>/scripts/agento.mjs review-publish <type>
+   <slug> --body-file -` call, the verdict summary with the top findings on stdin.
+   It checks this build window, requires review.md with `# Review: <slug>` and
+   exactly one `Verdict:` line, changes only inside the slug directory (in companion
+   mode the product half clean), and the open code PR; then it commits review.md and
+   roadmap repairs as one `docs(<type>): review <slug> — <verdict>` commit in the
+   artifact half (the companion half in companion mode), merges `origin/<branch>` into
+   every half and `origin/<default>` into the companion half only (never a rebase;
+   the reviewed code does not change under the verdict), pushes, and leaves exactly
+   one verdict comment on the **code** PR — `Verdict: <approve|request-changes>`,
+   the link to review.md on the branch, and the summary — editing that same comment
+   on a re-review, never a second thread. It ends with the trees clean per policy §7
+   clean handoff. On `status: rejected` fix what `message` names and re-send; on
+   `failed` stop with `message` (and its `reauth` on an authentication failure, §1).
+   Then summarize the verdict with the top findings.
    End with the cross-window sequence from policy §8,
    its first command being the `next:` of the §9 result line, each command in its
    own block per policy §12:

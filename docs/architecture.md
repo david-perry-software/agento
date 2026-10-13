@@ -97,6 +97,13 @@ flowchart TD
   `agento.mjs step-commit` performs the two-commit rule with the roadmap tick,
   integrates, pushes product then companion, and opens missing draft PRs — both
   enforce the guard's rules in process, since the guard cannot see their git), the
+  Planner's and Reviewer's publish (`agento.mjs plan-publish` commits the plan and
+  opens the draft PRs; `agento.mjs review-publish` commits the review and upserts one
+  marked verdict comment on the code PR), the changes-branch flows' publish
+  (`agento.mjs publish-pr` pushes, opens a non-draft PR, waits within a bounded
+  budget, merges with `--merge` only, deletes the branch, and syncs the default —
+  refusing the default branch and every delivery prefix, which merge only through
+  ship), the
   bounded CI poller,
   and the guard replay harness. Prompts call the
   CLI rather than re-deriving these algorithms in prose, so the configured branch
