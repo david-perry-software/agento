@@ -25,7 +25,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -236,23 +236,188 @@ function teardown() {
 }
 
 function collect(args) {
-  // Implemented in roadmap step 1.4.
-  console.error("probe: collect is not implemented yet");
-  process.exit(1);
+  const harness = parseOpt(args, "--harness");
+  if (!harness) {
+    console.error("probe: collect requires --harness <label>");
+    process.exit(2);
+  }
+  const fixturesRoot = process.env.AGENTO_PROBE_FIXTURES_DIR || path.join(here, "fixtures");
+  const fixturesDir = path.join(fixturesRoot, harness);
+  const files =
+    existsSync(logDir) && lstatOrNull(logDir)?.isDirectory()
+      ? readdirSync(logDir)
+          .filter((f) => f.endsWith(".json"))
+          .sort()
+      : [];
+  if (files.length === 0) {
+    console.log(JSON.stringify({ harness, fixturesDir, collected: 0, note: "no log files" }, null, 2));
+    return;
+  }
+
+  const ctx = makeSanitizeCtx();
+  const sanitized = [];
+  for (const f of files) {
+    let record;
+    try {
+      record = JSON.parse(readFileSync(path.join(logDir, f), "utf8"));
+    } catch {
+      record = { source: "unknown", event: "unknown", stdin: readFileSync(path.join(logDir, f), "utf8") };
+    }
+    const clean = sanitizeRecord(record, ctx);
+    const text = JSON.stringify(clean, null, 2);
+    const deny = findDeny(text);
+    if (deny) {
+      console.error(`probe: collect refused: ${deny.pattern} found in ${f}; nothing written`);
+      process.exit(1);
+    }
+    sanitized.push({ record: clean, text });
+  }
+
+  rmSync(fixturesDir, { recursive: true, force: true });
+  mkdirSync(fixturesDir, { recursive: true });
+  const counters = new Map();
+  const names = [];
+  for (const { record, text } of sanitized) {
+    const key = `${record.source}-${record.event}`;
+    const n = (counters.get(key) ?? 0) + 1;
+    counters.set(key, n);
+    const name = `${record.source}-${record.event}-${n}.json`;
+    names.push(name);
+    writeFileSync(path.join(fixturesDir, name), text + "\n");
+  }
+  for (const f of files) rmSync(path.join(logDir, f), { force: true });
+
+  console.log(JSON.stringify({ harness, fixturesDir, collected: sanitized.length, files: names }, null, 2));
+}
+
+const TOKEN_KEY = /token|secret|password|auth|cookie|credential|api[-_]?key/i;
+
+const DENY_PATTERNS = [
+  [/\/home\//i, "/home/ path"],
+  [/\/Users\//, "/Users/ path"],
+  [/C:\\Users/i, "C:\\Users path"],
+  [/gh[pousr]_/, "GitHub token"],
+  [/github_pat_/, "GitHub PAT"],
+  [/\bsk-[A-Za-z0-9_-]{8,}/, "sk- key"],
+  [/Bearer\s+/i, "Bearer header"],
+];
+
+function findDeny(text) {
+  for (const [re, label] of DENY_PATTERNS) {
+    if (re.test(text)) return { pattern: label };
+  }
+  return null;
+}
+
+function parseOpt(args, flag) {
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] === flag) return args[i + 1];
+    if (args[i].startsWith(`${flag}=`)) return args[i].slice(flag.length + 1);
+  }
+  return null;
+}
+
+function makeSanitizeCtx() {
+  const homeDir = process.env.HOME || homedir();
+  let username = process.env.USER || process.env.LOGNAME || "";
+  if (!username) {
+    try {
+      username = userInfo().username;
+    } catch {
+      username = "";
+    }
+  }
+  const repoRoot = path.resolve(here, "..", "..");
+  const probeWs = path.join(homeDir, ".cache", "agento-harness-probe", "workspace");
+  const counters = { TS: 0, UUID: 0, HEX: 0 };
+  const paths = [
+    [repoRoot, "<REPO>"],
+    [probeWs, "<PROBE_WS>"],
+    [homeDir, "<HOME>"],
+    [username, "<USER>"],
+  ].filter(([from]) => from);
+  return { counters, paths };
+}
+
+function nextPlaceholder(ctx, kind) {
+  ctx.counters[kind] += 1;
+  return `<${kind}-${ctx.counters[kind]}>`;
+}
+
+function scrubStrings(str, ctx) {
+  let out = str;
+  for (const [from, to] of ctx.paths) out = out.split(from).join(to);
+  return out
+    .replace(
+      /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})?\b/g,
+      () => nextPlaceholder(ctx, "TS"),
+    )
+    .replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+      () => nextPlaceholder(ctx, "UUID"),
+    )
+    .replace(/\b[0-9a-f]{16,}\b/gi, () => nextPlaceholder(ctx, "HEX"))
+    .replace(/\b\d{13,15}\b/g, () => nextPlaceholder(ctx, "TS"));
+}
+
+function sanitizeValue(value, ctx, key = null) {
+  if (key != null && TOKEN_KEY.test(String(key))) return undefined;
+  if (key === "env") return undefined;
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const v of value) {
+      const s = sanitizeValue(v, ctx, null);
+      if (s !== undefined) out.push(s);
+    }
+    return out;
+  }
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (TOKEN_KEY.test(k) || k === "env") continue;
+      const s = sanitizeValue(v, ctx, k);
+      if (s !== undefined) out[k] = s;
+    }
+    return out;
+  }
+  if (typeof value === "string") return scrubStrings(value, ctx);
+  return value;
+}
+
+function sanitizeRecord(record, ctx = makeSanitizeCtx()) {
+  // The raw stdin string may embed JSON whose keys carry secrets. Re-sanitize it
+  // through the parser so token-like keys and env objects are actually removed
+  // rather than surviving as raw text inside a string value.
+  if (record && typeof record === "object" && typeof record.stdin === "string") {
+    try {
+      const parsed = JSON.parse(record.stdin);
+      record.stdin = JSON.stringify(sanitizeValue(parsed, ctx), null, 2);
+    } catch {
+      // Not JSON: the generic pass below scrubs paths and ids from the raw string.
+    }
+  }
+  return sanitizeValue(record, ctx);
 }
 
 const [cmd, ...rest] = process.argv.slice(2);
 
-try {
-  if (cmd === "setup") setup();
-  else if (cmd === "status") status();
-  else if (cmd === "teardown") teardown();
-  else if (cmd === "collect") collect(rest);
-  else {
-    console.error("usage: probe.mjs <setup|status|collect|teardown>");
-    process.exit(2);
-  }
-} catch (err) {
-  console.error(`probe: ${err.message}`);
-  process.exit(1);
+function dispatch() {
+  if (cmd === "setup") return setup();
+  if (cmd === "status") return status();
+  if (cmd === "teardown") return teardown();
+  if (cmd === "collect") return collect(rest);
+  console.error("usage: probe.mjs <setup|status|collect|teardown>");
+  process.exit(2);
 }
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  try {
+    dispatch();
+  } catch (err) {
+    console.error(`probe: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+export { setup, status, teardown, collect, findDeny, sanitizeRecord, makeSanitizeCtx };

@@ -5,6 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, mkdirSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { findDeny } from "./probe.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const logger = path.join(here, "log-payload.mjs");
@@ -243,4 +244,117 @@ test("status reports the installed state", () => {
   assert.equal(report.installed.agentoProbeCopy, true);
   assert.equal(report.installed.logDir, true);
   rmSync(h, { recursive: true, force: true });
+});
+
+// --- probe.mjs collect (step 1.4) ---
+
+function runProbeCollect(args, env) {
+  const res = spawnSync(process.execPath, [probeCli, ...args], {
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+  return { res };
+}
+
+test("collect sanitizes logs into fixtures and empties the log dir", () => {
+  const h = mkHome();
+  const logDir = mkdtempSync(path.join(tmpdir(), "agento-probe-log-"));
+  const fixturesDir = mkdtempSync(path.join(tmpdir(), "agento-probe-fx-"));
+  const record = {
+    source: "workspace",
+    event: "PreToolUse",
+    argv: ["workspace", "PreToolUse"],
+    cwd: path.join(h, "DP", "agento-worktrees", "x"),
+    envVarNames: ["CLAUDE_PLUGIN_ROOT"],
+    stdin: JSON.stringify({
+      session_id: "123e4567-e89b-12d3-a456-426614174000",
+      at: "2026-10-13T12:00:00.000Z",
+      env: { SECRET: "x", HOME: path.join(h, "home") },
+      token: "topsecret",
+      tool_input: { content: "hi" },
+    }),
+  };
+  writeFileSync(path.join(logDir, "workspace-PreToolUse-1.json"), JSON.stringify(record, null, 2));
+
+  const { res } = runProbeCollect(["collect", "--harness", "local"], {
+    HOME: h,
+    AGENTO_PROBE_LOG_DIR: logDir,
+    AGENTO_PROBE_FIXTURES_DIR: fixturesDir,
+  });
+  assert.equal(res.status, 0, res.stderr);
+  const fxDir = path.join(fixturesDir, "local");
+  const files = readdirSync(fxDir).filter((f) => f.endsWith(".json"));
+  assert.equal(files.length, 1);
+  assert.equal(files[0], "workspace-PreToolUse-1.json");
+  const text = readFileSync(path.join(fxDir, files[0]), "utf8");
+  assert.ok(!text.includes(h), "temp home path leaked into the fixture");
+  assert.ok(!text.includes("topsecret"), "token value leaked into the fixture");
+  assert.ok(!text.includes("SECRET"), "env object not dropped");
+  assert.ok(text.includes("<HOME>"), "home path not replaced with <HOME>");
+  assert.ok(text.includes("<UUID-"), "UUID not replaced");
+  assert.ok(text.includes("<TS-"), "timestamp not replaced");
+  assert.equal(readdirSync(logDir).filter((f) => f.endsWith(".json")).length, 0, "log dir not emptied");
+  rmSync(logDir, { recursive: true, force: true });
+  rmSync(fixturesDir, { recursive: true, force: true });
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("collect refuses on a planted /home/x and writes nothing", () => {
+  const h = mkHome();
+  const logDir = mkdtempSync(path.join(tmpdir(), "agento-probe-log-"));
+  const fixturesDir = mkdtempSync(path.join(tmpdir(), "agento-probe-fx-"));
+  writeFileSync(
+    path.join(logDir, "workspace-SessionStart-1.json"),
+    JSON.stringify({ source: "workspace", event: "SessionStart", stdin: "/home/x/some/file" }),
+  );
+  const { res } = runProbeCollect(["collect", "--harness", "local"], {
+    HOME: h,
+    AGENTO_PROBE_LOG_DIR: logDir,
+    AGENTO_PROBE_FIXTURES_DIR: fixturesDir,
+  });
+  assert.notEqual(res.status, 0, "collect should refuse a /home/ path");
+  assert.match(res.stderr, /refused/);
+  assert.ok(!existsSync(path.join(fixturesDir, "local")), "fixtures written despite refusal");
+  assert.equal(readdirSync(logDir).filter((f) => f.endsWith(".json")).length, 1, "log dir must not be emptied on refusal");
+  rmSync(logDir, { recursive: true, force: true });
+  rmSync(fixturesDir, { recursive: true, force: true });
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("collect refuses on a planted ghp_ token and writes nothing", () => {
+  const h = mkHome();
+  const logDir = mkdtempSync(path.join(tmpdir(), "agento-probe-log-"));
+  const fixturesDir = mkdtempSync(path.join(tmpdir(), "agento-probe-fx-"));
+  writeFileSync(
+    path.join(logDir, "workspace-PreToolUse-1.json"),
+    JSON.stringify({ source: "workspace", event: "PreToolUse", stdin: "ghp_abcdef0123456789" }),
+  );
+  const { res } = runProbeCollect(["collect", "--harness", "copilot"], {
+    HOME: h,
+    AGENTO_PROBE_LOG_DIR: logDir,
+    AGENTO_PROBE_FIXTURES_DIR: fixturesDir,
+  });
+  assert.notEqual(res.status, 0, "collect should refuse a ghp_ token");
+  assert.match(res.stderr, /refused/);
+  assert.ok(!existsSync(path.join(fixturesDir, "copilot")), "fixtures written despite refusal");
+  rmSync(logDir, { recursive: true, force: true });
+  rmSync(fixturesDir, { recursive: true, force: true });
+  rmSync(h, { recursive: true, force: true });
+});
+
+test("committed fixtures contain no deny patterns", () => {
+  const root = path.join(here, "fixtures");
+  const files = [];
+  (function walk(dir) {
+    if (!existsSync(dir)) return;
+    for (const name of readdirSync(dir)) {
+      const p = path.join(dir, name);
+      if (lstatSync(p).isDirectory()) walk(p);
+      else if (name.endsWith(".json")) files.push(p);
+    }
+  })(root);
+  for (const f of files) {
+    const deny = findDeny(readFileSync(f, "utf8"));
+    assert.equal(deny, null, `${path.relative(here, f)} contains ${deny?.pattern}`);
+  }
 });
