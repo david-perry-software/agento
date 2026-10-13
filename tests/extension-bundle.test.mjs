@@ -11,6 +11,7 @@ const cliFiles = [
   "agento.mjs",
   "delivery-metrics.mjs",
   "delivery-roadmap-resolver.mjs",
+  "model-filter.mjs",
   "model-profiles.mjs",
   "release-state.mjs",
   "session-state.mjs",

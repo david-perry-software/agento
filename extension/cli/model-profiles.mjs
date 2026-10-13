@@ -229,6 +229,17 @@ export function handoffTargets(text) {
   return handoffItems(fm.lines, fm.end).map((item) => item.target);
 }
 
+// Each handoff item's target and its nested pin normalized to `model: <value>`
+// (null when the item carries none), in file order.
+export function handoffModelLines(text) {
+  const fm = frontmatter(text);
+  if (!fm) return [];
+  return handoffItems(fm.lines, fm.end).map((item) => ({
+    target: item.target,
+    line: item.modelLine === -1 ? null : `model: ${fm.lines[item.modelLine].slice(item.indent.length + "model:".length).replace(/\r$/, "").trim()}`,
+  }));
+}
+
 // The current per-file state: the top-level `model:` block (continuation lines
 // joined by "\n", "\r" stripped) plus each handoff item's nested `model:` line,
 // normalized to `model: <value>`; null when nothing is pinned.
