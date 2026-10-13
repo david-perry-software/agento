@@ -36,6 +36,15 @@ succeeded.
 Type `/agento delivery-status --probe-arg x` and report what the skill echoes.
 Then type `/agento-probe-copy hello` and report what it echoes.
 
+## Prompt 4b — skill argument resolution, plugin disabled
+
+Disable the Agento plugin for this workspace (Extensions → Agent Plugins –
+Installed → Disable (Workspace)), then reload the window and type
+`/agento delivery-status --probe-arg x` again, so the probe's own
+`~/.copilot/skills/agento` skill can be seen without the plugin shadowing it.
+Report what the skill echoes. Then re-enable the plugin (Extensions → Agent
+Plugins – Installed → Enable (Workspace)) and reload.
+
 ## Prompt 5 — subagents
 
 If the model reports that it has no subagent tool, open **Configure Tools** and
