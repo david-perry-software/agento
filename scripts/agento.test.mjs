@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
-import { setModel } from "./model-profiles.mjs";
+import { setHandoffModels, setModel } from "./model-profiles.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -1439,7 +1439,8 @@ const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 test("doctor reports nine checks and includes session-workspace, model-profile, and hook-wiring", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
-  const { code, json } = runWith({ cwd: repo, env }, "doctor");
+  // --plugin-root: the model-profile check must not read the (possibly pinned) clone running the suite.
+  const { code, json } = runWith({ cwd: repo, env }, "doctor", "--plugin-root", repo);
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
@@ -1548,7 +1549,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   const repo = makeRepo();
   const { env, bin } = restrictedPath({ code: okStubs.code });
 
-  const missing = runWith({ cwd: repo, env }, "doctor");
+  const missing = runWith({ cwd: repo, env }, "doctor", "--plugin-root", repo);
   assert.equal(missing.code, 3);
   assert.equal(missing.json.status, "fail");
   const gh = byId(missing.json).gh;
@@ -2800,6 +2801,13 @@ function modelsFixture({ gitInit = true } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-models-"));
   const plugin = path.join(base, "plugin");
   for (const rel of [".github/agents", ".github/prompts", "commands"]) fs.cpSync(path.join(repoRoot, rel), path.join(plugin, rel), { recursive: true });
+  // A pinned clone running the suite (its worktrees inherit the pins) must not seed them here.
+  for (const rel of [".github/agents", ".github/prompts", "commands"]) {
+    for (const file of fs.readdirSync(path.join(plugin, rel))) {
+      const abs = path.join(plugin, rel, file);
+      fs.writeFileSync(abs, setHandoffModels(setModel(fs.readFileSync(abs, "utf8"), null), null));
+    }
+  }
   fs.mkdirSync(path.join(plugin, "templates"), { recursive: true });
   fs.copyFileSync(path.join(repoRoot, "templates", "model-profiles.json"), path.join(plugin, "templates", "model-profiles.json"));
   if (gitInit) {

@@ -3572,18 +3572,19 @@ function modelsState(pluginRoot, loaded) {
   let tracked = new Set();
   let dirtyBeyondModel = [];
   let dirty = [];
+  let heads = {};
   const filter = isGit ? modelFilterStatus(pluginRoot, layout.files) : null;
   if (isGit) {
     const entries = git(pluginRoot, "ls-files", "-v", "--", ...layout.files).split("\n").filter(Boolean);
     tracked = new Set(entries.map((l) => l.slice(2)));
     legacySkipWorktree = entries.filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
-    const heads = Object.fromEntries(layout.files.filter((f) => tracked.has(f)).map((f) => [f, gitShowHead(pluginRoot, f)]));
+    heads = Object.fromEntries(layout.files.filter((f) => tracked.has(f)).map((f) => [f, gitShowHead(pluginRoot, f)]));
     dirtyBeyondModel = layout.files.filter((f) => heads[f] != null && differsBeyondModel(heads[f], texts[f]));
     // Under the filter a model: line that is not the recorded pin is a change git sees.
     const records = filter?.installed ? filter.records : null;
     dirty = layout.files.filter((f) => dirtyBeyondModel.includes(f) || (records && heads[f] != null && cleanText(texts[f], records[f] ?? null) !== heads[f]));
   }
-  return { layout, texts, current, resolved, active, isGit, tracked, legacySkipWorktree, dirtyBeyondModel, dirty, filter };
+  return { layout, texts, current, resolved, active, isGit, tracked, heads, legacySkipWorktree, dirtyBeyondModel, dirty, filter };
 }
 
 // Health of the installed filter; `records` (the per-file pins) is internal.
@@ -4713,9 +4714,12 @@ switch (command) {
     }
     for (const w of writes) fs.writeFileSync(w.abs, w.after);
     if (state.isGit) {
-      // Git trusts a size change as a modification, so re-record each file's stat;
-      // the cleaned content equals the index, so nothing is staged.
-      const restat = state.layout.files.filter((f) => state.tracked.has(f) && !state.dirtyBeyondModel.includes(f));
+      // Git trusts a size change as a modification, so re-record the stat of each file
+      // whose cleaned content is exactly HEAD; anything else would be staged.
+      const staged = new Set(git(pluginRoot, "diff", "--cached", "--name-only", "--", ...state.layout.files).split("\n").filter(Boolean));
+      const finalText = (f) => writes.find((w) => w.file === f)?.after ?? state.texts[f];
+      const cleaned = (f) => (verb === "clear" ? finalText(f) : cleanText(finalText(f), records[f]));
+      const restat = state.layout.files.filter((f) => state.heads[f] != null && !staged.has(f) && cleaned(f) === state.heads[f]);
       const updated = restat.length ? gitRun(pluginRoot, ["update-index", "--", ...restat], 120000) : { ok: true };
       if (!updated.ok) fail(`git update-index failed: ${updated.stderr}`);
     }
