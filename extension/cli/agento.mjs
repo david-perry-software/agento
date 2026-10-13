@@ -949,7 +949,22 @@ const DOCTOR_CHECKS = {
     if (loaded.errors.length) {
       return { status: "warn", detail: `${loaded.profilesFile.path} has ${loaded.errors.length} error(s), first: ${loaded.errors[0]}`, fallback: `fix the file (\`${cli}\` lists every error) or delete it; Agento runs fine without profiles` };
     }
-    const { active } = modelsState(pluginRoot, loaded);
+    const { active, filter, legacySkipWorktree } = modelsState(pluginRoot, loaded);
+    const apply = `\`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``;
+    const adopt = `\`agento.mjs models adopt --plugin-root ${pluginRoot}\``;
+    const filterIssues = [];
+    if (legacySkipWorktree?.length) {
+      filterIssues.push([`${legacySkipWorktree.length} file(s) still carry legacy skip-worktree pins, so a git pull or merge that touches one stops`, `${adopt} keeps the current pins on the git filter, or ${apply} re-pins a profile`]);
+    } else if (filter && active !== null && !filter.installed) {
+      const missing = [!filter.config && "filter config", !filter.attributes && "attribute block", filter.state !== "ok" && `pin state (${filter.state})`].filter(Boolean).join(", ");
+      filterIssues.push([`pins in ${pluginRoot} are not carried by a healthy git filter (missing: ${missing}), so a pull or commit may touch them`, `${apply} or ${adopt} reinstalls it`]);
+    } else if (filter?.installed && !filter.scriptCurrent) {
+      filterIssues.push([`the git filter's copied script in ${path.dirname(filter.script)} is missing or older than this CLI`, `${apply} or ${adopt} refreshes it`]);
+    }
+    if (filter?.unrecorded.length) {
+      filterIssues.push([`${filter.unrecorded.length} agent/prompt file(s) added since the last apply carry no pin: ${filter.unrecorded.join(", ")}`, `re-run ${apply}`]);
+    }
+    if (filterIssues.length) return { status: "warn", detail: filterIssues.map(([d]) => d).join("; "), fallback: filterIssues.map(([, f]) => f).join("; ") };
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
     if (active !== "custom") {
       const pins = modelsPins(pluginRoot);
@@ -966,7 +981,7 @@ const DOCTOR_CHECKS = {
     return {
       status: "warn",
       detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied)`,
-      fallback: `re-pin with \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\` or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\`; before a git pull that touches pinned files: clear, then git pull, then apply`,
+      fallback: `re-pin with ${apply}, record the current pins with ${adopt}, or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\``,
     };
   },
   // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.

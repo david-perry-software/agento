@@ -3329,12 +3329,51 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
   const custom = check();
   assert.equal(custom.status, "warn");
   assert.match(custom.detail, /match no profile/);
-  assert.match(custom.fallback, /models apply <name>.*models clear.*clear, then git pull, then apply/);
+  assert.match(custom.fallback, /models apply <name>.*models adopt.*models clear/);
+  assert.doesNotMatch(custom.fallback, /git pull/);
 
   fs.writeFileSync(path.join(home, "model-profiles.json"), "{ nope");
   const invalid = check();
   assert.equal(invalid.status, "warn");
   assert.match(invalid.detail, /1 error\(s\), first: invalid JSON/);
+});
+
+test("doctor model-profile warns on legacy skip-worktree pins, an unhealthy or stale filter, and unrecorded files", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+  writeProfiles({ tiny: { prompts: { doctor: "Tiny (copilot)" } } });
+
+  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Tiny (copilot)", "commands/doctor.md": "Tiny (copilot)" });
+  const legacy = check();
+  assert.equal(legacy.status, "warn");
+  assert.match(legacy.detail, /^2 file\(s\) still carry legacy skip-worktree pins/);
+  assert.match(legacy.fallback, /models adopt --plugin-root .* keeps the current pins.*models apply <name>/);
+
+  assert.equal(models("apply", "tiny").code, 0);
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `tiny applied to ${plugin}`, fallback: null });
+
+  const copy = path.join(commonDirOf(plugin), "agento", "model-filter.mjs");
+  fs.appendFileSync(copy, "// stale\n");
+  const stale = check();
+  assert.equal(stale.status, "warn");
+  assert.match(stale.detail, /copied script .* is missing or older than this CLI/);
+  assert.match(stale.fallback, /models apply <name>.*models adopt.*refreshes it/);
+  assert.equal(models("apply", "tiny").code, 0);
+  assert.equal(check().status, "ok");
+
+  git(plugin, "config", "--local", "--remove-section", "filter.agento-models");
+  const broken = check();
+  assert.equal(broken.status, "warn");
+  assert.match(broken.detail, /not carried by a healthy git filter \(missing: filter config\)/);
+  assert.equal(models("apply", "tiny").code, 0);
+
+  for (const rel of [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]) fs.writeFileSync(path.join(plugin, rel), "---\ndescription: \"New\"\nagent: agent\n---\n\nNew.\n");
+  git(plugin, "add", "-A");
+  git(plugin, "commit", "-q", "-m", "new prompt");
+  const unrecorded = check();
+  assert.equal(unrecorded.status, "warn");
+  assert.match(unrecorded.detail, /2 agent\/prompt file\(s\) added since the last apply carry no pin: \.github\/prompts\/zz-new\.prompt\.md, commands\/zz-new\.md/);
+  assert.match(unrecorded.fallback, /^re-run `agento\.mjs models apply <name>/);
 });
 
 test("doctor model-profile warns when autopilot is BYOK and delegates to a Copilot model", () => {
@@ -7370,4 +7409,133 @@ test("publish-pr reports gh and push authentication failures with a reauth comma
   assert.equal(push.code, 3, JSON.stringify(push.json));
   assert.equal(push.json.reason, "push-auth");
   assert.ok(push.json.reauth, "a reauth command");
+});
+
+// --- model pins across ship / publish-pr fast-forwards ------------------------------
+
+const PIN_AGENT = "---\nname: Tester\ndescription: \"Tests\"\n---\n\nAgent.\n";
+const PIN_PROMPT = "---\ndescription: \"Widget\"\nagent: agent\n---\n\nBody.\n";
+const PIN_PROMPT_V2 = "---\ndescription: \"Widget\"\nagent: agent\n---\n\nBody v2.\n";
+const PIN_PAIR = [".github/prompts/widget.prompt.md", "commands/widget.md"];
+
+// Commits a minimal plugin layout to main and pins the primary: `apply` a named
+// profile, or `adopt` a legacy (skip-worktree) custom pin set.
+function pinPrimary(repo, mode) {
+  writeFile(".github/agents/delivery-builder.agent.md", PIN_AGENT)(repo);
+  for (const rel of PIN_PAIR) writeFile(rel, PIN_PROMPT)(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "plugin layout");
+  git(repo, "push", "-q", "origin", "main");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agento-pin-home-"));
+  fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ profiles: { cheap: { default: "Cheap (copilot)" } } }));
+  const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
+  const models = (...args) => runWith({ cwd: repo, env }, "models", ...args, "--plugin-root", repo);
+  if (mode === "apply") {
+    assert.equal(models("apply", "cheap").code, 0);
+  } else {
+    legacyPins(repo, Object.fromEntries(PIN_PAIR.map((rel) => [rel, "Hand (copilot)"])));
+    assert.equal(models("adopt").code, 0);
+  }
+  const value = mode === "apply" ? "Cheap (copilot)" : "Hand (copilot)";
+  const active = models("list").json.active;
+  assert.equal(active, mode === "apply" ? "cheap" : "custom");
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  return { models, value, active };
+}
+
+// The pinned clone still carries the same pins on the merged content, and git sees no change.
+function assertPinsSurvived(repo, { models, value, active }, content = PIN_PROMPT_V2) {
+  for (const rel of PIN_PAIR) {
+    assert.equal(fs.readFileSync(path.join(repo, rel), "utf8"), setModel(content, value), rel);
+    assert.equal(git(repo, "show", `HEAD:${rel}`), content.trimEnd(), `${rel} is committed pin-free`);
+  }
+  assert.equal(git(repo, "status", "--porcelain"), "");
+  assert.equal(models("list").json.active, active);
+}
+
+const v2Pair = both(...PIN_PAIR.map((rel) => writeFile(rel, PIN_PROMPT_V2)));
+
+for (const mode of ["apply", "adopt"]) {
+  test(`ship --confirm syncs a primary pinned by models ${mode} through a delivery that changes a pinned prompt and its mirror`, () => {
+    const fixture = makeWorktreeRepo();
+    const { repo } = fixture;
+    const pins = pinPrimary(repo, mode);
+    const { branch, owner } = shippable(fixture, "widget", { extra: v2Pair });
+    assert.equal(fs.readFileSync(path.join(owner, PIN_PAIR[0]), "utf8"), setModel(PIN_PROMPT_V2, pins.value), "the owner worktree inherits the pins");
+    assert.equal(git(owner, "status", "--porcelain"), "");
+    const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING } } } });
+    const audit = shipRun(repo, stub.env, "feature", "widget").json;
+    assert.equal(audit.outcome, "awaiting-confirm", JSON.stringify(audit));
+    const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", audit.confirmToken, "--wait", "0");
+    assert.equal(code, 0, JSON.stringify(json));
+    assert.equal(json.outcome, "shipped");
+    assert.ok(stepsOf(json).includes("sync"), JSON.stringify(json.actions));
+    assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+    assert.equal(fs.existsSync(owner), false);
+    assertPinsSurvived(repo, pins);
+  });
+}
+
+test("ship reopen (checks-failed) fast-forwards a pinned owner worktree and a pinned primary switched onto the branch", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const pins = pinPrimary(repo, "apply");
+  const failing = (number) => ({ number, rollups: [[{ name: "Unit tests", status: "COMPLETED", conclusion: "FAILURE" }]] });
+
+  const owned = shippable(fixture, "broken", { extra: v2Pair });
+  const ownedStub = shipStub({ product: { prs: { [owned.branch]: failing(16) } } });
+  const ownedToken = shipRun(repo, ownedStub.env, "feature", "broken").json.confirmToken;
+  const ownedRun = shipRun(repo, ownedStub.env, "feature", "broken", "--confirm", ownedToken, "--wait", "0");
+  assert.equal(ownedRun.json.reason, "checks-failed", JSON.stringify(ownedRun.json));
+  assert.ok(stepsOf(ownedRun.json).includes("roadmap-reopened"));
+  assert.equal(git(owned.owner, "status", "--porcelain"), "");
+  assert.equal(fs.readFileSync(path.join(owned.owner, PIN_PAIR[0]), "utf8"), setModel(PIN_PROMPT_V2, pins.value));
+
+  const orphan = shippable(fixture, "orphan", { owner: false, extra: v2Pair });
+  const orphanStub = shipStub({ product: { prs: { [orphan.branch]: failing(17) } } });
+  const orphanToken = shipRun(repo, orphanStub.env, "feature", "orphan").json.confirmToken;
+  const orphaned = shipRun(repo, orphanStub.env, "feature", "orphan", "--confirm", orphanToken, "--wait", "0");
+  assert.equal(orphaned.json.reason, "checks-failed", JSON.stringify(orphaned.json));
+  assert.ok(stepsOf(orphaned.json).includes("roadmap-reopened"));
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assertPinsSurvived(repo, pins, PIN_PROMPT);
+});
+
+test("publish-pr --merge switches a pinned primary to the default branch and fast-forwards it over a pinned prompt change", () => {
+  const { repo } = makeWorktreeRepo();
+  const pins = pinPrimary(repo, "apply");
+  git(repo, "switch", "-q", "-c", "changes/widget");
+  v2Pair(repo);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "chore: widget v2");
+  const stub = shipStub({ product: { prs: { "changes/widget": { number: 15, isDraft: false, rollups: [[ciCheck("Unit tests", "SUCCESS")]] } } } });
+  const { code, json } = publishPrRun(repo, stub.env, "--merge", "--wait", "0");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.outcome, "merged");
+  assert.deepEqual(json.sync, { switched: true, fastForwarded: true, branchDeleted: true, skipped: null });
+  assert.equal(git(repo, "branch", "--show-current"), "main");
+  assert.equal(git(repo, "rev-parse", "HEAD"), git(repo, "rev-parse", "origin/main"));
+  assertPinsSurvived(repo, pins);
+});
+
+test("with pins active, the primary and a linked worktree are clean and their commits carry no model: line", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap (copilot)", agents: { planner: "Strong (copilot)" } } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const linked = path.join(path.dirname(plugin), "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
+  for (const [checkout, rel] of [[plugin, ".github/prompts/doctor.prompt.md"], [linked, ".github/agents/delivery-planner.agent.md"]]) {
+    assert.equal(git(checkout, "status", "--porcelain"), "", checkout);
+    const file = path.join(checkout, rel);
+    const text = fs.readFileSync(file, "utf8");
+    assert.match(text, /^model: "/m, `${rel} is pinned in ${checkout}`);
+    fs.writeFileSync(file, `${text}\nA body edit.\n`);
+    assert.equal(git(checkout, "status", "--porcelain"), `M ${rel}`);
+    git(checkout, "commit", "-q", "-am", "body edit");
+    const committed = git(checkout, "show", `HEAD:${rel}`);
+    assert.doesNotMatch(committed, /^\s*model:/m, `${rel} committed from ${checkout}`);
+    assert.match(committed, /A body edit\.$/);
+    assert.equal(git(checkout, "status", "--porcelain"), "");
+    assert.match(fs.readFileSync(file, "utf8"), /^model: "/m, "the pin stays in the working file");
+  }
 });
