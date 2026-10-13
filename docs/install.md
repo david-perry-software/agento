@@ -100,9 +100,9 @@ from source update via **Extensions: Check for Extension Updates** or
 `copilot plugin update agento`.
 
 With a model profile applied (`/agento models apply <name>`, see
-[model-profiles.md](model-profiles.md)), the pinned agent and prompt files are local
-modifications hidden by skip-worktree, and a `git pull` that changes one of them stops
-with "Your local changes … would be overwritten". Run `node scripts/agento.mjs models
-clear`, then `git pull`, then `node scripts/agento.mjs models apply <name>`. Installs
-from source or through the Copilot CLI are replaced on update; apply the profile again
-afterwards.
+[model-profiles.md](model-profiles.md)), a local git clean/smudge filter carries the
+pins, so a `git pull` keeps them with no extra step. Re-run `/agento models apply
+<name>` when an update adds agents or prompts (`filter.unrecorded`). A clone pinned
+by an older Agento (legacy skip-worktree bits) migrates once with `models apply
+<name>`, or `models adopt` to keep custom pins. Installs from source or through the
+Copilot CLI are replaced on update; apply the profile again afterwards.

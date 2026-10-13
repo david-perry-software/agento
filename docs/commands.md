@@ -21,7 +21,7 @@
 | `/agento commit-current-changes` | default | Commit everything on the current worktree, then PR, merge, and sync through one `agento.mjs publish-pr --merge` call |
 | `/agento delivery-status` | default | Dashboard of all roadmaps: status, PR, checkbox progress, next action |
 | `/agento doctor [--for <command>]` | default | Environment readiness: Node, git remote, gh auth, code CLI, worktrees dir — each with status and fallback; fixes nothing |
-| `/agento models [list \| show <name> \| apply <name> \| clear \| init]` | default | Pin agents and built-in-agent commands to models from a named profile in `~/.config/agento/model-profiles.json`; rewrites the plugin clone's `model:` lines under skip-worktree ([model-profiles.md](model-profiles.md)) |
+| `/agento models [list \| show <name> \| apply <name> \| adopt \| clear \| init]` | default | Pin agents and built-in-agent commands to models from a named profile in `~/.config/agento/model-profiles.json`; rewrites the plugin clone's `model:` lines and carries them through a local git clean/smudge filter, so pulls and merges keep them ([model-profiles.md](model-profiles.md)) |
 | `/agento triage-followups` | default | File review follow-ups as GitHub issues; annotate sources with `→ filed as #<n>` and merge the annotations through one `agento.mjs publish-pr --merge` call |
 | `/agento extend-copilot` · `/agento fix-copilot` | 🛠️ Agento Mechanic | Extend or repair the customization system itself |
 
@@ -462,13 +462,19 @@ appends a `## Migrated history` note to the companion `README.md` once, and repo
 `readmeNoteAdded`; a re-run with the roots already gone is `mode:
 "nothing-to-migrate"`, exit 0; `/agento agento-init --migrate` drives it and
 handles the commits and PRs),
-`models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]`
+`models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]`
 (model profiles from `~/.config/agento/model-profiles.json` — `$XDG_CONFIG_HOME` and
 `AGENTO_CONFIG_HOME` move it — applied to the plugin clone at `--plugin-root`,
 default the clone the CLI runs from: every verb reports `profilesFile { path, exists }`,
-`pluginRoot`, `active` (`null`, a profile name, or `custom`), `skipWorktree`, `dirty`,
-and `hint`; `apply` and `clear` rewrite the agents, prompts, handoff pins, and
-`commands/` mirrors and report `changed[]`; `models pins` reports each agent's current pin
+`pluginRoot`, `active` (`null`, a profile name, or `custom`), `filter { installed,
+config, attributes, state, stateFile, script, scriptCurrent, unrecorded[] }` (`null`
+outside git), `legacySkipWorktree` (`skipWorktree` is its deprecated alias), `dirty`,
+and `hint`; `apply`, `adopt`, and `clear` rewrite the agents, prompts, handoff pins,
+and `commands/` mirrors, install or remove the `agento-models` clean/smudge filter,
+clear legacy skip-worktree bits, and report `changed[]`; `adopt` records the files'
+current pins byte-identically; `apply` and `adopt` refuse a linked worktree
+(`worktree`), git older than 2.31 (`git-too-old`), and edits git would see (`dirty`);
+`models pins` reports each agent's current pin
 and any BYOK tier warning; `show`, `apply`, and `pins` also warn once about model values
 without a `(vendor)` suffix, and `apply` still exits 0; `init` copies `templates/model-profiles.json` only when the
 file is absent),
