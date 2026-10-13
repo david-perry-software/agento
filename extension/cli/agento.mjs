@@ -3430,6 +3430,75 @@ function parseRoadmapSteps(content) {
 const MODELS_HINT =
   "pinned files are marked skip-worktree; a git pull or merge that touches one stops with 'Your local changes … would be overwritten': run `models clear`, then `git pull`, then `models apply <name>` again";
 
+// The git clean/smudge filter that carries pins (scripts/model-filter.mjs): the
+// script, its one import, and the per-file pin state live in <common-dir>/agento/,
+// shared with every linked worktree through the common config and info/attributes.
+const MODEL_FILTER = "agento-models";
+const MODEL_FILTER_FILES = ["model-filter.mjs", "model-profiles.mjs"];
+const MODEL_PINS_FILE = "model-pins.json";
+const MODEL_ATTR_BEGIN = "# >>> agento model pins (managed by `agento.mjs models`) >>>";
+const MODEL_ATTR_END = "# <<< agento model pins <<<";
+const MODEL_ATTR_PATTERNS = ["/.github/agents/*.agent.md", "/.github/prompts/*.prompt.md", "/commands/*.md"];
+const CLI_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+const modelFilterCommand = (mode) => `node "$(git rev-parse --path-format=absolute --git-common-dir)/agento/model-filter.mjs" ${mode} %f`;
+
+// null when git is at least 2.31 (`rev-parse --path-format`), else the reason.
+function gitTooOld() {
+  const version = git(process.cwd(), "--version").match(/(\d+)\.(\d+)/);
+  if (!version) return "git --version is unreadable";
+  const [major, minor] = [Number(version[1]), Number(version[2])];
+  return major > 2 || (major === 2 && minor >= 31) ? null : `git ${version[1]}.${version[2]} is older than 2.31 (needed for rev-parse --path-format)`;
+}
+
+function modelCommonDir(pluginRoot) {
+  return git(pluginRoot, "rev-parse", "--path-format=absolute", "--git-common-dir") || null;
+}
+
+function stripAttributeBlock(text) {
+  const lines = text.split("\n");
+  const begin = lines.indexOf(MODEL_ATTR_BEGIN);
+  const end = lines.indexOf(MODEL_ATTR_END, begin);
+  if (begin === -1 || end === -1) return text;
+  return [...lines.slice(0, begin), ...lines.slice(end + 1)].join("\n");
+}
+
+// records: { [file]: { model, handoffs } } for every target file (null when unpinned).
+function installModelFilter(pluginRoot, records) {
+  const common = modelCommonDir(pluginRoot);
+  const dir = path.join(common, "agento");
+  fs.mkdirSync(dir, { recursive: true });
+  for (const file of MODEL_FILTER_FILES) fs.copyFileSync(path.join(CLI_DIR, file), path.join(dir, file));
+  fs.writeFileSync(path.join(dir, MODEL_PINS_FILE), `${JSON.stringify({ version: 1, files: records }, null, 2)}\n`);
+  for (const [key, value] of [["clean", modelFilterCommand("clean")], ["smudge", modelFilterCommand("smudge")], ["required", "true"]]) {
+    const set = gitRun(pluginRoot, ["config", "--local", `filter.${MODEL_FILTER}.${key}`, value]);
+    if (!set.ok) throw new Error(`git config filter.${MODEL_FILTER}.${key}: ${set.stderr}`);
+  }
+  const attributes = path.join(common, "info", "attributes");
+  const before = fs.existsSync(attributes) ? stripAttributeBlock(fs.readFileSync(attributes, "utf8")) : "";
+  const block = [MODEL_ATTR_BEGIN, ...MODEL_ATTR_PATTERNS.map((p) => `${p} filter=${MODEL_FILTER}`), MODEL_ATTR_END].join("\n");
+  fs.mkdirSync(path.dirname(attributes), { recursive: true });
+  fs.writeFileSync(attributes, `${before === "" || before.endsWith("\n") ? before : `${before}\n`}${block}\n`);
+}
+
+// Removes the config section, the attribute block (other lines stay), and the state
+// directory; needs no filter script, so it also repairs a broken install.
+function removeModelFilter(pluginRoot) {
+  const common = modelCommonDir(pluginRoot);
+  if (!common) return;
+  if (git(pluginRoot, "config", "--local", "--get-regexp", `^filter\\.${MODEL_FILTER}\\.`)) gitRun(pluginRoot, ["config", "--local", "--remove-section", `filter.${MODEL_FILTER}`]);
+  const attributes = path.join(common, "info", "attributes");
+  if (fs.existsSync(attributes)) {
+    const text = fs.readFileSync(attributes, "utf8");
+    const after = stripAttributeBlock(text);
+    if (after !== text) {
+      if (after.trim() === "") fs.rmSync(attributes);
+      else fs.writeFileSync(attributes, after);
+    }
+  }
+  fs.rmSync(path.join(common, "agento"), { recursive: true, force: true });
+}
+
 // The files a profile rewrites, relative to the plugin root: every agent, every
 // prompt, and each prompt's commands/<name>.md mirror (what plugin mode reads).
 function modelTargetFiles(pluginRoot) {
