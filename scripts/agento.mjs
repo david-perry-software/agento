@@ -29,7 +29,7 @@
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
-//   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json)
+//   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json through a local git clean/smudge filter; adopt records the pins the files carry now)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
@@ -52,7 +52,8 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
@@ -948,7 +949,22 @@ const DOCTOR_CHECKS = {
     if (loaded.errors.length) {
       return { status: "warn", detail: `${loaded.profilesFile.path} has ${loaded.errors.length} error(s), first: ${loaded.errors[0]}`, fallback: `fix the file (\`${cli}\` lists every error) or delete it; Agento runs fine without profiles` };
     }
-    const { active } = modelsState(pluginRoot, loaded);
+    const { active, filter, legacySkipWorktree } = modelsState(pluginRoot, loaded);
+    const apply = `\`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``;
+    const adopt = `\`agento.mjs models adopt --plugin-root ${pluginRoot}\``;
+    const filterIssues = [];
+    if (legacySkipWorktree?.length) {
+      filterIssues.push([`${legacySkipWorktree.length} file(s) still carry legacy skip-worktree pins, so a git pull or merge that touches one stops`, `${adopt} keeps the current pins on the git filter, or ${apply} re-pins a profile`]);
+    } else if (filter && active !== null && !filter.installed) {
+      const missing = [!filter.config && "filter config", !filter.attributes && "attribute block", filter.state !== "ok" && `pin state (${filter.state})`].filter(Boolean).join(", ");
+      filterIssues.push([`pins in ${pluginRoot} are not carried by a healthy git filter (missing: ${missing}), so a pull or commit may touch them`, `${apply} or ${adopt} reinstalls it`]);
+    } else if (filter?.installed && !filter.scriptCurrent) {
+      filterIssues.push([`the git filter's copied script in ${path.dirname(filter.script)} is missing or older than this CLI`, `${apply} or ${adopt} refreshes it`]);
+    }
+    if (filter?.unrecorded.length) {
+      filterIssues.push([`${filter.unrecorded.length} agent/prompt file(s) added since the last apply carry no pin: ${filter.unrecorded.join(", ")}`, `re-run ${apply}`]);
+    }
+    if (filterIssues.length) return { status: "warn", detail: filterIssues.map(([d]) => d).join("; "), fallback: filterIssues.map(([, f]) => f).join("; ") };
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
     if (active !== "custom") {
       const pins = modelsPins(pluginRoot);
@@ -965,7 +981,7 @@ const DOCTOR_CHECKS = {
     return {
       status: "warn",
       detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied)`,
-      fallback: `re-pin with \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\` or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\`; before a git pull that touches pinned files: clear, then git pull, then apply`,
+      fallback: `re-pin with ${apply}, record the current pins with ${adopt}, or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\``,
     };
   },
   // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
@@ -3428,7 +3444,76 @@ function parseRoadmapSteps(content) {
 // --- model profiles --------------------------------------------------------
 
 const MODELS_HINT =
-  "pinned files are marked skip-worktree; a git pull or merge that touches one stops with 'Your local changes … would be overwritten': run `models clear`, then `git pull`, then `models apply <name>` again";
+  "pins are applied by a local git filter (filter.agento-models) and survive pull, merge, switch, and stash; commits never contain them and linked worktrees inherit them; after an update adds agents or prompts (filter.unrecorded), re-run `models apply <name>`";
+
+// The git clean/smudge filter that carries pins (scripts/model-filter.mjs): the
+// script, its one import, and the per-file pin state live in <common-dir>/agento/,
+// shared with every linked worktree through the common config and info/attributes.
+const MODEL_FILTER = "agento-models";
+const MODEL_FILTER_FILES = ["model-filter.mjs", "model-profiles.mjs"];
+const MODEL_PINS_FILE = "model-pins.json";
+const MODEL_ATTR_BEGIN = "# >>> agento model pins (managed by `agento.mjs models`) >>>";
+const MODEL_ATTR_END = "# <<< agento model pins <<<";
+const MODEL_ATTR_PATTERNS = ["/.github/agents/*.agent.md", "/.github/prompts/*.prompt.md", "/commands/*.md"];
+const CLI_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+const modelFilterCommand = (mode) => `node "$(git rev-parse --path-format=absolute --git-common-dir)/agento/model-filter.mjs" ${mode} %f`;
+
+// null when git is at least 2.31 (`rev-parse --path-format`), else the reason.
+function gitTooOld() {
+  const version = git(process.cwd(), "--version").match(/(\d+)\.(\d+)/);
+  if (!version) return "git --version is unreadable";
+  const [major, minor] = [Number(version[1]), Number(version[2])];
+  return major > 2 || (major === 2 && minor >= 31) ? null : `git ${version[1]}.${version[2]} is older than 2.31 (needed for rev-parse --path-format)`;
+}
+
+function modelCommonDir(pluginRoot) {
+  return git(pluginRoot, "rev-parse", "--path-format=absolute", "--git-common-dir") || null;
+}
+
+function stripAttributeBlock(text) {
+  const lines = text.split("\n");
+  const begin = lines.indexOf(MODEL_ATTR_BEGIN);
+  const end = lines.indexOf(MODEL_ATTR_END, begin);
+  if (begin === -1 || end === -1) return text;
+  return [...lines.slice(0, begin), ...lines.slice(end + 1)].join("\n");
+}
+
+// records: { [file]: { model, handoffs } } for every target file (null when unpinned).
+function installModelFilter(pluginRoot, records) {
+  const common = modelCommonDir(pluginRoot);
+  const dir = path.join(common, "agento");
+  fs.mkdirSync(dir, { recursive: true });
+  for (const file of MODEL_FILTER_FILES) fs.copyFileSync(path.join(CLI_DIR, file), path.join(dir, file));
+  fs.writeFileSync(path.join(dir, MODEL_PINS_FILE), `${JSON.stringify({ version: 1, files: records }, null, 2)}\n`);
+  for (const [key, value] of [["clean", modelFilterCommand("clean")], ["smudge", modelFilterCommand("smudge")], ["required", "true"]]) {
+    const set = gitRun(pluginRoot, ["config", "--local", `filter.${MODEL_FILTER}.${key}`, value]);
+    if (!set.ok) throw new Error(`git config filter.${MODEL_FILTER}.${key}: ${set.stderr}`);
+  }
+  const attributes = path.join(common, "info", "attributes");
+  const before = fs.existsSync(attributes) ? stripAttributeBlock(fs.readFileSync(attributes, "utf8")) : "";
+  const block = [MODEL_ATTR_BEGIN, ...MODEL_ATTR_PATTERNS.map((p) => `${p} filter=${MODEL_FILTER}`), MODEL_ATTR_END].join("\n");
+  fs.mkdirSync(path.dirname(attributes), { recursive: true });
+  fs.writeFileSync(attributes, `${before === "" || before.endsWith("\n") ? before : `${before}\n`}${block}\n`);
+}
+
+// Removes the config section, the attribute block (other lines stay), and the state
+// directory; needs no filter script, so it also repairs a broken install.
+function removeModelFilter(pluginRoot) {
+  const common = modelCommonDir(pluginRoot);
+  if (!common) return;
+  if (git(pluginRoot, "config", "--local", "--get-regexp", `^filter\\.${MODEL_FILTER}\\.`)) gitRun(pluginRoot, ["config", "--local", "--remove-section", `filter.${MODEL_FILTER}`]);
+  const attributes = path.join(common, "info", "attributes");
+  if (fs.existsSync(attributes)) {
+    const text = fs.readFileSync(attributes, "utf8");
+    const after = stripAttributeBlock(text);
+    if (after !== text) {
+      if (after.trim() === "") fs.rmSync(attributes);
+      else fs.writeFileSync(attributes, after);
+    }
+  }
+  fs.rmSync(path.join(common, "agento"), { recursive: true, force: true });
+}
 
 // The files a profile rewrites, relative to the plugin root: every agent, every
 // prompt, and each prompt's commands/<name>.md mirror (what plugin mode reads).
@@ -3477,25 +3562,81 @@ function gitShowHead(pluginRoot, file) {
 // The derived state every `models` verb reports: no journal, read from the files.
 function modelsState(pluginRoot, loaded) {
   const layout = modelTargetFiles(pluginRoot);
-  const current = Object.fromEntries(layout.files.map((f) => [f, readModel(fs.readFileSync(path.join(pluginRoot, f), "utf8"))]));
+  const texts = Object.fromEntries(layout.files.map((f) => [f, fs.readFileSync(path.join(pluginRoot, f), "utf8")]));
+  const current = Object.fromEntries(layout.files.map((f) => [f, readModel(texts[f])]));
   const names = loaded.errors.some((e) => !e.startsWith("profiles.")) ? [] : Object.keys(loaded.profiles);
   const resolved = names.map((name) => ({ name, ...resolveProfile(loaded, name, layout) }));
   const active = detectActive({ profiles: resolved.filter((p) => !p.errors.length), current });
   const isGit = git(pluginRoot, "rev-parse", "--show-toplevel") !== "";
-  let skipWorktree = null;
+  let legacySkipWorktree = null;
   let tracked = new Set();
+  let dirtyBeyondModel = [];
   let dirty = [];
+  let heads = {};
+  const filter = isGit ? modelFilterStatus(pluginRoot, layout.files) : null;
   if (isGit) {
     const entries = git(pluginRoot, "ls-files", "-v", "--", ...layout.files).split("\n").filter(Boolean);
     tracked = new Set(entries.map((l) => l.slice(2)));
-    skipWorktree = entries.filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
-    dirty = layout.files.filter((f) => {
-      if (!tracked.has(f)) return false;
-      const head = gitShowHead(pluginRoot, f);
-      return head !== null && differsBeyondModel(head, fs.readFileSync(path.join(pluginRoot, f), "utf8"));
-    });
+    legacySkipWorktree = entries.filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
+    heads = Object.fromEntries(layout.files.filter((f) => tracked.has(f)).map((f) => [f, gitShowHead(pluginRoot, f)]));
+    dirtyBeyondModel = layout.files.filter((f) => heads[f] != null && differsBeyondModel(heads[f], texts[f]));
+    // Under the filter a model: line that is not the recorded pin is a change git sees.
+    const records = filter?.installed ? filter.records : null;
+    dirty = layout.files.filter((f) => dirtyBeyondModel.includes(f) || (records && heads[f] != null && cleanText(texts[f], records[f] ?? null) !== heads[f]));
   }
-  return { layout, current, resolved, active, isGit, tracked, skipWorktree, dirty };
+  return { layout, texts, current, resolved, active, isGit, tracked, heads, legacySkipWorktree, dirtyBeyondModel, dirty, filter };
+}
+
+// Health of the installed filter; `records` (the per-file pins) is internal.
+function modelFilterStatus(pluginRoot, files) {
+  const common = modelCommonDir(pluginRoot);
+  if (!common) return null;
+  const dir = path.join(common, "agento");
+  const stateFile = path.join(dir, MODEL_PINS_FILE);
+  let records = null;
+  let state = "missing";
+  if (fs.existsSync(stateFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+      if (data?.version !== 1 || !data.files || typeof data.files !== "object" || Array.isArray(data.files)) throw new Error("bad shape");
+      records = data.files;
+      state = "ok";
+    } catch {
+      state = "invalid";
+    }
+  }
+  const config = ["clean", "smudge"].every((mode) => git(pluginRoot, "config", "--local", `filter.${MODEL_FILTER}.${mode}`) === modelFilterCommand(mode))
+    && git(pluginRoot, "config", "--local", "--bool", `filter.${MODEL_FILTER}.required`) === "true";
+  const attributesFile = path.join(common, "info", "attributes");
+  const attributes = fs.existsSync(attributesFile) && fs.readFileSync(attributesFile, "utf8").split("\n").includes(MODEL_ATTR_BEGIN);
+  const scriptCurrent = MODEL_FILTER_FILES.every((f) => {
+    const copy = path.join(dir, f);
+    return fs.existsSync(copy) && fs.readFileSync(copy).equals(fs.readFileSync(path.join(CLI_DIR, f)));
+  });
+  const pinned = records !== null && Object.values(records).some(hasPin);
+  return {
+    installed: config && attributes && state === "ok",
+    config,
+    attributes,
+    state,
+    stateFile,
+    script: path.join(dir, "model-filter.mjs"),
+    scriptCurrent,
+    unrecorded: pinned ? files.filter((f) => !Object.hasOwn(records, f)) : [],
+    records,
+  };
+}
+
+const hasPin = (record) => (record?.model ?? null) !== null || (record?.handoffs ?? []).some((h) => (h.value ?? null) !== null);
+
+// The value of a normalized `model: <raw>` handoff line.
+function parsePinLine(line) {
+  const raw = line.slice("model:".length).trim();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw.replace(/^["']|["']$/g, "");
+  }
 }
 
 // The main checkout when `pluginRoot` is a linked worktree (e.g. an Agento
@@ -3509,11 +3650,15 @@ function primaryCheckoutOf(pluginRoot) {
 }
 
 function modelsReport(pluginRoot, loaded, state) {
+  const { records, ...filter } = state.filter ?? {};
   return {
     profilesFile: loaded.profilesFile,
     pluginRoot,
     active: state.active,
-    skipWorktree: state.skipWorktree,
+    legacySkipWorktree: state.legacySkipWorktree,
+    // Alias of legacySkipWorktree for one release, for consumers that still read it.
+    skipWorktree: state.legacySkipWorktree,
+    filter: state.filter ? filter : null,
     dirty: state.dirty,
     hint: MODELS_HINT,
   };
@@ -4463,7 +4608,7 @@ switch (command) {
 
   case "models": {
     const [verb = "list", name, ...extra] = rest;
-    const verbs = { list: 0, pins: 0, show: 1, apply: 1, clear: 0, init: 0 };
+    const verbs = { list: 0, pins: 0, show: 1, apply: 1, adopt: 0, clear: 0, init: 0 };
     if (!Object.hasOwn(verbs, verb)) usage(`models: unknown verb ${verb}; known: ${Object.keys(verbs).join(", ")}`);
     if (extra.length || (verbs[verb] === 1 ? !name : name !== undefined)) usage(`models ${verb} takes ${verbs[verb] ? "exactly one profile name" : "no arguments"}`);
     if (verbs[verb] && !/^[a-z0-9-]+$/.test(name)) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(name)}`);
@@ -4510,27 +4655,39 @@ switch (command) {
       emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
     }
 
-    // apply | clear
+    // apply | adopt | clear
+    const primaryCheckout = state.isGit ? primaryCheckoutOf(pluginRoot) : null;
     let targets = state.layout.files.map((file) => ({ file, value: null }));
     let handoffs = null;
-    if (verb === "apply") {
-      if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
-      const resolved = resolveProfile(loaded, name, state.layout);
-      if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
-      const primaryCheckout = state.isGit ? primaryCheckoutOf(pluginRoot) : null;
+    if (verb === "apply" || verb === "adopt") {
+      let resolved = null;
+      if (verb === "apply") {
+        if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+        resolved = resolveProfile(loaded, name, state.layout);
+        if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      }
       if (primaryCheckout) {
-        emit({ status: "worktree", verb, profile: name, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; skip-worktree would hide edits made here — apply to the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+        emit({ status: "worktree", verb, profile: name ?? null, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; linked worktrees inherit the clone's pins through its git filter — ${verb} on the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
       }
-      if (state.dirty.length) {
-        emit({ status: "dirty", verb, profile: name, message: "these files differ from HEAD beyond their model: lines; skip-worktree would hide those edits — commit, stash, or restore them first", ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const tooOld = state.isGit ? gitTooOld() : null;
+      if (tooOld) emit({ status: "git-too-old", verb, profile: name ?? null, message: `${tooOld}; upgrade git to pin models`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const dirty = verb === "apply" ? state.dirty : state.dirtyBeyondModel;
+      if (dirty.length) {
+        emit({ status: "dirty", verb, profile: name ?? null, message: "these files carry changes git would see beyond their recorded model pins (a body edit, or a model: line other than the recorded pin) — commit, stash, or restore them first (git restore re-applies the recorded pin)", ...modelsReport(pluginRoot, loaded, state), dirty }, 3);
       }
-      targets = resolved.targets;
-      handoffs = resolved.handoffs;
+      if (resolved) {
+        targets = resolved.targets;
+        handoffs = resolved.handoffs;
+      } else {
+        // adopt: the pins the files carry now become the recorded state.
+        targets = state.layout.files.map((file) => ({ file, value: parseModelValue(state.texts[file]) }));
+        handoffs = Object.fromEntries(state.layout.files.map((file) => [file, handoffModelLines(state.texts[file]).filter((h) => h.line !== null).map((h) => ({ target: h.target, value: parsePinLine(h.line) }))]));
+      }
     }
     const writes = [];
     for (const { file, value } of targets) {
       const abs = path.join(pluginRoot, file);
-      const before = fs.readFileSync(abs, "utf8");
+      const before = state.texts[file] ?? fs.readFileSync(abs, "utf8");
       let after;
       try {
         after = setModel(before, value);
@@ -4540,23 +4697,33 @@ switch (command) {
       }
       if (after !== before) writes.push({ file, abs, after });
     }
-    for (const w of writes) fs.writeFileSync(w.abs, w.after);
+    const records = Object.fromEntries(targets.map((t) => [t.file, { model: t.value, handoffs: handoffs?.[t.file] ?? [] }]));
+    const fail = (message) => emit({ status: "failed", verb, profile: name ?? null, changed: [], message: `${message}; re-run the same command` }, 3);
     if (state.isGit) {
-      const flagged = new Set(state.skipWorktree);
-      const tracked = targets.filter((t) => state.tracked.has(t.file));
-      const hasHandoffPin = (file) => (handoffs?.[file] ?? []).some((h) => h.value !== null);
-      const pin = tracked.filter((t) => (t.value !== null || hasHandoffPin(t.file)) && !flagged.has(t.file)).map((t) => t.file);
-      const unpin = tracked.filter((t) => t.value === null && !hasHandoffPin(t.file) && flagged.has(t.file)).map((t) => t.file);
-      for (const [flag, files] of [["--skip-worktree", pin], ["--no-skip-worktree", unpin]]) {
-        if (!files.length) continue;
-        try {
-          execFileSync("git", ["-C", pluginRoot, "update-index", flag, "--", ...files], { stdio: ["ignore", "ignore", "pipe"] });
-        } catch (error) {
-          emit({ status: "failed", verb, profile: name ?? null, changed: writes.map((w) => w.file), message: `git update-index ${flag} failed: ${(error?.stderr ?? "").toString().trim() || error.message}; re-run the same command` }, 3);
-        }
+      const legacy = state.legacySkipWorktree.filter((f) => state.tracked.has(f));
+      if (legacy.length) {
+        const unset = gitRun(pluginRoot, ["update-index", "--no-skip-worktree", "--", ...legacy]);
+        if (!unset.ok) fail(`git update-index --no-skip-worktree failed: ${unset.stderr}`);
+      }
+      try {
+        if (verb !== "clear" && Object.values(records).some(hasPin)) installModelFilter(pluginRoot, records);
+        else if (!primaryCheckout) removeModelFilter(pluginRoot);
+      } catch (error) {
+        fail(`installing the model filter failed: ${error.message}`);
       }
     }
-    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, verb === "apply" ? loaded.profiles[name] : null), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+    for (const w of writes) fs.writeFileSync(w.abs, w.after);
+    if (state.isGit) {
+      // Git trusts a size change as a modification, so re-record the stat of each file
+      // whose cleaned content is exactly HEAD; anything else would be staged.
+      const staged = new Set(git(pluginRoot, "diff", "--cached", "--name-only", "--", ...state.layout.files).split("\n").filter(Boolean));
+      const finalText = (f) => writes.find((w) => w.file === f)?.after ?? state.texts[f];
+      const cleaned = (f) => (verb === "clear" ? finalText(f) : cleanText(finalText(f), records[f]));
+      const restat = state.layout.files.filter((f) => state.heads[f] != null && !staged.has(f) && cleaned(f) === state.heads[f]);
+      const updated = restat.length ? gitRun(pluginRoot, ["update-index", "--", ...restat], 120000) : { ok: true };
+      if (!updated.ok) fail(`git update-index failed: ${updated.stderr}`);
+    }
+    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, verb === "apply" ? loaded.profiles[name] : null), ...(verb === "clear" && primaryCheckout ? { primaryCheckout } : {}), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
     break;
   }
 

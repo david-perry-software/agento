@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Fixed.** Model-profile pins no longer break fast-forwards. `/agento ship`,
+  `publish-pr --merge`, `/agento finish-freehand`, and a hand-run `git pull` in a
+  clone with `/agento models apply` active used to stop at the sync with "Your local
+  changes … would be overwritten" whenever the merge touched a pinned agent, prompt,
+  or `commands/` mirror. `models apply` now carries the pins through a local git
+  clean/smudge filter (`filter.agento-models`, `required=true`; its script, its one
+  import, and `model-pins.json` live in `<common-dir>/agento/`, wired through
+  `<common-dir>/info/attributes`) instead of skip-worktree: git compares and commits
+  pin-free content, rewrites put the pins back, linked worktrees inherit them, and a
+  commit can never contain one. New `models adopt` records the pins the files carry
+  now (byte-identical; the migration for `active: custom`), and `apply` migrates
+  legacy skip-worktree bits. Every `models` verb reports `filter` and
+  `legacySkipWorktree` (`skipWorktree` stays one release as its alias);
+  `filter.unrecorded` and `doctor`'s `model-profile` check flag agents or prompts
+  added since the last apply, legacy bits, and an unhealthy or stale filter. The
+  clear → pull → apply workaround is gone from `hint`, `doctor`, and the docs. Needs
+  git ≥ 2.31.
+
 - **Added.** `agento.mjs plan-publish <type> <slug>`, `agento.mjs review-publish
   <type> <slug> [--body-file <file|->]`, and `agento.mjs publish-pr [--dir <path>]
   [--branch <name>] [--title <text>] [--body-file <file|->] [--merge] [--wait N]`

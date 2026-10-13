@@ -82,7 +82,7 @@ are unchanged.
 ## Applying and clearing
 
 ```text
-node <agento-root>/scripts/agento.mjs models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]
+node <agento-root>/scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]
 ```
 
 `/agento models …` runs the same verbs from chat, and the extension's
@@ -93,17 +93,27 @@ defaults to the clone the CLI runs from; pass `--plugin-root` for another one.
   `argument-hint:`, else after `description:`), and a nested `model:` line into every
   `handoffs:` item of the planner, builder, and reviewer — the handoff target's pin,
   first entry when it is a list — after the item's last key. It removes the line
-  where the profile resolves to nothing, and marks each pinned file
-  `git update-index --skip-worktree` so the clone still looks clean to
-  `/agento start-session` and `/agento quick-fix`. It refuses (`status: "dirty"`,
-  exit 3) while any of those files differs from `HEAD` beyond its `model:` lines —
-  skip-worktree would hide such edits.
-- `clear` removes every `model:` line and every skip-worktree bit it set.
-- Both report `changed[]` and are idempotent: a repeat reports `changed: []`.
+  where the profile resolves to nothing, records every file's resolved pins as the
+  state of a local git clean/smudge filter (see [The pin filter](#the-pin-filter)),
+  so the clone still looks clean to `/agento start-session` and `/agento quick-fix`
+  and every pull, merge, and switch keeps the pins. It refuses (`status: "dirty"`,
+  exit 3) while any of those files carries a change git would see — a body edit, or a
+  `model:` line other than the recorded pin (`git restore <file>` brings the recorded
+  pin back).
+- `adopt` records the pins the files carry right now as the filter state, without
+  changing a byte — the migration path for a clone whose pins match no profile
+  (`active: custom`). It refuses linked worktrees and body edits like `apply`.
+- `clear` removes every `model:` line, the filter (its config section, its attribute
+  block, and `<common-dir>/agento/`), and any legacy skip-worktree bit; the files
+  equal `HEAD` afterwards.
+- All three report `changed[]` and are idempotent: a repeat reports `changed: []`.
 - Every verb reports `active` — `null` (nothing pinned), the name of the profile the
   files match, or `custom` (pins that match no profile: hand-edited, or the profile
-  changed after it was applied). There is no journal; the state is read from the
-  files.
+  changed after it was applied) — plus `filter { installed, config, attributes,
+  state, stateFile, script, scriptCurrent, unrecorded[] }` (`null` outside git),
+  `legacySkipWorktree` (files still flagged by an older `apply`; `skipWorktree` is a
+  deprecated alias kept for one release), `dirty`, and `hint`. There is no journal;
+  the state is read from the files, the git config, and the pin state file.
 
 `models pins` (CLI-only, for the Autopilot) reports each agent's current pin read
 from the plugin root's files: `pins: { planner, builder, reviewer, autopilot,
@@ -131,33 +141,63 @@ BYOK tier warning applies too, the detail joins both with `; `.
 
 Run *Developer: Reload Window* if the model picker does not reflect a change.
 
+## The pin filter
+
+`apply` and `adopt` install a git clean/smudge filter named `agento-models` in the
+clone:
+
+- `<common-dir>/agento/` holds `model-pins.json` (each target file's resolved
+  top-level and handoff pins; no profile name) and copies of `model-filter.mjs` and
+  `model-profiles.mjs`, refreshed on every apply.
+- The clone's local config sets `filter.agento-models.clean` and `.smudge` to
+  `node "$(git rev-parse --path-format=absolute --git-common-dir)/agento/model-filter.mjs" clean|smudge %f`
+  and `filter.agento-models.required` to `true`.
+- A marker-delimited block in `<common-dir>/info/attributes` assigns the filter to
+  `/.github/agents/*.agent.md`, `/.github/prompts/*.prompt.md`, and `/commands/*.md`.
+
+`clean` strips exactly the recorded pins, so git compares and commits pin-free
+content; `smudge` writes the recorded pins back whenever git rewrites a file. A
+different `model:` value or any other edit passes through, so git still shows it.
+With `required=true` a missing or broken filter makes git refuse the operation, so a
+pin can never reach a commit. Needs git ≥ 2.31 (`apply` and `adopt` refuse older
+versions with `status: "git-too-old"`) and `node` on git's `PATH`.
+
 ## Updating the clone
 
-A pinned file is a local modification hidden by skip-worktree. A `git pull` or merge
-that changes one stops with "Your local changes to the following files would be
-overwritten" and leaves everything intact. Update in three steps:
+A `git pull`, merge, `switch`, or `stash` in a pinned clone needs no extra step: git
+sees no local change in a pinned file, rewrites it, and the filter puts the same pins
+back. `/agento ship`, `agento.mjs publish-pr --merge`, and `/agento finish-freehand`
+fast-forward a pinned clone the same way.
 
-```text
-node scripts/agento.mjs models clear
-git pull
-node scripts/agento.mjs models apply <name>
-```
+A new agent or prompt that arrives with an update has no recorded pin and stays
+unpinned; `filter.unrecorded` lists it and `active` may read `custom` until you run
+`models apply <name>` again. Every `models` output says so as `hint`.
 
-Every `models` output repeats this as `hint`, and `agento.mjs doctor` reports the
-state as its `model-profile` check: `ok` with nothing pinned or a named profile
-applied, `warn` for an invalid profiles file, `custom` pins, the BYOK tier
-conflict, or unqualified pins described above.
+Clones pinned by an older Agento carry legacy skip-worktree bits (reported as
+`legacySkipWorktree`), and a pull that touches one of those files still stops.
+Migrate once: `models apply <name>` re-pins a profile and clears the bits; `models
+adopt` keeps the current pins exactly (the route for `active: custom`).
+
+`agento.mjs doctor` reports the state as its `model-profile` check: `ok` with nothing
+pinned or a named profile applied on a healthy filter; `warn` for an invalid profiles
+file, `custom` pins, the BYOK tier conflict, or unqualified pins described above,
+and for legacy skip-worktree bits, pins without a healthy filter (missing config,
+attribute block, or state), a copied filter script older than the CLI, or non-empty
+`filter.unrecorded` — each with the command that fixes it.
 
 ## Developing Agento
 
-Profiles apply to the registered plugin clone (`chat.pluginLocations`). A worktree
-window of the Agento repository loads its own workspace `.github/agents/` and
-`.github/prompts/`, which stay unpinned: `apply` refuses a plugin root that is a
-linked worktree (`status: "worktree"`, exit 3, naming the clone as
-`primaryCheckout`), while `clear` still runs there to unpin it.
-`tests/customizations.test.mjs` fails if a `model:` line is ever committed. Clear the
-profile before editing an agent or prompt in the clone — skip-worktree hides your
-edits from `git status` — and apply it again afterwards.
+Profiles apply to the registered plugin clone (`chat.pluginLocations`). The filter's
+config and attributes live in the clone's common git directory, so every linked
+worktree of the clone — an Agento development worktree included — inherits the pins
+whenever git writes a target file there (a new worktree gets them at checkout; an
+older one as git rewrites each file). Commits from any of them are cleaned and carry
+no `model:` line; `tests/customizations.test.mjs` fails if one is ever committed.
+`apply` and `adopt` refuse a plugin root that is a linked worktree (`status:
+"worktree"`, exit 3, naming the clone as `primaryCheckout`); `clear` still runs
+there to unpin that worktree's files and leaves the clone's shared filter alone.
+Editing an agent or prompt in a pinned clone is safe: `git status` shows your edit,
+not the pin.
 
 ## Subagents and handoffs
 
