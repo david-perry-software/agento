@@ -1,0 +1,34 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP",
+    "CLAUDE_PROJECT_DIR",
+    "COPILOT_CLI",
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_CLI_RUN_AS_NODE",
+    "COPILOT_ENABLE_BUILTIN_GITHUB_MCP",
+    "COPILOT_HOME",
+    "COPILOT_MCP_APPS",
+    "COPILOT_PROJECT_DIR",
+    "COPILOT_RUNTIME_PROCESS_FILE_LOGGING"
+  ],
+  "stdin": "{\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-11>\",\n  \"timestamp\": \"<TS-11>\",\n  \"cwd\": \"<PROBE_WS>\",\n  \"tool_name\": \"Edit\",\n  \"tool_input\": {\n    \"path\": \"<PROBE_WS>/notes.txt\",\n    \"old_str\": \"line two (edited)\",\n    \"new_str\": \"line two (edited)\\nline three (probe edit)\"\n  }\n}",
+  "parsedStdin": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-12>",
+    "timestamp": "<TS-12>",
+    "cwd": "<PROBE_WS>",
+    "tool_name": "Edit",
+    "tool_input": {
+      "path": "<PROBE_WS>/notes.txt",
+      "old_str": "line two (edited)",
+      "new_str": "line two (edited)\nline three (probe edit)"
+    }
+  }
+}

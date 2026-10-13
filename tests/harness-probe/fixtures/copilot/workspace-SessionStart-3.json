@@ -1,0 +1,30 @@
+{
+  "source": "workspace",
+  "event": "SessionStart",
+  "argv": [
+    "workspace",
+    "SessionStart"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP",
+    "CLAUDE_PROJECT_DIR",
+    "COPILOT_CLI",
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_CLI_RUN_AS_NODE",
+    "COPILOT_ENABLE_BUILTIN_GITHUB_MCP",
+    "COPILOT_HOME",
+    "COPILOT_MCP_APPS",
+    "COPILOT_PROJECT_DIR",
+    "COPILOT_RUNTIME_PROCESS_FILE_LOGGING"
+  ],
+  "stdin": "{\n  \"hook_event_name\": \"SessionStart\",\n  \"session_id\": \"<UUID-23>\",\n  \"timestamp\": \"<TS-23>\",\n  \"cwd\": \"<PROBE_WS>\",\n  \"source\": \"resume\",\n  \"initial_prompt\": \"Run this shell command and report what happened: echo AGENTO_PROBE_EXIT2\"\n}",
+  "parsedStdin": {
+    "hook_event_name": "SessionStart",
+    "session_id": "<UUID-24>",
+    "timestamp": "<TS-24>",
+    "cwd": "<PROBE_WS>",
+    "source": "resume",
+    "initial_prompt": "Run this shell command and report what happened: echo AGENTO_PROBE_EXIT2"
+  }
+}

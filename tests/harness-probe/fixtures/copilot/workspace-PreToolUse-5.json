@@ -1,0 +1,32 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP",
+    "CLAUDE_PROJECT_DIR",
+    "COPILOT_CLI",
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_CLI_RUN_AS_NODE",
+    "COPILOT_ENABLE_BUILTIN_GITHUB_MCP",
+    "COPILOT_HOME",
+    "COPILOT_MCP_APPS",
+    "COPILOT_PROJECT_DIR",
+    "COPILOT_RUNTIME_PROCESS_FILE_LOGGING"
+  ],
+  "stdin": "{\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-9>\",\n  \"timestamp\": \"<TS-9>\",\n  \"cwd\": \"<PROBE_WS>\",\n  \"tool_name\": \"Read\",\n  \"tool_input\": {\n    \"path\": \"<PROBE_WS>/notes.txt\"\n  }\n}",
+  "parsedStdin": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-10>",
+    "timestamp": "<TS-10>",
+    "cwd": "<PROBE_WS>",
+    "tool_name": "Read",
+    "tool_input": {
+      "path": "<PROBE_WS>/notes.txt"
+    }
+  }
+}
