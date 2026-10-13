@@ -92,6 +92,14 @@ function main([mode, file]) {
   return 0;
 }
 
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))) {
+const invokedDirectly = () => {
+  try {
+    return Boolean(process.argv[1]) && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+
+if (invokedDirectly()) {
   process.exitCode = main(process.argv.slice(2));
 }

@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
+import { setModel } from "./model-profiles.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -2829,8 +2830,11 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.equal(json.pluginRoot, plugin);
   assert.equal(json.active, null);
   assert.deepEqual(json.skipWorktree, []);
+  assert.deepEqual(json.legacySkipWorktree, []);
+  assert.equal(json.filter.installed, false);
+  assert.deepEqual(json.filter.unrecorded, []);
   assert.deepEqual(json.dirty, []);
-  assert.match(json.hint, /models clear.*git pull.*models apply/);
+  assert.match(json.hint, /git filter.*survive pull, merge, switch, and stash/);
 });
 
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
@@ -2941,7 +2945,7 @@ test("models show, apply, and pins warn when autopilot is BYOK and delegates to 
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
   const repo = makeRepo();
   const usage = run(repo, "bogus").json.usage;
-  assert.ok(usage.some((line) => line.includes("models [list | pins | show <name> | apply <name> | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  assert.ok(usage.some((line) => line.includes("models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
   const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
   assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });
@@ -2949,7 +2953,24 @@ test("models: the usage header lists the subcommand and keeps the full Options p
 const sBits = (plugin) => git(plugin, "ls-files", "-v").split("\n").filter((l) => l.startsWith("S ")).map((l) => l.slice(2));
 const gitQuiet = (plugin, ...args) => spawnSync("git", ["-C", plugin, ...args]).status;
 
-test("models apply pins agents, prompts, and mirrors under skip-worktree; clear restores HEAD", () => {
+const commonDirOf = (plugin) => git(plugin, "rev-parse", "--path-format=absolute", "--git-common-dir");
+const filterConfig = (plugin) => spawnSync("git", ["-C", plugin, "config", "--local", "--get-regexp", "^filter\\.agento-models\\."], { encoding: "utf8" }).stdout.trim();
+const attributesBlock = (plugin) => {
+  const file = path.join(commonDirOf(plugin), "info", "attributes");
+  return fs.existsSync(file) && fs.readFileSync(file, "utf8").includes("agento model pins");
+};
+const pinState = (plugin) => {
+  const file = path.join(commonDirOf(plugin), "agento", "model-pins.json");
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : null;
+};
+const assertFilterGone = (plugin) => {
+  assert.equal(filterConfig(plugin), "");
+  assert.equal(attributesBlock(plugin), false);
+  assert.equal(fs.existsSync(path.join(commonDirOf(plugin), "agento")), false);
+  assert.deepEqual(sBits(plugin), []);
+};
+
+test("models apply pins agents, prompts, and mirrors through the git filter; clear restores HEAD", () => {
   const { plugin, models, writeProfiles } = modelsFixture();
   writeProfiles({
     mixed: { default: "Cheap", agents: { planner: "Strong", reviewer: ["A (copilot)", "B"] }, prompts: { doctor: "Tiny" } },
@@ -2970,19 +2991,36 @@ test("models apply pins agents, prompts, and mirrors under skip-worktree; clear 
   assert.match(read(".github/prompts/new-feature.prompt.md"), /^model: "Strong"$/m);
   for (const p of prompts) assert.equal(read(`commands/${p.replace(".prompt.md", ".md")}`), read(`.github/prompts/${p}`), p);
   assert.equal(git(plugin, "status", "--porcelain"), "");
-  assert.equal(sBits(plugin).length, apply.json.changed.length);
-  assert.deepEqual(apply.json.skipWorktree.sort(), sBits(plugin).sort());
+  assert.deepEqual(sBits(plugin), []);
+  assert.deepEqual(apply.json.legacySkipWorktree, []);
+  assert.deepEqual(apply.json.skipWorktree, []);
+  assert.equal(apply.json.filter.installed, true);
+  assert.equal(apply.json.filter.scriptCurrent, true);
+  assert.deepEqual(apply.json.filter.unrecorded, []);
+  assert.match(filterConfig(plugin), /^filter\.agento-models\.clean node "\$\(git rev-parse --path-format=absolute --git-common-dir\)\/agento\/model-filter\.mjs" clean %f$/m);
+  assert.match(filterConfig(plugin), /^filter\.agento-models\.smudge node .*model-filter\.mjs" smudge %f$/m);
+  assert.match(filterConfig(plugin), /^filter\.agento-models\.required true$/m);
+  assert.ok(attributesBlock(plugin));
+  const state = pinState(plugin);
+  assert.equal(Object.keys(state.files).length, apply.json.changed.length);
+  assert.equal(state.files[".github/agents/delivery-planner.agent.md"].model, "Strong");
+  assert.deepEqual(state.files[".github/agents/delivery-reviewer.agent.md"].model, ["A (copilot)", "B"]);
+  assert.equal(state.files["commands/doctor.md"].model, "Tiny");
+  // The index still holds the pin-free HEAD content.
+  assert.equal(git(plugin, "diff", "--cached", "--name-only", "HEAD"), "");
 
   const again = models("apply", "mixed");
   assert.equal(again.code, 0);
   assert.deepEqual(again.json.changed, []);
   assert.equal(models("list").json.active, "mixed");
 
-  // Switching to a profile without a default unpins (and unflags) everything else.
+  // Switching to a profile without a default unpins everything else; the state records it.
   const partial = models("apply", "partial");
   assert.equal(partial.code, 0, JSON.stringify(partial.json));
   assert.equal(partial.json.active, "partial");
-  assert.deepEqual(sBits(plugin).sort(), [".github/agents/delivery-planner.agent.md", ".github/prompts/new-feature.prompt.md", ".github/prompts/new-issue.prompt.md", "commands/new-feature.md", "commands/new-issue.md"]);
+  assert.equal(pinState(plugin).files[".github/agents/delivery-planner.agent.md"].model, "Strong");
+  assert.equal(pinState(plugin).files[".github/agents/delivery-builder.agent.md"].model, null);
+  assert.deepEqual(partial.json.filter.unrecorded, []);
   assert.equal(git(plugin, "status", "--porcelain"), "");
 
   const clear = models("clear");
@@ -2991,8 +3029,166 @@ test("models apply pins agents, prompts, and mirrors under skip-worktree; clear 
   assert.equal(clear.json.changed.length, 5);
   assert.equal(clear.json.active, null);
   assert.equal(gitQuiet(plugin, "diff", "--quiet"), 0);
-  assert.deepEqual(sBits(plugin), []);
+  assertFilterGone(plugin);
   assert.deepEqual(models("clear").json.changed, []);
+});
+
+test("models clear removes the filter config, attribute block, state dir, and legacy bits; a linked worktree's clear leaves the shared filter", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap (copilot)" } });
+  const attributes = path.join(commonDirOf(plugin), "info", "attributes");
+  fs.mkdirSync(path.dirname(attributes), { recursive: true });
+  fs.writeFileSync(attributes, "*.png binary\n");
+  assert.equal(models("apply", "mixed").code, 0);
+  assert.ok(attributesBlock(plugin));
+
+  // A worktree added after apply inherits the pins through the shared filter.
+  const linked = path.join(path.dirname(plugin), "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
+  assert.match(fs.readFileSync(path.join(linked, ".github", "agents", "delivery-builder.agent.md"), "utf8"), /^model: "Cheap \(copilot\)"$/m);
+  assert.equal(git(linked, "status", "--porcelain"), "");
+  const inLinked = runWith({ cwd: linked, env }, "models", "clear", "--plugin-root", linked);
+  assert.equal(inLinked.code, 0, JSON.stringify(inLinked.json));
+  assert.equal(inLinked.json.primaryCheckout, plugin);
+  assert.ok(inLinked.json.changed.length > 0);
+  assert.equal(gitQuiet(linked, "diff", "--quiet", "HEAD"), 0);
+  assert.equal(git(linked, "status", "--porcelain"), "");
+  assert.ok(attributesBlock(plugin), "the shared attribute block stays");
+  assert.ok(pinState(plugin), "the shared pin state stays");
+  assert.equal(models("list").json.active, "mixed");
+
+  // A legacy bit left behind (an older apply) is cleared too.
+  git(plugin, "update-index", "--skip-worktree", "--", "commands/doctor.md");
+  const clear = models("clear");
+  assert.equal(clear.code, 0, JSON.stringify(clear.json));
+  assert.equal(clear.json.primaryCheckout, undefined);
+  assert.equal(clear.json.filter.installed, false);
+  assert.deepEqual(clear.json.legacySkipWorktree, []);
+  assertFilterGone(plugin);
+  assert.equal(fs.readFileSync(attributes, "utf8"), "*.png binary\n");
+  assert.equal(gitQuiet(plugin, "diff", "--quiet", "HEAD"), 0);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+});
+
+// The pre-filter state an older `models apply` left: pins written into the files
+// and hidden from git with skip-worktree.
+function legacyPins(plugin, pins) {
+  for (const [file, value] of Object.entries(pins)) {
+    const abs = path.join(plugin, file);
+    fs.writeFileSync(abs, setModel(fs.readFileSync(abs, "utf8"), value));
+  }
+  git(plugin, "update-index", "--skip-worktree", "--", ...Object.keys(pins));
+}
+
+const targetBytes = (plugin) => Object.fromEntries([".github/agents", ".github/prompts", "commands"].flatMap((dir) => fs.readdirSync(path.join(plugin, dir)).map((f) => [`${dir}/${f}`, fs.readFileSync(path.join(plugin, dir, f), "utf8")])));
+
+test("models apply migrates legacy skip-worktree pins onto the filter with identical pins", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ tiny: { prompts: { doctor: "Tiny (copilot)" } } });
+  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Tiny (copilot)", "commands/doctor.md": "Tiny (copilot)" });
+  const legacy = models("list").json;
+  assert.equal(legacy.active, "tiny");
+  assert.deepEqual(legacy.legacySkipWorktree, [".github/prompts/doctor.prompt.md", "commands/doctor.md"]);
+  assert.equal(legacy.filter.installed, false);
+  const before = targetBytes(plugin);
+
+  const apply = models("apply", "tiny");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.deepEqual(apply.json.changed, []);
+  assert.equal(apply.json.active, "tiny");
+  assert.deepEqual(apply.json.legacySkipWorktree, []);
+  assert.deepEqual(sBits(plugin), []);
+  assert.equal(apply.json.filter.installed, true);
+  assert.equal(pinState(plugin).files["commands/doctor.md"].model, "Tiny (copilot)");
+  assert.deepEqual(targetBytes(plugin), before);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+});
+
+test("models adopt records a legacy custom pin set as filter state with byte-identical files", () => {
+  const { plugin, env, models, writeProfiles } = modelsFixture();
+  writeProfiles({ tiny: { prompts: { doctor: "Tiny (copilot)" } } });
+  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Hand (copilot)", "commands/doctor.md": "Hand (copilot)", ".github/agents/delivery-builder.agent.md": ["X (copilot)", "Y"] });
+  assert.equal(models("list").json.active, "custom");
+  const before = targetBytes(plugin);
+
+  const adopt = models("adopt");
+  assert.equal(adopt.code, 0, JSON.stringify(adopt.json));
+  assert.equal(adopt.json.verb, "adopt");
+  assert.equal(adopt.json.profile, null);
+  assert.deepEqual(adopt.json.changed, []);
+  assert.equal(adopt.json.active, "custom");
+  assert.deepEqual(adopt.json.legacySkipWorktree, []);
+  assert.equal(adopt.json.filter.installed, true);
+  assert.deepEqual(targetBytes(plugin), before);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+  const state = pinState(plugin);
+  assert.equal(state.files[".github/prompts/doctor.prompt.md"].model, "Hand (copilot)");
+  assert.deepEqual(state.files[".github/agents/delivery-builder.agent.md"].model, ["X (copilot)", "Y"]);
+  assert.equal(state.files[".github/agents/delivery-planner.agent.md"].model, null);
+  assert.deepEqual(models("adopt").json.changed, []);
+
+  // Git's own rewrite of a pinned file brings the adopted pin back.
+  fs.rmSync(path.join(plugin, "commands", "doctor.md"));
+  git(plugin, "checkout", "--", "commands/doctor.md");
+  assert.equal(fs.readFileSync(path.join(plugin, "commands", "doctor.md"), "utf8"), before["commands/doctor.md"]);
+
+  const linked = path.join(path.dirname(plugin), "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
+  const refused = runWith({ cwd: linked, env }, "models", "adopt", "--plugin-root", linked);
+  assert.equal(refused.code, 3);
+  assert.equal(refused.json.status, "worktree");
+  assert.match(refused.json.message, new RegExp(`--plugin-root ${plugin}$`));
+});
+
+test("models list reports a prompt added after apply in filter.unrecorded until the next apply", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap (copilot)" } });
+  assert.equal(models("apply", "mixed").code, 0);
+  for (const rel of [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]) fs.writeFileSync(path.join(plugin, rel), "---\ndescription: \"New\"\nagent: agent\n---\n\nNew.\n");
+  git(plugin, "add", "-A");
+  git(plugin, "commit", "-q", "-m", "new prompt");
+  const list = models("list").json;
+  assert.deepEqual(list.filter.unrecorded, [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]);
+  assert.equal(list.active, "custom");
+  assert.match(list.hint, /git filter.*survive.*models apply <name>/);
+  assert.doesNotMatch(list.hint, /models clear/);
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+
+  const reapply = models("apply", "mixed");
+  assert.equal(reapply.code, 0, JSON.stringify(reapply.json));
+  assert.deepEqual(reapply.json.changed, [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]);
+  assert.deepEqual(reapply.json.filter.unrecorded, []);
+  assert.equal(reapply.json.active, "mixed");
+});
+
+test("under the filter a body edit and a hand-edited model: value show in git status and make apply refuse", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { default: "Cheap (copilot)" } });
+  assert.equal(models("apply", "mixed").code, 0);
+  const rel = ".github/prompts/doctor.prompt.md";
+  const file = path.join(plugin, rel);
+  const pinned = fs.readFileSync(file, "utf8");
+
+  fs.writeFileSync(file, pinned.replace('model: "Cheap (copilot)"', 'model: "Edited (copilot)"'));
+  assert.equal(git(plugin, "status", "--porcelain"), `M ${rel}`);
+  const value = models("apply", "mixed");
+  assert.equal(value.code, 3);
+  assert.equal(value.json.status, "dirty");
+  assert.deepEqual(value.json.dirty, [rel]);
+  git(plugin, "restore", "--", rel);
+  assert.equal(fs.readFileSync(file, "utf8"), pinned, "restore re-applies the recorded pin");
+  assert.equal(git(plugin, "status", "--porcelain"), "");
+
+  fs.appendFileSync(file, "\nlocal edit\n");
+  assert.equal(git(plugin, "status", "--porcelain"), `M ${rel}`);
+  const body = models("apply", "mixed");
+  assert.equal(body.code, 3);
+  assert.equal(body.json.status, "dirty");
+  assert.deepEqual(body.json.dirty, [rel]);
+  const adopt = models("adopt");
+  assert.equal(adopt.code, 3);
+  assert.equal(adopt.json.status, "dirty");
+  assert.deepEqual(adopt.json.dirty, [rel]);
 });
 
 test("issue #79 autopilot-subagent-model-pins: models apply pins handoffs[].model to the target agent's model; clear removes it", () => {
@@ -3083,6 +3279,8 @@ test("models apply on a non-git plugin root rewrites without flags", () => {
   const apply = models("apply", "mixed");
   assert.equal(apply.code, 0, JSON.stringify(apply.json));
   assert.equal(apply.json.skipWorktree, null);
+  assert.equal(apply.json.legacySkipWorktree, null);
+  assert.equal(apply.json.filter, null);
   assert.deepEqual(apply.json.dirty, []);
   assert.ok(apply.json.changed.length > 0);
   assert.match(fs.readFileSync(path.join(plugin, ".github", "agents", "delivery-builder.agent.md"), "utf8"), /^model: "Cheap"$/m);
