@@ -3,14 +3,14 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "node ${CLAUDE_PLUGIN_ROOT}/../log-payload.mjs plugin SessionStart",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/log-payload.mjs plugin SessionStart",
         "timeout": 10
       }
     ],
     "PreToolUse": [
       {
         "type": "command",
-        "command": "node ${CLAUDE_PLUGIN_ROOT}/../log-payload.mjs plugin PreToolUse",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/log-payload.mjs plugin PreToolUse",
         "timeout": 10
       }
     ]

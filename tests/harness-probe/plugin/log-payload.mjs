@@ -1,15 +1,24 @@
 #!/usr/bin/env node
-// harness-probe hook logger.
+// harness-probe hook logger (plugin-root copy).
+//
+// This copy lives inside the probe plugin root so the plugin hook wiring never
+// escapes its root with `..` (the old `${CLAUDE_PLUGIN_ROOT}/../log-payload.mjs`
+// was one suspected cause of the Copilot plugin-hook failure). The workspace
+// wiring references this same file by absolute path, so there is exactly one
+// logger to maintain.
 //
 // Writes one JSON file per invocation to $AGENTO_PROBE_LOG_DIR (default
 // ~/.cache/agento-harness-probe/logs) recording the source, event, argv, cwd,
-// the *names* (never values) of matching environment variables, and the raw
-// stdin. It then answers based on markers in the stdin so the harness's honored
-// output shapes can be told apart. Any internal error is caught: it exits 0 with
-// no output, so a crashing probe hook can never wedge a session.
+// the *names* (never values) of matching environment variables, a token-free
+// diagnostic entry (cwd, `command -v node`, and the names/values of
+// `*PLUGIN_ROOT*` env vars only), and the raw stdin. It then answers based on
+// markers in the stdin so the harness's honored output shapes can be told apart.
+// Any internal error is caught: it exits 0 with no output, so a crashing probe
+// hook can never wedge a session.
 //
 // Usage: node log-payload.mjs <source> <event>   (stdin = the hook payload)
 
+import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
@@ -38,6 +47,36 @@ function envVarNames() {
     .sort();
 }
 
+function commandV(command) {
+  try {
+    const res = spawnSync("sh", ["-c", `command -v ${command}`], {
+      encoding: "utf8",
+      timeout: 3000,
+    });
+    if (res.status === 0 && res.stdout.trim()) return res.stdout.trim();
+  } catch {
+    // Fall through to the empty result.
+  }
+  return "";
+}
+
+// The `*PLUGIN_ROOT*` env vars are directory paths, not secrets; their values are
+// the evidence that tells "token unexpanded" from "node missing" from "wrong root"
+// in the Copilot plugin run. Only this narrow set of values is recorded.
+function pluginRootEnv() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => /PLUGIN_ROOT/.test(key)),
+  );
+}
+
+function diagnostic() {
+  return {
+    cwd: process.cwd(),
+    nodeCommandV: commandV("node"),
+    pluginRootEnv: pluginRootEnv(),
+  };
+}
+
 async function writeLog(raw) {
   const record = {
     source,
@@ -45,6 +84,7 @@ async function writeLog(raw) {
     argv: process.argv.slice(2),
     cwd: process.cwd(),
     envVarNames: envVarNames(),
+    diagnostic: diagnostic(),
     stdin: raw,
   };
   try {
@@ -118,7 +158,4 @@ async function main() {
   // Otherwise silent, exit 0.
 }
 
-main().catch(() => {
-  // Never let an internal error wedge the session.
-  process.exitCode = 0;
-});
+main();

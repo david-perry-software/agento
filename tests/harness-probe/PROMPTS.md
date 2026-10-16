@@ -11,6 +11,14 @@ differently so the honored output shapes can be told apart; `AGENTO_PROBE_EXIT2`
 is sent **last** (prompt 6) because it makes the hook exit 2 (the fail-closed
 check).
 
+Every log file also carries a token-free `diagnostic` entry recording the hook's
+`cwd`, the output of `command -v node`, and the names/values of `*PLUGIN_ROOT*`
+env vars only. After a plugin run, those entries are the evidence that separates
+the three candidate causes of the Copilot plugin-hook failure: `${CLAUDE_PLUGIN_ROOT}`
+staying literal, a wrong/empty root, or `node` missing from the hook `PATH`.
+Report the `diagnostic` of the Copilot plugin SessionStart/PreToolUse captures
+when asked.
+
 ## Prompt 1 — session context
 
 > Which of these tokens do you see in your session context: `PROBE_CTX_NESTED`,
