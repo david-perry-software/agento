@@ -358,3 +358,19 @@ test("committed fixtures contain no deny patterns", () => {
     assert.equal(deny, null, `${path.relative(here, f)} contains ${deny?.pattern}`);
   }
 });
+
+test("every relative link in docs/copilot-harness.md resolves", () => {
+  const doc = path.join(here, "..", "..", "docs", "copilot-harness.md");
+  assert.ok(existsSync(doc), "docs/copilot-harness.md is missing");
+  const docDir = path.dirname(doc);
+  const text = readFileSync(doc, "utf8");
+  const links = [...text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)].map((m) => m[1]);
+  const broken = [];
+  for (const target of links) {
+    if (/^(?:https?:|#|mailto:)/i.test(target)) continue;
+    const file = target.split("#")[0];
+    if (!file) continue;
+    if (!existsSync(path.resolve(docDir, file))) broken.push(target);
+  }
+  assert.deepEqual(broken, [], "docs/copilot-harness.md has unresolved relative links");
+});
