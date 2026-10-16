@@ -2929,6 +2929,33 @@ test("models pins reads each agent's current pin and rejects an argument", () =>
   assert.deepEqual(pinned.json.warnings, []);
 });
 
+test("models pins reports copilotModel for mapped, unmapped, and unpinned agents", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: {
+        "Planner Model (copilot)": "planner-copilot-id",
+        "Builder Model (copilot)": "builder-copilot-id",
+      },
+      profiles: { mixed: { agents: { planner: "Planner Model (copilot)", builder: "Builder Model (copilot)", reviewer: "Reviewer Model (copilot)" } } },
+    }),
+  );
+  assert.equal(models("apply", "mixed").code, 0);
+  const pins = models("pins");
+  assert.equal(pins.code, 0, JSON.stringify(pins.json));
+  // Mapped: the copilotModels alias of the first picker entry.
+  assert.equal(pins.json.pins.planner.copilotModel, "planner-copilot-id");
+  assert.equal(pins.json.pins.builder.copilotModel, "builder-copilot-id");
+  // Unmapped: a pinned agent whose picker name has no alias.
+  assert.equal(pins.json.pins.reviewer.copilotModel, null);
+  assert.equal(pins.json.pins.reviewer.subagentModel, "Reviewer Model (copilot)");
+  // Unpinned: no pin at all.
+  assert.equal(pins.json.pins.architect.copilotModel, null);
+  assert.equal(pins.json.pins.architect.model, null);
+});
+
 test("models show, apply, and pins warn when autopilot is BYOK and delegates to a Copilot model", () => {
   const { models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { agents: { autopilot: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } });
@@ -2948,6 +2975,63 @@ test("models show, apply, and pins warn when autopilot is BYOK and delegates to 
   assert.equal(pins.code, 0);
   assert.equal(pins.json.warnings.length, 1);
   assert.match(pins.json.warnings[0], /autopilot is pinned to "DeepSeek V4 Pro \(deepseek\)"/);
+});
+
+test("models show, apply, and pins warn for agent pins without a Copilot alias", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: { "Claude Opus 5.5 (copilot)": "claude-opus-5.5" },
+      profiles: { mixed: { agents: { planner: "Claude Opus 5.5 (copilot)", builder: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } },
+    }),
+  );
+
+  const show = models("show", "mixed");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  const showWarn = show.json.warnings.find((w) => /agent pins without a Copilot alias/.test(w));
+  assert.ok(showWarn, JSON.stringify(show.json.warnings));
+  assert.match(showWarn, /builder "DeepSeek V4 Pro \(deepseek\)" and reviewer "Claude Fable 5\.1 \(copilot\)"/);
+  assert.match(showWarn, /top-level copilotModels map/);
+
+  const apply = models("apply", "mixed");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  assert.ok(apply.json.warnings.some((w) => /agent pins without a Copilot alias/.test(w)), JSON.stringify(apply.json.warnings));
+
+  const pins = models("pins");
+  assert.equal(pins.code, 0, JSON.stringify(pins.json));
+  assert.ok(pins.json.warnings.some((w) => /agent pins without a Copilot alias/.test(w)), JSON.stringify(pins.json.warnings));
+
+  // A fully aliased profile carries no missing-alias warning.
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: { "Claude Opus 5.5 (copilot)": "claude-opus-5.5", "DeepSeek V4 Pro (deepseek)": "deepseek/deepseek-v4-pro", "Claude Fable 5.1 (copilot)": "claude-fable-5.1" },
+      profiles: { mixed: { agents: { planner: "Claude Opus 5.5 (copilot)", builder: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } },
+    }),
+  );
+  const clean = models("show", "mixed");
+  assert.equal(clean.code, 0, JSON.stringify(clean.json));
+  assert.deepEqual(clean.json.warnings, [], JSON.stringify(clean.json.warnings));
+});
+
+test("doctor model-profile warns for agent pins without a Copilot alias", () => {
+  const { plugin, home, env, models } = modelsFixture();
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: { "Claude Opus 5.5 (copilot)": "claude-opus-5.5" },
+      profiles: { mixed: { agents: { planner: "Claude Opus 5.5 (copilot)", builder: "DeepSeek V4 Pro (deepseek)" } } },
+    }),
+  );
+  assert.equal(models("apply", "mixed").code, 0);
+  const warn = check();
+  assert.equal(warn.status, "warn", JSON.stringify(warn));
+  assert.match(warn.detail, /agent pins without a Copilot alias: builder "DeepSeek V4 Pro \(deepseek\)"/);
+  assert.match(warn.fallback, /copilotModels map/);
 });
 
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {

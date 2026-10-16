@@ -405,3 +405,46 @@ test("every relative link in docs/copilot-harness.md resolves", () => {
   }
   assert.deepEqual(broken, [], "docs/copilot-harness.md has unresolved relative links");
 });
+
+// --- probe agents (agents-copilot-models member, step 1.1) ---
+
+const agentsDir = path.join(here, "workspace", ".github", "agents");
+
+function agentFrontmatter(name) {
+  const file = path.join(agentsDir, name);
+  assert.ok(existsSync(file), `${name} is missing`);
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  assert.equal(lines[0].replace(/\r$/, ""), "---", `${name}: no frontmatter opener`);
+  const end = lines.findIndex((l, i) => i > 0 && l.replace(/\r$/, "") === "---");
+  assert.ok(end > 0, `${name}: no frontmatter closer`);
+  return { text, body: lines.slice(end + 1).join("\n"), fm: lines.slice(1, end).join("\n") };
+}
+
+test("probe agents carry the four pin variants (picker, BYOK, list, unpinned)", () => {
+  const pinned = agentFrontmatter("probe-pinned.agent.md");
+  assert.match(pinned.fm, /^model: "Claude Opus 5\.5 \(copilot\)"$/m, "probe-pinned must pin the picker form");
+
+  const byok = agentFrontmatter("probe-pinned-byok.agent.md");
+  assert.match(byok.fm, /^model: "DeepSeek V4 Pro \(deepseek\)"$/m, "probe-pinned-byok must pin the BYOK picker form");
+
+  const list = agentFrontmatter("probe-pinned-list.agent.md");
+  assert.match(
+    list.fm,
+    /^model: \["Claude Opus 5\.5 \(copilot\)", "claude-opus-5\.5"\]$/m,
+    "probe-pinned-list must pin the picker form first and the Copilot id candidate second",
+  );
+
+  const unpinned = agentFrontmatter("probe-unpinned.agent.md");
+  assert.doesNotMatch(unpinned.fm, /^model:/m, "probe-unpinned must have no model pin");
+});
+
+test("every probe agent reports model, tools, ask-user, browser, and subagent model support", () => {
+  for (const name of ["probe-pinned.agent.md", "probe-pinned-byok.agent.md", "probe-pinned-list.agent.md", "probe-unpinned.agent.md"]) {
+    const { body } = agentFrontmatter(name);
+    const tag = name.replace(/\.agent\.md$/, "");
+    for (const line of ["model=", "tools=", "ask-user=", "browser=", "subagent-model-param="]) {
+      assert.ok(body.includes(`${tag} ${line}`), `${name} body must contain a \`${tag} ${line}\` report line`);
+    }
+  }
+});

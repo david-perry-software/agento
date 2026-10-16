@@ -73,6 +73,32 @@ test("parseProfiles rejects DEL and closing placeholders too", () => {
   assert.equal(parse({ profiles: { p: { default: "model>" } } }).errors.length, 1);
 });
 
+test("parseProfiles accepts and returns a top-level copilotModels map", () => {
+  const { profiles, copilotModels, errors } = parse({
+    copilotModels: {
+      "Claude Opus 5.5 (copilot)": "claude-opus-5.5",
+      "DeepSeek V4 Pro (deepseek)": "deepseek/deepseek-v4-pro",
+    },
+    profiles: { p: { default: "Cheap (copilot)" } },
+  });
+  assert.deepEqual(errors, []);
+  assert.deepEqual(copilotModels, {
+    "Claude Opus 5.5 (copilot)": "claude-opus-5.5",
+    "DeepSeek V4 Pro (deepseek)": "deepseek/deepseek-v4-pro",
+  });
+  assert.deepEqual(Object.keys(profiles), ["p"]);
+  assert.deepEqual(parse({ profiles: { p: {} } }).copilotModels, {});
+});
+
+test("parseProfiles rejects malformed copilotModels and still rejects unknown top-level keys", () => {
+  assert.deepEqual(parse({ copilotModels: [], profiles: {} }).errors, ["`copilotModels` must be an object mapping a qualified picker name to a Copilot model id"]);
+  assert.deepEqual(parse({ copilotModels: { "A (copilot)": "" }, profiles: {} }).errors, ["copilotModels.A (copilot): Copilot model ids must be non-empty strings"]);
+  assert.deepEqual(parse({ copilotModels: { "A (copilot)": "<id>" }, profiles: {} }).errors, ['copilotModels.A (copilot): placeholder "<id>" must be replaced with a model id']);
+  assert.deepEqual(parse({ copilotModels: { "A (copilot)": "a\nb" }, profiles: {} }).errors, ['copilotModels.A (copilot): "a\\nb" contains a control character']);
+  assert.deepEqual(parse({ copilotModels: {}, profiles: {}, extra: 1 }).errors, ['unknown top-level key "extra"']);
+  assert.deepEqual(parse({ copilotModels: {}, profiles: {} }).errors, []);
+});
+
 test("errorsFor keeps file-level errors and the named profile's own errors", () => {
   const errors = ["unknown top-level key \"x\"", "profiles.a.default: e1", "profiles.a: e2", "profiles.a-b.default: e3", "profiles.b: e4"];
   assert.deepEqual(errorsFor(errors, "a"), ["unknown top-level key \"x\"", "profiles.a.default: e1", "profiles.a: e2"]);

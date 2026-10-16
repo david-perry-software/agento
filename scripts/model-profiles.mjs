@@ -46,12 +46,28 @@ export function parseProfiles(text) {
   try {
     data = JSON.parse(text);
   } catch (error) {
-    return { profiles: {}, errors: [`invalid JSON: ${error.message}`] };
+    return { profiles: {}, copilotModels: {}, errors: [`invalid JSON: ${error.message}`] };
   }
-  if (!isObject(data)) return { profiles: {}, errors: ["top level must be an object with a `profiles` key"] };
+  if (!isObject(data)) return { profiles: {}, copilotModels: {}, errors: ["top level must be an object with a `profiles` key"] };
   const errors = [];
-  for (const key of Object.keys(data)) if (key !== "profiles") errors.push(`unknown top-level key ${JSON.stringify(key)}`);
-  if (!isObject(data.profiles)) return { profiles: {}, errors: [...errors, "`profiles` must be an object"] };
+  for (const key of Object.keys(data)) if (key !== "profiles" && key !== "copilotModels") errors.push(`unknown top-level key ${JSON.stringify(key)}`);
+  // An optional top-level map of qualified picker name → Copilot `task` model id
+  // (bare id for Copilot-hosted models, `<vendor>/<id>` for BYOK). Every value is
+  // validated like a model name; an unknown shape invalidates the whole file.
+  const copilotModels = {};
+  if (data.copilotModels !== undefined) {
+    if (!isObject(data.copilotModels)) {
+      errors.push("`copilotModels` must be an object mapping a qualified picker name to a Copilot model id");
+    } else {
+      for (const [picker, id] of Object.entries(data.copilotModels)) {
+        if (typeof id !== "string" || !id.trim()) errors.push(`copilotModels.${picker}: Copilot model ids must be non-empty strings`);
+        else if (/[<>]/.test(id)) errors.push(`copilotModels.${picker}: placeholder ${JSON.stringify(id)} must be replaced with a model id`);
+        else if (CONTROL.test(id)) errors.push(`copilotModels.${picker}: ${JSON.stringify(id)} contains a control character`);
+        else copilotModels[picker] = id;
+      }
+    }
+  }
+  if (!isObject(data.profiles)) return { profiles: {}, copilotModels, errors: [...errors, "`profiles` must be an object"] };
   for (const [name, profile] of Object.entries(data.profiles)) {
     const at = `profiles.${name}`;
     if (!PROFILE_NAME.test(name)) {
@@ -78,7 +94,7 @@ export function parseProfiles(text) {
       }
     }
   }
-  return { profiles: data.profiles, errors };
+  return { profiles: data.profiles, copilotModels, errors };
 }
 
 export function errorsFor(errors, name) {
@@ -404,4 +420,19 @@ export function unqualifiedWarning(entries) {
   if (!places.size) return null;
   const named = [...places].map(([value, where]) => `${JSON.stringify(value)} (${where.join(", ")})`).join("; ");
   return `model values without a (vendor) suffix: ${named}; VS Code resolves an unqualified name only for some Copilot models and silently ignores it otherwise — use "<picker name> (<vendor>)", then re-apply`;
+}
+
+// Pinned agents whose first entry has no `copilotModels` alias: `entries` is
+// `[{ alias, value }]` with a string or list value; `copilotModels` the parsed
+// top-level map. Returns the warning string, or null when every pinned agent is
+// aliased (or no map is defined).
+export function missingAliasWarning(entries, copilotModels) {
+  if (!copilotModels || !Object.keys(copilotModels).length) return null;
+  const missing = [];
+  for (const { alias, value } of entries) {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first === "string" && first !== "" && !Object.hasOwn(copilotModels, first)) missing.push(`${alias} ${JSON.stringify(first)}`);
+  }
+  if (!missing.length) return null;
+  return `agent pins without a Copilot alias: ${missing.join(" and ")}; add each picker name to the top-level copilotModels map so the Autopilot can pin Copilot subagents`;
 }

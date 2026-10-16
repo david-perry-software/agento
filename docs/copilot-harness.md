@@ -33,13 +33,57 @@ guesses. It changes no runtime behavior.
 | Which PreToolUse decision slots are read? | `hookSpecificOutput.permissionDecision` (+ reason); top-level decision and ask ignored. | Both `hookSpecificOutput.permissionDecision` (+ reason) and top-level `permissionDecision`; top-level ask shows a hook card then runs. | [Local plugin run](../tests/harness-probe/fixtures/local-plugin/plugin-PreToolUse-1.json), [Copilot plugin run](../tests/harness-probe/fixtures/copilot-plugin/workspace-PreToolUse-1.json) | `copilot-hook-compat` |
 | Does exit 2 fail closed? | Yes — "Hook denied tool execution" (reason dropped). | Yes — "hook exited with code 2". | step 2.2 and step 2.4 observations | `copilot-hook-compat` |
 | Does `/agento <name> [args]` reach a user skill named `agento` (symlinked)? | No — the Agento plugin's real `/agento <name>` command shadows the user skill; args arrive as free text. | Yes — resolves to the symlinked `~/.copilot/skills/agento` as "Read skill · agento", with ARGUMENTS `delivery-status --probe-arg x` exactly. | [skill fixtures](../tests/harness-probe/skills/agento/SKILL.md); step 2.2 and 2.4 observations | `agento-router-skill`, `harness-install` |
-| Can a subagent ask the user, and nest? | `vscode/askQuestions` works; a nested subagent has no subagent tool, so nesting is unavailable. | Subagent stalls ("Reasoning" 10+ min) — ask-user, nesting, and pin unobserved. | step 2.2 and 2.4 observations | `agento-router-skill`, `agents-copilot-models` |
-| Do model pins apply, and in what format? | The agent pin (`Claude Opus 5.5 (copilot)`, the VS Code picker form) overrides the parent model; an unpinned agent inherits the parent model. | Unobserved (subagent stalled); the parent model field is absent from the SessionStart payload. | step 2.2 and 2.4 observations | `agents-copilot-models` |
+| Can a subagent ask the user, and nest? | `vscode/askQuestions` works and the answer returns within the same turn; a nested subagent runs on its own agent pin and its own `vscode/askQuestions` also works; a nested subagent has no subagent tool of its own, so deeper nesting is unavailable. | The subagent tool is `task` (no ask-user tool); `probe-unpinned` invoked `probe-pinned` via `task` and it completed in 21 s — the earlier 10+ min stall did not recur. | step 2.2, 2.4, and 1.2 observations | `agento-router-skill`, `agents-copilot-models` |
+| Do model pins apply, and in what format? | The agent pin (`Claude Opus 5.5 (copilot)`, the VS Code picker form) overrides the parent model; an unpinned agent inherits the parent model. | **`finding: picker-rejected`** — an agent selected directly in a Copilot session runs on the session's model, not its `model:` pin (picker, list, BYOK, specific model, or Auto are all ignored); the pin format itself is accepted (see [Agents and models](#agents-and-models)). The parent model field is absent from the SessionStart payload. | step 2.2, 2.4, and 1.2 observations | `agents-copilot-models` |
 | What does `workbench.action.chat.open {query, mode, attachFiles}` do in Copilot? | — | Fills the chat input with `/agento delivery-status`, attaches `delivery-status.md`, sets Agent mode, but does **not** submit; the Copilot input will not send a message that begins with a slash in this dispatch case. | step 2.4 observations | `dispatch-copilot-harness` |
 
 Screenshots and raw observation notes live in the companion artifact repository
 (`agento-docs`) under `features/2026/10/harness-probe/evidence/`; the table links
 the sanitized fixtures committed in this repository.
+
+## Agents and models
+
+Measured 2026-10-16 (VS Code 1.141.0 / Copilot Chat 0.69.0) by selecting each
+probe agent directly from the agent picker in a Copilot session. Evidence lives in
+the companion repository under
+`features/2026/10/agents-copilot-models/evidence/step-1-2-*.png`.
+
+- **Accepted model form.** The editor hover on an agent's `model:` frontmatter
+  resolves the picker form (`Name: Claude Opus 5.5`, `Family: claude-opus-5.5`,
+  `Vendor: copilot`) and states the field "is supported by the GitHub Copilot
+  harness" — so the `<picker name> (<vendor>)` format is valid input.
+- **Directly selected agents ignore the pin (`finding: picker-rejected`).**
+  Selecting a probe agent from the picker in a Copilot session did not change the
+  model picker, and each agent ran on the session's model (the chat reply footer),
+  never on its `model:` pin — picker form (`Claude Opus 5.5 (copilot)`), list form
+  (`["Claude Opus 5.5 (copilot)", "claude-opus-5.5"]`), BYOK form
+  (`DeepSeek V4 Pro (deepseek)`), a specific model, and Auto (`Auto` routed a task
+  to GPT-6 Luna) all behaved the same. Whether the pin applies only to `task`-tool
+  subagents, or this is a bug, was not determined. ~7 min per turn.
+- **BYOK result.** The `DeepSeek V4 Pro (deepseek)` pin was ignored for a directly
+  selected agent exactly like the Copilot pins; the agent ran on the session model.
+- **Tool set.** The Copilot tools observed (the same for every agent regardless of
+  its `tools:` list): `bash`, `create`, `edit`, `list_agents`, `list_bash`,
+  `read_agent`, `read_bash`, `skill`, `sql`, `stop_bash`, `task`, `view`,
+  `write_agent`; a GPT-routed turn additionally showed `functions.*` plus
+  `apply_patch` and `multi_tool_use.parallel`. There is **no ask-user tool and no
+  browser tool**, so `vscode/askQuestions` and `browser` are unavailable in
+  Copilot — the §10 `ask-questions` and `browser` fallbacks apply there. A
+  question asked as plain chat text works: the agent ends its turn and the user's
+  reply arrives as a new turn (~3–4 min round trip).
+- **Subagent model parameter.** The Copilot subagent tool is `task`; its optional
+  `model` parameter takes bare ids for Copilot-hosted models (35 listed in the
+  task-models screenshots, e.g. `claude-opus-5.5`, `gpt-5.6-luna`, …) and
+  `<vendor>/<id>` for BYOK models (`deepseek/deepseek-v4-pro`, …). The per-subagent
+  model in Copilot is therefore set through `task`'s `model`, not the agent pin.
+- **Caveats.** The model's self-reported `model=` line is not evidence (agents
+  cannot see their runtime model; some echo their own frontmatter) — only the chat
+  reply footer and the model picker count. A confound: Copilot loaded user-level
+  Agento instructions into the probe workspace (replies mentioned
+  `ask_user`/`openBrowserPage` and ended with an Agento `next:` line), most likely
+  from the user's installed agento-plugin; it does not affect the model result.
+  Local runs showed a "Warning from Session Start hook" (a probe-workspace side
+  effect, not a Copilot finding).
 
 ## Hook input payload fields
 
@@ -172,14 +216,19 @@ both resolve with the full argument tail in Copilot.
   the parent model. `vscode/askQuestions` works in both and the user's answer
   reaches the subagent. A nested subagent has no subagent tool, so **nesting is
   unavailable** in Local.
-- **Copilot.** The subagent opened its own read-only chat tab and sat at
-  "Reasoning" for 10+ minutes with no tool call and no question; the user stopped
-  it. Ask-user, nesting, and model pins in Copilot are therefore **unobserved**.
+- **Copilot.** The subagent tool is `task` (no ask-user tool, no browser tool).
+  `probe-unpinned` invoked `probe-pinned` via `task` and it completed in 21 s — the
+  earlier "Reasoning" 10+ min stall did not recur. The nested run's model was not
+  distinguishable (parent and pin were both `Claude Opus 5.5`). The `task` tool's
+  `model` parameter and the directly-selected-agent pin finding are in
+  [Agents and models](#agents-and-models).
 
-Implication for `agento-router-skill` (decision 3): an orchestrating agent such as
-the Autopilot cannot run as a subagent and still spawn Builder/Reviewer subagents.
-The inline fallback remains the path for interactive/orchestrating agents; the
-delivery that consumes this finding records the user's approval.
+Implication for `agento-router-skill` (decision 3): a Copilot subagent is launched
+with the `task` tool (which has no ask-user tool and takes an optional `model`
+parameter), and an agent selected directly in a Copilot session ignores its
+`model:` pin and runs on the session's model. `agento-router-skill` teaches the
+Autopilot to orchestrate with `task`; the inline fallback remains the path for
+interactive/orchestrating agents until then.
 
 ## Dispatch
 

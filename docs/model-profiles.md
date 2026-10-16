@@ -17,6 +17,10 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
 
 ```json
 {
+  "copilotModels": {
+    "Claude Opus 5.5 (copilot)": "claude-opus-5.5",
+    "DeepSeek V4 Pro (deepseek)": "deepseek/deepseek-v4-pro"
+  },
   "profiles": {
     "mixed": {
       "description": "Strong model for planning and review, a cheaper one elsewhere",
@@ -36,6 +40,16 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
 
 - Profile names match `[a-z0-9-]+`. Each profile may carry `description`, `default`,
   `agents`, and `prompts`; any other key is an error.
+- The top level carries `profiles` and an optional `copilotModels`; any other
+  top-level key is an error. `copilotModels` maps a qualified picker name to the
+  Copilot `task` model id for the same model — a bare id for Copilot-hosted models
+  or `<vendor>/<id>` for bring-your-own-key models, for example
+  `"Claude Opus 5.5 (copilot)"` → `"claude-opus-5.5"` and
+  `"DeepSeek V4 Pro (deepseek)"` → `"deepseek/deepseek-v4-pro"`. Each value is
+  validated like a model value (non-empty string, no `<`/`>` placeholder, no
+  control character); an unknown shape invalidates the whole file. The map never
+  changes a written `model:` line — it only feeds `models pins`' `copilotModel`
+  and the missing-alias warning (see below).
 - A value is a model name or a non-empty list of model names in the qualified form
   `<picker name> (<vendor>)`, for example `Claude Opus 4.5 (copilot)` or
   `DeepSeek V4 Pro (deepseek)`. VS Code resolves a bare picker name only for some
@@ -60,6 +74,11 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
 | Handoff item (`handoffs:` entry) | The target agent's pin, first entry of a list, else no `model:` line |
 | Prompt on a custom agent (`/agento build-feature`, `/agento new-feature`, `/agento ap`, …) | The agent's model; a `prompts.<name>` entry for it is an error |
 | Prompt on the built-in agent (`agent: "agent"` or no `agent:`) | `prompts.<name>`, else `default`, else no `model:` line |
+
+`copilotModels` does not participate in this table: it aliases a picker name to the
+Copilot `task` model id **after** resolution so `models pins` can report it. It never
+changes which `model:` line a file gets — writing the Copilot id into a `model:`
+line was found not to help (see [Subagents and handoffs](#subagents-and-handoffs)).
 
 A `prompts` key with no matching `.github/prompts/<name>.prompt.md` is an error.
 Each prompt's plugin-mode mirror `commands/<name>.md` receives the same bytes as the
@@ -139,6 +158,13 @@ succeeds (exit 0) and writes the pins. `agento.mjs doctor`'s `model-profile` che
 returns `warn` when an applied, named profile pins an unqualified value; when the
 BYOK tier warning applies too, the detail joins both with `; `.
 
+The missing-Copilot-alias warning: when `copilotModels` is present and a pinned
+agent's first picker entry has no entry in it, `models show`/`apply`/`pins` report
+`agent pins without a Copilot alias: …` naming each such agent and its picker
+name. `apply` still succeeds (exit 0). `agento.mjs doctor`'s `model-profile` check
+returns `warn` with the same detail; when the BYOK tier or vendor-suffix warning
+applies too, the detail joins them with `; `.
+
 Run *Developer: Reload Window* if the model picker does not reflect a change.
 
 ## The pin filter
@@ -210,7 +236,17 @@ bring-your-own-key `DeepSeek V4 Pro (deepseek)` model, a built-in Agent on
 `DeepSeek V4 Pro (deepseek)` model. No fallback to the caller's model and no tier
 refusal were reproduced.
 
-Copilot-harness (Agent Host) behavior is unverified.
+Copilot-harness (Agent Host, measured on VS Code 1.141.0 / Copilot Chat 0.69.0):
+an agent selected directly in a Copilot session runs on the **session's** model,
+not its `model:` pin — the picker form, list form, BYOK form, a specific model, and
+Auto all ignore the pin (`finding: picker-rejected`). The pin format is accepted by
+the editor (the `model:` hover resolves `<name> (<vendor>)` and states the field is
+supported by the Copilot harness), but it is not applied to directly selected
+agents; whether it applies only to `task`-tool subagents, or this is a bug, is not
+determined. The per-subagent model in Copilot is set through the `task` tool's
+`model` parameter instead, which is what `copilotModels` and `models pins`'
+`copilotModel` feed — so in a Copilot session the user must set the model picker
+themselves.
 
 As hardening, Agento now passes explicit `runSubagent`/handoff models: `models
 apply` writes a nested `model:` line into every `handoffs:` item (the target's

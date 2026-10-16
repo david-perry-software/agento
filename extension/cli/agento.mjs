@@ -52,7 +52,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
@@ -967,14 +967,15 @@ const DOCTOR_CHECKS = {
     if (filterIssues.length) return { status: "warn", detail: filterIssues.map(([d]) => d).join("; "), fallback: filterIssues.map(([, f]) => f).join("; ") };
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
     if (active !== "custom") {
-      const pins = modelsPins(pluginRoot);
-      const warns = pinWarnings(pins);
-      if (warns.byok || warns.unqualified) {
+      const pins = modelsPins(pluginRoot, loaded.copilotModels);
+      const warns = pinWarnings(pins, loaded.copilotModels);
+      if (warns.byok || warns.unqualified || warns.missingAlias) {
         const fallbacks = [
           warns.byok && `pin autopilot at least as high as the highest-tier model it delegates to, then \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``,
           warns.unqualified && `qualify each named value as "<picker name> (<vendor>)" in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
+          warns.missingAlias && `add each missing picker name to the top-level copilotModels map in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
         ];
-        return { status: "warn", detail: [warns.byok, warns.unqualified].filter(Boolean).join("; "), fallback: fallbacks.filter(Boolean).join("; ") };
+        return { status: "warn", detail: [warns.byok, warns.unqualified, warns.missingAlias].filter(Boolean).join("; "), fallback: fallbacks.filter(Boolean).join("; ") };
       }
       return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
     }
@@ -3537,9 +3538,9 @@ function modelTargetFiles(pluginRoot) {
 function loadProfiles() {
   const file = profilesFile();
   const exists = fs.existsSync(file);
-  if (!exists) return { profilesFile: { path: file, exists }, profiles: {}, errors: [] };
-  const { profiles, errors } = parseProfiles(fs.readFileSync(file, "utf8"));
-  return { profilesFile: { path: file, exists }, profiles, errors };
+  if (!exists) return { profilesFile: { path: file, exists }, profiles: {}, copilotModels: {}, errors: [] };
+  const { profiles, copilotModels, errors } = parseProfiles(fs.readFileSync(file, "utf8"));
+  return { profilesFile: { path: file, exists }, profiles, copilotModels, errors };
 }
 
 // Resolved targets (mirrors included) plus every error that blocks applying `name`.
@@ -3665,10 +3666,11 @@ function modelsReport(pluginRoot, loaded, state) {
 }
 
 // The pin each agent file currently carries, read from the plugin root's files:
-// { alias: { name, file, model, subagentModel } }. `model` is the parsed top-level
-// pin (a string, a list, or null); `subagentModel` is the string or the first entry
-// of a list; both are null when the agent is unpinned.
-function modelsPins(pluginRoot) {
+// { alias: { name, file, model, subagentModel, copilotModel } }. `model` is the
+// parsed top-level pin (a string, a list, or null); `subagentModel` is the string
+// or the first entry of a list; `copilotModel` is the `copilotModels` alias of
+// that first entry, else null; all three are null when the agent is unpinned.
+function modelsPins(pluginRoot, copilotModels = {}) {
   const pins = {};
   for (const [alias, file] of Object.entries(AGENT_ALIASES)) {
     const rel = `.github/agents/${file}`;
@@ -3676,7 +3678,14 @@ function modelsPins(pluginRoot) {
     if (!fs.existsSync(abs)) continue;
     const text = fs.readFileSync(abs, "utf8");
     const model = parseModelValue(text);
-    pins[alias] = { name: frontmatterField(text, "name"), file: rel, model, subagentModel: Array.isArray(model) ? model[0] : model };
+    const subagentModel = Array.isArray(model) ? model[0] : model;
+    pins[alias] = {
+      name: frontmatterField(text, "name"),
+      file: rel,
+      model,
+      subagentModel,
+      copilotModel: typeof subagentModel === "string" ? (copilotModels[subagentModel] ?? null) : null,
+    };
   }
   return pins;
 }
@@ -3688,7 +3697,7 @@ function agentTargetValue(targets, alias) {
 
 // Model warnings for a resolved target set: the Decision 2 BYOK tier warning, then
 // the unqualified-value warning over the profile's own entries (none for clear).
-function tierWarnings(targets, profile = null) {
+function tierWarnings(targets, profile = null, copilotModels = null) {
   const byok = byokTierWarning({ autopilot: agentTargetValue(targets, "autopilot"), builder: agentTargetValue(targets, "builder"), reviewer: agentTargetValue(targets, "reviewer") });
   const entries = profile
     ? [
@@ -3697,14 +3706,16 @@ function tierWarnings(targets, profile = null) {
         ...Object.entries(profile.prompts ?? {}).map(([prompt, value]) => ({ where: `prompts.${prompt}`, value })),
       ]
     : [];
-  return [byok, unqualifiedWarning(entries)].filter(Boolean);
+  const agentEntries = Object.entries(AGENT_ALIASES).map(([alias]) => ({ alias, value: agentTargetValue(targets, alias) }));
+  return [byok, unqualifiedWarning(entries), missingAliasWarning(agentEntries, copilotModels)].filter(Boolean);
 }
 
-// The same two warnings over the agents' current pins (`models pins`, doctor).
-function pinWarnings(pins) {
+// The same three warnings over the agents' current pins (`models pins`, doctor).
+function pinWarnings(pins, copilotModels = null) {
   return {
     byok: byokTierWarning({ autopilot: pins.autopilot?.model, builder: pins.builder?.model, reviewer: pins.reviewer?.model }),
     unqualified: unqualifiedWarning(Object.entries(pins).map(([alias, pin]) => ({ where: alias, value: pin.model }))),
+    missingAlias: missingAliasWarning(Object.entries(pins).map(([alias, pin]) => ({ alias, value: pin.model })), copilotModels),
   };
 }
 
@@ -4644,14 +4655,14 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
-      const warnings = tierWarnings(targets, loaded.profiles[name]);
+      const warnings = tierWarnings(targets, loaded.profiles[name], loaded.copilotModels);
       emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
     }
 
     if (verb === "pins") {
-      const pins = modelsPins(pluginRoot);
-      const { byok, unqualified } = pinWarnings(pins);
-      const warnings = [byok, unqualified].filter(Boolean);
+      const pins = modelsPins(pluginRoot, loaded.copilotModels);
+      const { byok, unqualified, missingAlias } = pinWarnings(pins, loaded.copilotModels);
+      const warnings = [byok, unqualified, missingAlias].filter(Boolean);
       emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
     }
 
@@ -4723,7 +4734,7 @@ switch (command) {
       const updated = restat.length ? gitRun(pluginRoot, ["update-index", "--", ...restat], 120000) : { ok: true };
       if (!updated.ok) fail(`git update-index failed: ${updated.stderr}`);
     }
-    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, verb === "apply" ? loaded.profiles[name] : null), ...(verb === "clear" && primaryCheckout ? { primaryCheckout } : {}), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, verb === "apply" ? loaded.profiles[name] : null, loaded.copilotModels), ...(verb === "clear" && primaryCheckout ? { primaryCheckout } : {}), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
     break;
   }
 
