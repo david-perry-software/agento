@@ -18,6 +18,31 @@ import { fileURLToPath } from "node:url";
 import { findOccupants as defaultFindOccupants } from "../worktree-occupants.mjs";
 import { emit, loadHookConfig, readPayload, realpath, resolveArtifacts, runGit, shellSplit } from "./hook-lib.mjs";
 
+// Opt-in diagnostic: when the marker file /tmp/agento-guard-debug exists (or
+// AGENTO_GUARD_DEBUG_LOG names a log file), main() records the raw PreToolUse
+// payload, the cwd, the plugin env markers, and the resulting decision to that log.
+// Off by default; Local behavior is unchanged without the marker. The log is
+// machine-local and must be removed after the diagnosis.
+const DEBUG_LOG = process.env.AGENTO_GUARD_DEBUG_LOG || "/tmp/agento-guard-debug.log";
+const DEBUG_MARKER = "/tmp/agento-guard-debug";
+
+export function debugEnabled() {
+  if (process.env.AGENTO_GUARD_DEBUG_LOG) return true;
+  try {
+    return fs.existsSync(DEBUG_MARKER);
+  } catch {
+    return false;
+  }
+}
+
+export function debugWrite(entry) {
+  try {
+    fs.appendFileSync(DEBUG_LOG, `${JSON.stringify(entry)}\n`);
+  } catch {
+    // Diagnostics must never affect the guard verdict.
+  }
+}
+
 const PROTECTED_PATHS = String.raw`\.github\/hooks\/|scripts\/hooks\/|(?<![\w.-])hooks\/hooks\.json|\.claude-plugin(?![\w.-])`;
 const PROTECTED = new RegExp(`(${PROTECTED_PATHS})`);
 const PROTECTED_REDIRECT = new RegExp(String.raw`(?<![<])>{1,2}\s*\S*(` + PROTECTED_PATHS + ")");
@@ -446,8 +471,29 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
 }
 
 export function main() {
+  const debug = debugEnabled();
+  let payload = {};
   try {
-    const { decision, reason } = decide(readPayload());
+    payload = readPayload();
+  } catch {
+    payload = {};
+  }
+  if (debug) {
+    debugWrite({
+      event: "entry",
+      ts: new Date().toISOString(),
+      pid: process.pid,
+      cwd: process.cwd(),
+      claudePluginRoot: process.env.CLAUDE_PLUGIN_ROOT ?? null,
+      pluginRoot: process.env.PLUGIN_ROOT ?? null,
+      copilotPluginRoot: process.env.COPILOT_PLUGIN_ROOT ?? null,
+      copilotCli: process.env.COPILOT_CLI ?? null,
+      payload,
+    });
+  }
+  try {
+    const { decision, reason } = decide(payload);
+    if (debug) debugWrite({ event: "decision", ts: new Date().toISOString(), decision, reason });
     if (decision === "allow") return;
     // Dual-shape output: the top-level slots are what the Copilot harness reads,
     // `hookSpecificOutput` is what the Local harness reads. Each harness ignores
@@ -459,6 +505,7 @@ export function main() {
     });
   } catch (error) {
     // A crashing guard must not block the tool call: report it and allow.
+    if (debug) debugWrite({ event: "error", ts: new Date().toISOString(), error: `${error?.stack ?? error}` });
     process.stderr.write(`${error?.stack ?? error}\n`);
   }
 }

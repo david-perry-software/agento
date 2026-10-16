@@ -621,3 +621,35 @@ test("denies a main commit reached through a tilde-prefixed cd", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("opt-in debug log records the payload and decision when enabled via env", () => {
+  const log = path.join(os.tmpdir(), `agento-guard-debug-${process.pid}.log`);
+  const repo = makeGitRepo();
+  try {
+    const result = spawnSync("bash", [guardScript], {
+      input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "git push origin main" }, cwd: repo }),
+      encoding: "utf8",
+      timeout: 20000,
+      env: { ...process.env, AGENTO_GUARD_DEBUG_LOG: log },
+    });
+    assert.equal(result.status, 0, `guard exited ${result.status}: ${result.stderr}`);
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const entry = lines.find((line) => line.event === "entry");
+    const decision = lines.find((line) => line.event === "decision");
+    assert.ok(entry, "debug log is missing the entry event");
+    assert.equal(entry.payload.tool_name, "Bash");
+    assert.equal(entry.payload.tool_input.command, "git push origin main");
+    assert.equal(decision.decision, "deny");
+    // The guard still emits the dual-shape deny while logging.
+    assert.equal(JSON.parse(result.stdout.trim()).permissionDecision, "deny");
+  } finally {
+    fs.rmSync(log, { force: true });
+  }
+});
+
+test("debug logging stays off without the marker or env", () => {
+  fs.rmSync("/tmp/agento-guard-debug", { force: true });
+  fs.rmSync("/tmp/agento-guard-debug.log", { force: true });
+  assert.equal(decide("git push origin main").decision, "deny");
+  assert.equal(fs.existsSync("/tmp/agento-guard-debug.log"), false, "debug log written without the marker or env");
+});
