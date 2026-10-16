@@ -6,6 +6,12 @@
 # a feature branch (override with REPLAY_CWD=<dir>) so verdicts reflect the command,
 # not the caller's branch.
 #
+# REPLAY_FORMAT=copilot replays the same fixture lines as Copilot `Bash` payloads,
+# reads the top-level `permissionDecision`, and reports a MISMATCH when the nested
+# `hookSpecificOutput.permissionDecision` disagrees with it. A file-tool payload is
+# spelled `<verdict> @<Tool> <path>` (e.g. `ask @Write .github/hooks/x.json`) and
+# builds `{tool_name: <Tool>, tool_input: {path}}`.
+#
 # REPLAY_COMPANION=1 additionally creates a sibling companion repo `<cwd>-docs` (on
 # feature/replay), commits `.github/agento.json` pointing `artifacts.repo.dir` at it
 # with `branches.default` set to `trunk` (so companion-default-branch verdicts prove
@@ -16,6 +22,11 @@
 set -u
 cd "$(dirname "$0")/../.." || exit 1
 guard="$PWD/scripts/hooks/delivery-guard.sh"
+format="${REPLAY_FORMAT:-local}"
+if [[ "$format" != "local" && "$format" != "copilot" ]]; then
+  echo "REPLAY_FORMAT must be local or copilot, got: $format" >&2
+  exit 1
+fi
 
 companion=""
 if [[ -n "${REPLAY_CWD:-}" ]]; then
@@ -46,22 +57,47 @@ failures=0
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == '#'* ]] && { echo "$line"; continue; }
   expected=""
+  is_file_tool=0
+  file_tool=""
+  file_path=""
   cmd="$line"
-  if [[ "$line" =~ ^(allow|ask|deny)[[:space:]]+(.*)$ ]]; then
+  if [[ "$line" =~ ^(allow|ask|deny)[[:space:]]+@([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$ ]]; then
+    expected="${BASH_REMATCH[1]}"
+    file_tool="${BASH_REMATCH[2]}"
+    file_path="${BASH_REMATCH[3]}"
+    is_file_tool=1
+  elif [[ "$line" =~ ^(allow|ask|deny)[[:space:]]+(.*)$ ]]; then
     expected="${BASH_REMATCH[1]}"
     cmd="${BASH_REMATCH[2]}"
   fi
   if [[ -n "$companion" ]]; then
     cmd="${cmd//\{companion\}/$companion}"
+    file_path="${file_path//\{companion\}/$companion}"
   fi
-  json=$(REPLAY_CMD="$cmd" REPLAY_DIR="$cwd" node -e 'console.log(JSON.stringify({tool_name:"run_in_terminal",tool_input:{command:process.env.REPLAY_CMD},cwd:process.env.REPLAY_DIR}))')
+  tool_name="run_in_terminal"
+  if [[ "$format" == "copilot" ]]; then
+    tool_name="Bash"
+  fi
+  if [[ "$is_file_tool" == 1 ]]; then
+    json=$(REPLAY_TOOL="$file_tool" REPLAY_PATH="$file_path" REPLAY_DIR="$cwd" node -e 'console.log(JSON.stringify({tool_name:process.env.REPLAY_TOOL,tool_input:{path:process.env.REPLAY_PATH},cwd:process.env.REPLAY_DIR}))')
+  else
+    json=$(REPLAY_TOOL="$tool_name" REPLAY_CMD="$cmd" REPLAY_DIR="$cwd" node -e 'console.log(JSON.stringify({tool_name:process.env.REPLAY_TOOL,tool_input:{command:process.env.REPLAY_CMD},cwd:process.env.REPLAY_DIR}))')
+  fi
   out=$(printf '%s' "$json" | "$guard")
-  verdict=$(printf '%s' "$out" | node -e 'const d=require("fs").readFileSync(0,"utf8").trim();console.log(d?JSON.parse(d).hookSpecificOutput.permissionDecision:"allow")')
+  if [[ "$format" == "copilot" ]]; then
+    verdict=$(printf '%s' "$out" | node -e 'const d=require("fs").readFileSync(0,"utf8").trim();if(!d){console.log("allow")}else{const o=JSON.parse(d);const top=o.permissionDecision;const nested=o.hookSpecificOutput&&o.hookSpecificOutput.permissionDecision;console.log(top===nested?top:"MISMATCH")}')
+  else
+    verdict=$(printf '%s' "$out" | node -e 'const d=require("fs").readFileSync(0,"utf8").trim();console.log(d?JSON.parse(d).hookSpecificOutput.permissionDecision:"allow")')
+  fi
+  display="$cmd"
+  if [[ "$is_file_tool" == 1 ]]; then
+    display="@$file_tool $file_path"
+  fi
   if [[ -n "$expected" && "$verdict" != "$expected" ]]; then
-    printf '%-75s -> %s  (expected %s) MISMATCH\n' "$cmd" "$verdict" "$expected"
+    printf '%-75s -> %s  (expected %s) MISMATCH\n' "$display" "$verdict" "$expected"
     failures=$((failures + 1))
   else
-    printf '%-75s -> %s\n' "$cmd" "$verdict"
+    printf '%-75s -> %s\n' "$display" "$verdict"
   fi
 done
 
