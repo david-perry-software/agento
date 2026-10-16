@@ -41,6 +41,9 @@ delivery system. Layout:
 - Guard smoke: `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`
 - Guard smoke (companion mode): `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh <
   tests/guard-fixtures-companion.txt`
+- Guard smoke (Copilot format): `REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`
+- Guard smoke (Copilot format, companion): `REPLAY_FORMAT=copilot REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt`
+- Guard smoke (Copilot fixtures): `REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-copilot.txt`
 - Shell lint: `shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh`
 - Extension install: `cd extension && npm ci`
 - Extension build: `cd extension && npm run build`
