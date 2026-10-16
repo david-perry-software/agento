@@ -112,6 +112,36 @@ A `PreToolUse` hook that exits 2 fails closed in both harnesses:
 - Copilot: the tool is blocked with "Denied by preToolUse hook: hook exited with
   code 2"; the message names the exit code.
 
+## Live checks in the Agento clone (copilot-hook-compat)
+
+The `copilot-hook-compat` delivery ran the guard live in a Copilot chat in the
+Agento worktree. The first run (roadmap step 4.2) failed: the SessionStart hook
+injected the `Agento CLI:` line, but the PreToolUse guard did not fire — a
+`git push origin main --dry-run` ran ("Everything up-to-date") and
+`.github/hooks/x.json` was created with no approval card. The re-run (roadmap
+step 6.2, with the opt-in guard diagnostic live) passed all three prompts: the
+context line was present, the push was denied ("Direct commits/pushes to main are
+forbidden; use a work branch and a pull request."), and the hook-file edit asked
+("Modifying a protected hook file; approve this specific change?") and was denied
+with no file created.
+
+The opt-in diagnostic log (`/tmp/agento-guard-debug.log`) recorded the 6.2 run:
+one `entry`+`decision` pair per tool call — `Bash "git push origin main --dry-run"`
+→ deny and `Write ".github/hooks/x.json"` → ask — each with `COPILOT_CLI=1` set and
+no `CLAUDE_PLUGIN_ROOT`/`PLUGIN_ROOT`/`COPILOT_PLUGIN_ROOT`, i.e. the workspace hook
+fired once and there was no plugin-mode duplicate run. The `Bash`/`tool_input.command`
+and `Write`/`tool_input.path` shapes are exactly what `decide()` normalizes.
+
+Diagnosis (roadmap 6.3): the exact trigger of the 4.2 failure cannot be proven —
+4.2 predates the diagnostic and left no PreToolUse log. The most likely cause is a
+stale Copilot session/hook state right after the probe plugin/skill cleanup and
+settings changes: SessionStart fired (it binds at chat creation) while PreToolUse
+was not yet effective, and 6.2 passed after a full window reload. The opt-in
+diagnostic does not alter the verdict path, so the passing 6.2 run reflects the
+committed guard code under a fresh session. No code fix was needed. The screenshots
+are the companion repository's `features/2026/10/copilot-hook-compat/evidence/`
+`step-6-2-copilot-capture-{1,2,3}.png` and `step-4-2-copilot-clone-{1,2}.png`.
+
 ## Skill resolution with arguments
 
 The probe installs two skills: `agento` (a symlink to

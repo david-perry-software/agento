@@ -83,6 +83,16 @@ session's permission mode rather than hard-blocking, so under auto-approve a
 hook-file edit is not stopped; `deny` verdicts (push to main, force-push, hook
 shell writes) are unaffected.
 
+**Opt-in diagnostic.** When the marker file `/tmp/agento-guard-debug` exists, or
+`AGENTO_GUARD_DEBUG_LOG` names a log file, `delivery-guard.mjs` `main()` appends
+one JSON line per event to that log — the raw `PreToolUse` payload, `cwd`, the
+`*PLUGIN_ROOT*`/`COPILOT_CLI` env markers, and the resulting `decision`/`reason`
+(or any error). It is off by default (no marker, no env → no log), its writes are
+wrapped in `try/catch` so a logging failure never affects the verdict, and it is
+covered by `tests/guard.test.mjs`. It exists to diagnose harness firing; the log
+holds raw payloads and is machine-local, so remove the marker and the log when
+done.
+
 Inside a managed session window, these `ask` cases should be the only approval
 prompts you normally see once the session `.code-workspace` settings are current.
 
