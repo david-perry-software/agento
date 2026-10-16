@@ -2929,6 +2929,33 @@ test("models pins reads each agent's current pin and rejects an argument", () =>
   assert.deepEqual(pinned.json.warnings, []);
 });
 
+test("models pins reports copilotModel for mapped, unmapped, and unpinned agents", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: {
+        "Planner Model (copilot)": "planner-copilot-id",
+        "Builder Model (copilot)": "builder-copilot-id",
+      },
+      profiles: { mixed: { agents: { planner: "Planner Model (copilot)", builder: "Builder Model (copilot)", reviewer: "Reviewer Model (copilot)" } } },
+    }),
+  );
+  assert.equal(models("apply", "mixed").code, 0);
+  const pins = models("pins");
+  assert.equal(pins.code, 0, JSON.stringify(pins.json));
+  // Mapped: the copilotModels alias of the first picker entry.
+  assert.equal(pins.json.pins.planner.copilotModel, "planner-copilot-id");
+  assert.equal(pins.json.pins.builder.copilotModel, "builder-copilot-id");
+  // Unmapped: a pinned agent whose picker name has no alias.
+  assert.equal(pins.json.pins.reviewer.copilotModel, null);
+  assert.equal(pins.json.pins.reviewer.subagentModel, "Reviewer Model (copilot)");
+  // Unpinned: no pin at all.
+  assert.equal(pins.json.pins.architect.copilotModel, null);
+  assert.equal(pins.json.pins.architect.model, null);
+});
+
 test("models show, apply, and pins warn when autopilot is BYOK and delegates to a Copilot model", () => {
   const { models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { agents: { autopilot: "DeepSeek V4 Pro (deepseek)", reviewer: "Claude Fable 5.1 (copilot)" } } });

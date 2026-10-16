@@ -967,7 +967,7 @@ const DOCTOR_CHECKS = {
     if (filterIssues.length) return { status: "warn", detail: filterIssues.map(([d]) => d).join("; "), fallback: filterIssues.map(([, f]) => f).join("; ") };
     if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
     if (active !== "custom") {
-      const pins = modelsPins(pluginRoot);
+      const pins = modelsPins(pluginRoot, loaded.copilotModels);
       const warns = pinWarnings(pins, loaded.copilotModels);
       if (warns.byok || warns.unqualified || warns.missingAlias) {
         const fallbacks = [
@@ -3666,10 +3666,11 @@ function modelsReport(pluginRoot, loaded, state) {
 }
 
 // The pin each agent file currently carries, read from the plugin root's files:
-// { alias: { name, file, model, subagentModel } }. `model` is the parsed top-level
-// pin (a string, a list, or null); `subagentModel` is the string or the first entry
-// of a list; both are null when the agent is unpinned.
-function modelsPins(pluginRoot) {
+// { alias: { name, file, model, subagentModel, copilotModel } }. `model` is the
+// parsed top-level pin (a string, a list, or null); `subagentModel` is the string
+// or the first entry of a list; `copilotModel` is the `copilotModels` alias of
+// that first entry, else null; all three are null when the agent is unpinned.
+function modelsPins(pluginRoot, copilotModels = {}) {
   const pins = {};
   for (const [alias, file] of Object.entries(AGENT_ALIASES)) {
     const rel = `.github/agents/${file}`;
@@ -3677,7 +3678,14 @@ function modelsPins(pluginRoot) {
     if (!fs.existsSync(abs)) continue;
     const text = fs.readFileSync(abs, "utf8");
     const model = parseModelValue(text);
-    pins[alias] = { name: frontmatterField(text, "name"), file: rel, model, subagentModel: Array.isArray(model) ? model[0] : model };
+    const subagentModel = Array.isArray(model) ? model[0] : model;
+    pins[alias] = {
+      name: frontmatterField(text, "name"),
+      file: rel,
+      model,
+      subagentModel,
+      copilotModel: typeof subagentModel === "string" ? (copilotModels[subagentModel] ?? null) : null,
+    };
   }
   return pins;
 }
@@ -4652,7 +4660,7 @@ switch (command) {
     }
 
     if (verb === "pins") {
-      const pins = modelsPins(pluginRoot);
+      const pins = modelsPins(pluginRoot, loaded.copilotModels);
       const { byok, unqualified, missingAlias } = pinWarnings(pins, loaded.copilotModels);
       const warnings = [byok, unqualified, missingAlias].filter(Boolean);
       emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
