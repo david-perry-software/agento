@@ -40,3 +40,32 @@ the clone is the real path of the skill directory's parent's parent. Confirm
 Read `<agento-root>/commands/<name>.md`. If it is missing, reply with the valid
 names — the basenames of `<agento-root>/commands/*.md`, each printed as
 `/agento <name>` — and stop. Never guess a closest match.
+
+## 5. Dispatch
+
+The command file's `agent:` frontmatter decides how it runs:
+
+| `agent:` | Mode |
+| --- | --- |
+| missing or `agent` | inline |
+| `📋 Agento Planner`, `🏛️ Agento Architect`, `🛠️ Agento Mechanic`, `🤖 Agento Autopilot` | inline, as that agent |
+| `🔨 Agento Builder`, `🔍 Agento Reviewer` | subagent |
+
+- **Inline** (missing or `agent`): follow the command file's body as this turn's
+  instructions, with the argument as its argument.
+- **Inline, as that agent**: first read the agent's `.github/agents/*.agent.md`
+  (matched by its `name:`) and follow its body as the operating rules, then the
+  command body. Where the agent needs `ask-questions` or `browser` and the tool is
+  absent, its §10 fallback applies (numbered questions in chat; headless verify).
+- **Subagent**: run `node <agento-root>/scripts/agento.mjs models pins`, take the
+  agent's pin (`builder` / `reviewer`), and invoke the agent with the subagent tool
+  available — `task` (Copilot) with `copilotModel` as its `model`, or `runSubagent`
+  (Local) with `subagentModel` as its `model`, omitting the model when it is `null`
+  — passing the command body and the argument. Relay the subagent's final message
+  verbatim, including its receipt and result lines and its command blocks.
+
+## 6. No own receipt
+
+The router adds no receipt or result line of its own; the dispatched command owns
+§9. The router's own outputs are only the redirect sentence and the unknown-name
+list.
