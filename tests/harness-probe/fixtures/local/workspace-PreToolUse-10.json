@@ -1,0 +1,39 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-37>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-37>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-19>/GitHub.copilot-chat/transcripts/<UUID-38>.jsonl\",\n  \"tool_name\": \"read_file\",\n  \"tool_input\": {\n    \"endLine\": 400,\n    \"filePath\": \"<HOME>/DP/agento-plugin/.github/instructions/delivery-policy.instructions.md\",\n    \"startLine\": 200\n  },\n  \"tool_use_id\": \"call_00_d0NIwDnoX2wH2dJKlMam5626__vscode-<TS-38>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-39>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-39>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-20>/GitHub.copilot-chat/transcripts/<UUID-40>.jsonl",
+    "tool_name": "read_file",
+    "tool_input": {
+      "endLine": 400,
+      "filePath": "<HOME>/DP/agento-plugin/.github/instructions/delivery-policy.instructions.md",
+      "startLine": 200
+    },
+    "tool_use_id": "call_00_d0NIwDnoX2wH2dJKlMam5626__vscode-<TS-40>",
+    "cwd": "<PROBE_WS>"
+  }
+}

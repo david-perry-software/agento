@@ -1,0 +1,8 @@
+{
+  "name": "agento-probe-plugin",
+  "description": "Harness-probe fixture plugin: SessionStart and PreToolUse hooks that log payloads to the probe log dir so harness hook loading can be observed.",
+  "version": "0.1.0",
+  "author": { "name": "Agento harness-probe" },
+  "license": "MIT",
+  "hooks": "./hooks/hooks.json"
+}

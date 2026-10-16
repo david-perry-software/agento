@@ -1,0 +1,33 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP",
+    "CLAUDE_PROJECT_DIR",
+    "COPILOT_CLI",
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_CLI_RUN_AS_NODE",
+    "COPILOT_ENABLE_BUILTIN_GITHUB_MCP",
+    "COPILOT_HOME",
+    "COPILOT_MCP_APPS",
+    "COPILOT_PROJECT_DIR",
+    "COPILOT_RUNTIME_PROCESS_FILE_LOGGING"
+  ],
+  "stdin": "{\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-5>\",\n  \"timestamp\": \"<TS-5>\",\n  \"cwd\": \"<PROBE_WS>\",\n  \"tool_name\": \"Bash\",\n  \"tool_input\": {\n    \"command\": \"echo AGENTO_PROBE_ASK_TOPLEVEL\",\n    \"description\": \"Run probe command 3\"\n  }\n}",
+  "parsedStdin": {
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-6>",
+    "timestamp": "<TS-6>",
+    "cwd": "<PROBE_WS>",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "echo AGENTO_PROBE_ASK_TOPLEVEL",
+      "description": "Run probe command 3"
+    }
+  }
+}

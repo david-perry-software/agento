@@ -1,0 +1,40 @@
+{
+  "source": "plugin",
+  "event": "PreToolUse",
+  "argv": [
+    "plugin",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "CLAUDE_PLUGIN_ROOT",
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-5>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-5>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-3>/GitHub.copilot-chat/transcripts/<UUID-6>.jsonl\",\n  \"tool_name\": \"run_in_terminal\",\n  \"tool_input\": {\n    \"command\": \"echo AGENTO_PROBE_DENY_TOPLEVEL\",\n    \"explanation\": \"Run the second probe echo command\",\n    \"goal\": \"Execute command 2\",\n    \"mode\": \"sync\"\n  },\n  \"tool_use_id\": \"call_00_Mq59SsDNUw9b2t5IVh2r8551__vscode-<TS-6>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-7>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-7>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-4>/GitHub.copilot-chat/transcripts/<UUID-8>.jsonl",
+    "tool_name": "run_in_terminal",
+    "tool_input": {
+      "command": "echo AGENTO_PROBE_DENY_TOPLEVEL",
+      "explanation": "Run the second probe echo command",
+      "goal": "Execute command 2",
+      "mode": "sync"
+    },
+    "tool_use_id": "call_00_Mq59SsDNUw9b2t5IVh2r8551__vscode-<TS-8>",
+    "cwd": "<PROBE_WS>"
+  }
+}

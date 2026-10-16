@@ -1,0 +1,36 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-21>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-21>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-11>/GitHub.copilot-chat/transcripts/<UUID-22>.jsonl\",\n  \"tool_name\": \"tool_search\",\n  \"tool_input\": {\n    \"query\": \"apply patch tool to create or modify files with a diff\"\n  },\n  \"tool_use_id\": \"toolu_01NS2crPrd5i2NLBiFJUigMD__vscode-<TS-22>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-23>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-23>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-12>/GitHub.copilot-chat/transcripts/<UUID-24>.jsonl",
+    "tool_name": "tool_search",
+    "tool_input": {
+      "query": "apply patch tool to create or modify files with a diff"
+    },
+    "tool_use_id": "toolu_01NS2crPrd5i2NLBiFJUigMD__vscode-<TS-24>",
+    "cwd": "<PROBE_WS>"
+  }
+}

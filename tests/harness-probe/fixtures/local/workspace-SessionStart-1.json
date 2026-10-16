@@ -1,0 +1,33 @@
+{
+  "source": "workspace",
+  "event": "SessionStart",
+  "argv": [
+    "workspace",
+    "SessionStart"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-105>\",\n  \"hook_event_name\": \"SessionStart\",\n  \"session_id\": \"<UUID-105>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-53>/GitHub.copilot-chat/transcripts/<UUID-106>.jsonl\",\n  \"source\": \"new\",\n  \"model\": \"claude-opus-5.5\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-106>",
+    "hook_event_name": "SessionStart",
+    "session_id": "<UUID-107>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-54>/GitHub.copilot-chat/transcripts/<UUID-108>.jsonl",
+    "source": "new",
+    "model": "claude-opus-5.5",
+    "cwd": "<PROBE_WS>"
+  }
+}

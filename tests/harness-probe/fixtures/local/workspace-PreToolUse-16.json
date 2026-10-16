@@ -1,0 +1,37 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-61>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-61>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-31>/GitHub.copilot-chat/transcripts/<UUID-62>.jsonl\",\n  \"tool_name\": \"list_dir\",\n  \"tool_input\": {\n    \"path\": \"<PROBE_WS>\"\n  },\n  \"tool_use_id\": \"call_00_aEQLz0umQXD5qAjwDAdS6965__vscode-<TS-62>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-63>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-63>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-32>/GitHub.copilot-chat/transcripts/<UUID-64>.jsonl",
+    "tool_name": "list_dir",
+    "tool_input": {
+      "path": "<PROBE_WS>"
+    },
+    "tool_use_id": "call_00_aEQLz0umQXD5qAjwDAdS6965__vscode-<TS-64>",
+    "cwd": "<PROBE_WS>"
+  }
+}

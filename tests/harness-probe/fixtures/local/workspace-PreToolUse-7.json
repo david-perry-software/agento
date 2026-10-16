@@ -1,0 +1,38 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-25>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-25>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-13>/GitHub.copilot-chat/transcripts/<UUID-26>.jsonl\",\n  \"tool_name\": \"replace_string_in_file\",\n  \"tool_input\": {\n    \"filePath\": \"<PROBE_WS>/notes.txt\",\n    \"oldString\": \"probe notes\\n\",\n    \"newString\": \"probe notes (edited)\\n\"\n  },\n  \"tool_use_id\": \"toolu_01KRoDWdmbHyyFoFkpWoJsgP__vscode-<TS-26>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-27>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-27>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-14>/GitHub.copilot-chat/transcripts/<UUID-28>.jsonl",
+    "tool_name": "replace_string_in_file",
+    "tool_input": {
+      "filePath": "<PROBE_WS>/notes.txt",
+      "oldString": "probe notes\n",
+      "newString": "probe notes (edited)\n"
+    },
+    "tool_use_id": "toolu_01KRoDWdmbHyyFoFkpWoJsgP__vscode-<TS-28>",
+    "cwd": "<PROBE_WS>"
+  }
+}

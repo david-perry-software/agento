@@ -1,0 +1,42 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-101>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-101>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-51>/GitHub.copilot-chat/transcripts/<UUID-102>.jsonl\",\n  \"tool_name\": \"vscode_askQuestions\",\n  \"tool_input\": {\n    \"questions\": [\n      {\n        \"header\": \"probe\",\n        \"question\": \"probe-pinned asks: does this reach you?\"\n      }\n    ]\n  },\n  \"tool_use_id\": \"toolu_0186B72XSz6MK91uuiAsaZvd__vscode-<TS-102>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-103>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-103>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-52>/GitHub.copilot-chat/transcripts/<UUID-104>.jsonl",
+    "tool_name": "vscode_askQuestions",
+    "tool_input": {
+      "questions": [
+        {
+          "header": "probe",
+          "question": "probe-pinned asks: does this reach you?"
+        }
+      ]
+    },
+    "tool_use_id": "toolu_0186B72XSz6MK91uuiAsaZvd__vscode-<TS-104>",
+    "cwd": "<PROBE_WS>"
+  }
+}

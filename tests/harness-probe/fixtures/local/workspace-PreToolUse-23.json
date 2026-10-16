@@ -1,0 +1,39 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_L10N_BUNDLE_LOCATION",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-89>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-89>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-45>/GitHub.copilot-chat/transcripts/<UUID-90>.jsonl\",\n  \"tool_name\": \"runSubagent\",\n  \"tool_input\": {\n    \"agentName\": \"probe-unpinned\",\n    \"description\": \"Run probe-unpinned agent\",\n    \"prompt\": \"Report your model, ask the user a question, and try a nested subagent. Return verbatim: (1) the model name you are running as, (2) whether the ask-questions tool (vscode/askQuestions) was available and the user's answer, and (3) the outcome of attempting to launch a nested subagent.\"\n  },\n  \"tool_use_id\": \"call_00_ET_3GRAed3nbG4nuCFAtMQz9581__vscode-<TS-90>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-91>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-91>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-46>/GitHub.copilot-chat/transcripts/<UUID-92>.jsonl",
+    "tool_name": "runSubagent",
+    "tool_input": {
+      "agentName": "probe-unpinned",
+      "description": "Run probe-unpinned agent",
+      "prompt": "Report your model, ask the user a question, and try a nested subagent. Return verbatim: (1) the model name you are running as, (2) whether the ask-questions tool (vscode/askQuestions) was available and the user's answer, and (3) the outcome of attempting to launch a nested subagent."
+    },
+    "tool_use_id": "call_00_ET_3GRAed3nbG4nuCFAtMQz9581__vscode-<TS-92>",
+    "cwd": "<PROBE_WS>"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "source": "workspace",
+  "event": "PreToolUse",
+  "argv": [
+    "workspace",
+    "PreToolUse"
+  ],
+  "cwd": "<PROBE_WS>",
+  "envVarNames": [
+    "COPILOT_CLI_ENABLED_FEATURE_FLAGS",
+    "COPILOT_OTEL_FILE_EXPORTER_PATH",
+    "VSCODE_CLI",
+    "VSCODE_CODE_CACHE_PATH",
+    "VSCODE_CRASH_REPORTER_PROCESS_TYPE",
+    "VSCODE_CWD",
+    "VSCODE_ESM_ENTRYPOINT",
+    "VSCODE_HANDLES_UNCAUGHT_ERRORS",
+    "VSCODE_IPC_HOOK",
+    "VSCODE_NLS_CONFIG",
+    "VSCODE_NODE_COMPILE_CACHE_ROOT",
+    "VSCODE_PID"
+  ],
+  "stdin": "{\n  \"timestamp\": \"<TS-1>\",\n  \"hook_event_name\": \"PreToolUse\",\n  \"session_id\": \"<UUID-1>\",\n  \"transcript_path\": \"<HOME>/.config/Code/User/workspaceStorage/<HEX-1>/GitHub.copilot-chat/transcripts/<UUID-2>.jsonl\",\n  \"tool_name\": \"run_in_terminal\",\n  \"tool_input\": {\n    \"command\": \"echo AGENTO_PROBE_DENY_NESTED\",\n    \"explanation\": \"Echo probe token 1.\",\n    \"goal\": \"Probe hook behavior\",\n    \"mode\": \"sync\"\n  },\n  \"tool_use_id\": \"toolu_01DYgxGwvqBALjvi2UfZHTn2__vscode-<TS-2>\",\n  \"cwd\": \"<PROBE_WS>\"\n}",
+  "parsedStdin": {
+    "timestamp": "<TS-3>",
+    "hook_event_name": "PreToolUse",
+    "session_id": "<UUID-3>",
+    "transcript_path": "<HOME>/.config/Code/User/workspaceStorage/<HEX-2>/GitHub.copilot-chat/transcripts/<UUID-4>.jsonl",
+    "tool_name": "run_in_terminal",
+    "tool_input": {
+      "command": "echo AGENTO_PROBE_DENY_NESTED",
+      "explanation": "Echo probe token 1.",
+      "goal": "Probe hook behavior",
+      "mode": "sync"
+    },
+    "tool_use_id": "toolu_01DYgxGwvqBALjvi2UfZHTn2__vscode-<TS-4>",
+    "cwd": "<PROBE_WS>"
+  }
+}
