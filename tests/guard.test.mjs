@@ -270,6 +270,28 @@ test("malformed toolArgs and non-object tool_input allow without error", () => {
   assert.equal(runGuard({ tool_name: "Bash", tool_input: ["git", "push"], cwd: repo }).decision, "allow");
 });
 
+test("every captured local and Copilot PreToolUse payload runs through the guard with allow", () => {
+  const repo = makeGitRepo();
+  const fixturesRoot = path.join(repoRoot, "tests", "harness-probe", "fixtures");
+  for (const harness of ["local", "copilot"]) {
+    const dir = path.join(fixturesRoot, harness);
+    const files = fs.readdirSync(dir).filter((f) => /^workspace-PreToolUse.*\.json$/.test(f));
+    assert.ok(files.length > 0, `${harness}: no PreToolUse fixtures under ${dir}`);
+    for (const file of files) {
+      const fixture = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+      const payload = JSON.parse(
+        JSON.stringify(fixture.parsedStdin)
+          .split("<PROBE_WS>").join(repo)
+          .split("<HOME>").join(repo)
+          .split("<REPO>").join(repo)
+          .split("<USER>").join("replay-user"),
+      );
+      const verdict = runGuard(payload);
+      assert.equal(verdict.decision, "allow", `${harness}/${file}`);
+    }
+  }
+});
+
 test("honours a custom default branch and feature prefix from .github/agento.json", () => {
   const repo = makeGitRepo({
     config: { branches: { default: "trunk", feature: "feat/" } },
