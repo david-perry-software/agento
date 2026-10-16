@@ -239,6 +239,37 @@ test("asks before edits to the plugin hook wiring via edit tools", () => {
   assert.equal(decide("", { filePath: path.join(repoRoot, "docs", "hooks.md"), tool: "replace_string_in_file" }).decision, "allow");
 });
 
+test("Copilot tool names map to the same verdicts as their Local equivalents", () => {
+  const repo = makeGitRepo();
+  const hookPath = path.join(repoRoot, ".github", "hooks", "x.json");
+  const bash = (command) => runGuard({ tool_name: "Bash", tool_input: { command }, cwd: repo });
+  assert.equal(bash("git push origin main").decision, "deny");
+  assert.equal(bash("echo hi").decision, "allow");
+  for (const toolName of ["Write", "Edit"]) {
+    const { decision, reason } = runGuard({ tool_name: toolName, tool_input: { path: hookPath, file_text: "{}" }, cwd: repo });
+    assert.equal(decision, "ask", toolName);
+    assert.match(reason, /protected hook file/);
+  }
+  for (const toolName of ["Read", "Agent", "tool_search_tool"]) {
+    assert.equal(runGuard({ tool_name: toolName, tool_input: { path: hookPath }, cwd: repo }).decision, "allow", toolName);
+  }
+});
+
+test("toolArgs and string tool_input JSON objects yield the same verdict as the object form", () => {
+  const repo = makeGitRepo();
+  const asObject = runGuard({ tool_name: "Bash", tool_input: { command: "git push origin main" }, cwd: repo });
+  assert.equal(asObject.decision, "deny");
+  assert.equal(runGuard({ tool_name: "Bash", toolArgs: JSON.stringify({ command: "git push origin main" }), cwd: repo }).decision, "deny");
+  assert.equal(runGuard({ tool_name: "Bash", toolInput: JSON.stringify({ command: "git push origin main" }), cwd: repo }).decision, "deny");
+});
+
+test("malformed toolArgs and non-object tool_input allow without error", () => {
+  const repo = makeGitRepo();
+  assert.equal(runGuard({ tool_name: "Bash", toolArgs: "not json at all {", cwd: repo }).decision, "allow");
+  assert.equal(runGuard({ tool_name: "Bash", toolArgs: JSON.stringify([1, 2]), cwd: repo }).decision, "allow");
+  assert.equal(runGuard({ tool_name: "Bash", tool_input: ["git", "push"], cwd: repo }).decision, "allow");
+});
+
 test("honours a custom default branch and feature prefix from .github/agento.json", () => {
   const repo = makeGitRepo({
     config: { branches: { default: "trunk", feature: "feat/" } },

@@ -23,6 +23,37 @@ const PROTECTED = new RegExp(`(${PROTECTED_PATHS})`);
 const PROTECTED_REDIRECT = new RegExp(String.raw`(?<![<])>{1,2}\s*\S*(` + PROTECTED_PATHS + ")");
 const WRITE_TOOL = /edit|create|write|replace|patch|apply|insert|notebook/;
 
+// Explicit Copilot ↔ Local tool-name map for `decide()`. The guard derives shell text
+// by key (`command`/`commandLine`/`text`), so the `shell` and `neither` classes are
+// documentation of the harness names; only the `write` class changes a verdict (the
+// protected-file ask below).
+const TOOL_CLASS = new Map([
+  ...["bash", "run_in_terminal"].map((t) => [t, "shell"]),
+  ...["write", "edit", "create_file", "replace_string_in_file"].map((t) => [t, "write"]),
+  ...["read", "agent", "tool_search_tool"].map((t) => [t, "neither"]),
+]);
+const isWriteTool = (tool) => TOOL_CLASS.get(tool) === "write" || WRITE_TOOL.test(tool);
+
+// Tool input is the first of `tool_input` / `toolInput` / `toolArgs` that is a plain
+// object, or a string that `JSON.parse`s to one; anything else (arrays, malformed
+// JSON, other scalars) is `{}` so `decide()` allows instead of throwing.
+function readToolInput(payload) {
+  for (const key of ["tool_input", "toolInput", "toolArgs"]) {
+    const value = payload[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      } catch {
+        // Malformed JSON: fall through to the next key, then `{}`.
+      }
+    }
+  }
+  return {};
+}
+
 // Shell segments: split on control operators so branch state and command words are
 // evaluated per command rather than across the whole line.
 const SEGMENT_SPLIT = /\|\||&&|[;|&\n]|\bthen\b|\bdo\b|\belse\b/;
@@ -190,8 +221,7 @@ function hookFileVerdict(segments) {
 
 export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFindOccupants } = {}) {
   const tool = String(payload.tool_name || payload.toolName || "").toLowerCase();
-  let toolInput = payload.tool_input || payload.toolInput || {};
-  if (toolInput === null || typeof toolInput !== "object" || Array.isArray(toolInput)) toolInput = {};
+  const toolInput = readToolInput(payload);
   const first = (...keys) => {
     for (const key of keys) {
       const value = toolInput[key];
@@ -216,7 +246,7 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
   }
 
   // Hook self-protection: edits need per-change approval; shell writes are denied.
-  if (filePath && PROTECTED.test(filePath) && WRITE_TOOL.test(tool)) {
+  if (filePath && PROTECTED.test(filePath) && isWriteTool(tool)) {
     return verdict("ask", "Modifying a protected hook file; approve this specific change?");
   }
 
