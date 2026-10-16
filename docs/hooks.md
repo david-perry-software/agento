@@ -22,7 +22,10 @@ Injects `Current git branch: <branch>`, the `Agento CLI:` path, one
 line (the output of `agento.mjs session` without `--pr`; the record's `hosted` flag
 and `worktrees[]` are JSON-only and do not appear on the line), plus one line per
 in-progress / paused / in-review roadmap (`status:` and `next-step:` from the YAML
-header) into every new chat session via `hookSpecificOutput.additionalContext`. It
+header) into every new chat session via `hookSpecificOutput.additionalContext`. The same
+object also carries a top-level `additionalContext` with the identical value: the
+Copilot harness reads only the top-level slot and Local reads only the nested one,
+and each harness ignores the other's keys, so one dual-shape object serves both. It
 reads the repository from the hook input's `cwd` and the artifact roots from the
 target's `.github/agento.json` — it never assumes the plugin's own directory. When
 the CLI call behind the `Session:` line fails or exceeds its 5 s timeout, the line is
@@ -65,6 +68,20 @@ regex recognises it. The enforcement layer is a GitHub ruleset on the default br
 Returns `allow` (silent), `ask` (user confirmation with a reason), or `deny` (with a
 reason). Commands are evaluated one shell segment at a time (`&&`, `;`, `|`, `&`),
 tracking branch switches earlier in the same line.
+
+A non-allow verdict is emitted dual-shape: top-level `permissionDecision` +
+`permissionDecisionReason` (what the Copilot harness reads) alongside
+`hookSpecificOutput.permissionDecision` + `permissionDecisionReason` (what Local
+reads), with equal values. Tool input is normalized before evaluation: the tool
+name maps explicitly (`Bash`/`run_in_terminal` are shell tools;
+`Write`/`Edit`/`create_file`/`replace_string_in_file` are writes; `Read`/`Agent`/
+`tool_search_tool` are neither), and the input is read from the first of
+`tool_input`/`toolInput`/`toolArgs` that is a plain object or a string that
+`JSON.parse`s to one — anything else becomes `{}` and the call is allowed, never a
+throw. In Copilot an `ask` verdict shows a hook card and then runs under the
+session's permission mode rather than hard-blocking, so under auto-approve a
+hook-file edit is not stopped; `deny` verdicts (push to main, force-push, hook
+shell writes) are unaffected.
 
 Inside a managed session window, these `ask` cases should be the only approval
 prompts you normally see once the session `.code-workspace` settings are current.
@@ -114,6 +131,13 @@ companion half is not mistaken for a product commit.
   (product config: `artifacts.repo.dir` → the companion, `branches.default: trunk`);
   the literal `{companion}` in each fixture command is replaced with the companion's
   absolute path.
+- `REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`
+  — the same fixtures replayed as Copilot `Bash` payloads, reading the top-level
+  `permissionDecision` and reporting a MISMATCH when the nested
+  `hookSpecificOutput.permissionDecision` disagrees; add `REPLAY_COMPANION=1` for
+  the companion fixtures. File-tool payloads are spelled
+  `<verdict> @<Tool> <path>` (e.g. `ask @Write .github/hooks/x.json`); see
+  `tests/guard-fixtures-copilot.txt`.
 - `tests/guard.test.mjs` — the assertion suite (spins up real temp git repos).
 - `tests/session-context.test.mjs` — SessionStart output against temp repos.
 - `tests/hook-lib.test.mjs` — unit tests for the shared hook helpers (shell

@@ -97,6 +97,12 @@ Implication for `copilot-hook-compat`: a single hook can emit both shapes in one
 object — top-level Copilot fields plus `hookSpecificOutput` for Local — because
 each harness reads a disjoint set of keys and ignores the other's.
 
+**Ask caveat.** A top-level `permissionDecision: "ask"` in Copilot shows a hook
+card and then lets the tool run under the session's permission mode (observed with
+"Manual permissions"); under auto-approve the tool is not stopped. `deny` verdicts
+fail closed in both harnesses. The guard keeps its `ask` verdicts unchanged in both
+harnesses; the weaker Copilot `ask` is a documented risk, not a behavior change.
+
 ## Exit-2 behavior
 
 A `PreToolUse` hook that exits 2 fails closed in both harnesses:
