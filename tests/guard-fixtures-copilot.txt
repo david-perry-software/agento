@@ -1,0 +1,25 @@
+# Copilot-format replay fixtures for scripts/hooks/replay-guard.sh. Run with
+#   REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-copilot.txt
+# File-tool payloads are spelled `<verdict> @<Tool> <path>`; every other line
+# replays as a Copilot `Bash` payload (tool_name "Bash", tool_input.command).
+
+# Write/Edit on protected hook files ask
+ask  @Write .github/hooks/x.json
+ask  @Write scripts/hooks/x.sh
+ask  @Write hooks/hooks.json
+ask  @Edit .github/hooks/x.json
+ask  @Edit scripts/hooks/x.sh
+ask  @Edit hooks/hooks.json
+
+# Write/Read on ordinary files allow
+allow @Write notes.txt
+allow @Edit notes.txt
+allow @Read notes.txt
+allow @Read scripts/agento.mjs
+
+# Bash push / force-push deny
+deny  git push origin main
+deny  git push origin HEAD:main
+deny  git push --force origin feature/widget
+deny  git push -f origin feature/widget
+deny  git push --force-with-lease origin feature/widget
