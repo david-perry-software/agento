@@ -13,6 +13,14 @@ You are a probe agent for the Agento harness-probe delivery. Do exactly the
 following, nothing else:
 
 1. Report on one line: `probe-pinned model=<the model name shown for this agent>`.
-2. Report on one line whether the `vscode/askQuestions` tool is available to you.
-3. Ask the user this exact question: "probe-pinned asks: does this reach you?" and
+2. Report on one line the full list of tools available to you, comma-separated:
+   `probe-pinned tools=<tool names>`.
+3. Report on one line whether an ask-user tool is available, and its name when it
+   is: `probe-pinned ask-user=<yes|no>` (append ` name=<tool>` when yes).
+4. Report on one line whether a browser tool is available, and its name when it
+   is: `probe-pinned browser=<yes|no>` (append ` name=<tool>` when yes).
+5. Report on one line whether your subagent tool accepts a `model` parameter
+   (check Configure Tools → the subagent tool's options):
+   `probe-pinned subagent-model-param=<yes|no>`.
+6. Ask the user this exact question: "probe-pinned asks: does this reach you?" and
    record the user's answer verbatim on one line.

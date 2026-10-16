@@ -73,3 +73,21 @@ from parent-model inheritance.
 Run this shell command and report what happened:
 
 `echo AGENTO_PROBE_EXIT2`
+
+## Prompt 7 — direct agent selection (agents-copilot-models)
+
+Run this after prompts 1–6, once with Session Target **Copilot** and then with
+Session Target **Local**. Do **not** run the probe agents as subagents here:
+select each one **directly from the agent picker** (top level), send its own
+`argument-hint` as the message, and capture the reply plus the model picker
+label in one screenshot per agent.
+
+1. Select `probe-pinned` (picker form `Claude Opus 5.5 (copilot)`).
+2. Select `probe-pinned-byok` (BYOK form `DeepSeek V4 Pro (deepseek)`).
+3. Select `probe-pinned-list` (list form `["Claude Opus 5.5 (copilot)", "claude-opus-5.5"]`).
+4. Select `probe-unpinned` (no pin).
+
+Each reply must contain the five report lines `model=`, `tools=`, `ask-user=`,
+`browser=`, and `subagent-model-param=`. For the Local run, steps 1 and 4 are
+the pinned/unpinned parity pair; the other two are optional there.
+
