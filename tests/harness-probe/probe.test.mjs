@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { findDeny } from "./probe.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const logger = path.join(here, "log-payload.mjs");
+const logger = path.join(here, "plugin", "log-payload.mjs");
 const probeCli = path.join(here, "probe.mjs");
 
 function runLogger({ source, event, stdin = "", env = {}, args = [] }) {
@@ -41,7 +41,7 @@ test("logger writes one file per call recording source, event, argv, cwd, and st
   rmSync(logDir, { recursive: true, force: true });
 });
 
-test("logger records env-var names, never values", () => {
+test("logger records env-var names, never token values", () => {
   const { res, logDir } = runLogger({
     source: "plugin",
     event: "PreToolUse",
@@ -54,8 +54,31 @@ test("logger records env-var names, never values", () => {
   const record = JSON.parse(raw);
   assert.ok(record.envVarNames.includes("CLAUDE_PLUGIN_ROOT"));
   assert.ok(record.envVarNames.includes("COPILOT_TOKEN"));
-  assert.ok(!raw.includes("/top/secret/root"), "env value leaked into the log");
-  assert.ok(!raw.includes("tok-secret-999"), "env value leaked into the log");
+  // A token value must never leak into the log.
+  assert.ok(!raw.includes("tok-secret-999"), "token value leaked into the log");
+  // The PLUGIN_ROOT value is a path, not a token; the diagnostic records it alone.
+  assert.equal(record.diagnostic.pluginRootEnv.CLAUDE_PLUGIN_ROOT, "/top/secret/root");
+  assert.ok(!("COPILOT_TOKEN" in record.diagnostic.pluginRootEnv), "non-PLUGIN_ROOT var leaked into the diagnostic");
+  rmSync(logDir, { recursive: true, force: true });
+});
+
+test("logger records a token-free diagnostic entry (cwd, node, PLUGIN_ROOT values)", () => {
+  const { res, logDir } = runLogger({
+    source: "plugin",
+    event: "SessionStart",
+    stdin: "{}",
+    env: { CLAUDE_PLUGIN_ROOT: "/tmp/probe-root", PLUGIN_ROOT: "/tmp/probe-root2" },
+  });
+  assert.equal(res.status, 0);
+  const files = logFiles(logDir);
+  assert.equal(files.length, 1);
+  const record = JSON.parse(readFileSync(path.join(logDir, files[0]), "utf8"));
+  assert.equal(typeof record.diagnostic.cwd, "string");
+  assert.ok(record.diagnostic.cwd.length > 0);
+  assert.equal(typeof record.diagnostic.nodeCommandV, "string");
+  assert.ok(record.diagnostic.nodeCommandV.length > 0);
+  assert.equal(record.diagnostic.pluginRootEnv.CLAUDE_PLUGIN_ROOT, "/tmp/probe-root");
+  assert.equal(record.diagnostic.pluginRootEnv.PLUGIN_ROOT, "/tmp/probe-root2");
   rmSync(logDir, { recursive: true, force: true });
 });
 
@@ -266,6 +289,11 @@ test("collect sanitizes logs into fixtures and empties the log dir", () => {
     argv: ["workspace", "PreToolUse"],
     cwd: path.join(h, "DP", "agento-worktrees", "x"),
     envVarNames: ["CLAUDE_PLUGIN_ROOT"],
+    diagnostic: {
+      cwd: path.join(h, "DP", "agento-worktrees", "x"),
+      nodeCommandV: path.join(h, ".nvm", "versions", "node"),
+      pluginRootEnv: { CLAUDE_PLUGIN_ROOT: path.join(h, "DP", "agento-worktrees", "x", "tests", "harness-probe", "plugin") },
+    },
     stdin: JSON.stringify({
       session_id: "123e4567-e89b-12d3-a456-426614174000",
       at: "2026-10-13T12:00:00.000Z",
@@ -293,6 +321,9 @@ test("collect sanitizes logs into fixtures and empties the log dir", () => {
   assert.ok(text.includes("<HOME>"), "home path not replaced with <HOME>");
   assert.ok(text.includes("<UUID-"), "UUID not replaced");
   assert.ok(text.includes("<TS-"), "timestamp not replaced");
+  const clean = JSON.parse(text);
+  assert.ok(clean.diagnostic.pluginRootEnv.CLAUDE_PLUGIN_ROOT.includes("<HOME>"), "diagnostic PLUGIN_ROOT value not scrubbed");
+  assert.ok(clean.diagnostic.nodeCommandV.includes("<HOME>"), "diagnostic node path not scrubbed");
   assert.equal(readdirSync(logDir).filter((f) => f.endsWith(".json")).length, 0, "log dir not emptied");
   rmSync(logDir, { recursive: true, force: true });
   rmSync(fixturesDir, { recursive: true, force: true });

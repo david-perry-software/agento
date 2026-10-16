@@ -9,12 +9,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const guardScript = path.join(repoRoot, "scripts", "hooks", "delivery-guard.sh");
 
-function decide(command, { cwd, filePath, tool = "run_in_terminal", env } = {}) {
-  const payload = {
-    tool_name: tool,
-    tool_input: filePath ? { filePath } : { command },
-    cwd: cwd ?? os.tmpdir(),
-  };
+function runGuard(payload, env) {
   const result = spawnSync("bash", [guardScript], {
     input: JSON.stringify(payload),
     encoding: "utf8",
@@ -25,8 +20,30 @@ function decide(command, { cwd, filePath, tool = "run_in_terminal", env } = {}) 
   const stdout = result.stdout.trim();
   if (!stdout) return { decision: "allow", reason: "" };
   const parsed = JSON.parse(stdout);
-  const out = parsed.hookSpecificOutput;
-  return { decision: out.permissionDecision, reason: out.permissionDecisionReason ?? "" };
+  const nested = parsed.hookSpecificOutput;
+  assert.ok(nested, "dual-shape output is missing hookSpecificOutput");
+  assert.equal(parsed.permissionDecision, nested.permissionDecision, "top-level and nested permissionDecision differ");
+  assert.equal(
+    parsed.permissionDecisionReason ?? "",
+    nested.permissionDecisionReason ?? "",
+    "top-level and nested permissionDecisionReason differ",
+  );
+  return { decision: nested.permissionDecision, reason: nested.permissionDecisionReason ?? "" };
+}
+
+function decide(command, { cwd, filePath, tool = "run_in_terminal", toolArgs, toolInput, env } = {}) {
+  const payload = {
+    tool_name: tool,
+    cwd: cwd ?? os.tmpdir(),
+  };
+  if (toolArgs !== undefined) {
+    payload.toolArgs = toolArgs;
+  } else if (toolInput !== undefined) {
+    payload.tool_input = toolInput;
+  } else {
+    payload.tool_input = filePath ? { filePath } : { command };
+  }
+  return runGuard(payload, env);
 }
 
 function makeGitRepo({ config, companion = false } = {}) {
@@ -220,6 +237,59 @@ test("asks before edits to the plugin hook wiring via edit tools", () => {
     assert.equal(decide("", { filePath, tool: "create_file" }).decision, "ask", filePath);
   }
   assert.equal(decide("", { filePath: path.join(repoRoot, "docs", "hooks.md"), tool: "replace_string_in_file" }).decision, "allow");
+});
+
+test("Copilot tool names map to the same verdicts as their Local equivalents", () => {
+  const repo = makeGitRepo();
+  const hookPath = path.join(repoRoot, ".github", "hooks", "x.json");
+  const bash = (command) => runGuard({ tool_name: "Bash", tool_input: { command }, cwd: repo });
+  assert.equal(bash("git push origin main").decision, "deny");
+  assert.equal(bash("echo hi").decision, "allow");
+  for (const toolName of ["Write", "Edit"]) {
+    const { decision, reason } = runGuard({ tool_name: toolName, tool_input: { path: hookPath, file_text: "{}" }, cwd: repo });
+    assert.equal(decision, "ask", toolName);
+    assert.match(reason, /protected hook file/);
+  }
+  for (const toolName of ["Read", "Agent", "tool_search_tool"]) {
+    assert.equal(runGuard({ tool_name: toolName, tool_input: { path: hookPath }, cwd: repo }).decision, "allow", toolName);
+  }
+});
+
+test("toolArgs and string tool_input JSON objects yield the same verdict as the object form", () => {
+  const repo = makeGitRepo();
+  const asObject = runGuard({ tool_name: "Bash", tool_input: { command: "git push origin main" }, cwd: repo });
+  assert.equal(asObject.decision, "deny");
+  assert.equal(runGuard({ tool_name: "Bash", toolArgs: JSON.stringify({ command: "git push origin main" }), cwd: repo }).decision, "deny");
+  assert.equal(runGuard({ tool_name: "Bash", toolInput: JSON.stringify({ command: "git push origin main" }), cwd: repo }).decision, "deny");
+});
+
+test("malformed toolArgs and non-object tool_input allow without error", () => {
+  const repo = makeGitRepo();
+  assert.equal(runGuard({ tool_name: "Bash", toolArgs: "not json at all {", cwd: repo }).decision, "allow");
+  assert.equal(runGuard({ tool_name: "Bash", toolArgs: JSON.stringify([1, 2]), cwd: repo }).decision, "allow");
+  assert.equal(runGuard({ tool_name: "Bash", tool_input: ["git", "push"], cwd: repo }).decision, "allow");
+});
+
+test("every captured local and Copilot PreToolUse payload runs through the guard with allow", () => {
+  const repo = makeGitRepo();
+  const fixturesRoot = path.join(repoRoot, "tests", "harness-probe", "fixtures");
+  for (const harness of ["local", "copilot"]) {
+    const dir = path.join(fixturesRoot, harness);
+    const files = fs.readdirSync(dir).filter((f) => /^workspace-PreToolUse.*\.json$/.test(f));
+    assert.ok(files.length > 0, `${harness}: no PreToolUse fixtures under ${dir}`);
+    for (const file of files) {
+      const fixture = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+      const payload = JSON.parse(
+        JSON.stringify(fixture.parsedStdin)
+          .split("<PROBE_WS>").join(repo)
+          .split("<HOME>").join(repo)
+          .split("<REPO>").join(repo)
+          .split("<USER>").join("replay-user"),
+      );
+      const verdict = runGuard(payload);
+      assert.equal(verdict.decision, "allow", `${harness}/${file}`);
+    }
+  }
 });
 
 test("honours a custom default branch and feature prefix from .github/agento.json", () => {
@@ -550,4 +620,36 @@ test("denies a main commit reached through a tilde-prefixed cd", () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("opt-in debug log records the payload and decision when enabled via env", () => {
+  const log = path.join(os.tmpdir(), `agento-guard-debug-${process.pid}.log`);
+  const repo = makeGitRepo();
+  try {
+    const result = spawnSync("bash", [guardScript], {
+      input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "git push origin main" }, cwd: repo }),
+      encoding: "utf8",
+      timeout: 20000,
+      env: { ...process.env, AGENTO_GUARD_DEBUG_LOG: log },
+    });
+    assert.equal(result.status, 0, `guard exited ${result.status}: ${result.stderr}`);
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const entry = lines.find((line) => line.event === "entry");
+    const decision = lines.find((line) => line.event === "decision");
+    assert.ok(entry, "debug log is missing the entry event");
+    assert.equal(entry.payload.tool_name, "Bash");
+    assert.equal(entry.payload.tool_input.command, "git push origin main");
+    assert.equal(decision.decision, "deny");
+    // The guard still emits the dual-shape deny while logging.
+    assert.equal(JSON.parse(result.stdout.trim()).permissionDecision, "deny");
+  } finally {
+    fs.rmSync(log, { force: true });
+  }
+});
+
+test("debug logging stays off without the marker or env", () => {
+  fs.rmSync("/tmp/agento-guard-debug", { force: true });
+  fs.rmSync("/tmp/agento-guard-debug.log", { force: true });
+  assert.equal(decide("git push origin main").decision, "deny");
+  assert.equal(fs.existsSync("/tmp/agento-guard-debug.log"), false, "debug log written without the marker or env");
 });

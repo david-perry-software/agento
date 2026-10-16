@@ -21,3 +21,9 @@ jobs:
           shellcheck scripts/hooks/*.sh scripts/wait-for-checks.sh
       - name: Guard fixture replay
         run: ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt
+      - name: Guard fixture replay (Copilot format)
+        run: REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt
+      - name: Guard fixture replay (Copilot format, companion)
+        run: REPLAY_FORMAT=copilot REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt
+      - name: Guard fixture replay (Copilot fixtures)
+        run: REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-copilot.txt

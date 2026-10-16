@@ -18,10 +18,66 @@ import { fileURLToPath } from "node:url";
 import { findOccupants as defaultFindOccupants } from "../worktree-occupants.mjs";
 import { emit, loadHookConfig, readPayload, realpath, resolveArtifacts, runGit, shellSplit } from "./hook-lib.mjs";
 
+// Opt-in diagnostic: when the marker file /tmp/agento-guard-debug exists (or
+// AGENTO_GUARD_DEBUG_LOG names a log file), main() records the raw PreToolUse
+// payload, the cwd, the plugin env markers, and the resulting decision to that log.
+// Off by default; Local behavior is unchanged without the marker. The log is
+// machine-local and must be removed after the diagnosis.
+const DEBUG_LOG = process.env.AGENTO_GUARD_DEBUG_LOG || "/tmp/agento-guard-debug.log";
+const DEBUG_MARKER = "/tmp/agento-guard-debug";
+
+export function debugEnabled() {
+  if (process.env.AGENTO_GUARD_DEBUG_LOG) return true;
+  try {
+    return fs.existsSync(DEBUG_MARKER);
+  } catch {
+    return false;
+  }
+}
+
+export function debugWrite(entry) {
+  try {
+    fs.appendFileSync(DEBUG_LOG, `${JSON.stringify(entry)}\n`);
+  } catch {
+    // Diagnostics must never affect the guard verdict.
+  }
+}
+
 const PROTECTED_PATHS = String.raw`\.github\/hooks\/|scripts\/hooks\/|(?<![\w.-])hooks\/hooks\.json|\.claude-plugin(?![\w.-])`;
 const PROTECTED = new RegExp(`(${PROTECTED_PATHS})`);
 const PROTECTED_REDIRECT = new RegExp(String.raw`(?<![<])>{1,2}\s*\S*(` + PROTECTED_PATHS + ")");
 const WRITE_TOOL = /edit|create|write|replace|patch|apply|insert|notebook/;
+
+// Explicit Copilot ↔ Local tool-name map for `decide()`. The guard derives shell text
+// by key (`command`/`commandLine`/`text`), so the `shell` and `neither` classes are
+// documentation of the harness names; only the `write` class changes a verdict (the
+// protected-file ask below).
+const TOOL_CLASS = new Map([
+  ...["bash", "run_in_terminal"].map((t) => [t, "shell"]),
+  ...["write", "edit", "create_file", "replace_string_in_file"].map((t) => [t, "write"]),
+  ...["read", "agent", "tool_search_tool"].map((t) => [t, "neither"]),
+]);
+const isWriteTool = (tool) => TOOL_CLASS.get(tool) === "write" || WRITE_TOOL.test(tool);
+
+// Tool input is the first of `tool_input` / `toolInput` / `toolArgs` that is a plain
+// object, or a string that `JSON.parse`s to one; anything else (arrays, malformed
+// JSON, other scalars) is `{}` so `decide()` allows instead of throwing.
+function readToolInput(payload) {
+  for (const key of ["tool_input", "toolInput", "toolArgs"]) {
+    const value = payload[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value === "object" && !Array.isArray(value)) return value;
+    if (typeof value === "string") {
+      try {
+        const parsed = JSON.parse(value);
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+      } catch {
+        // Malformed JSON: fall through to the next key, then `{}`.
+      }
+    }
+  }
+  return {};
+}
 
 // Shell segments: split on control operators so branch state and command words are
 // evaluated per command rather than across the whole line.
@@ -190,8 +246,7 @@ function hookFileVerdict(segments) {
 
 export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFindOccupants } = {}) {
   const tool = String(payload.tool_name || payload.toolName || "").toLowerCase();
-  let toolInput = payload.tool_input || payload.toolInput || {};
-  if (toolInput === null || typeof toolInput !== "object" || Array.isArray(toolInput)) toolInput = {};
+  const toolInput = readToolInput(payload);
   const first = (...keys) => {
     for (const key of keys) {
       const value = toolInput[key];
@@ -216,7 +271,7 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
   }
 
   // Hook self-protection: edits need per-change approval; shell writes are denied.
-  if (filePath && PROTECTED.test(filePath) && WRITE_TOOL.test(tool)) {
+  if (filePath && PROTECTED.test(filePath) && isWriteTool(tool)) {
     return verdict("ask", "Modifying a protected hook file; approve this specific change?");
   }
 
@@ -416,12 +471,41 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
 }
 
 export function main() {
+  const debug = debugEnabled();
+  let payload = {};
   try {
-    const { decision, reason } = decide(readPayload());
+    payload = readPayload();
+  } catch {
+    payload = {};
+  }
+  if (debug) {
+    debugWrite({
+      event: "entry",
+      ts: new Date().toISOString(),
+      pid: process.pid,
+      cwd: process.cwd(),
+      claudePluginRoot: process.env.CLAUDE_PLUGIN_ROOT ?? null,
+      pluginRoot: process.env.PLUGIN_ROOT ?? null,
+      copilotPluginRoot: process.env.COPILOT_PLUGIN_ROOT ?? null,
+      copilotCli: process.env.COPILOT_CLI ?? null,
+      payload,
+    });
+  }
+  try {
+    const { decision, reason } = decide(payload);
+    if (debug) debugWrite({ event: "decision", ts: new Date().toISOString(), decision, reason });
     if (decision === "allow") return;
-    emit({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision, permissionDecisionReason: reason } });
+    // Dual-shape output: the top-level slots are what the Copilot harness reads,
+    // `hookSpecificOutput` is what the Local harness reads. Each harness ignores
+    // the other's keys, so one object serves both.
+    emit({
+      permissionDecision: decision,
+      permissionDecisionReason: reason,
+      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision, permissionDecisionReason: reason },
+    });
   } catch (error) {
     // A crashing guard must not block the tool call: report it and allow.
+    if (debug) debugWrite({ event: "error", ts: new Date().toISOString(), error: `${error?.stack ?? error}` });
     process.stderr.write(`${error?.stack ?? error}\n`);
   }
 }

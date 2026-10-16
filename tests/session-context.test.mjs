@@ -40,13 +40,22 @@ function writeRoadmap(root, rel, header) {
   fs.writeFileSync(path.join(dir, "roadmap.md"), "```yaml\n" + header + "\n```\n\n## Phase 1\n\n- [ ] 1.1 step — verify: x\n");
 }
 
-function run(cwd, env) {
+function runWithPayload(payload, env) {
   const bash = execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
-  const result = spawnSync(bash, [hook], { input: JSON.stringify({ cwd }), encoding: "utf8", timeout: 20000, env: env ?? process.env });
+  const result = spawnSync(bash, [hook], { input: JSON.stringify(payload), encoding: "utf8", timeout: 20000, env: env ?? process.env });
   assert.equal(result.status, 0, result.stderr);
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
+  assert.equal(
+    parsed.additionalContext,
+    parsed.hookSpecificOutput.additionalContext,
+    "top-level and nested additionalContext differ",
+  );
   return parsed.hookSpecificOutput.additionalContext;
+}
+
+function run(cwd, env) {
+  return runWithPayload({ cwd }, env);
 }
 
 // A PATH with only bash and the tools the wrapper could reach (no node).
@@ -68,6 +77,17 @@ test("reports the branch and no work on an empty repo", () => {
 test("announces the Agento CLI path", () => {
   const context = run(makeRepo());
   assert.match(context, new RegExp(`^Agento CLI: node ${path.join(repoRoot, "scripts", "agento.mjs").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m"));
+});
+
+test("a Copilot SessionStart fixture payload yields the Agento CLI line", () => {
+  const repo = makeRepo();
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(repoRoot, "tests", "harness-probe", "fixtures", "copilot", "workspace-SessionStart-1.json"), "utf8"),
+  );
+  const payload = JSON.parse(JSON.stringify(fixture.parsedStdin).split("<PROBE_WS>").join(repo));
+  const context = runWithPayload(payload);
+  assert.match(context, /^Current git branch: feature\/widget$/m);
+  assert.match(context, /^Agento CLI: node /m);
 });
 
 test("lists resumable roadmaps and skips planned/complete ones", () => {

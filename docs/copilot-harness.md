@@ -27,7 +27,7 @@ guesses. It changes no runtime behavior.
 | Does `chat.pluginLocations` load a plugin? | Yes. The probe plugin's hooks fire and its `/agento <name>` prompt commands shadow a same-named user skill. | Partially. The plugin's prompt commands are **not** loaded (nothing shadows the user skill), and the plugin's `PreToolUse` hook was invoked but its logger never ran. | [plugin `hooks.json`](../tests/harness-probe/plugin/hooks/hooks.json); `features/2026/10/harness-probe/evidence/step-2-7-plugin-sessions.png` | `harness-install`, `agento-router-skill` |
 | Does `copilot plugin install` load a plugin? | — | Unobserved: the Copilot CLI is absent. | Roadmap step 2.6 | `harness-install` |
 | Is a workspace `.github/hooks/*.json` (PascalCase, no `version`) discovered? | Yes. | Yes. | [Local SessionStart](../tests/harness-probe/fixtures/local/workspace-SessionStart-1.json), [Copilot SessionStart](../tests/harness-probe/fixtures/copilot/workspace-SessionStart-1.json) | `copilot-hook-compat` |
-| Is a plugin `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` discovered and expanded? | Yes — the plugin hook runs and its env includes `CLAUDE_PLUGIN_ROOT`. | The hook is invoked (the model reports it errored) but its logger never runs, so the `${CLAUDE_PLUGIN_ROOT}` path did not resolve to the logger. | [Local plugin SessionStart](../tests/harness-probe/fixtures/local-plugin/plugin-SessionStart-1.json); [Copilot plugin run (workspace-only)](../tests/harness-probe/fixtures/copilot-plugin/workspace-PreToolUse-1.json) | `copilot-hook-compat`, `harness-install` |
+| Is a plugin `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` discovered and expanded? | Yes — the plugin hook runs and its env includes `CLAUDE_PLUGIN_ROOT`. | Yes — the token expands to the staged plugin copy (`~/.config/Code/agentPlugins/<name>/<hash>`); the diagnostic captures show `cwd`, `CLAUDE_PLUGIN_ROOT`, `PLUGIN_ROOT`, and `COPILOT_PLUGIN_ROOT` all point there and `command -v node` succeeds. The earlier "errored" run was the probe's own `../log-payload.mjs` escaping the staged root — not the token and not a missing node. | [Copilot plugin SessionStart diagnostic](../tests/harness-probe/fixtures/copilot-plugin/plugin-SessionStart-1.json); [Copilot plugin PreToolUse diagnostic](../tests/harness-probe/fixtures/copilot-plugin/plugin-PreToolUse-1.json) | `copilot-hook-compat`, `harness-install` |
 | Which `tool_name` values arrive? | VS Code tool ids: `run_in_terminal`, `create_file`, `replace_string_in_file`. | Claude tool names: `Bash`, `Write`, `Read`, `Edit`, `Agent`, `tool_search_tool`. | [Local PreToolUse](../tests/harness-probe/fixtures/local/workspace-PreToolUse-1.json), [Copilot PreToolUse](../tests/harness-probe/fixtures/copilot/workspace-PreToolUse-1.json) | `copilot-hook-compat` |
 | Which SessionStart output slot is read? | `hookSpecificOutput.additionalContext` (top-level `additionalContext` ignored). | Top-level `additionalContext` (nested ignored) — the opposite of Local. | step 2.2 and step 2.4 observations | `copilot-hook-compat` |
 | Which PreToolUse decision slots are read? | `hookSpecificOutput.permissionDecision` (+ reason); top-level decision and ask ignored. | Both `hookSpecificOutput.permissionDecision` (+ reason) and top-level `permissionDecision`; top-level ask shows a hook card then runs. | [Local plugin run](../tests/harness-probe/fixtures/local-plugin/plugin-PreToolUse-1.json), [Copilot plugin run](../tests/harness-probe/fixtures/copilot-plugin/workspace-PreToolUse-1.json) | `copilot-hook-compat` |
@@ -97,6 +97,12 @@ Implication for `copilot-hook-compat`: a single hook can emit both shapes in one
 object — top-level Copilot fields plus `hookSpecificOutput` for Local — because
 each harness reads a disjoint set of keys and ignores the other's.
 
+**Ask caveat.** A top-level `permissionDecision: "ask"` in Copilot shows a hook
+card and then lets the tool run under the session's permission mode (observed with
+"Manual permissions"); under auto-approve the tool is not stopped. `deny` verdicts
+fail closed in both harnesses. The guard keeps its `ask` verdicts unchanged in both
+harnesses; the weaker Copilot `ask` is a documented risk, not a behavior change.
+
 ## Exit-2 behavior
 
 A `PreToolUse` hook that exits 2 fails closed in both harnesses:
@@ -105,6 +111,36 @@ A `PreToolUse` hook that exits 2 fails closed in both harnesses:
   the hook's reason is dropped.
 - Copilot: the tool is blocked with "Denied by preToolUse hook: hook exited with
   code 2"; the message names the exit code.
+
+## Live checks in the Agento clone (copilot-hook-compat)
+
+The `copilot-hook-compat` delivery ran the guard live in a Copilot chat in the
+Agento worktree. The first run (roadmap step 4.2) failed: the SessionStart hook
+injected the `Agento CLI:` line, but the PreToolUse guard did not fire — a
+`git push origin main --dry-run` ran ("Everything up-to-date") and
+`.github/hooks/x.json` was created with no approval card. The re-run (roadmap
+step 6.2, with the opt-in guard diagnostic live) passed all three prompts: the
+context line was present, the push was denied ("Direct commits/pushes to main are
+forbidden; use a work branch and a pull request."), and the hook-file edit asked
+("Modifying a protected hook file; approve this specific change?") and was denied
+with no file created.
+
+The opt-in diagnostic log (`/tmp/agento-guard-debug.log`) recorded the 6.2 run:
+one `entry`+`decision` pair per tool call — `Bash "git push origin main --dry-run"`
+→ deny and `Write ".github/hooks/x.json"` → ask — each with `COPILOT_CLI=1` set and
+no `CLAUDE_PLUGIN_ROOT`/`PLUGIN_ROOT`/`COPILOT_PLUGIN_ROOT`, i.e. the workspace hook
+fired once and there was no plugin-mode duplicate run. The `Bash`/`tool_input.command`
+and `Write`/`tool_input.path` shapes are exactly what `decide()` normalizes.
+
+Diagnosis (roadmap 6.3): the exact trigger of the 4.2 failure cannot be proven —
+4.2 predates the diagnostic and left no PreToolUse log. The most likely cause is a
+stale Copilot session/hook state right after the probe plugin/skill cleanup and
+settings changes: SessionStart fired (it binds at chat creation) while PreToolUse
+was not yet effective, and 6.2 passed after a full window reload. The opt-in
+diagnostic does not alter the verdict path, so the passing 6.2 run reflects the
+committed guard code under a fresh session. No code fix was needed. The screenshots
+are the companion repository's `features/2026/10/copilot-hook-compat/evidence/`
+`step-6-2-copilot-capture-{1,2,3}.png` and `step-4-2-copilot-clone-{1,2}.png`.
 
 ## Skill resolution with arguments
 
