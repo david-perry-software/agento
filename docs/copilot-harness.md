@@ -223,12 +223,36 @@ both resolve with the full argument tail in Copilot.
   `model` parameter and the directly-selected-agent pin finding are in
   [Agents and models](#agents-and-models).
 
-Implication for `agento-router-skill` (decision 3): a Copilot subagent is launched
-with the `task` tool (which has no ask-user tool and takes an optional `model`
-parameter), and an agent selected directly in a Copilot session ignores its
-`model:` pin and runs on the session's model. `agento-router-skill` teaches the
-Autopilot to orchestrate with `task`; the inline fallback remains the path for
-interactive/orchestrating agents until then.
+Implication for `agento-router-skill`: a Copilot subagent is launched with the
+`task` tool (which has no ask-user tool and takes an optional `model` parameter),
+and an agent selected directly in a Copilot session ignores its `model:` pin and
+runs on the session's model. The router skill now implements this: Builder and
+Reviewer run as subagents through `task` (Copilot) or `runSubagent` (Local) with
+their model pin passed as the tool's `model`, while Planner, Architect, Mechanic,
+and Autopilot run inline (see [Router skill](#router-skill)).
+
+## Router skill
+
+The `/agento <name> [args]` router lives at `skills/agento/SKILL.md` — a
+user-level skill named `agento`, not a plugin skill, so nothing shadows it in
+Copilot sessions. Until `harness-install` automates the link, install it by hand:
+
+```sh
+ln -s <clone>/skills/agento ~/.copilot/skills/agento
+```
+
+The skill parses the command name from the arguments, applies the canonical
+spelling redirect rule, reads `commands/<name>.md`, and dispatches by that file's
+`agent:` frontmatter:
+
+| `agent:` | Mode |
+| --- | --- |
+| missing or `agent` | inline |
+| `📋 Agento Planner`, `🏛️ Agento Architect`, `🛠️ Agento Mechanic`, `🤖 Agento Autopilot` | inline, as that agent |
+| `🔨 Agento Builder`, `🔍 Agento Reviewer` | subagent |
+
+Phase 2 live results: pending — populated once the Copilot and Local session
+checks are run.
 
 ## Dispatch
 
