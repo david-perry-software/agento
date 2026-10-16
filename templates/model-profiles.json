@@ -1,4 +1,8 @@
 {
+  "copilotModels": {
+    "Claude Opus 5.5 (copilot)": "claude-opus-5.5",
+    "DeepSeek V4 Pro (deepseek)": "deepseek/deepseek-v4-pro"
+  },
   "profiles": {
     "mixed": {
       "description": "A strong model for planning, review, and initiatives; a cheaper one everywhere else",
