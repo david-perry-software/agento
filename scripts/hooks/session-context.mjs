@@ -149,7 +149,10 @@ export function main() {
     const payload = readPayload();
     if (isDuplicatePluginRun({ payload })) return;
     const lines = buildSessionContext({ payload });
-    emit({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: lines.join("\n") } });
+    const additionalContext = lines.join("\n");
+    // Dual-shape output: the top-level `additionalContext` is what the Copilot harness
+    // reads, `hookSpecificOutput.additionalContext` what the Local harness reads.
+    emit({ additionalContext, hookSpecificOutput: { hookEventName: "SessionStart", additionalContext } });
   } catch (error) {
     // A crashing hook must not fail session start: report it and add no context.
     process.stderr.write(`${error?.stack ?? error}\n`);
