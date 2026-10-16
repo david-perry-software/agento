@@ -419,7 +419,14 @@ export function main() {
   try {
     const { decision, reason } = decide(readPayload());
     if (decision === "allow") return;
-    emit({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision, permissionDecisionReason: reason } });
+    // Dual-shape output: the top-level slots are what the Copilot harness reads,
+    // `hookSpecificOutput` is what the Local harness reads. Each harness ignores
+    // the other's keys, so one object serves both.
+    emit({
+      permissionDecision: decision,
+      permissionDecisionReason: reason,
+      hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: decision, permissionDecisionReason: reason },
+    });
   } catch (error) {
     // A crashing guard must not block the tool call: report it and allow.
     process.stderr.write(`${error?.stack ?? error}\n`);

@@ -9,12 +9,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const guardScript = path.join(repoRoot, "scripts", "hooks", "delivery-guard.sh");
 
-function decide(command, { cwd, filePath, tool = "run_in_terminal", env } = {}) {
-  const payload = {
-    tool_name: tool,
-    tool_input: filePath ? { filePath } : { command },
-    cwd: cwd ?? os.tmpdir(),
-  };
+function runGuard(payload, env) {
   const result = spawnSync("bash", [guardScript], {
     input: JSON.stringify(payload),
     encoding: "utf8",
@@ -25,8 +20,30 @@ function decide(command, { cwd, filePath, tool = "run_in_terminal", env } = {}) 
   const stdout = result.stdout.trim();
   if (!stdout) return { decision: "allow", reason: "" };
   const parsed = JSON.parse(stdout);
-  const out = parsed.hookSpecificOutput;
-  return { decision: out.permissionDecision, reason: out.permissionDecisionReason ?? "" };
+  const nested = parsed.hookSpecificOutput;
+  assert.ok(nested, "dual-shape output is missing hookSpecificOutput");
+  assert.equal(parsed.permissionDecision, nested.permissionDecision, "top-level and nested permissionDecision differ");
+  assert.equal(
+    parsed.permissionDecisionReason ?? "",
+    nested.permissionDecisionReason ?? "",
+    "top-level and nested permissionDecisionReason differ",
+  );
+  return { decision: nested.permissionDecision, reason: nested.permissionDecisionReason ?? "" };
+}
+
+function decide(command, { cwd, filePath, tool = "run_in_terminal", toolArgs, toolInput, env } = {}) {
+  const payload = {
+    tool_name: tool,
+    cwd: cwd ?? os.tmpdir(),
+  };
+  if (toolArgs !== undefined) {
+    payload.toolArgs = toolArgs;
+  } else if (toolInput !== undefined) {
+    payload.tool_input = toolInput;
+  } else {
+    payload.tool_input = filePath ? { filePath } : { command };
+  }
+  return runGuard(payload, env);
 }
 
 function makeGitRepo({ config, companion = false } = {}) {
