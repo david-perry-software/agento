@@ -542,6 +542,25 @@ test("every agent or tool-restricted prompt that needs ask-questions lists vscod
   assert.deepEqual(missing, [], `files that need ask-questions but do not list ${ASK_QUESTIONS_TOOL} in tools:\n${missing.join("\n")}`);
 });
 
+// A `tools:` entry must name a harness it serves: a GitHub primary alias (honoured
+// by the Copilot Agent Host and recognized by VS Code) or an explicit VS Code-only
+// tool. Copilot ignores unrecognized names, so an unknown entry silently does nothing
+// there — this test makes that a choice the author has to state.
+const GITHUB_TOOL_ALIASES = new Set(["execute", "read", "edit", "search", "agent", "web", "todo"]);
+const VSCODE_ONLY_TOOLS = new Set(["browser", "vscode/askQuestions"]);
+
+test("every agent tools: entry is a GitHub primary alias or an explicit VS Code-only tool", () => {
+  const offenders = [];
+  for (const [file, meta] of agents) {
+    for (const tool of meta.tools) {
+      if (!GITHUB_TOOL_ALIASES.has(tool) && !VSCODE_ONLY_TOOLS.has(tool)) {
+        offenders.push(`${path.relative(repoRoot, file)}: ${tool}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, [], `tools: entries must be a GitHub primary alias (${[...GITHUB_TOOL_ALIASES].join(", ")}) or an explicit VS Code-only tool (${[...VSCODE_ONLY_TOOLS].join(", ")}):\n${offenders.join("\n")}`);
+});
+
 test("ask-questions clarification always offers a §10 recommended choice (#90 planner-ask-questions-tool)", () => {
   const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
   const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m)?.[1] ?? "";
