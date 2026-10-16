@@ -65,16 +65,19 @@ being run.
    branch, stop and report the record's alternatives
    (`/agento start-session <type>/<slug> --resume`).
 2. Read the model pins — run `node <agento-root>/scripts/agento.mjs models pins`
-   and keep `pins.builder.subagentModel` and `pins.reviewer.subagentModel`; pass each
-   as the matching subagent's `model` in every invocation below, omitting it when
-   `null`. If the call fails, proceed unpinned and say so in a progress note. Relay
-   each `warnings[]` entry as a progress note before the first invocation.
+   and keep `pins.builder.subagentModel`, `pins.builder.copilotModel`,
+   `pins.reviewer.subagentModel`, and `pins.reviewer.copilotModel`. Pass the right
+   one as the matching subagent's model in every invocation below, chosen by the
+   subagent tool you actually have: `runSubagent` (Local harness) → pass
+   `subagentModel` as the `runSubagent` `model`; `task` (Copilot harness) → pass
+   `copilotModel` as the `task` tool's `model`, omitting it when `null`. If the
+   call fails, proceed unpinned and say so in a progress note. Relay each
+   `warnings[]` entry as a progress note before the first invocation.
 3. Read roadmap.md. If `status: in-review`, skip straight to the review phase. If a
    review.md with `Verdict: request-changes` exists and is newer than the last roadmap
    update, start with the fix phase.
   When status is `in-review`, invoke the 🔍 Agento Reviewer subagent directly with
-  the Reviewer's pin (`pins.reviewer.subagentModel`) as the `runSubagent` `model`,
-  omitting it when `null`;
+  the Reviewer's pin (per Preflight step 2), omitting it when `null`;
   do not stop to ask for a manual `/agento review-<type> <slug>` command.
   If the session record's `lifecycle` is `approved` and `reviewFresh` is not
   `false`, the run is already done: report the approve summary and the §8 ship
@@ -90,8 +93,9 @@ being run.
 
 Repeat until approve, human-needed, or cycle cap:
 
-1. **Build.** Invoke 🔨 Agento Builder with the Builder's pin
-   (`pins.builder.subagentModel`) as the `runSubagent` `model`, omitting it when
+1. **Build.** Invoke 🔨 Agento Builder with the Builder's pin (per Preflight step
+   2 — `pins.builder.subagentModel` as the `runSubagent` `model`, or
+   `pins.builder.copilotModel` as the `task` tool's `model`), omitting it when
    `null`: the slug, "run your full resume protocol
    then execute all remaining roadmap steps", and this ordering directive: "where
    dependencies permit, sequence `(manual)` steps as late as possible so automated work
@@ -106,22 +110,22 @@ Repeat until approve, human-needed, or cycle cap:
      user instructions and resume point verbatim. Never skip past a manual step to
      keep the loop going.
    - `status: in-progress` (the Builder took a session break or returned without
-     finishing) → re-invoke the Builder to resume (with the Builder's pin as the
-     `runSubagent` `model`, omitting it when `null`), and keep re-invoking as long as
+     finishing) → re-invoke the Builder to resume (with the Builder's pin per
+     Preflight step 2, omitting it when `null`), and keep re-invoking as long as
      each run ticks at least one new step; a run that returns without ticking a new
      step is a stall — stop and report the stall point.
 3. **Review.** Invoke 🔍 Agento Reviewer with the slug and "follow your full
    procedure and commit review.md with an explicit verdict", passing the Reviewer's
-   pin (`pins.reviewer.subagentModel`) as the `runSubagent` `model`, omitting it when
-   `null`.
+   pin (per Preflight step 2 — `pins.reviewer.subagentModel` as the `runSubagent`
+   `model`, or `pins.reviewer.copilotModel` as the `task` tool's `model`), omitting
+   it when `null`.
 4. **Read verdict** from review.md:
    - `Verdict: approve` → done. Report the verdict summary and the cross-window
      sequence from policy §8, each command in its own block per policy §12:
      `/agento ship <slug>` from the primary window (it audits
      this open worktree first and tears it down once the PR is merged).
    - `Verdict: request-changes` → if under the cycle cap, invoke the Builder with
-     the Builder's pin (`pins.builder.subagentModel`) as the `runSubagent` `model`,
-     omitting it when `null`:
+     the Builder's pin (per Preflight step 2), omitting it when `null`:
      "address the request-changes findings in review.md — add each finding as a
      roadmap step `(added <date>)`, execute them, and return the roadmap to
      `status: in-review`", then loop back to step 2.

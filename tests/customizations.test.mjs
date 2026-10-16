@@ -987,6 +987,10 @@ test("the Autopilot pins subagent models via models pins and stops on a tier ref
   assert.match(autopilot, /`runSubagent` `model`/, "Autopilot must pass the runSubagent model");
   assert.match(autopilot, /`pins\.builder\.subagentModel`/, "Autopilot must pass the Builder's pin");
   assert.match(autopilot, /`pins\.reviewer\.subagentModel`/, "Autopilot must pass the Reviewer's pin");
+  assert.match(autopilot, /`pins\.builder\.copilotModel`/, "Autopilot must keep the Builder's Copilot alias");
+  assert.match(autopilot, /`pins\.reviewer\.copilotModel`/, "Autopilot must keep the Reviewer's Copilot alias");
+  assert.match(autopilot, /`task` \(Copilot harness\)/, "Autopilot must detect the Copilot harness by its task tool");
+  assert.match(autopilot, /`copilotModel` as the `task` tool's `model`/, "Autopilot must pass copilotModel as the task tool's model");
   assert.match(autopilot, /Tier refusal halts the run/, "Autopilot must stop on a tier refusal");
   assert.match(autopilot, /pin `autopilot` at least as high as the\s+highest-tier model/, "Autopilot must name the tier-refusal fix");
 });
