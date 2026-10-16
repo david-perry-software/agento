@@ -21,6 +21,17 @@ function listFiles(dir, suffix) {
     .sort();
 }
 
+function listSkillFiles() {
+  const root = rel("skills");
+  if (!fs.existsSync(root)) return [];
+  return fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, entry.name, "SKILL.md"))
+    .filter((file) => fs.existsSync(file))
+    .sort();
+}
+
 function splitFrontmatter(file) {
   const text = fs.readFileSync(file, "utf8");
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
@@ -96,6 +107,12 @@ for (const file of agentFiles) {
 const agentNames = new Set([...agents.values()].map((a) => a.name));
 const knownSubagents = new Set([...agentNames, "Explore"]);
 
+const skillFile = rel("skills", "agento", "SKILL.md");
+function readSkill() {
+  const { frontmatter, body } = splitFrontmatter(skillFile);
+  return { meta: parseFrontmatter(frontmatter, "skills/agento/SKILL.md"), body };
+}
+
 test("every agent has a unique name, description, and tool list", () => {
   assert.ok(agentFiles.length > 0);
   assert.equal(agentNames.size, agentFiles.length, "duplicate agent names");
@@ -145,6 +162,57 @@ test("every prompt dispatches to a real agent and has no name override", () => {
   }
 });
 
+// The /agento <name> [args] router skill, reached as a user-level skill in Copilot
+// sessions. It reads commands/<name>.md and dispatches by its agent: frontmatter.
+const INLINE_AGENT_FILES = ["delivery-planner.agent.md", "initiative-architect.agent.md", "copilot-mechanic.agent.md", "delivery-autopilot.agent.md"];
+const SUBAGENT_AGENT_FILES = ["delivery-builder.agent.md", "delivery-reviewer.agent.md"];
+
+test("the router skill exists with the decided frontmatter", () => {
+  assert.ok(fs.existsSync(skillFile), "skills/agento/SKILL.md missing");
+  const { meta } = readSkill();
+  assert.equal(meta.name, "agento");
+  assert.equal(path.basename(path.dirname(skillFile)), meta.name, "skill directory name must match the frontmatter name");
+  assert.equal(meta["argument-hint"], "<command> [args]");
+  assert.equal(meta["user-invocable"], true);
+  assert.equal(meta["disable-model-invocation"], true);
+  assert.match(meta.description ?? "", /^Use when/, "description should start with a trigger phrase");
+});
+
+test("every command's agent: is absent, agent, or an existing agent name", () => {
+  const commandFiles = listFiles(rel("commands"), ".md");
+  assert.ok(commandFiles.length > 0);
+  for (const file of commandFiles) {
+    const label = path.relative(repoRoot, file);
+    const { frontmatter } = splitFrontmatter(file);
+    const meta = parseFrontmatter(frontmatter, label);
+    if (meta.agent !== undefined) {
+      assert.ok(meta.agent === "agent" || agentNames.has(meta.agent), `${label}: agent ${JSON.stringify(meta.agent)} does not exist`);
+    }
+  }
+});
+
+test("the router dispatch content names every agent exactly once with the decided inline set and mechanics", () => {
+  const { body } = readSkill();
+  const count = (needle) => body.split(needle).length - 1;
+  for (const name of agentNames) {
+    assert.equal(count(name), 1, `skills/agento/SKILL.md must name ${JSON.stringify(name)} exactly once`);
+  }
+  const rows = body.split(/\r?\n/).filter((line) => line.trim().startsWith("|") && line.trim().endsWith("|"));
+  const inlineRow = rows.find((line) => /inline, as that agent/.test(line));
+  const subagentRow = rows.find((line) => /\| subagent \|/.test(line));
+  assert.ok(inlineRow, "dispatch table must have an `inline, as that agent` row");
+  assert.ok(subagentRow, "dispatch table must have a `subagent` row");
+  for (const name of INLINE_AGENT_FILES.map((f) => agents.get(rel(".github", "agents", f)).name)) {
+    assert.ok(inlineRow.includes(name), `inline row must name ${name}`);
+  }
+  for (const name of SUBAGENT_AGENT_FILES.map((f) => agents.get(rel(".github", "agents", f)).name)) {
+    assert.ok(subagentRow.includes(name), `subagent row must name ${name}`);
+  }
+  for (const token of ["models pins", "task", "runSubagent", "copilotModel", "subagentModel", "Agento CLI:", "realpath"]) {
+    assert.ok(body.includes(token), `skills/agento/SKILL.md must name ${JSON.stringify(token)}`);
+  }
+});
+
 test("every instruction file has a description and applyTo", () => {
   for (const file of instructionFiles) {
     const label = path.relative(repoRoot, file);
@@ -154,8 +222,8 @@ test("every instruction file has a description and applyTo", () => {
   }
 });
 
-test("relative links inside agents, prompts, and instructions resolve", () => {
-  for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
+test("relative links inside agents, prompts, instructions, and skills resolve", () => {
+  for (const file of [...agentFiles, ...promptFiles, ...instructionFiles, ...listSkillFiles()]) {
     const text = fs.readFileSync(file, "utf8");
     for (const [, target] of text.matchAll(/\]\((\.{1,2}\/[^)#\s]+|[\w-]+\.instructions\.md)\)/g)) {
       const resolved = path.resolve(path.dirname(file), target);
@@ -803,6 +871,7 @@ const guidanceFiles = [
   ...listFiles(rel("commands"), ".md"),
   ...listFiles(rel("docs"), ".md"),
   ...listFiles(rel("templates"), ".md"),
+  ...listSkillFiles(),
 ];
 
 test("active guidance qualifies Agento slash commands with the plugin name", () => {
