@@ -421,3 +421,18 @@ export function unqualifiedWarning(entries) {
   const named = [...places].map(([value, where]) => `${JSON.stringify(value)} (${where.join(", ")})`).join("; ");
   return `model values without a (vendor) suffix: ${named}; VS Code resolves an unqualified name only for some Copilot models and silently ignores it otherwise — use "<picker name> (<vendor>)", then re-apply`;
 }
+
+// Pinned agents whose first entry has no `copilotModels` alias: `entries` is
+// `[{ alias, value }]` with a string or list value; `copilotModels` the parsed
+// top-level map. Returns the warning string, or null when every pinned agent is
+// aliased (or no map is defined).
+export function missingAliasWarning(entries, copilotModels) {
+  if (!copilotModels || !Object.keys(copilotModels).length) return null;
+  const missing = [];
+  for (const { alias, value } of entries) {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first === "string" && first !== "" && !Object.hasOwn(copilotModels, first)) missing.push(`${alias} ${JSON.stringify(first)}`);
+  }
+  if (!missing.length) return null;
+  return `agent pins without a Copilot alias: ${missing.join(" and ")}; add each picker name to the top-level copilotModels map so the Autopilot can pin Copilot subagents`;
+}
