@@ -235,11 +235,19 @@ and Autopilot run inline (see [Router skill](#router-skill)).
 
 The `/agento <name> [args]` router lives at `skills/agento/SKILL.md` — a
 user-level skill named `agento`, not a plugin skill, so nothing shadows it in
-Copilot sessions. Until `harness-install` automates the link, install it by hand:
+Copilot sessions. `harness-install` automates the link (no by-hand symlink
+command):
 
 ```sh
-ln -s <clone>/skills/agento ~/.copilot/skills/agento
+node <clone>/scripts/agento.mjs harness install --plugin-root <clone>
 ```
+
+`harness status [--plugin-root <clone>]` reports the link state
+(`absent`/`installed`/`foreign`/`dangling`/`not-a-link`); `harness uninstall
+--plugin-root <clone>` removes only Agento's own link; `harness install --force
+--plugin-root <clone>` replaces a foreign or dangling link. Installing the link
+means Local sessions also route `/agento <name>` through the router instead of the
+plugin prompt command; `harness uninstall` restores the Local prompt commands.
 
 The skill parses the command name from the arguments, applies the canonical
 spelling redirect rule, reads `commands/<name>.md`, and dispatches by that file's
@@ -261,6 +269,12 @@ Phase 2 live results (2026-10-17), with the skill linked to
   delivery-status; `/agento not-a-command` listed all 25
   `/agento <name>` names with no receipt; `/agento new-feature router smoke test`
   ran the Planner up to its clarifying questions.
+- **Router-read label.** In VS Code 1.141.0 / Copilot Chat 0.69.0 the
+  "Read skill · agento" label does not appear, even with every collapsed box
+  expanded: the router read is shown as "Reviewed SKILL.md and checked
+  delivery-status.md" instead (observed 2026-10-17 on the `harness-install` live
+  check, where `/agento delivery-status` still printed its receipt and result
+  line).
 - **Redirect sentence placement.** The redirect sentence is printed, but Copilot
   places it inside the collapsed "Completed N steps" block rather than in the
   final reply text.

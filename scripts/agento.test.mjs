@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
+import { linkType } from "./harness.mjs";
 import { setHandoffModels, setModel } from "./model-profiles.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
@@ -81,6 +82,8 @@ delete baseEnv.GITHUB_ACTIONS;
 baseEnv.AGENTO_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-config-home-"));
 // Never read the real VS Code user settings (doctor hook-wiring).
 baseEnv.AGENTO_VSCODE_SETTINGS = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-settings.json");
+// Never touch the real ~/.copilot/skills (harness install/status/uninstall).
+baseEnv.AGENTO_COPILOT_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
 
 function runWith({ cwd, env }, ...args) {
   const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
@@ -1436,7 +1439,7 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports nine checks and includes session-workspace, model-profile, and hook-wiring", () => {
+test("doctor reports ten checks and includes session-workspace, model-profile, hook-wiring, and harness", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   // --plugin-root: the model-profile check must not read the (possibly pinned) clone running the suite.
@@ -1444,7 +1447,7 @@ test("doctor reports nine checks and includes session-workspace, model-profile, 
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1557,7 +1560,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -1566,6 +1569,259 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.equal(auth.status, "fail");
   assert.match(auth.detail, /gh auth status failed: You are not logged into any GitHub hosts/);
   assert.match(auth.fallback, /`gh auth login`/);
+});
+
+// --- harness install|status|uninstall and the doctor harness check ------------------
+
+function harnessFixture() {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-harness-"));
+  const plugin = path.join(base, "plugin");
+  fs.mkdirSync(path.join(plugin, "skills", "agento"), { recursive: true });
+  fs.writeFileSync(path.join(plugin, "skills", "agento", "SKILL.md"), "---\ndescription: router\n---\n\n# agento\n");
+  fs.mkdirSync(path.join(plugin, ".github", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(plugin, ".github", "agents", "delivery-builder.agent.md"), "---\nname: builder\n---\n# builder\n");
+  execFileSync("git", ["init", "-q", "-b", "main", plugin]);
+  git(plugin, "config", "user.email", "test@example.com");
+  git(plugin, "config", "user.name", "Test");
+  git(plugin, "add", "-A");
+  git(plugin, "commit", "-q", "-m", "init");
+  const skills = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
+  const env = { ...baseEnv, AGENTO_COPILOT_SKILLS_DIR: skills };
+  const runHarness = (...args) => runWith({ cwd: plugin, env }, "harness", ...args);
+  const link = path.join(skills, "agento");
+  return { plugin, env, runHarness, link };
+}
+
+test("harness status reports absent, installed, foreign, dangling, and not-a-link", () => {
+  const { plugin, runHarness, link } = harnessFixture();
+  const expected = path.join(plugin, "skills", "agento");
+  const status = () => runHarness("status", "--plugin-root", plugin);
+
+  const absent = status();
+  assert.equal(absent.code, 0, JSON.stringify(absent.json));
+  assert.equal(absent.json.status, "ok");
+  assert.equal(absent.json.verb, "status");
+  assert.equal(absent.json.link, link);
+  assert.equal(absent.json.expected, expected);
+  assert.equal(absent.json.pluginRoot, plugin);
+  assert.equal(absent.json.state, "absent");
+  assert.equal(absent.json.target, null);
+  assert.equal(absent.json.changed, false);
+  assert.match(absent.json.localTakeover, /Local/);
+
+  fs.symlinkSync(expected, link, "dir");
+  const installed = status();
+  assert.equal(installed.json.state, "installed");
+  assert.equal(installed.json.target, expected);
+
+  fs.unlinkSync(link);
+  const other = path.join(path.dirname(plugin), "other");
+  fs.mkdirSync(path.join(other, "skills", "agento"), { recursive: true });
+  fs.writeFileSync(path.join(other, "skills", "agento", "SKILL.md"), "x");
+  fs.symlinkSync(path.join(other, "skills", "agento"), link, "dir");
+  const foreign = status();
+  assert.equal(foreign.json.state, "foreign");
+  assert.equal(foreign.json.target, path.join(other, "skills", "agento"));
+
+  fs.unlinkSync(link);
+  fs.symlinkSync(path.join(plugin, "does-not-exist"), link, "dir");
+  const dangling = status();
+  assert.equal(dangling.json.state, "dangling");
+  assert.equal(dangling.json.target, path.join(plugin, "does-not-exist"));
+
+  fs.unlinkSync(link);
+  fs.mkdirSync(link);
+  fs.writeFileSync(path.join(link, "SKILL.md"), "x");
+  const notALink = status();
+  assert.equal(notALink.json.state, "not-a-link");
+  assert.equal(notALink.json.target, null);
+});
+
+test("harness install creates an idempotent link, replaces foreign/dangling with --force, and refuses a real directory", () => {
+  const { plugin, runHarness, link } = harnessFixture();
+  const expected = path.join(plugin, "skills", "agento");
+
+  const created = runHarness("install", "--plugin-root", plugin);
+  assert.equal(created.code, 0, JSON.stringify(created.json));
+  assert.equal(created.json.status, "ok");
+  assert.equal(created.json.changed, true);
+  assert.equal(created.json.state, "installed");
+  assert.equal(fs.readlinkSync(link), expected);
+
+  const again = runHarness("install", "--plugin-root", plugin);
+  assert.equal(again.code, 0);
+  assert.equal(again.json.changed, false);
+  assert.equal(again.json.state, "installed");
+
+  // Foreign: refused without --force (untouched), replaced with --force.
+  const other = path.join(path.dirname(plugin), "other");
+  fs.mkdirSync(path.join(other, "skills", "agento"), { recursive: true });
+  fs.writeFileSync(path.join(other, "skills", "agento", "SKILL.md"), "x");
+  fs.unlinkSync(link);
+  fs.symlinkSync(path.join(other, "skills", "agento"), link, "dir");
+  const foreignRefused = runHarness("install", "--plugin-root", plugin);
+  assert.equal(foreignRefused.code, 3);
+  assert.equal(foreignRefused.json.status, "refused");
+  assert.equal(fs.readlinkSync(link), path.join(other, "skills", "agento"));
+
+  const foreignForced = runHarness("install", "--plugin-root", plugin, "--force");
+  assert.equal(foreignForced.code, 0, JSON.stringify(foreignForced.json));
+  assert.equal(foreignForced.json.changed, true);
+  assert.equal(fs.readlinkSync(link), expected);
+
+  // Dangling: refused without --force, replaced with --force.
+  fs.unlinkSync(link);
+  fs.symlinkSync(path.join(plugin, "gone"), link, "dir");
+  const danglingRefused = runHarness("install", "--plugin-root", plugin);
+  assert.equal(danglingRefused.code, 3);
+  assert.equal(danglingRefused.json.status, "refused");
+  assert.equal(fs.readlinkSync(link), path.join(plugin, "gone"));
+
+  const danglingForced = runHarness("install", "--plugin-root", plugin, "--force");
+  assert.equal(danglingForced.code, 0);
+  assert.equal(danglingForced.json.changed, true);
+  assert.equal(fs.readlinkSync(link), expected);
+
+  // Real directory: refused even with --force, left intact.
+  fs.unlinkSync(link);
+  fs.mkdirSync(link);
+  fs.writeFileSync(path.join(link, "SKILL.md"), "mine");
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 3);
+  const dirForced = runHarness("install", "--plugin-root", plugin, "--force");
+  assert.equal(dirForced.code, 3);
+  assert.equal(dirForced.json.status, "refused");
+  assert.equal(fs.readFileSync(path.join(link, "SKILL.md"), "utf8"), "mine");
+});
+
+test("harness install refuses a linked worktree naming the primary clone and reports missing without a router skill", () => {
+  const { plugin, env, runHarness } = harnessFixture();
+
+  const linked = path.join(path.dirname(plugin), "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
+  const inLinked = runWith({ cwd: linked, env }, "harness", "install", "--plugin-root", linked);
+  assert.equal(inLinked.code, 3, JSON.stringify(inLinked.json));
+  assert.equal(inLinked.json.status, "worktree");
+  assert.equal(inLinked.json.primaryCheckout, plugin);
+  assert.match(inLinked.json.message, new RegExp(`--plugin-root ${plugin}$`));
+
+  const bare = path.join(path.dirname(plugin), "bare");
+  fs.mkdirSync(bare);
+  const missing = runWith({ cwd: bare, env }, "harness", "install", "--plugin-root", bare);
+  assert.equal(missing.code, 3);
+  assert.equal(missing.json.status, "missing");
+  assert.match(missing.json.message, /no router skill/);
+});
+
+test("harness uninstall removes only an installed link; absent is a no-op; foreign and real directories are refused", () => {
+  const { plugin, runHarness, link } = harnessFixture();
+  const expected = path.join(plugin, "skills", "agento");
+
+  const absent = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(absent.code, 0);
+  assert.equal(absent.json.status, "ok");
+  assert.equal(absent.json.changed, false);
+  assert.equal(absent.json.state, "absent");
+
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 0);
+  const removed = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(removed.code, 0, JSON.stringify(removed.json));
+  assert.equal(removed.json.changed, true);
+  assert.equal(removed.json.state, "absent");
+  assert.equal(fs.existsSync(link), false);
+
+  // Foreign: refused and untouched.
+  const other = path.join(path.dirname(plugin), "other");
+  fs.mkdirSync(path.join(other, "skills", "agento"), { recursive: true });
+  fs.writeFileSync(path.join(other, "skills", "agento", "SKILL.md"), "x");
+  fs.symlinkSync(path.join(other, "skills", "agento"), link, "dir");
+  const foreign = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(foreign.code, 3);
+  assert.equal(foreign.json.status, "refused");
+  assert.equal(fs.readlinkSync(link), path.join(other, "skills", "agento"));
+
+  // Real directory: refused and untouched.
+  fs.unlinkSync(link);
+  fs.mkdirSync(link);
+  fs.writeFileSync(path.join(link, "SKILL.md"), "mine");
+  const dir = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(dir.code, 3);
+  assert.equal(dir.json.status, "refused");
+  assert.equal(fs.readFileSync(path.join(link, "SKILL.md"), "utf8"), "mine");
+
+  // sanity: the expected target was never the install/uninstall source of truth for removal
+  assert.ok(fs.existsSync(expected));
+});
+
+test("harness usage errors and the pure linkType helper", () => {
+  const { plugin, runHarness } = harnessFixture();
+  assert.equal(runHarness("bogus", "--plugin-root", plugin).code, 1);
+  assert.equal(runHarness("status", "extra", "--plugin-root", plugin).code, 1);
+  assert.equal(runHarness("status", "--plugin-root", plugin, "--force").code, 1);
+  assert.equal(runHarness("uninstall", "--plugin-root", plugin, "--force").code, 1);
+
+  assert.equal(linkType("win32"), "junction");
+  assert.equal(linkType("linux"), "dir");
+  assert.equal(linkType("darwin"), "dir");
+});
+
+test("doctor harness check is ok without a router and when installed, warns per state, and never runs in preflight", () => {
+  const { plugin, env, runHarness, link } = harnessFixture();
+  const { bin: okBin } = restrictedPath(okStubs);
+  // The fixture's skills dir, with a stubbed gh/code PATH so the doctor run is deterministic.
+  const doctorEnv = { ...env, PATH: okBin };
+  const check = () => byId(runWith({ cwd: plugin, env: doctorEnv }, "doctor", "--plugin-root", plugin).json)["harness"];
+  const expected = path.join(plugin, "skills", "agento");
+
+  // Installed: ok, names the link, the clone, and the Local takeover.
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 0);
+  const installed = check();
+  assert.equal(installed.status, "ok", JSON.stringify(installed));
+  assert.match(installed.detail, new RegExp(plugin));
+  assert.match(installed.detail, /Local/);
+
+  // Absent.
+  fs.unlinkSync(link);
+  const absent = check();
+  assert.equal(absent.status, "warn");
+  assert.match(absent.detail, /cannot run \/agento/);
+  assert.match(absent.fallback, new RegExp(`harness install --plugin-root ${plugin}`));
+
+  // Foreign.
+  const other = path.join(path.dirname(plugin), "other");
+  fs.mkdirSync(path.join(other, "skills", "agento"), { recursive: true });
+  fs.writeFileSync(path.join(other, "skills", "agento", "SKILL.md"), "x");
+  fs.symlinkSync(path.join(other, "skills", "agento"), link, "dir");
+  const foreign = check();
+  assert.equal(foreign.status, "warn");
+  assert.match(foreign.detail, new RegExp(path.join(other, "skills", "agento")));
+  assert.match(foreign.fallback, /--force/);
+
+  // Dangling.
+  fs.unlinkSync(link);
+  fs.symlinkSync(path.join(plugin, "gone"), link, "dir");
+  const dangling = check();
+  assert.equal(dangling.status, "warn");
+  assert.match(dangling.detail, /dangling/);
+  assert.match(dangling.fallback, /--force/);
+
+  // Not-a-link.
+  fs.unlinkSync(link);
+  fs.mkdirSync(link);
+  const notALink = check();
+  assert.equal(notALink.status, "warn");
+  assert.match(notALink.fallback, /move it away/);
+
+  // Root without a router skill: ok.
+  const plain = makeRepo();
+  const noSkill = byId(runWith({ cwd: plain, env: doctorEnv }, "doctor", "--plugin-root", plain).json)["harness"];
+  assert.equal(noSkill.status, "ok");
+  assert.match(noSkill.detail, /no Agento router skill/);
+
+  // Informational: never in doctor --for new-feature or preflight new-feature.
+  const forCheck = byId(runWith({ cwd: plugin, env: doctorEnv }, "doctor", "--for", "new-feature").json);
+  assert.equal(forCheck["harness"], undefined);
+  const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature").json;
+  assert.equal(byId(preflight.doctor)["harness"], undefined);
 });
 
 test("doctor warns (exit 0) when code is missing and reports its fallback; no Python check remains", () => {
