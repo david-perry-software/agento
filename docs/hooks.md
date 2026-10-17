@@ -78,10 +78,18 @@ name maps explicitly (`Bash`/`run_in_terminal` are shell tools;
 `tool_search_tool` are neither), and the input is read from the first of
 `tool_input`/`toolInput`/`toolArgs` that is a plain object or a string that
 `JSON.parse`s to one — anything else becomes `{}` and the call is allowed, never a
-throw. In Copilot an `ask` verdict shows a hook card and then runs under the
-session's permission mode rather than hard-blocking, so under auto-approve a
-hook-file edit is not stopped; `deny` verdicts (push to main, force-push, hook
-shell writes) are unaffected.
+throw. The harnesses spell tool names and inputs differently: Local sends VS Code
+ids (`run_in_terminal`, `create_file`, `replace_string_in_file`) with shapes like
+`{command, …}` / `{filePath, content}`, while Copilot sends Claude names (`Bash`,
+`Write`, `Read`, `Edit`, `Agent`) with shapes like `{command, description}` /
+`{path, file_text}` — the guard classifies by capability (shell, write) so one
+normalizer serves both. In Copilot an `ask` verdict shows a hook card and then runs
+under the session's permission mode rather than hard-blocking, so under auto-approve
+a hook-file edit is not stopped; `deny` verdicts (push to main, force-push, hook
+shell writes) are unaffected. A hook process that exits 2 fails closed in both
+harnesses — Local blocks with the generic "Hook denied tool execution" (the reason
+is dropped) and Copilot with "hook exited with code 2" — so the guard emits a JSON
+verdict and exits 0, keeping its reason visible.
 
 **Opt-in diagnostic.** When the marker file `/tmp/agento-guard-debug` exists, or
 `AGENTO_GUARD_DEBUG_LOG` names a log file, `delivery-guard.mjs` `main()` appends
@@ -144,10 +152,13 @@ companion half is not mistaken for a product commit.
 - `REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`
   — the same fixtures replayed as Copilot `Bash` payloads, reading the top-level
   `permissionDecision` and reporting a MISMATCH when the nested
-  `hookSpecificOutput.permissionDecision` disagrees; add `REPLAY_COMPANION=1` for
-  the companion fixtures. File-tool payloads are spelled
-  `<verdict> @<Tool> <path>` (e.g. `ask @Write .github/hooks/x.json`); see
-  `tests/guard-fixtures-copilot.txt`.
+  `hookSpecificOutput.permissionDecision` disagrees.
+- `REPLAY_FORMAT=copilot REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-companion.txt`
+  — the Copilot-format replay with a sibling companion repo beside the throwaway
+  product repo (the companion fixtures).
+- `REPLAY_FORMAT=copilot ./scripts/hooks/replay-guard.sh < tests/guard-fixtures-copilot.txt`
+  — file-tool payloads spelled `<verdict> @<Tool> <path>` (e.g.
+  `ask @Write .github/hooks/x.json`) plus the Copilot `Bash` payloads.
 - `tests/guard.test.mjs` — the assertion suite (spins up real temp git repos).
 - `tests/session-context.test.mjs` — SessionStart output against temp repos.
 - `tests/hook-lib.test.mjs` — unit tests for the shared hook helpers (shell
