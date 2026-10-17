@@ -289,7 +289,7 @@ Phase 2 live results (2026-10-17), with the skill linked to
   redirect, ~8s for the unknown command).
 - **Step 2.10** (re-check that the new-feature receipt line appears before the
   question): confirmed 2026-10-17 — the receipt line
-  `Receipt: accepted new-feature:plan-20261016-191841:eea6bdd` is now printed
+  `Receipt: accepted new-feature:plan-20261016-191841:6ee4bdd` is now printed
   verbatim before the structured clarifying-question card.
 
 ## Dispatch
