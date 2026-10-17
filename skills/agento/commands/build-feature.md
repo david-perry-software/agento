@@ -1,6 +1,7 @@
 ---
 description: "Start or resume implementation of a planned feature from its roadmap.md, with verified, pushed progress"
 argument-hint: "Feature slug, or blank to list resumable features"
+model: "DeepSeek V4 Pro (deepseek)"
 agent: "🔨 Agento Builder"
 ---
 

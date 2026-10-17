@@ -1,6 +1,7 @@
 ---
 description: "Harvest un-triaged follow-ups from shipped features/issues, file them as GitHub issues autonomously, and annotate the source artifacts"
 argument-hint: "Slug to triage, or empty to scan all shipped work"
+model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 ---
 

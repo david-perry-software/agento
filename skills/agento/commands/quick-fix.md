@@ -1,6 +1,7 @@
 ---
 description: "Lite tier: make a small, well-understood change in this window — branch, implement, verify, PR, wait for checks, merge — with no plan, roadmap, review, or second window"
 argument-hint: "What to change, in one or two sentences"
+model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 tools: [read, search, edit, execute, agent]
 ---

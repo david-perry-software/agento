@@ -1,6 +1,7 @@
 ---
 description: "Turn a large brief into an initiative: clarify, research, decompose into independently shippable features with dependencies and waves, write brief.md + breakdown.md, and publish them to main through a merged PR from the primary window"
 argument-hint: "Brief text, or a repository-relative path to a file containing it"
+model: "Claude Opus 5.5 (copilot)"
 agent: "🏛️ Agento Architect"
 ---
 

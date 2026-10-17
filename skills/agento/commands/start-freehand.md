@@ -1,6 +1,7 @@
 ---
 description: "Start or resume a lightweight freehand work session in an isolated Git worktree and VS Code window — no plan, roadmap, or review artifacts, just a branch to edit freely and publish later"
 argument-hint: "[slug] [--resume] [--no-open]"
+model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 ---
 

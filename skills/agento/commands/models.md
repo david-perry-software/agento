@@ -1,6 +1,7 @@
 ---
 description: "Pin Agento agents and commands to models from a named profile in ~/.config/agento/model-profiles.json: list, show, apply, adopt, clear, or init — rewrites model: lines in the plugin clone and carries them through a local git filter"
 argument-hint: "[list | show <name> | apply <name> | adopt | clear | init]"
+model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 tools: [read, execute]
 ---

@@ -1,6 +1,7 @@
 ---
 description: "Add a new capability to the Copilot customization system: a prompt (slash command), custom agent, instruction file, hook, or skill"
 argument-hint: "Describe the capability you want (what it should do, when it should trigger, who uses it)"
+model: "Claude Opus 5.5 (copilot)"
 agent: "🛠️ Agento Mechanic"
 ---
 

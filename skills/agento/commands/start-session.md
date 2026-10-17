@@ -1,6 +1,7 @@
 ---
 description: "Create or resume an isolated Git worktree and VS Code window for a delivery session — planning (no argument or a session ID) or building (feature/<slug> or issue/<slug>)"
 argument-hint: "[<feature|issue>/<slug> | session-id] [--resume] [--no-open]"
+model: "Claude Opus 5.5 (copilot)"
 ---
 
 Needs: terminal, code

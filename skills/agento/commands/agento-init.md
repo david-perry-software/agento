@@ -1,6 +1,7 @@
 ---
 description: "Scaffold Agento in the current project: create and clone the companion artifact repository (<repo>-docs), .github/agento.json pointing at it, an ## Agento section in AGENTS.md, and scripts/wait-for-checks.sh; --migrate also moves an existing in-repo features/, issues/, initiatives/ tree into the companion"
 argument-hint: "[--force] [--migrate]"
+model: "Claude Opus 5.5 (copilot)"
 ---
 
 Needs: terminal, ask-questions, gh, network

@@ -1,6 +1,7 @@
 ---
 description: "Dashboard of all features, issues, and initiatives: status, branch, PR state, checkbox progress, initiative membership and readiness, and recommended next actions"
 argument-hint: "Optional filter, e.g. features, issues, or a slug"
+model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 tools: [read, search, execute]
 ---

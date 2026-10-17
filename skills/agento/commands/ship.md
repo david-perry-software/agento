@@ -1,6 +1,7 @@
 ---
 description: "Acceptance gate: audit a feature/issue against roadmap, codebase, and review while its build worktree is still open, reject back to that window on a real gap, merge its PR on a clean audit or explicit confirmation, then tear the build worktree down"
 argument-hint: "Slug of the feature or issue to ship"
+model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 ---
 

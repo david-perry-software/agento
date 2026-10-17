@@ -1,6 +1,7 @@
 ---
 description: "Detect the project's stack, propose matching agent skills from the skills registry, and install the approved ones — updating the AGENTS.md skills table"
 argument-hint: "No arguments"
+model: "Claude Opus 5.5 (copilot)"
 ---
 
 Needs: terminal, ask-questions, network
