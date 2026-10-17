@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 # Agento command router
 
-Routes `/agento <name> [args]` in a Copilot session (where plugin prompt commands
-do not load) to the command file `commands/<name>.md` and runs it inline or
-through its custom agent. Follow the steps below in order.
+Routes `/agento <name> [args]` in every session (Copilot and Local) to the
+command file `commands/<name>.md` and runs it inline or through its custom
+agent. Follow the steps below in order.
 
 ## 1. Parse
 
