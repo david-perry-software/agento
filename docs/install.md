@@ -58,6 +58,42 @@ copilot plugin install david-perry-software/agento
 
 Plugins installed through the CLI are also discovered by VS Code.
 
+## Copilot harness (Session Target Copilot)
+
+VS Code Copilot Chat has two harnesses, chosen by the chat's **Session Target**:
+
+- **Local** loads the plugin's prompt commands (`.github/prompts/*.prompt.md`,
+  surfaced as `/agento <name>`), so `/agento` works out of the box.
+- **Copilot** does **not** load `*.prompt.md` prompt commands. Instead it resolves
+  `/agento <name>` through the user-level router skill `~/.copilot/skills/agento`,
+  a symlink to the plugin clone's `skills/agento/SKILL.md`. Without that link a
+  Copilot chat cannot run `/agento` at all.
+
+Install the router link with the plugin's `harness` subcommand:
+
+```bash
+node <clone>/scripts/agento.mjs harness install --plugin-root <clone>
+```
+
+`harness status [--plugin-root <clone>]` reports the link's state (`absent`,
+`installed`, `foreign`, `dangling`, or `not-a-link`); `harness uninstall
+--plugin-root <clone>` removes only Agento's own link; and `harness install --force
+--plugin-root <clone>` replaces a `foreign` or `dangling` link. `--plugin-root`
+defaults to the clone the command runs in.
+
+Installing the link also changes **Local** sessions: `/agento <name>` now routes
+through the router skill instead of the plugin prompt command (the router reads the
+same `commands/<name>.md`). Builder and Reviewer keep their model pins through the
+subagent tool, but the inline agents and prompt-level model pins no longer switch —
+a known gap of the router takeover. `harness uninstall` removes the link and
+restores the Local prompt commands.
+
+The Copilot CLI path (`copilot plugin install david-perry-software/agento` in
+Option C) is **unobserved**: the GitHub Copilot CLI is not installed in the
+environment where the harness was measured, so its plugin discovery and the router
+link it would or would not create are untested. Use `harness install` for the
+Copilot harness.
+
 ## First run in a project
 
 Open your project and run `/agento agento-init`. It creates the companion artifact
@@ -84,6 +120,13 @@ command refuses while open delivery PRs exist unless you accept.
 ## Verifying the install
 
 - `/agento delivery-status` should respond (empty dashboard on a fresh project).
+- The doctor `harness` check reports the router link state:
+  `node <clone>/scripts/agento.mjs doctor` — `ok` when the link is `installed`,
+  `warn` (with the `harness install` or `install --force` command as its fallback)
+  when it is `absent`, `foreign`, `dangling`, or `not-a-link`. In a **Copilot**
+  session `/agento delivery-status` prints its `Receipt: accepted …` line; in a
+  **Local** session `/agento delivery-status` responds too (through the router once
+  the link is installed).
 - The Output panel channel **GitHub Copilot Chat Hooks** should list the Agento
   SessionStart and PreToolUse hooks, and a new chat's context should include an
   `Agento CLI: node .../scripts/agento.mjs` line.
