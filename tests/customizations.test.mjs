@@ -963,15 +963,16 @@ test("every agent and built-in-agent command loads the policy explicitly", () =>
   assert.deepEqual(missing, [], `files that do not read delivery-policy.instructions.md explicitly:\n${missing.join("\n")}`);
 });
 
-test("plugin manifest uses suffix-less command names and hook wiring points at existing executable files", () => {
+test("command mirrors use suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
-  assert.ok(fs.existsSync(rel(plugin.commands)), `plugin.commands ${plugin.commands} missing`);
-  for (const name of fs.readdirSync(rel(plugin.commands))) {
-    assert.match(name, /^[a-z0-9-]+\.md$/, `${plugin.commands}/${name}: command files are <name>.md only (no .prompt suffix)`);
+  const commandsDir = rel("commands");
+  assert.ok(fs.existsSync(commandsDir), `${commandsDir} missing`);
+  for (const name of fs.readdirSync(commandsDir)) {
+    assert.match(name, /^[a-z0-9-]+\.md$/, `${commandsDir}/${name}: command files are <name>.md only (no .prompt suffix)`);
   }
-  const pluginCommands = listFiles(rel(plugin.commands), ".md");
-  assert.ok(pluginCommands.length > 0, "plugin.commands has no .md command files");
+  const pluginCommands = listFiles(commandsDir, ".md");
+  assert.ok(pluginCommands.length > 0, "commands has no .md command files");
   assert.deepEqual(
     pluginCommands.map((file) => path.basename(file, ".md")),
     promptFiles.map((file) => path.basename(file, ".prompt.md")),
