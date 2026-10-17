@@ -406,13 +406,18 @@ transition`, `no merge commit names <branch>`; timestamps are committer dates in
 `YYYY-MM-DDTHH:MM:SSZ`, whatever the committer's offset or git version; an
 unknown slug is `status: "missing"`, exit 3),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
-`code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile` — each `{ id, status, detail, fallback }` with
+`code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile`,
+`hook-wiring`, `harness` — each `{ id, status, detail, fallback }` with
 `status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
 `<dir>-worktrees` directory exists but is not writable; `--for` runs only the checks
 the named command's `Needs:` line requires and echoes them as `for.needs`;
-`model-profile` is informational, never part of a `--for` run: `ok` with no plugin
-clone at `--plugin-root`, nothing pinned, or a named profile applied, `warn` on an
-invalid profiles file, `custom` pins, the BYOK tier conflict, or unqualified pins),
+`model-profile`, `hook-wiring`, and `harness` are informational, never part of a
+`--for` run: `model-profile` is `ok` with no plugin clone at `--plugin-root`,
+nothing pinned, or a named profile applied, `warn` on an invalid profiles file,
+`custom` pins, the BYOK tier conflict, or unqualified pins; `hook-wiring` is `warn`
+when the clone is also registered in `chat.pluginLocations`; `harness` is `ok` when
+the `~/.copilot/skills/agento` link is `installed`, `warn` otherwise with a
+`harness install` or `install --force` fallback),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
 preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
@@ -478,6 +483,20 @@ current pins byte-identically; `apply` and `adopt` refuse a linked worktree
 and any BYOK tier warning; `show`, `apply`, and `pins` also warn once about model values
 without a `(vendor)` suffix, and `apply` still exits 0; `init` copies `templates/model-profiles.json` only when the
 file is absent),
+`harness <status|install|uninstall> [--plugin-root <dir>] [--force]`
+(the router-skill link management, with the pure link helpers in
+`scripts/harness.mjs`: every verb reports `{ status, verb, link, expected, state,
+target, pluginRoot, changed, localTakeover }` with `state` ∈ `absent | installed |
+foreign | dangling | not-a-link`. `status` only reports. `install` refuses with exit
+3 — `missing` when no `skills/agento/SKILL.md` is under `--plugin-root`, `worktree`
+when `--plugin-root` names a linked worktree of the registered clone, `not-a-link`
+when the link is a real directory or file, and `foreign`/`dangling` without
+`--force` — and otherwise creates the `~/.copilot/skills/agento` symlink
+(`harness install` from the plugin clone), reporting `changed: true`. `uninstall`
+removes only Agento's own installed link (`changed: true`) and refuses everything
+else; `--force` is valid only with `install`. With the link installed, Local
+sessions also route `/agento` through the router — see
+[install.md](install.md)),
 `release <merge-sha> [--wait N] [--interval N]` (the deploy-wait verdict for
 `checks.releaseWorkflow`, derived afresh from the GitHub REST API on every call so a
 lost output costs nothing: `verdict` ∈ `success | superseded-success | not-triggered
@@ -579,6 +598,17 @@ proceeds, arguments unchanged, without asking for confirmation — per
 | `/agento <name>.prompt [args]` | `/agento <name> [args]` |
 | `/agento <name>.prompt.md [args]` | `/agento <name> [args]` |
 | `/agento <name>.md [args]` | `/agento <name> [args]` |
+
+How `/agento <name>` resolves depends on the chat's Session Target. In **Local**
+the plugin's prompt commands load, so `/agento <name>` runs the matching
+`commands/<name>.md` directly. In **Copilot** no prompt commands load; the
+user-level router skill (`~/.copilot/skills/agento`, installed by
+`harness install`) resolves the command and dispatches by its `agent:` frontmatter
+— Planner, Architect, Mechanic, and Autopilot run inline, while Builder and
+Reviewer run as subagents (`runSubagent` in Local, `task` in Copilot). Once the
+link is installed, Local also routes through the router. See
+[architecture.md](architecture.md) "Two harnesses" and
+[copilot-harness.md](copilot-harness.md) "Router skill".
 
 ## Receipts
 

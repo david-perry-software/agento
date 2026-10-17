@@ -118,6 +118,11 @@ Command Palette → *Chat: Install Plugin From Source* →
 copilot plugin install david-perry-software/agento
 ```
 
+If the chat's Session Target is **Copilot**, the plugin's prompt commands do not
+load there — run `harness install` once from the clone so `/agento` resolves
+through the router skill. See [docs/install.md](docs/install.md) "Copilot harness"
+and [docs/copilot-harness.md](docs/copilot-harness.md).
+
 Full details and the developer-mode caveat: [docs/install.md](docs/install.md).
 
 For the optional dashboard VSIX, including installation, view behavior, command
@@ -547,6 +552,9 @@ After install, in a fresh chat in your project:
 - `/agento delivery-status` responds with an empty dashboard.
 - Ask the agent to run `git push origin main`; the guard denies it.
 - Output panel → **GitHub Copilot Chat Hooks** lists both hooks.
+- `node <clone>/scripts/agento.mjs harness status` reports the router link as
+  `installed`, and `agento.mjs doctor` includes the `harness` check (`ok` when the
+  link is installed). A Copilot session needs that link before `/agento` resolves.
 
 If commands don't appear or route to the wrong agent, run `/agento fix-copilot` and
 describe the symptom — the Mechanic knows the usual causes (frontmatter, name
@@ -577,7 +585,8 @@ rules, and [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 - [Install](docs/install.md) · [Commands](docs/commands.md) ·
   [Architecture](docs/architecture.md) · [Artifacts](docs/artifacts.md) ·
-  [Hooks](docs/hooks.md) · [Concurrency](docs/concurrency.md) ·
+  [Hooks](docs/hooks.md) · [Copilot harness](docs/copilot-harness.md) ·
+  [Concurrency](docs/concurrency.md) ·
   [Project profile](docs/project-profile.md) ·
   [Example profile](examples/soshiki-profile.md)
 

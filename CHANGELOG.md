@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-10-17)
+
+- **Added.** Copilot-harness support ships end to end. The `agento` router skill
+  (`skills/agento/SKILL.md`, installed as the user-level link
+  `~/.copilot/skills/agento`) resolves `/agento <name>` in Copilot sessions, where
+  the plugin's prompt commands do not load; the new `harness install`, `harness
+  status`, and `harness uninstall` subcommand creates, reports, and removes that
+  link, and doctor's `harness` check reports its state. The hooks emit the
+  dual-shape output both harnesses expect (top-level Copilot slots plus
+  `hookSpecificOutput` for Local), the Builder and Reviewer subagent model is passed
+  through `task` (Copilot) via `copilotModel` or `runSubagent` (Local) via
+  `subagentModel`, and the dashboard submits the same `{ query, mode, attachFiles }`
+  dispatch in both harnesses. With the link installed, Local also routes `/agento`
+  through the router; the known gap is that the Local takeover drops prompt-level
+  and inline-agent model pins (Builder and Reviewer pins survive). Documented in
+  install.md, hooks.md, architecture.md, extension.md, commands.md,
+  model-profiles.md, and copilot-harness.md.
 
 - **Fixed.** Model-profile pins no longer break fast-forwards. `/agento ship`,
   `publish-pr --merge`, `/agento finish-freehand`, and a hand-run `git pull` in a

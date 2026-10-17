@@ -2,11 +2,14 @@
 
 This document records what the Copilot (Agent Host) harness actually does, as
 measured by the reproducible probe in `tests/harness-probe/` (see
-[Reproduce](#reproduce)). It replaces the "unverified" documentation claims in
-the `copilot-harness` initiative with recorded observations, so the later
-members (`copilot-hook-compat`, `agents-copilot-models`, `agento-router-skill`,
-`harness-install`, `dispatch-copilot-harness`) build against facts instead of
-guesses. It changes no runtime behavior.
+[Reproduce](#reproduce)). The Copilot harness is now **shipped**: the router
+skill, the `harness install|status|uninstall` CLI subcommand, the doctor `harness`
+check, dual-harness hooks, and dashboard dispatch in both harnesses are all part
+of this release — install the router link as described in
+[install.md](install.md) and run the subcommand documented in
+[commands.md](commands.md). The sections below keep the probe's recorded
+observations as the evidence behind those shipped behaviors; the document changes
+no runtime behavior.
 
 ## Versions observed
 
@@ -67,10 +70,12 @@ the companion repository under
   `read_agent`, `read_bash`, `skill`, `sql`, `stop_bash`, `task`, `view`,
   `write_agent`; a GPT-routed turn additionally showed `functions.*` plus
   `apply_patch` and `multi_tool_use.parallel`. There is **no ask-user tool and no
-  browser tool**, so `vscode/askQuestions` and `browser` are unavailable in
-  Copilot — the §10 `ask-questions` and `browser` fallbacks apply there. A
-  question asked as plain chat text works: the agent ends its turn and the user's
-  reply arrives as a new turn (~3–4 min round trip).
+  browser tool** in the model's tool set, so `vscode/askQuestions` and `browser`
+  are unavailable to the model — including to `task` subagents, which therefore
+  cannot ask the user at all. An inline run under the router asks through the chat
+  itself (not a tool), and Copilot renders that as a structured ask-user card (see
+  the router section below). A question asked as plain chat text works: the agent
+  ends its turn and the user's reply arrives as a new turn (~3–4 min round trip).
 - **Subagent model parameter.** The Copilot subagent tool is `task`; its optional
   `model` parameter takes bare ids for Copilot-hosted models (35 listed in the
   task-models screenshots, e.g. `claude-opus-5.5`, `gpt-5.6-luna`, …) and
@@ -280,9 +285,11 @@ Phase 2 live results (2026-10-17), with the skill linked to
   final reply text.
 - **Structured ask-user card.** In Copilot the Planner's clarifying question
   rendered as a structured ask-user card — numbered options with "(Recommended)",
-  a custom-answer field, and a Submit button — contradicting the "no ask-user
-  tool" finding elsewhere in this document (that finding concerns the `task`
-  subagent tool, not an inline run).
+  a custom-answer field, and a Submit button. This does not contradict the
+  "no ask-user tool" finding: that finding concerns the model's tool set (and so
+  `task` subagents and directly selected agents, which cannot ask the user at
+  all), whereas the card is the harness's own rendering of an inline run's chat
+  question.
 - **Missing new-feature receipt.** The new-feature check showed no visible
   `Receipt: accepted new-feature:…` line before the question — the Planner
   summarised "Preflight passed …" instead. Fixed in step 2.9 (the skill now
@@ -321,8 +328,11 @@ which equals the current payload, so no `chatOpenOptions` change is required.
 
 The earlier harness-probe observation — that the Copilot input filled but did not
 submit and would not send a slash-leading message — predates the router install and
-used the probe skill; it is superseded. The matrix and screenshots live in the
-companion repository under
+used the probe skill. That the missing router link explains the difference is a
+stated, untested hypothesis: V1 was observed submitting only after the router was
+installed, and the pre-router non-submit was never re-measured under the same
+setup, so the cause is inferred, not demonstrated. The matrix and screenshots live
+in the companion repository under
 `features/2026/10/dispatch-copilot-harness/evidence/step-1-2-dispatch-matrix.md`.
 
 ## Reproduce
