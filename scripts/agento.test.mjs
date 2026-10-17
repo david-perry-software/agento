@@ -1500,7 +1500,7 @@ test("doctor artifact-repo passes a valid companion, fails a missing or broken o
   const docs = companionOf(repo);
   const { env } = restrictedPath(okStubs);
   const check = (...args) => {
-    const result = runWith({ cwd: repo, env }, "doctor", ...args);
+    const result = runWith({ cwd: repo, env }, "doctor", "--plugin-root", repo, ...args);
     return { code: result.code, status: result.json.status, check: byId(result.json)["artifact-repo"] };
   };
 
@@ -1728,6 +1728,7 @@ test("harness uninstall removes only an installed link; absent is a no-op; forei
   assert.equal(removed.json.changed, true);
   assert.equal(removed.json.state, "absent");
   assert.equal(fs.existsSync(link), false);
+  assert.match(removed.json.warning, /\/agento will no longer resolve/);
 
   // Foreign: refused and untouched.
   const other = path.join(path.dirname(plugin), "other");
@@ -1764,7 +1765,7 @@ test("harness usage errors and the pure linkType helper", () => {
   assert.equal(linkType("darwin"), "dir");
 });
 
-test("doctor harness check is ok without a router and when installed, warns per state, and never runs in preflight", () => {
+test("doctor harness check is ok without a router and when installed, fails per state, and never runs in preflight", () => {
   const { plugin, env, runHarness, link } = harnessFixture();
   const { bin: okBin } = restrictedPath(okStubs);
   // The fixture's skills dir, with a stubbed gh/code PATH so the doctor run is deterministic.
@@ -1782,8 +1783,8 @@ test("doctor harness check is ok without a router and when installed, warns per 
   // Absent.
   fs.unlinkSync(link);
   const absent = check();
-  assert.equal(absent.status, "warn");
-  assert.match(absent.detail, /cannot run \/agento/);
+  assert.equal(absent.status, "fail");
+  assert.match(absent.detail, /cannot run \/agento in any session/);
   assert.match(absent.fallback, new RegExp(`harness install --plugin-root ${plugin}`));
 
   // Foreign.
@@ -1792,7 +1793,8 @@ test("doctor harness check is ok without a router and when installed, warns per 
   fs.writeFileSync(path.join(other, "skills", "agento", "SKILL.md"), "x");
   fs.symlinkSync(path.join(other, "skills", "agento"), link, "dir");
   const foreign = check();
-  assert.equal(foreign.status, "warn");
+  assert.equal(foreign.status, "fail");
+  assert.match(foreign.detail, /cannot run \/agento in any session/);
   assert.match(foreign.detail, new RegExp(path.join(other, "skills", "agento")));
   assert.match(foreign.fallback, /--force/);
 
@@ -1800,7 +1802,8 @@ test("doctor harness check is ok without a router and when installed, warns per 
   fs.unlinkSync(link);
   fs.symlinkSync(path.join(plugin, "gone"), link, "dir");
   const dangling = check();
-  assert.equal(dangling.status, "warn");
+  assert.equal(dangling.status, "fail");
+  assert.match(dangling.detail, /cannot run \/agento in any session/);
   assert.match(dangling.detail, /dangling/);
   assert.match(dangling.fallback, /--force/);
 
@@ -1808,7 +1811,8 @@ test("doctor harness check is ok without a router and when installed, warns per 
   fs.unlinkSync(link);
   fs.mkdirSync(link);
   const notALink = check();
-  assert.equal(notALink.status, "warn");
+  assert.equal(notALink.status, "fail");
+  assert.match(notALink.detail, /cannot run \/agento in any session/);
   assert.match(notALink.fallback, /move it away/);
 
   // Root without a router skill: ok.
@@ -1827,7 +1831,7 @@ test("doctor harness check is ok without a router and when installed, warns per 
 test("doctor warns (exit 0) when code is missing and reports its fallback; no Python check remains", () => {
   const repo = makeRepo();
   const { env } = restrictedPath({ gh: okStubs.gh });
-  const { code, json } = runWith({ cwd: repo, env }, "doctor");
+  const { code, json } = runWith({ cwd: repo, env }, "doctor", "--plugin-root", repo);
   assert.equal(code, 0);
   assert.equal(json.status, "warn");
   const checks = byId(json);
@@ -1843,7 +1847,7 @@ test("doctor fails without an origin remote and warns when origin is unreachable
   const { env } = restrictedPath(okStubs);
 
   git(repo, "remote", "set-url", "origin", path.join(path.dirname(repo), "does-not-exist.git"));
-  const unreachable = runWith({ cwd: repo, env }, "doctor");
+  const unreachable = runWith({ cwd: repo, env }, "doctor", "--plugin-root", repo);
   assert.equal(unreachable.code, 0);
   assert.equal(unreachable.json.status, "warn");
   const remote = byId(unreachable.json)["git-remote"];
@@ -1852,7 +1856,7 @@ test("doctor fails without an origin remote and warns when origin is unreachable
   assert.match(remote.fallback, /work offline/);
 
   git(repo, "remote", "remove", "origin");
-  const none = runWith({ cwd: repo, env }, "doctor");
+  const none = runWith({ cwd: repo, env }, "doctor", "--plugin-root", repo);
   assert.equal(none.code, 3);
   assert.equal(none.json.status, "fail");
   const missing = byId(none.json)["git-remote"];
