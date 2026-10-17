@@ -269,6 +269,12 @@ Phase 2 live results (2026-10-17), with the skill linked to
   delivery-status; `/agento not-a-command` listed all 25
   `/agento <name>` names with no receipt; `/agento new-feature router smoke test`
   ran the Planner up to its clarifying questions.
+- **Router-read label.** In VS Code 1.141.0 / Copilot Chat 0.69.0 the
+  "Read skill · agento" label does not appear, even with every collapsed box
+  expanded: the router read is shown as "Reviewed SKILL.md and checked
+  delivery-status.md" instead (observed 2026-10-17 on the `harness-install` live
+  check, where `/agento delivery-status` still printed its receipt and result
+  line).
 - **Redirect sentence placement.** The redirect sentence is printed, but Copilot
   places it inside the collapsed "Completed N steps" block rather than in the
   final reply text.
