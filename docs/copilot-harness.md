@@ -256,8 +256,9 @@ Phase 2 live results (2026-10-17), with the skill linked to
 
 - **Copilot — all four checks reached the router** ("Read skill · agento"):
   `/agento delivery-status` printed `Receipt: accepted delivery-status:main:6ee4bdd`
-  and the session report; `/agento delivery-status.prompt` printed the redirect
-  sentence and ran delivery-status; `/agento not-a-command` listed all 25
+  and the session report; a `delivery-status` spelling with a `.prompt` suffix (the
+  old form the redirect rule strips) printed the redirect sentence and ran
+  delivery-status; `/agento not-a-command` listed all 25
   `/agento <name>` names with no receipt; `/agento new-feature router smoke test`
   ran the Planner up to its clarifying questions.
 - **Redirect sentence placement.** The redirect sentence is printed, but Copilot
