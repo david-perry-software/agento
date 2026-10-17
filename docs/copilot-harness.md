@@ -35,7 +35,7 @@ guesses. It changes no runtime behavior.
 | Does `/agento <name> [args]` reach a user skill named `agento` (symlinked)? | No — the Agento plugin's real `/agento <name>` command shadows the user skill; args arrive as free text. | Yes — resolves to the symlinked `~/.copilot/skills/agento` as "Read skill · agento", with ARGUMENTS `delivery-status --probe-arg x` exactly. | [skill fixtures](../tests/harness-probe/skills/agento/SKILL.md); step 2.2 and 2.4 observations | `agento-router-skill`, `harness-install` |
 | Can a subagent ask the user, and nest? | `vscode/askQuestions` works and the answer returns within the same turn; a nested subagent runs on its own agent pin and its own `vscode/askQuestions` also works; a nested subagent has no subagent tool of its own, so deeper nesting is unavailable. | The subagent tool is `task` (no ask-user tool); `probe-unpinned` invoked `probe-pinned` via `task` and it completed in 21 s — the earlier 10+ min stall did not recur. | step 2.2, 2.4, and 1.2 observations | `agento-router-skill`, `agents-copilot-models` |
 | Do model pins apply, and in what format? | The agent pin (`Claude Opus 5.5 (copilot)`, the VS Code picker form) overrides the parent model; an unpinned agent inherits the parent model. | **`finding: picker-rejected`** — an agent selected directly in a Copilot session runs on the session's model, not its `model:` pin (picker, list, BYOK, specific model, or Auto are all ignored); the pin format itself is accepted (see [Agents and models](#agents-and-models)). The parent model field is absent from the SessionStart payload. | step 2.2, 2.4, and 1.2 observations | `agents-copilot-models` |
-| What does `workbench.action.chat.open {query, mode, attachFiles}` do in Copilot? | — | Fills the chat input with `/agento delivery-status`, attaches `delivery-status.md`, sets Agent mode, but does **not** submit; the Copilot input will not send a message that begins with a slash in this dispatch case. | step 2.4 observations | `dispatch-copilot-harness` |
+| What does `workbench.action.chat.open {query, mode, attachFiles}` do in Copilot? | — | Fills the chat input with `/agento delivery-status`, attaches `delivery-status.md`, sets Agent mode, but does **not** submit; the Copilot input will not send a message that begins with a slash in this dispatch case. Superseded 2026-10-17 — see [Dispatch](#dispatch). | step 2.4 observations | `dispatch-copilot-harness` |
 
 Screenshots and raw observation notes live in the companion artifact repository
 (`agento-docs`) under `features/2026/10/harness-probe/evidence/`; the table links
@@ -309,12 +309,21 @@ Phase 2 live results (2026-10-17), with the skill linked to
 ## Dispatch
 
 The Agento extension dashboard dispatches through
-`workbench.action.chat.open` with `{ query, mode, attachFiles }`. In a Copilot
-session this fills the chat input with `/agento delivery-status`, attaches
-`delivery-status.md` (the command file), and sets Agent mode — but it does **not**
-submit, and the Copilot chat input will not let the user send a message that
-begins with a slash in this dispatch case. Typed `/agento …` messages do send when
-entered normally. `dispatch-copilot-harness` owns this gap.
+`workbench.action.chat.open` with `{ query, mode, attachFiles }`.
+
+`dispatch-copilot-harness` selected **V1** — today's
+`{ query, mode: "agent", attachFiles }` payload — on 2026-10-17: it now
+**submits in both Copilot and Local** on this VS Code build with the router skill
+installed (`~/.copilot/skills/agento` → `agento-plugin`): the chat input is
+filled, the request is sent, the command file is attached, Agent mode is set, and
+the router prints `Receipt: accepted delivery-status:…`. The chosen variant is V1,
+which equals the current payload, so no `chatOpenOptions` change is required.
+
+The earlier harness-probe observation — that the Copilot input filled but did not
+submit and would not send a slash-leading message — predates the router install and
+used the probe skill; it is superseded. The matrix and screenshots live in the
+companion repository under
+`features/2026/10/dispatch-copilot-harness/evidence/step-1-2-dispatch-matrix.md`.
 
 ## Reproduce
 
