@@ -64,6 +64,8 @@ The command file's `agent:` frontmatter decides how it runs:
   — passing the command body and the argument. Relay the subagent's final message
   verbatim, including its receipt and result lines and its command blocks.
 
+Whichever mode applies, the dispatched command's §9 receipt line must be printed verbatim as visible text, before any question or other output.
+
 ## 6. No own receipt
 
 The router adds no receipt or result line of its own; the dispatched command owns

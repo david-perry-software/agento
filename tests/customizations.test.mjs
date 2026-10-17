@@ -211,6 +211,10 @@ test("the router dispatch content names every agent exactly once with the decide
   for (const token of ["models pins", "task", "runSubagent", "copilotModel", "subagentModel", "Agento CLI:", "realpath"]) {
     assert.ok(body.includes(token), `skills/agento/SKILL.md must name ${JSON.stringify(token)}`);
   }
+  assert.ok(
+    body.includes("receipt line must be printed verbatim as visible text"),
+    "skills/agento/SKILL.md must require the dispatched command's §9 receipt line printed verbatim before any question or other output",
+  );
 });
 
 test("every instruction file has a description and applyTo", () => {
