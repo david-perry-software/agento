@@ -1019,6 +1019,25 @@ test("plugin manifest uses suffix-less command names and hook wiring points at e
   }
 });
 
+test("#121 dispatch-router-only: plugin manifest registers no commands; the router skill reaches every commands/*.md", () => {
+  const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
+  assert.equal(plugin.commands, undefined, "plugin.json must not register prompt commands; /agento resolves only through the router skill");
+  assert.ok(fs.existsSync(rel("skills", "agento", "SKILL.md")), "skills/agento/SKILL.md missing");
+  const commandFiles = listFiles(rel("commands"), ".md");
+  assert.ok(commandFiles.length > 0, "commands/ has no .md command files");
+  for (const file of commandFiles) {
+    const name = path.basename(file, ".md");
+    assert.match(name, /^[a-z0-9-]+$/, `commands/${name}.md: command names are suffix-less lowercase`);
+    const promptFile = rel(".github", "prompts", `${name}.prompt.md`);
+    assert.ok(fs.existsSync(promptFile), `commands/${name}.md has no .github/prompts/${name}.prompt.md`);
+    assert.equal(
+      fs.readFileSync(file, "utf8"),
+      fs.readFileSync(promptFile, "utf8"),
+      `commands/${name}.md differs from its workspace prompt`,
+    );
+  }
+});
+
 test("plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#36 plugin-hooks-layout)", () => {
   // A root plugin.json + hooks.json (Copilot format 0) is parsed by VS Code without
   // substituting the plugin-root token, so every hook spawns as `/scripts/hooks/…`
