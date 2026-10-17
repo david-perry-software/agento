@@ -1,7 +1,6 @@
 ---
 description: "Run a planned feature or issue unattended: Builder and Reviewer loop automatically until approved or a human is needed"
 argument-hint: "<feature|issue>/<slug> or bare slug"
-model: "Claude Opus 5.5 (copilot)"
 agent: "🤖 Agento Autopilot"
 ---
 

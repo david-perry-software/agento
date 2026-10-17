@@ -1,6 +1,6 @@
 ---
 name: agento
-description: "Use when the user types /agento <command> [args]: routes an Agento command to its commands/<name>.md and runs it inline or through its custom agent."
+description: "Use when the user types /agento <command> [args]: routes an Agento command to its skills/agento/commands/<name>.md and runs it inline or through its custom agent."
 argument-hint: "<command> [args]"
 user-invocable: true
 disable-model-invocation: true
@@ -9,8 +9,8 @@ disable-model-invocation: true
 # Agento command router
 
 Routes `/agento <name> [args]` in every session (Copilot and Local) to the
-command file `commands/<name>.md` and runs it inline or through its custom
-agent. Follow the steps below in order.
+command file `skills/agento/commands/<name>.md` and runs it inline or through its
+custom agent. Follow the steps below in order.
 
 ## 1. Parse
 
@@ -33,12 +33,13 @@ asking.
 Otherwise it is the `realpath` of this skill's directory, two levels up: the
 user-level link `~/.copilot/skills/agento` points at `<clone>/skills/agento`, so
 the clone is the real path of the skill directory's parent's parent. Confirm
-`<agento-root>/commands/` exists.
+`<agento-root>/skills/agento/commands/` exists.
 
 ## 4. Resolve
 
-Read `<agento-root>/commands/<name>.md`. If it is missing, reply with the valid
-names — the basenames of `<agento-root>/commands/*.md`, each printed as
+Read `<agento-root>/skills/agento/commands/<name>.md`. If it is missing, reply
+with the valid names — the basenames of
+`<agento-root>/skills/agento/commands/*.md`, each printed as
 `/agento <name>` — and stop. Never guess a closest match.
 
 ## 5. Dispatch

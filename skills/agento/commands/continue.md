@@ -1,7 +1,6 @@
 ---
 description: "Derive the one legal next delivery transition from the session record and perform it — build, review, or ship here, or open the worktree window that owns the next step; optional slug when several deliveries are in flight"
 argument-hint: "[<slug>]"
-model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 ---
 

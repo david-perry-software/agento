@@ -1,7 +1,6 @@
 ---
 description: "Start or resume implementation of a planned issue fix from its roadmap.md, with verified, pushed progress"
 argument-hint: "Issue slug, or blank to list resumable issues"
-model: "DeepSeek V4 Pro (deepseek)"
 agent: "🔨 Agento Builder"
 ---
 

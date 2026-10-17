@@ -1,7 +1,6 @@
 ---
 description: "Review an issue fix against its plan: score the acceptance checklist, audit roadmap.md, write review.md with a verdict"
 argument-hint: "Issue slug to review"
-model: "Claude Fable 5.1 (copilot)"
 agent: "🔍 Agento Reviewer"
 ---
 

@@ -35,7 +35,7 @@ test("resolveChatMode resolves a planner command to its agent name", () => {
   const result = resolveChatMode("/agento new-feature widget", {
     pluginRoot: "/plugin",
     readFile: (filePath) => {
-      assert.equal(filePath, path.join("/plugin", "commands", "new-feature.md"));
+      assert.equal(filePath, path.join("/plugin", "skills", "agento", "commands", "new-feature.md"));
       return '---\nagent: "📋 Agento Planner"\n---\n';
     },
   });
@@ -64,7 +64,7 @@ test("resolveChatMode reports an unreadable command file", () => {
   assert.deepEqual(resolveChatMode("/agento new-feature widget", {
     pluginRoot: "/plugin",
     readFile: () => { throw new Error("ENOENT"); },
-  }), { mode: null, reason: "unreadable command file /plugin/commands/new-feature.md: ENOENT" });
+  }), { mode: null, reason: "unreadable command file /plugin/skills/agento/commands/new-feature.md: ENOENT" });
 });
 
 test("resolveChatMode reports a non-canonical command", () => {
@@ -78,10 +78,10 @@ test("resolveCommandFile resolves the command file path", () => {
   assert.deepEqual(resolveCommandFile("/agento new-feature widget", {
     pluginRoot: "/plugin",
     exists: (filePath) => {
-      assert.equal(filePath, path.join("/plugin", "commands", "new-feature.md"));
+      assert.equal(filePath, path.join("/plugin", "skills", "agento", "commands", "new-feature.md"));
       return true;
     },
-  }), { path: path.join("/plugin", "commands", "new-feature.md") });
+  }), { path: path.join("/plugin", "skills", "agento", "commands", "new-feature.md") });
 });
 
 test("resolveCommandFile reports a non-canonical command", () => {
@@ -102,5 +102,5 @@ test("resolveCommandFile reports a missing command file", () => {
   assert.deepEqual(resolveCommandFile("/agento new-feature widget", {
     pluginRoot: "/plugin",
     exists: () => false,
-  }), { path: null, reason: "missing command file /plugin/commands/new-feature.md" });
+  }), { path: null, reason: "missing command file /plugin/skills/agento/commands/new-feature.md" });
 });

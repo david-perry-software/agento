@@ -1,7 +1,6 @@
 ---
 description: "Verify and document an issue with evidence, file a GitHub issue, and plan the fix around an exposing regression test"
 argument-hint: "Describe the issue or bug"
-model: "Claude Opus 5.5 (copilot)"
 agent: "📋 Agento Planner"
 ---
 

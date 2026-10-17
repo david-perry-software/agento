@@ -81,8 +81,8 @@ changes which `model:` line a file gets — writing the Copilot id into a `model
 line was found not to help (see [Subagents and handoffs](#subagents-and-handoffs)).
 
 A `prompts` key with no matching `.github/prompts/<name>.prompt.md` is an error.
-Each prompt's plugin-mode mirror `commands/<name>.md` receives the same bytes as the
-prompt.
+Each prompt's plugin-mode mirror `skills/agento/commands/<name>.md` receives the
+same bytes as the prompt.
 
 `/agento start-session` is a thin formatter: one `agento.mjs start-session` call
 does the window check, fetch, worktree adds, and window open, and the model only
@@ -91,7 +91,8 @@ maps the JSON to the receipt and report. Pin it to a fast model (for example
 nothing here. The dashboard's New Plan and start-session play buttons call the CLI
 directly and use no model at all.
 
-A `model:` line in a `commands/<name>.md` mirror is not applied through the
+A `model:` line in a `skills/agento/commands/<name>.md` mirror is not applied
+through the
 router: the router runs inline (built-in agent or a Planner/Architect/Mechanic/
 Autopilot agent) on the session's model, so a prompt `model:` pin and the
 agent-mode model switch do not take effect there; only Builder and Reviewer,
@@ -182,7 +183,8 @@ clone:
   `node "$(git rev-parse --path-format=absolute --git-common-dir)/agento/model-filter.mjs" clean|smudge %f`
   and `filter.agento-models.required` to `true`.
 - A marker-delimited block in `<common-dir>/info/attributes` assigns the filter to
-  `/.github/agents/*.agent.md`, `/.github/prompts/*.prompt.md`, and `/commands/*.md`.
+  `/.github/agents/*.agent.md`, `/.github/prompts/*.prompt.md`, and
+  `/skills/agento/commands/*.md`.
 
 `clean` strips exactly the recorded pins, so git compares and commits pin-free
 content; `smudge` writes the recorded pins back whenever git rewrites a file. A

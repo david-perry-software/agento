@@ -1,7 +1,6 @@
 ---
 description: "Diagnose and repair a bug in the Copilot customization system (agents, prompts, instructions, hooks, skills)"
 argument-hint: "Describe the misbehavior (what you did, what happened, what you expected)"
-model: "Claude Opus 5.5 (copilot)"
 agent: "🛠️ Agento Mechanic"
 ---
 

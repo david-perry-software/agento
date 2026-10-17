@@ -1,7 +1,6 @@
 ---
 description: "Wrap up a freehand session: commit everything on the session branch, publish it through a protected pull request, and merge it into main without running local verification"
 argument-hint: "Optional context, intent, or issue reference"
-model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 ---
 

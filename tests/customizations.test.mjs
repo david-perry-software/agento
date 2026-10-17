@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const rel = (...parts) => path.join(repoRoot, ...parts);
+const commandRel = (...parts) => rel("skills", "agento", "commands", ...parts);
 
 function listFiles(dir, suffix) {
   return fs
@@ -163,7 +164,8 @@ test("every prompt dispatches to a real agent and has no name override", () => {
 });
 
 // The /agento <name> [args] router skill, reached as a user-level skill in Copilot
-// sessions. It reads commands/<name>.md and dispatches by its agent: frontmatter.
+// sessions. It reads skills/agento/commands/<name>.md and dispatches by its agent:
+// frontmatter.
 const INLINE_AGENT_FILES = ["delivery-planner.agent.md", "initiative-architect.agent.md", "copilot-mechanic.agent.md", "delivery-autopilot.agent.md"];
 const SUBAGENT_AGENT_FILES = ["delivery-builder.agent.md", "delivery-reviewer.agent.md"];
 
@@ -179,7 +181,7 @@ test("the router skill exists with the decided frontmatter", () => {
 });
 
 test("every command's agent: is absent, agent, or an existing agent name", () => {
-  const commandFiles = listFiles(rel("commands"), ".md");
+  const commandFiles = listFiles(commandRel(), ".md");
   assert.ok(commandFiles.length > 0);
   for (const file of commandFiles) {
     const label = path.relative(repoRoot, file);
@@ -338,7 +340,7 @@ test("status: paused is reserved for the user; the Autopilot resumes session bre
   assert.match(autopilot, /`status:\s+paused` and `next-step` carries a `\(manual\)` or `blocked:` marker/, "Autopilot preflight must inspect the next-step marker");
   assert.match(autopilot, /legacy session break/, "Autopilot must resume a legacy paused roadmap without a marker");
   assert.match(autopilot, /`status: in-progress` \(the Builder took a session break/, "Autopilot loop must re-invoke the Builder after a session break");
-  for (const file of [rel(".github", "prompts", "ap.prompt.md"), rel("commands", "ap.md")]) {
+  for (const file of [rel(".github", "prompts", "ap.prompt.md"), commandRel("ap.md")]) {
     assert.match(fs.readFileSync(file, "utf8"), /session break/, `${path.relative(repoRoot, file)} must describe session-break resumption`);
   }
 });
@@ -346,8 +348,8 @@ test("status: paused is reserved for the user; the Autopilot resumes session bre
 test("start-session and start-freehand write the workspace file through the CLI (#58 session-auto-approve)", () => {
   // start-session delegates the whole start (workspace file included) to `agento.mjs start-session`.
   const pairs = [
-    [rel(".github", "prompts", "start-session.prompt.md"), rel("commands", "start-session.md"), /agento\.mjs start-session/],
-    [rel(".github", "prompts", "start-freehand.prompt.md"), rel("commands", "start-freehand.md"), /agento\.mjs workspace/],
+    [rel(".github", "prompts", "start-session.prompt.md"), commandRel("start-session.md"), /agento\.mjs start-session/],
+    [rel(".github", "prompts", "start-freehand.prompt.md"), commandRel("start-freehand.md"), /agento\.mjs workspace/],
   ];
   for (const [prompt, mirror, call] of pairs) {
     const promptBody = splitFrontmatter(prompt).body;
@@ -362,7 +364,7 @@ test("start-session and start-freehand write the workspace file through the CLI 
 test("start-session is one agento.mjs start-session call with no hand-run fallback procedure", () => {
   const prompt = rel(".github", "prompts", "start-session.prompt.md");
   const body = splitFrontmatter(prompt).body;
-  assert.equal(fs.readFileSync(rel("commands", "start-session.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/start-session.md must mirror the prompt byte for byte");
+  assert.equal(fs.readFileSync(commandRel("start-session.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "skills/agento/commands/start-session.md must mirror the prompt byte for byte");
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs start-session /);
   assert.doesNotMatch(body, /git -C <\w+> worktree add/, "the CLI runs git worktree add; the prompt must not");
   assert.doesNotMatch(body, /date -u \+%Y/, "the CLI generates the session id; the prompt must not");
@@ -371,7 +373,7 @@ test("start-session is one agento.mjs start-session call with no hand-run fallba
 test("close-session is one agento.mjs close-session call with no hand-run fallback procedure", () => {
   const prompt = rel(".github", "prompts", "close-session.prompt.md");
   const body = splitFrontmatter(prompt).body;
-  assert.equal(fs.readFileSync(rel("commands", "close-session.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/close-session.md must mirror the prompt byte for byte");
+  assert.equal(fs.readFileSync(commandRel("close-session.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "skills/agento/commands/close-session.md must mirror the prompt byte for byte");
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs close-session /);
   assert.doesNotMatch(body, /git (?:-C \S+ )?worktree remove/, "the CLI removes the halves; the prompt must not");
   assert.doesNotMatch(body, /git (?:-C \S+ )?branch -d/, "the CLI deletes merged branches; the prompt must not");
@@ -382,7 +384,7 @@ test("close-session is one agento.mjs close-session call with no hand-run fallba
 test("ship is one agento.mjs ship call with no hand-run fallback procedure", () => {
   const prompt = rel(".github", "prompts", "ship.prompt.md");
   const body = splitFrontmatter(prompt).body;
-  assert.equal(fs.readFileSync(rel("commands", "ship.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "commands/ship.md must mirror the prompt byte for byte");
+  assert.equal(fs.readFileSync(commandRel("ship.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "skills/agento/commands/ship.md must mirror the prompt byte for byte");
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs preflight ship <slug>/);
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs ship <type> <slug>/);
   assert.match(body, /--confirm <confirmToken>/, "the confirmation reaches the CLI as --confirm <token>");
@@ -406,9 +408,9 @@ test("only the ship prompt and its mirror reference agento.mjs ship", () => {
   // Any other prompt or agent calling the merging subcommand would bypass the user's
   // /agento ship. Instructions may describe it (policy §6 names its bounded waits)
   // but never as a command to run.
-  const allowed = new Set([".github/prompts/ship.prompt.md", "commands/ship.md"]);
+  const allowed = new Set([".github/prompts/ship.prompt.md", "skills/agento/commands/ship.md"]);
   const offenders = [];
-  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
     const label = path.relative(repoRoot, file);
     if (allowed.has(label)) continue;
     if (/agento\.mjs ship\b(?!-preflight)/.test(fs.readFileSync(file, "utf8"))) offenders.push(label);
@@ -441,7 +443,7 @@ test("only the Builder agent references agento.mjs step-commit and agento.mjs sy
   // sight; any other caller would bypass the Builder's roadmap discipline.
   const allowed = new Set([".github/agents/delivery-builder.agent.md"]);
   const offenders = [];
-  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
     const label = path.relative(repoRoot, file);
     if (allowed.has(label)) continue;
     if (/agento\.mjs (?:step-commit|sync)\b/.test(fs.readFileSync(file, "utf8"))) offenders.push(label);
@@ -466,7 +468,7 @@ const HAND_RUN_PUBLISH = [
 function assertOneCall(files, call) {
   for (const file of files) {
     const label = path.relative(repoRoot, file);
-    const text = file.includes(`${path.sep}commands${path.sep}`) ? fs.readFileSync(file, "utf8") : splitFrontmatter(file).body;
+    const text = file.includes(`${path.sep}skills${path.sep}agento${path.sep}commands${path.sep}`) ? fs.readFileSync(file, "utf8") : splitFrontmatter(file).body;
     assert.match(text.replace(/\s+/g, " "), call, `${label} must call ${call.source}`);
     for (const [pattern, why] of HAND_RUN_PUBLISH) assert.doesNotMatch(text, pattern, `${label}: the CLI ${why}; the file must not (${pattern})`);
   }
@@ -474,7 +476,7 @@ function assertOneCall(files, call) {
 
 function assertMirrors(names) {
   for (const name of names) {
-    assert.equal(fs.readFileSync(rel("commands", `${name}.md`), "utf8"), fs.readFileSync(rel(".github", "prompts", `${name}.prompt.md`), "utf8"), `commands/${name}.md must mirror the prompt byte for byte`);
+    assert.equal(fs.readFileSync(commandRel(`${name}.md`), "utf8"), fs.readFileSync(rel(".github", "prompts", `${name}.prompt.md`), "utf8"), `skills/agento/commands/${name}.md must mirror the prompt byte for byte`);
   }
 }
 
@@ -482,7 +484,7 @@ function assertMirrors(names) {
 function assertOnlyReferencedBy(sub, allowed) {
   const pattern = new RegExp(`agento\\.mjs ${sub}\\b`);
   const offenders = [];
-  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
     const label = path.relative(repoRoot, file);
     if (!allowed.has(label) && pattern.test(fs.readFileSync(file, "utf8").replace(/\s+/g, " "))) offenders.push(label);
   }
@@ -494,26 +496,26 @@ function assertOnlyReferencedBy(sub, allowed) {
   for (const label of allowed) assert.match(fs.readFileSync(rel(...label.split("/")), "utf8").replace(/\s+/g, " "), pattern, `${label} must call agento.mjs ${sub}`);
 }
 
-const PLANNER_FILES = [".github/agents/delivery-planner.agent.md", ".github/prompts/new-feature.prompt.md", ".github/prompts/new-issue.prompt.md", "commands/new-feature.md", "commands/new-issue.md"];
+const PLANNER_FILES = [".github/agents/delivery-planner.agent.md", ".github/prompts/new-feature.prompt.md", ".github/prompts/new-issue.prompt.md", "skills/agento/commands/new-feature.md", "skills/agento/commands/new-issue.md"];
 
 test("the Planner publishes through one agento.mjs plan-publish call with no hand-run fallback", () => {
   assertMirrors(["new-feature", "new-issue"]);
   assertOneCall([rel(".github", "agents", "delivery-planner.agent.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish <type> <slug>/);
-  assertOneCall([rel(".github", "prompts", "new-feature.prompt.md"), rel("commands", "new-feature.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish feature <slug>/);
-  assertOneCall([rel(".github", "prompts", "new-issue.prompt.md"), rel("commands", "new-issue.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish issue <slug>/);
+  assertOneCall([rel(".github", "prompts", "new-feature.prompt.md"), commandRel("new-feature.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish feature <slug>/);
+  assertOneCall([rel(".github", "prompts", "new-issue.prompt.md"), commandRel("new-issue.md")], /node <agento-root>\/scripts\/agento\.mjs plan-publish issue <slug>/);
 });
 
 test("only the Planner files reference agento.mjs plan-publish", () => {
   assertOnlyReferencedBy("plan-publish", new Set(PLANNER_FILES));
 });
 
-const REVIEWER_FILES = [".github/agents/delivery-reviewer.agent.md", ".github/prompts/review-feature.prompt.md", ".github/prompts/review-issue.prompt.md", "commands/review-feature.md", "commands/review-issue.md"];
+const REVIEWER_FILES = [".github/agents/delivery-reviewer.agent.md", ".github/prompts/review-feature.prompt.md", ".github/prompts/review-issue.prompt.md", "skills/agento/commands/review-feature.md", "skills/agento/commands/review-issue.md"];
 
 test("the Reviewer publishes through one agento.mjs review-publish call with no hand-run fallback", () => {
   assertMirrors(["review-feature", "review-issue"]);
   assertOneCall([rel(".github", "agents", "delivery-reviewer.agent.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish <type> <slug>/);
-  assertOneCall([rel(".github", "prompts", "review-feature.prompt.md"), rel("commands", "review-feature.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish feature <slug>/);
-  assertOneCall([rel(".github", "prompts", "review-issue.prompt.md"), rel("commands", "review-issue.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish issue <slug>/);
+  assertOneCall([rel(".github", "prompts", "review-feature.prompt.md"), commandRel("review-feature.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish feature <slug>/);
+  assertOneCall([rel(".github", "prompts", "review-issue.prompt.md"), commandRel("review-issue.md")], /node <agento-root>\/scripts\/agento\.mjs review-publish issue <slug>/);
   for (const label of REVIEWER_FILES) assert.doesNotMatch(fs.readFileSync(rel(...label.split("/")), "utf8"), /git -C <companion\.path> (?:add|commit)/, `${label}: the CLI commits the review`);
 });
 
@@ -526,7 +528,7 @@ const PR_FLOW_PROMPTS = ["commit-current-changes", "quick-fix", "finish-freehand
 test("commit-current-changes, quick-fix, and finish-freehand publish through one agento.mjs publish-pr call with no hand-run fallback", () => {
   assertMirrors(PR_FLOW_PROMPTS);
   for (const name of PR_FLOW_PROMPTS) {
-    assertOneCall([rel(".github", "prompts", `${name}.prompt.md`), rel("commands", `${name}.md`)], /node <agento-root>\/scripts\/agento\.mjs publish-pr --title "<[a-z]+>" --body-file - --merge/);
+    assertOneCall([rel(".github", "prompts", `${name}.prompt.md`), commandRel(`${name}.md`)], /node <agento-root>\/scripts\/agento\.mjs publish-pr --title "<[a-z]+>" --body-file - --merge/);
   }
   assert.match(splitFrontmatter(rel(".github", "prompts", "finish-freehand.prompt.md")).body, /returns `\/agento close-session changes\/<slug>` in `next\[\]`/);
 });
@@ -534,7 +536,7 @@ test("commit-current-changes, quick-fix, and finish-freehand publish through one
 test("the Architect, new-initiative, and triage-followups publish through one agento.mjs publish-pr call (--dir in companion mode) with no hand-run fallback", () => {
   assertMirrors(["new-initiative", "triage-followups"]);
   const call = /node <agento-root>\/scripts\/agento\.mjs publish-pr --title "[^"]+" --body-file - --merge/;
-  assertOneCall([rel(".github", "agents", "initiative-architect.agent.md"), rel(".github", "prompts", "new-initiative.prompt.md"), rel("commands", "new-initiative.md"), rel(".github", "prompts", "triage-followups.prompt.md"), rel("commands", "triage-followups.md")], call);
+  assertOneCall([rel(".github", "agents", "initiative-architect.agent.md"), rel(".github", "prompts", "new-initiative.prompt.md"), commandRel("new-initiative.md"), rel(".github", "prompts", "triage-followups.prompt.md"), commandRel("triage-followups.md")], call);
   for (const file of [rel(".github", "agents", "initiative-architect.agent.md"), rel(".github", "prompts", "new-initiative.prompt.md"), rel(".github", "prompts", "triage-followups.prompt.md")]) {
     const text = fs.readFileSync(file, "utf8");
     assert.match(text.replace(/\s+/g, " "), /`--dir <artifactsRoot>`/, `${path.relative(repoRoot, file)}: companion mode passes --dir <artifactsRoot>`);
@@ -544,7 +546,7 @@ test("the Architect, new-initiative, and triage-followups publish through one ag
 
 test("only the five flows' prompts, their mirrors, and the Architect reference agento.mjs publish-pr", () => {
   const prompts = ["commit-current-changes", "quick-fix", "finish-freehand", "new-initiative", "triage-followups"];
-  assertOnlyReferencedBy("publish-pr", new Set([...prompts.flatMap((n) => [`.github/prompts/${n}.prompt.md`, `commands/${n}.md`]), ".github/agents/initiative-architect.agent.md"]));
+  assertOnlyReferencedBy("publish-pr", new Set([...prompts.flatMap((n) => [`.github/prompts/${n}.prompt.md`, `skills/agento/commands/${n}.md`]), ".github/agents/initiative-architect.agent.md"]));
 });
 
 test("only worktree-mutating commands inspect `git worktree list --porcelain`", () => {
@@ -553,7 +555,7 @@ test("only worktree-mutating commands inspect `git worktree list --porcelain`", 
   // or remove worktrees read the list, and ship removes the pair at its teardown.
   const allowlist = new Set(["start-session", "start-freehand", "close-session", "ship"]);
   const offenders = [];
-  for (const file of [...promptFiles, ...listFiles(rel("commands"), ".md"), ...agentFiles]) {
+  for (const file of [...promptFiles, ...listFiles(commandRel(), ".md"), ...agentFiles]) {
     const name = path.basename(file).replace(/(?:\.prompt|\.agent)?\.md$/, "");
     if (allowlist.has(name)) continue;
     if (/worktree list\s+--porcelain/.test(fs.readFileSync(file, "utf8"))) offenders.push(path.relative(repoRoot, file));
@@ -642,7 +644,7 @@ test("ask-questions clarification always offers a §10 recommended choice (#90 p
   assert.match(paragraph, /\(recommended\)/, "§10 recommended choice must mark the fallback option (recommended)");
   const askers = [];
   const missing = [];
-  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
     const text = fs.readFileSync(file, "utf8");
     if (!/ask-questions\s+tool/.test(text)) continue;
     askers.push(path.basename(file));
@@ -689,7 +691,7 @@ test("the byproduct cleanup lives in the CLI with --literal-pathspecs; no prompt
   assert.match(cli, /\["--literal-pathspecs", "clean", "-f", "--", /, "scripts/agento.mjs must spell the literal, non-recursive clean");
   assert.doesNotMatch(cli, /"clean", "-fd"|"clean", "-fx"|"clean", "-f", "-d"|"clean", "-f", "-x"/, "the CLI never cleans directories or ignored files");
   const offenders = [];
-  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
       if (/\bgit (?:-C \S+ )?(?:--literal-pathspecs )?clean\b/.test(line)) offenders.push(`${path.relative(repoRoot, file)}: ${line.trim()}`);
     }
@@ -699,7 +701,7 @@ test("the byproduct cleanup lives in the CLI with --literal-pathspecs; no prompt
 
 test("REST PATCH examples render real blank-line newlines (#62 pr-cross-linking-deprecation)", () => {
   const examples = [];
-  for (const file of [...promptFiles, ...agentFiles, ...listFiles(rel("commands"), ".md")]) {
+  for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
     const text = fs.readFileSync(file, "utf8");
     for (const match of text.matchAll(/gh api repos\/[^\n]+?\/pulls\/[^\n]+? -X PATCH -f body=([^;]+); fi/g)) {
       examples.push({ label: path.relative(repoRoot, file), expression: match[1] });
@@ -872,7 +874,7 @@ const guidanceFiles = [
   ...agentFiles,
   ...promptFiles,
   ...instructionFiles,
-  ...listFiles(rel("commands"), ".md"),
+  ...listFiles(commandRel(), ".md"),
   ...listFiles(rel("docs"), ".md"),
   ...listFiles(rel("templates"), ".md"),
   ...listSkillFiles(),
@@ -956,7 +958,7 @@ test("every agent and built-in-agent command loads the policy explicitly", () =>
   const policyRead = /^Policy: read `<agento-root>\/\.github\/instructions\/delivery-policy\.instructions\.md` once /m;
   const builtIn = promptFiles.filter((file) => parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file)).agent === "agent");
   assert.ok(builtIn.length >= 11, `expected at least 11 built-in-agent prompts, got ${builtIn.length}`);
-  const mirrors = builtIn.map((file) => rel("commands", `${path.basename(file, ".prompt.md")}.md`));
+  const mirrors = builtIn.map((file) => commandRel(`${path.basename(file, ".prompt.md")}.md`));
   const missing = [...agentFiles, ...builtIn, ...mirrors]
     .filter((file) => !policyRead.test(splitFrontmatter(file).body))
     .map((file) => path.relative(repoRoot, file));
@@ -966,13 +968,13 @@ test("every agent and built-in-agent command loads the policy explicitly", () =>
 test("command mirrors use suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
-  const commandsDir = rel("commands");
+  const commandsDir = commandRel();
   assert.ok(fs.existsSync(commandsDir), `${commandsDir} missing`);
   for (const name of fs.readdirSync(commandsDir)) {
     assert.match(name, /^[a-z0-9-]+\.md$/, `${commandsDir}/${name}: command files are <name>.md only (no .prompt suffix)`);
   }
   const pluginCommands = listFiles(commandsDir, ".md");
-  assert.ok(pluginCommands.length > 0, "commands has no .md command files");
+  assert.ok(pluginCommands.length > 0, "skills/agento/commands has no .md command files");
   assert.deepEqual(
     pluginCommands.map((file) => path.basename(file, ".md")),
     promptFiles.map((file) => path.basename(file, ".prompt.md")),
@@ -1065,9 +1067,9 @@ test("plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#
 
 test("committed agents, prompts, and command mirrors carry no model: line", () => {
   const gitOut = (...args) => execFileSync("git", ["-C", repoRoot, ...args], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-  const files = gitOut("ls-tree", "-r", "--name-only", "HEAD", "--", ".github/agents", ".github/prompts", "commands")
+  const files = gitOut("ls-tree", "-r", "--name-only", "HEAD", "--", ".github/agents", ".github/prompts", "skills/agento/commands")
     .split("\n")
-    .filter((f) => /\.(agent|prompt)\.md$/.test(f) || /^commands\/[^/]+\.md$/.test(f));
+    .filter((f) => /\.(agent|prompt)\.md$/.test(f) || /^skills\/agento\/commands\/[^/]+\.md$/.test(f));
   assert.ok(files.length > 0, "no agents, prompts, or command mirrors at HEAD");
   for (const file of files) {
     const frontmatter = gitOut("show", `HEAD:${file}`).match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/)?.[1] ?? "";

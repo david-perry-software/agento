@@ -1,7 +1,6 @@
 ---
 description: "Read-only initiative report: which member features are ready, blocked, in flight, or complete, the CLI's recommended next feature, and the exact commands to plan it"
 argument-hint: "<initiative-slug>"
-model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 tools: [read, search, execute]
 ---

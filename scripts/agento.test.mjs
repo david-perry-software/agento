@@ -2538,7 +2538,7 @@ const T3 = "2026-09-10T12:00:00Z";
 
 function assertDispatch(json, agentExpected) {
   assert.ok(json.dispatch, "dispatch missing");
-  assert.equal(json.dispatch.prompt, path.join(repoRoot, "commands", `${json.next.command}.md`));
+  assert.equal(json.dispatch.prompt, path.join(repoRoot, "skills", "agento", "commands", `${json.next.command}.md`));
   assert.ok(fs.existsSync(json.dispatch.prompt), json.dispatch.prompt);
   if (agentExpected === null) assert.equal(json.dispatch.agent, null);
   else {
@@ -3060,9 +3060,12 @@ test("migrate rejects a non-sibling destination and a non-checkout, writing noth
 function modelsFixture({ gitInit = true } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-models-"));
   const plugin = path.join(base, "plugin");
-  for (const rel of [".github/agents", ".github/prompts", "commands"]) fs.cpSync(path.join(repoRoot, rel), path.join(plugin, rel), { recursive: true });
+  for (const rel of [".github/agents", ".github/prompts", "skills/agento/commands"]) {
+    fs.mkdirSync(path.join(plugin, path.dirname(rel)), { recursive: true });
+    fs.cpSync(path.join(repoRoot, rel), path.join(plugin, rel), { recursive: true });
+  }
   // A pinned clone running the suite (its worktrees inherit the pins) must not seed them here.
-  for (const rel of [".github/agents", ".github/prompts", "commands"]) {
+  for (const rel of [".github/agents", ".github/prompts", "skills/agento/commands"]) {
     for (const file of fs.readdirSync(path.join(plugin, rel))) {
       const abs = path.join(plugin, rel, file);
       fs.writeFileSync(abs, setHandoffModels(setModel(fs.readFileSync(abs, "utf8"), null), null));
@@ -3143,9 +3146,9 @@ test("models show resolves agents, inherited prompts, and mirrors", () => {
   assert.equal(value(".github/agents/delivery-planner.agent.md"), "Strong");
   assert.equal(value(".github/agents/delivery-builder.agent.md"), "Cheap");
   assert.equal(value(".github/prompts/new-feature.prompt.md"), "Strong");
-  assert.equal(value("commands/new-feature.md"), "Strong");
+  assert.equal(value("skills/agento/commands/new-feature.md"), "Strong");
   assert.equal(value(".github/prompts/doctor.prompt.md"), "Tiny");
-  assert.equal(value("commands/doctor.md"), "Tiny");
+  assert.equal(value("skills/agento/commands/doctor.md"), "Tiny");
   assert.equal(value(".github/prompts/start-session.prompt.md"), "Cheap");
 });
 
@@ -3341,7 +3344,7 @@ test("models apply pins agents, prompts, and mirrors through the git filter; cle
   assert.match(read(".github/agents/delivery-builder.agent.md"), /^model: "Cheap"$/m);
   assert.match(read(".github/prompts/doctor.prompt.md"), /^model: "Tiny"$/m);
   assert.match(read(".github/prompts/new-feature.prompt.md"), /^model: "Strong"$/m);
-  for (const p of prompts) assert.equal(read(`commands/${p.replace(".prompt.md", ".md")}`), read(`.github/prompts/${p}`), p);
+  for (const p of prompts) assert.equal(read(`skills/agento/commands/${p.replace(".prompt.md", ".md")}`), read(`.github/prompts/${p}`), p);
   assert.equal(git(plugin, "status", "--porcelain"), "");
   assert.deepEqual(sBits(plugin), []);
   assert.deepEqual(apply.json.legacySkipWorktree, []);
@@ -3357,7 +3360,7 @@ test("models apply pins agents, prompts, and mirrors through the git filter; cle
   assert.equal(Object.keys(state.files).length, apply.json.changed.length);
   assert.equal(state.files[".github/agents/delivery-planner.agent.md"].model, "Strong");
   assert.deepEqual(state.files[".github/agents/delivery-reviewer.agent.md"].model, ["A (copilot)", "B"]);
-  assert.equal(state.files["commands/doctor.md"].model, "Tiny");
+  assert.equal(state.files["skills/agento/commands/doctor.md"].model, "Tiny");
   // The index still holds the pin-free HEAD content.
   assert.equal(git(plugin, "diff", "--cached", "--name-only", "HEAD"), "");
 
@@ -3410,7 +3413,7 @@ test("models clear removes the filter config, attribute block, state dir, and le
   assert.equal(models("list").json.active, "mixed");
 
   // A legacy bit left behind (an older apply) is cleared too.
-  git(plugin, "update-index", "--skip-worktree", "--", "commands/doctor.md");
+  git(plugin, "update-index", "--skip-worktree", "--", "skills/agento/commands/doctor.md");
   const clear = models("clear");
   assert.equal(clear.code, 0, JSON.stringify(clear.json));
   assert.equal(clear.json.primaryCheckout, undefined);
@@ -3432,15 +3435,15 @@ function legacyPins(plugin, pins) {
   git(plugin, "update-index", "--skip-worktree", "--", ...Object.keys(pins));
 }
 
-const targetBytes = (plugin) => Object.fromEntries([".github/agents", ".github/prompts", "commands"].flatMap((dir) => fs.readdirSync(path.join(plugin, dir)).map((f) => [`${dir}/${f}`, fs.readFileSync(path.join(plugin, dir, f), "utf8")])));
+const targetBytes = (plugin) => Object.fromEntries([".github/agents", ".github/prompts", "skills/agento/commands"].flatMap((dir) => fs.readdirSync(path.join(plugin, dir)).map((f) => [`${dir}/${f}`, fs.readFileSync(path.join(plugin, dir, f), "utf8")])));
 
 test("models apply migrates legacy skip-worktree pins onto the filter with identical pins", () => {
   const { plugin, models, writeProfiles } = modelsFixture();
   writeProfiles({ tiny: { prompts: { doctor: "Tiny (copilot)" } } });
-  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Tiny (copilot)", "commands/doctor.md": "Tiny (copilot)" });
+  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Tiny (copilot)", "skills/agento/commands/doctor.md": "Tiny (copilot)" });
   const legacy = models("list").json;
   assert.equal(legacy.active, "tiny");
-  assert.deepEqual(legacy.legacySkipWorktree, [".github/prompts/doctor.prompt.md", "commands/doctor.md"]);
+  assert.deepEqual(legacy.legacySkipWorktree, [".github/prompts/doctor.prompt.md", "skills/agento/commands/doctor.md"]);
   assert.equal(legacy.filter.installed, false);
   const before = targetBytes(plugin);
 
@@ -3451,7 +3454,7 @@ test("models apply migrates legacy skip-worktree pins onto the filter with ident
   assert.deepEqual(apply.json.legacySkipWorktree, []);
   assert.deepEqual(sBits(plugin), []);
   assert.equal(apply.json.filter.installed, true);
-  assert.equal(pinState(plugin).files["commands/doctor.md"].model, "Tiny (copilot)");
+  assert.equal(pinState(plugin).files["skills/agento/commands/doctor.md"].model, "Tiny (copilot)");
   assert.deepEqual(targetBytes(plugin), before);
   assert.equal(git(plugin, "status", "--porcelain"), "");
 });
@@ -3459,7 +3462,7 @@ test("models apply migrates legacy skip-worktree pins onto the filter with ident
 test("models adopt records a legacy custom pin set as filter state with byte-identical files", () => {
   const { plugin, env, models, writeProfiles } = modelsFixture();
   writeProfiles({ tiny: { prompts: { doctor: "Tiny (copilot)" } } });
-  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Hand (copilot)", "commands/doctor.md": "Hand (copilot)", ".github/agents/delivery-builder.agent.md": ["X (copilot)", "Y"] });
+  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Hand (copilot)", "skills/agento/commands/doctor.md": "Hand (copilot)", ".github/agents/delivery-builder.agent.md": ["X (copilot)", "Y"] });
   assert.equal(models("list").json.active, "custom");
   const before = targetBytes(plugin);
 
@@ -3480,9 +3483,9 @@ test("models adopt records a legacy custom pin set as filter state with byte-ide
   assert.deepEqual(models("adopt").json.changed, []);
 
   // Git's own rewrite of a pinned file brings the adopted pin back.
-  fs.rmSync(path.join(plugin, "commands", "doctor.md"));
-  git(plugin, "checkout", "--", "commands/doctor.md");
-  assert.equal(fs.readFileSync(path.join(plugin, "commands", "doctor.md"), "utf8"), before["commands/doctor.md"]);
+  fs.rmSync(path.join(plugin, "skills", "agento", "commands", "doctor.md"));
+  git(plugin, "checkout", "--", "skills/agento/commands/doctor.md");
+  assert.equal(fs.readFileSync(path.join(plugin, "skills", "agento", "commands", "doctor.md"), "utf8"), before["skills/agento/commands/doctor.md"]);
 
   const linked = path.join(path.dirname(plugin), "plan-1");
   git(plugin, "worktree", "add", "-q", "-b", "dev", linked);
@@ -3496,11 +3499,11 @@ test("models list reports a prompt added after apply in filter.unrecorded until 
   const { plugin, models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { default: "Cheap (copilot)" } });
   assert.equal(models("apply", "mixed").code, 0);
-  for (const rel of [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]) fs.writeFileSync(path.join(plugin, rel), "---\ndescription: \"New\"\nagent: agent\n---\n\nNew.\n");
+  for (const rel of [".github/prompts/zz-new.prompt.md", "skills/agento/commands/zz-new.md"]) fs.writeFileSync(path.join(plugin, rel), "---\ndescription: \"New\"\nagent: agent\n---\n\nNew.\n");
   git(plugin, "add", "-A");
   git(plugin, "commit", "-q", "-m", "new prompt");
   const list = models("list").json;
-  assert.deepEqual(list.filter.unrecorded, [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]);
+  assert.deepEqual(list.filter.unrecorded, [".github/prompts/zz-new.prompt.md", "skills/agento/commands/zz-new.md"]);
   assert.equal(list.active, "custom");
   assert.match(list.hint, /git filter.*survive.*models apply <name>/);
   assert.doesNotMatch(list.hint, /models clear/);
@@ -3508,7 +3511,7 @@ test("models list reports a prompt added after apply in filter.unrecorded until 
 
   const reapply = models("apply", "mixed");
   assert.equal(reapply.code, 0, JSON.stringify(reapply.json));
-  assert.deepEqual(reapply.json.changed, [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]);
+  assert.deepEqual(reapply.json.changed, [".github/prompts/zz-new.prompt.md", "skills/agento/commands/zz-new.md"]);
   assert.deepEqual(reapply.json.filter.unrecorded, []);
   assert.equal(reapply.json.active, "mixed");
 });
@@ -3695,7 +3698,7 @@ test("doctor model-profile warns on legacy skip-worktree pins, an unhealthy or s
   const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
   writeProfiles({ tiny: { prompts: { doctor: "Tiny (copilot)" } } });
 
-  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Tiny (copilot)", "commands/doctor.md": "Tiny (copilot)" });
+  legacyPins(plugin, { ".github/prompts/doctor.prompt.md": "Tiny (copilot)", "skills/agento/commands/doctor.md": "Tiny (copilot)" });
   const legacy = check();
   assert.equal(legacy.status, "warn");
   assert.match(legacy.detail, /^2 file\(s\) still carry legacy skip-worktree pins/);
@@ -3719,12 +3722,12 @@ test("doctor model-profile warns on legacy skip-worktree pins, an unhealthy or s
   assert.match(broken.detail, /not carried by a healthy git filter \(missing: filter config\)/);
   assert.equal(models("apply", "tiny").code, 0);
 
-  for (const rel of [".github/prompts/zz-new.prompt.md", "commands/zz-new.md"]) fs.writeFileSync(path.join(plugin, rel), "---\ndescription: \"New\"\nagent: agent\n---\n\nNew.\n");
+  for (const rel of [".github/prompts/zz-new.prompt.md", "skills/agento/commands/zz-new.md"]) fs.writeFileSync(path.join(plugin, rel), "---\ndescription: \"New\"\nagent: agent\n---\n\nNew.\n");
   git(plugin, "add", "-A");
   git(plugin, "commit", "-q", "-m", "new prompt");
   const unrecorded = check();
   assert.equal(unrecorded.status, "warn");
-  assert.match(unrecorded.detail, /2 agent\/prompt file\(s\) added since the last apply carry no pin: \.github\/prompts\/zz-new\.prompt\.md, commands\/zz-new\.md/);
+  assert.match(unrecorded.detail, /2 agent\/prompt file\(s\) added since the last apply carry no pin: \.github\/prompts\/zz-new\.prompt\.md, skills\/agento\/commands\/zz-new\.md/);
   assert.match(unrecorded.fallback, /^re-run `agento\.mjs models apply <name>/);
 });
 
@@ -7768,7 +7771,7 @@ test("publish-pr reports gh and push authentication failures with a reauth comma
 const PIN_AGENT = "---\nname: Tester\ndescription: \"Tests\"\n---\n\nAgent.\n";
 const PIN_PROMPT = "---\ndescription: \"Widget\"\nagent: agent\n---\n\nBody.\n";
 const PIN_PROMPT_V2 = "---\ndescription: \"Widget\"\nagent: agent\n---\n\nBody v2.\n";
-const PIN_PAIR = [".github/prompts/widget.prompt.md", "commands/widget.md"];
+const PIN_PAIR = [".github/prompts/widget.prompt.md", "skills/agento/commands/widget.md"];
 
 // Commits a minimal plugin layout to main and pins the primary: `apply` a named
 // profile, or `adopt` a legacy (skip-worktree) custom pin set.

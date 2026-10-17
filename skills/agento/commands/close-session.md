@@ -1,7 +1,6 @@
 ---
 description: "Close a clean isolated worktree — a detached planning session (session ID), a fully pushed build session (feature/<slug> or issue/<slug>), or a freehand session (changes/<slug>), with mode detected from worktree state"
 argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-run] [--ignore-occupants]"
-model: "Claude Opus 5.5 (copilot)"
 ---
 
 Needs: terminal

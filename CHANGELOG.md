@@ -2,23 +2,27 @@
 
 ## Unreleased
 
-- **Breaking.** The plugin manifest no longer registers prompt `commands`:
-  `.claude-plugin/plugin.json` drops `"commands": "commands"`, so `/agento <name>`
+- **Breaking.** The plugin manifest no longer registers prompt `commands`, and the
+  router's command files move out of the root: `.claude-plugin/plugin.json` drops
+  `"commands": "commands"` and `commands/<name>.md` becomes
+  `skills/agento/commands/<name>.md` (VS Code auto-discovers a root `commands/`
+  directory as prompt commands even without the manifest field), so `/agento <name>`
   resolves only through the `agento` router skill in every session (Copilot and
   Local). `node <clone>/scripts/agento.mjs harness install --plugin-root <clone>`
   is now a required install step; without the link `/agento` cannot run in any
   session, and `agento.mjs doctor` fails with the exact command. `harness
   uninstall` removes the link and stops `/agento` from resolving. This fixes
   dashboard dispatch in an existing Copilot chat, where `/agento <name>` used to
-  bind to the plugin prompt command and never send (#121). Prompt `model:` pins and
-  inline agent-mode model switching are not applied through the router (Builder and
-  Reviewer pins survive through the subagent tool).
+  bind to the auto-discovered prompt command and never send (#121). Prompt `model:`
+  pins and inline agent-mode model switching are not applied through the router
+  (Builder and Reviewer pins survive through the subagent tool).
 
 - **Fixed.** Model-profile pins no longer break fast-forwards. `/agento ship`,
   `publish-pr --merge`, `/agento finish-freehand`, and a hand-run `git pull` in a
   clone with `/agento models apply` active used to stop at the sync with "Your local
   changes … would be overwritten" whenever the merge touched a pinned agent, prompt,
-  or `commands/` mirror. `models apply` now carries the pins through a local git
+  or `skills/agento/commands/` mirror. `models apply` now carries the pins through a
+  local git
   clean/smudge filter (`filter.agento-models`, `required=true`; its script, its one
   import, and `model-pins.json` live in `<common-dir>/agento/`, wired through
   `<common-dir>/info/attributes`) instead of skip-worktree: git compares and commits

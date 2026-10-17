@@ -251,7 +251,8 @@ registers no `commands`, so the router skill is the only `/agento` path in every
 session — Copilot and Local both resolve through it.
 
 The skill parses the command name from the arguments, applies the canonical
-spelling redirect rule, reads `commands/<name>.md`, and dispatches by that file's
+spelling redirect rule, reads `skills/agento/commands/<name>.md`, and dispatches
+by that file's
 `agent:` frontmatter:
 
 | `agent:` | Mode |
@@ -327,10 +328,13 @@ companion repository under
 `features/2026/10/dispatch-copilot-harness/evidence/step-1-2-dispatch-matrix.md`.
 
 **Existing-chat dispatch (#121).** In an existing Copilot chat the dispatch used
-to fill the input but not send it: with the plugin's `commands` registered in
-`.claude-plugin/plugin.json`, the whole `/agento <name>` bound to the plugin
-prompt command (tooltip → `commands/<name>.md`), which the Copilot harness does
-not execute. Removing `commands` from the manifest leaves the router skill as the
+to fill the input but not send it: VS Code's plugin-content expansion scans the
+default plugin directories `agents`, `skills`, `commands`, and `rules`, so the
+root `commands/` directory's `.md` files were auto-discovered as prompt commands
+even after the manifest stopped registering them — the whole `/agento <name>`
+bound to that prompt command (tooltip → `commands/<name>.md`), which the Copilot
+harness does not execute. Moving the command files to `skills/agento/commands/`
+(which the skill collector never descends into) leaves the router skill as the
 only `/agento` binding, so the dispatch sends in new and existing chats. See
 issue [#121](https://github.com/david-perry-software/agento/issues/121).
 

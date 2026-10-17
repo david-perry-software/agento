@@ -1,7 +1,6 @@
 ---
 description: "Review all current repository changes, create one accurate commit, and publish it through a protected pull request without running local verification"
 argument-hint: "Optional context, intent, or issue reference"
-model: "Claude Opus 5.5 (copilot)"
 agent: "agent"
 ---
 

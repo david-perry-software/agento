@@ -1,7 +1,6 @@
 ---
 description: "Research and plan a new feature with dated delivery artifacts, a pushed branch, and a draft PR"
 argument-hint: "Describe the feature, or initiative:<initiative-slug>/<feature-slug> to plan an initiative member"
-model: "Claude Opus 5.5 (copilot)"
 agent: "📋 Agento Planner"
 ---
 
