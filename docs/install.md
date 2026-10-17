@@ -58,6 +58,21 @@ copilot plugin install david-perry-software/agento
 
 Plugins installed through the CLI are also discovered by VS Code.
 
+### Register the router skill (required)
+
+`/agento <name>` resolves through the `agento` router skill in every session
+(Copilot and Local). After installing the plugin (A, B, or C above), register the
+skill link once:
+
+```bash
+node <clone>/scripts/agento.mjs harness install --plugin-root <clone>
+```
+
+`<clone>` is the plugin checkout (for Option A, `~/code/agento`). Without the link
+`/agento` cannot run in any session and `agento.mjs doctor` fails naming the exact
+command. `harness uninstall --plugin-root <clone>` removes the link, after which
+`/agento` stops resolving.
+
 ## First run in a project
 
 Open your project and run `/agento agento-init`. It creates the companion artifact

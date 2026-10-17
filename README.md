@@ -120,6 +120,16 @@ copilot plugin install david-perry-software/agento
 
 Full details and the developer-mode caveat: [docs/install.md](docs/install.md).
 
+Then register the router skill — required, because `/agento <name>` now resolves
+only through the `agento` router skill in every session (Copilot and Local):
+
+```bash
+node ~/code/agento/scripts/agento.mjs harness install --plugin-root ~/code/agento
+```
+
+Without the link `/agento` cannot run in any session. `agento.mjs doctor` fails
+with the exact command to restore it.
+
 For the optional dashboard VSIX, including installation, view behavior, command
 routing, companion workspaces, and recovery, see the
 [VS Code extension guide](docs/extension.md).

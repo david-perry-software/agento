@@ -91,12 +91,15 @@ maps the JSON to the receipt and report. Pin it to a fast model (for example
 nothing here. The dashboard's New Plan and start-session play buttons call the CLI
 directly and use no model at all.
 
-A `model:` line in a `commands/<name>.md` mirror is a no-op for plugin commands:
-the dashboard dispatches a command by switching chat to the command's `agent:`
-and the agent's own `model:` then applies. A `prompts.<name>` pin takes effect
-only where `.github/prompts/<name>.prompt.md` is loaded (workspace mode). The
-mirrors keep receiving the same bytes so `models apply` and the byte-equality test
-are unchanged.
+A `model:` line in a `commands/<name>.md` mirror is not applied through the
+router: the router runs inline (built-in agent or a Planner/Architect/Mechanic/
+Autopilot agent) on the session's model, so a prompt `model:` pin and the
+agent-mode model switch do not take effect there; only Builder and Reviewer,
+dispatched as subagents, carry their pin through the subagent tool's `model`
+parameter. A `prompts.<name>` pin takes effect only where
+`.github/prompts/<name>.prompt.md` is loaded (workspace mode). The mirrors keep
+receiving the same bytes so `models apply` and the byte-equality test are
+unchanged.
 
 ## Applying and clearing
 

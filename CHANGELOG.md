@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Breaking.** The plugin manifest no longer registers prompt `commands`:
+  `.claude-plugin/plugin.json` drops `"commands": "commands"`, so `/agento <name>`
+  resolves only through the `agento` router skill in every session (Copilot and
+  Local). `node <clone>/scripts/agento.mjs harness install --plugin-root <clone>`
+  is now a required install step; without the link `/agento` cannot run in any
+  session, and `agento.mjs doctor` fails with the exact command. `harness
+  uninstall` removes the link and stops `/agento` from resolving. This fixes
+  dashboard dispatch in an existing Copilot chat, where `/agento <name>` used to
+  bind to the plugin prompt command and never send (#121). Prompt `model:` pins and
+  inline agent-mode model switching are not applied through the router (Builder and
+  Reviewer pins survive through the subagent tool).
+
 - **Fixed.** Model-profile pins no longer break fast-forwards. `/agento ship`,
   `publish-pr --merge`, `/agento finish-freehand`, and a hand-run `git pull` in a
   clone with `/agento models apply` active used to stop at the sync with "Your local
