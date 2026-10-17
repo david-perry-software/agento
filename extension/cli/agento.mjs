@@ -1483,7 +1483,7 @@ function roadmapOnBranch(type, slug) {
 // matches the prompt's `agent:` frontmatter.
 function dispatchFor(command) {
   if (!command) return null;
-  const prompt = path.join(PLUGIN_ROOT, "commands", `${command}.md`);
+  const prompt = path.join(PLUGIN_ROOT, "skills", "agento", "commands", `${command}.md`);
   if (!fs.existsSync(prompt)) return { prompt, agent: null };
   const agentName = fs.readFileSync(prompt, "utf8").match(/^agent:\s*"([^"\n]+)"/m)?.[1] ?? null;
   if (!agentName || agentName === "agent") return { prompt, agent: null };
@@ -3496,7 +3496,7 @@ const MODEL_FILTER_FILES = ["model-filter.mjs", "model-profiles.mjs"];
 const MODEL_PINS_FILE = "model-pins.json";
 const MODEL_ATTR_BEGIN = "# >>> agento model pins (managed by `agento.mjs models`) >>>";
 const MODEL_ATTR_END = "# <<< agento model pins <<<";
-const MODEL_ATTR_PATTERNS = ["/.github/agents/*.agent.md", "/.github/prompts/*.prompt.md", "/commands/*.md"];
+const MODEL_ATTR_PATTERNS = ["/.github/agents/*.agent.md", "/.github/prompts/*.prompt.md", "/skills/agento/commands/*.md"];
 const CLI_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const modelFilterCommand = (mode) => `node "$(git rev-parse --path-format=absolute --git-common-dir)/agento/model-filter.mjs" ${mode} %f`;
@@ -3558,7 +3558,8 @@ function removeModelFilter(pluginRoot) {
 }
 
 // The files a profile rewrites, relative to the plugin root: every agent, every
-// prompt, and each prompt's commands/<name>.md mirror (what plugin mode reads).
+// prompt, and each prompt's skills/agento/commands/<name>.md mirror (what plugin
+// mode reads).
 function modelTargetFiles(pluginRoot) {
   const list = (rel, suffix) => {
     const dir = path.join(pluginRoot, rel);
@@ -3569,7 +3570,7 @@ function modelTargetFiles(pluginRoot) {
   const prompts = list(".github/prompts", ".prompt.md").map((file) => ({ file, name: path.basename(file, ".prompt.md"), agent: frontmatterField(read(file), "agent") }));
   const mirrors = {};
   for (const prompt of prompts) {
-    const mirror = `commands/${prompt.name}.md`;
+    const mirror = `skills/agento/commands/${prompt.name}.md`;
     if (fs.existsSync(path.join(pluginRoot, mirror))) mirrors[prompt.file] = mirror;
   }
   const files = [...agents.map((a) => a.file), ...prompts.flatMap((p) => (mirrors[p.file] ? [p.file, mirrors[p.file]] : [p.file]))];
