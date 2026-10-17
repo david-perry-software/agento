@@ -235,11 +235,19 @@ and Autopilot run inline (see [Router skill](#router-skill)).
 
 The `/agento <name> [args]` router lives at `skills/agento/SKILL.md` — a
 user-level skill named `agento`, not a plugin skill, so nothing shadows it in
-Copilot sessions. Until `harness-install` automates the link, install it by hand:
+Copilot sessions. `harness-install` automates the link (no by-hand symlink
+command):
 
 ```sh
-ln -s <clone>/skills/agento ~/.copilot/skills/agento
+node <clone>/scripts/agento.mjs harness install --plugin-root <clone>
 ```
+
+`harness status [--plugin-root <clone>]` reports the link state
+(`absent`/`installed`/`foreign`/`dangling`/`not-a-link`); `harness uninstall
+--plugin-root <clone>` removes only Agento's own link; `harness install --force
+--plugin-root <clone>` replaces a foreign or dangling link. Installing the link
+means Local sessions also route `/agento <name>` through the router instead of the
+plugin prompt command; `harness uninstall` restores the Local prompt commands.
 
 The skill parses the command name from the arguments, applies the canonical
 spelling redirect rule, reads `commands/<name>.md`, and dispatches by that file's

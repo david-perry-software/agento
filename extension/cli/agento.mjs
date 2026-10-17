@@ -30,6 +30,7 @@
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json through a local git clean/smudge filter; adopt records the pins the files carry now)
+//   node scripts/agento.mjs harness <status|install|uninstall> [--plugin-root <dir>] [--force]   (create/report/remove the ~/.copilot/skills/agento link to the router skill; --force replaces a foreign or dangling link on install only)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
 //
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
@@ -57,6 +58,7 @@ import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
+import { linkState, linkType } from "./harness.mjs";
 
 const PLUGIN_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -97,6 +99,7 @@ function parseArgs(argv) {
     else if (arg === "--pr") options.pr = true;
     else if (arg === "--write") options.write = true;
     else if (arg === "--apply") options.apply = true;
+    else if (arg === "--force") options.force = true;
     else if (arg === "--resume") options.resume = true;
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--dry-run") options.dryRun = true;
@@ -1007,7 +1010,45 @@ const DOCTOR_CHECKS = {
       fallback: "disable the Agento plugin for this workspace (Extensions → Agent Plugins – Installed) in each worktree window, or remove the clone from chat.pluginLocations (docs/install.md)",
     };
   },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  "harness"() {
+    const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
+    const install = `agento.mjs harness install --plugin-root ${facts.clone}`;
+    if (!facts.hasSkill) return { status: "ok", detail: `no Agento router skill at ${facts.pluginRoot}`, fallback: null };
+    const { state, target } = linkState(facts.link, facts.expected);
+    if (state === "installed") return { status: "ok", detail: `${facts.link} → ${facts.clone}; ${LOCAL_TAKEOVER}`, fallback: null };
+    if (state === "absent") return { status: "warn", detail: `Copilot sessions cannot run /agento — ${facts.link} is missing`, fallback: install };
+    if (state === "foreign") return { status: "warn", detail: `${facts.link} resolves to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone} (or keep the other clone's link)` };
+    if (state === "dangling") return { status: "warn", detail: `${facts.link} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
+    return { status: "warn", detail: `${facts.link} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
+  },
 };
+
+// With the link installed, Local sessions also route /agento through the router.
+const LOCAL_TAKEOVER = "With the link installed, Local sessions also route /agento through the router — Builder/Reviewer keep their pins, Planner/Architect/Mechanic/Autopilot and prompt model pins do not switch; harness uninstall restores the Local prompt commands.";
+
+// The user-level skills directory; AGENTO_COPILOT_SKILLS_DIR overrides the default
+// so tests never touch the real ~/.copilot/skills.
+function copilotSkillsDir(env = process.env) {
+  return env.AGENTO_COPILOT_SKILLS_DIR ? env.AGENTO_COPILOT_SKILLS_DIR : path.join(os.homedir(), ".copilot", "skills");
+}
+
+// The router-skill link, the plugin clone it must point at (the primary checkout of
+// a linked worktree), and the expected target directory — shared by the subcommand
+// and the doctor check.
+function harnessFacts(pluginRoot) {
+  const root = path.resolve(pluginRoot);
+  const clone = primaryCheckoutOf(root) ?? root;
+  const skillsDir = copilotSkillsDir();
+  return {
+    pluginRoot: root,
+    clone,
+    skillsDir,
+    link: path.join(skillsDir, "agento"),
+    expected: path.join(clone, "skills", "agento"),
+    hasSkill: fs.existsSync(path.join(root, "skills", "agento", "SKILL.md")),
+  };
+}
 
 // VS Code's user settings.json; AGENTO_VSCODE_SETTINGS overrides the platform default.
 function vscodeSettingsPath(env = process.env) {
@@ -1139,7 +1180,7 @@ function runDoctor(ids) {
 }
 
 // The checks that run no external probe (doctorProbes) and so need no network.
-const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring"];
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness"];
 
 // --- initiatives -----------------------------------------------------------
 
@@ -4614,6 +4655,41 @@ switch (command) {
       root,
       configSource: source,
     });
+    break;
+  }
+
+  case "harness": {
+    const [verb, ...extra] = rest;
+    const verbs = { status: 0, install: 0, uninstall: 0 };
+    if (!Object.hasOwn(verbs, verb)) usage(`harness: unknown verb ${verb ?? "none"}; known: ${Object.keys(verbs).join(", ")}`);
+    if (extra.length) usage(`harness ${verb} takes no arguments`);
+    if (options.force && verb !== "install") usage(`harness ${verb}: --force is only valid with install`);
+    const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
+    const { state, target } = linkState(facts.link, facts.expected);
+    const doc = { status: "ok", verb, link: facts.link, expected: facts.expected, state, target, pluginRoot: facts.pluginRoot, changed: false, localTakeover: LOCAL_TAKEOVER };
+
+    if (verb === "status") emit(doc);
+
+    if (verb === "install") {
+      if (!facts.hasSkill) emit({ ...doc, status: "missing", changed: false, message: `no router skill at ${path.join(facts.pluginRoot, "skills", "agento", "SKILL.md")}` }, 3);
+      const primary = primaryCheckoutOf(facts.pluginRoot);
+      if (primary) emit({ ...doc, status: "worktree", primaryCheckout: primary, changed: false, message: `${facts.pluginRoot} is a linked worktree of ${primary}, not the registered plugin clone; linked worktrees share the clone's skill — run harness install on the primary clone with --plugin-root ${primary}` }, 3);
+      if (state === "not-a-link") emit({ ...doc, status: "refused", changed: false, message: `${facts.link} is a real directory or file, not a symlink; it is never deleted — move it away, then re-run harness install` }, 3);
+      if (state === "installed") emit({ ...doc, status: "ok", changed: false });
+      if ((state === "foreign" || state === "dangling") && !options.force) emit({ ...doc, status: "refused", changed: false, message: `${facts.link} resolves to ${target ?? "a missing target"}; re-run harness install with --force to replace it` }, 3);
+      if (state === "foreign" || state === "dangling") fs.unlinkSync(facts.link);
+      fs.mkdirSync(facts.skillsDir, { recursive: true });
+      fs.symlinkSync(facts.expected, facts.link, linkType());
+      emit({ ...doc, state: "installed", target: facts.expected, status: "ok", changed: true });
+    }
+
+    // uninstall
+    if (state === "installed") {
+      fs.unlinkSync(facts.link);
+      emit({ ...doc, state: "absent", target: null, status: "ok", changed: true });
+    }
+    if (state === "absent") emit({ ...doc, status: "ok", changed: false });
+    emit({ ...doc, status: "refused", changed: false, message: `only the installed ${facts.link} link is ever removed; ${state === "not-a-link" ? "it is a real directory or file" : "the link resolves elsewhere"}` }, 3);
     break;
   }
 
