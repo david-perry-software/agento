@@ -1017,15 +1017,15 @@ const DOCTOR_CHECKS = {
     if (!facts.hasSkill) return { status: "ok", detail: `no Agento router skill at ${facts.pluginRoot}`, fallback: null };
     const { state, target } = linkState(facts.link, facts.expected);
     if (state === "installed") return { status: "ok", detail: `${facts.link} → ${facts.clone}; ${LOCAL_TAKEOVER}`, fallback: null };
-    if (state === "absent") return { status: "warn", detail: `Copilot sessions cannot run /agento — ${facts.link} is missing`, fallback: install };
-    if (state === "foreign") return { status: "warn", detail: `${facts.link} resolves to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone} (or keep the other clone's link)` };
-    if (state === "dangling") return { status: "warn", detail: `${facts.link} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
-    return { status: "warn", detail: `${facts.link} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
+    if (state === "absent") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is missing`, fallback: install };
+    if (state === "foreign") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} resolves to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone} (or keep the other clone's link)` };
+    if (state === "dangling") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
+    return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
   },
 };
 
-// With the link installed, Local sessions also route /agento through the router.
-const LOCAL_TAKEOVER = "With the link installed, Local sessions also route /agento through the router — Builder/Reviewer keep their pins, Planner/Architect/Mechanic/Autopilot and prompt model pins do not switch; harness uninstall restores the Local prompt commands.";
+// The router skill is the only /agento path in every session.
+const LOCAL_TAKEOVER = "The router skill is the only /agento path in every session (Copilot and Local) — Builder/Reviewer keep their pins; inline agent modes and prompt model: lines do not switch; harness uninstall removes /agento.";
 
 // The user-level skills directory; AGENTO_COPILOT_SKILLS_DIR overrides the default
 // so tests never touch the real ~/.copilot/skills.
@@ -4686,7 +4686,7 @@ switch (command) {
     // uninstall
     if (state === "installed") {
       fs.unlinkSync(facts.link);
-      emit({ ...doc, state: "absent", target: null, status: "ok", changed: true });
+      emit({ ...doc, state: "absent", target: null, status: "ok", changed: true, warning: "harness uninstall removed the router link; /agento will no longer resolve in any session" });
     }
     if (state === "absent") emit({ ...doc, status: "ok", changed: false });
     emit({ ...doc, status: "refused", changed: false, message: `only the installed ${facts.link} link is ever removed; ${state === "not-a-link" ? "it is a real directory or file" : "the link resolves elsewhere"}` }, 3);
