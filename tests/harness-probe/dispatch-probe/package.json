@@ -1,0 +1,20 @@
+{
+  "name": "agento-dispatch-probe",
+  "displayName": "Agento Dispatch Probe",
+  "description": "Probe for workbench.action.chat.open dispatch variants across Copilot and Local harnesses.",
+  "version": "0.0.1",
+  "publisher": "agento-harness-probe",
+  "private": true,
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "agentoDispatchProbe.runVariant",
+        "title": "Agento Probe: Dispatch variant"
+      }
+    ]
+  }
+}
