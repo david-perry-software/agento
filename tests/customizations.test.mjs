@@ -1020,21 +1020,22 @@ test("command mirrors use suffix-less command names and hook wiring points at ex
   }
 });
 
-test("#121 dispatch-router-only: plugin manifest registers no commands; the router skill reaches every commands/*.md", () => {
+test("#121 dispatch-router-only: plugin manifest registers no commands; no root commands/ directory; the router skill reaches every skills/agento/commands/*.md", () => {
   const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.equal(plugin.commands, undefined, "plugin.json must not register prompt commands; /agento resolves only through the router skill");
   assert.ok(fs.existsSync(rel("skills", "agento", "SKILL.md")), "skills/agento/SKILL.md missing");
-  const commandFiles = listFiles(rel("commands"), ".md");
-  assert.ok(commandFiles.length > 0, "commands/ has no .md command files");
+  assert.ok(!fs.existsSync(rel("commands")), "a root-level commands/ directory must not exist — VS Code auto-discovers it as prompt commands and shadows the router skill (#121)");
+  const commandFiles = listFiles(rel("skills", "agento", "commands"), ".md");
+  assert.ok(commandFiles.length > 0, "skills/agento/commands/ has no .md command files");
   for (const file of commandFiles) {
     const name = path.basename(file, ".md");
-    assert.match(name, /^[a-z0-9-]+$/, `commands/${name}.md: command names are suffix-less lowercase`);
+    assert.match(name, /^[a-z0-9-]+$/, `skills/agento/commands/${name}.md: command names are suffix-less lowercase`);
     const promptFile = rel(".github", "prompts", `${name}.prompt.md`);
-    assert.ok(fs.existsSync(promptFile), `commands/${name}.md has no .github/prompts/${name}.prompt.md`);
+    assert.ok(fs.existsSync(promptFile), `skills/agento/commands/${name}.md has no .github/prompts/${name}.prompt.md`);
     assert.equal(
       fs.readFileSync(file, "utf8"),
       fs.readFileSync(promptFile, "utf8"),
-      `commands/${name}.md differs from its workspace prompt`,
+      `skills/agento/commands/${name}.md differs from its workspace prompt`,
     );
   }
 });
