@@ -251,8 +251,43 @@ spelling redirect rule, reads `commands/<name>.md`, and dispatches by that file'
 | `📋 Agento Planner`, `🏛️ Agento Architect`, `🛠️ Agento Mechanic`, `🤖 Agento Autopilot` | inline, as that agent |
 | `🔨 Agento Builder`, `🔍 Agento Reviewer` | subagent |
 
-Phase 2 live results: pending — populated once the Copilot and Local session
-checks are run.
+Phase 2 live results (2026-10-17), with the skill linked to
+`~/.copilot/skills/agento` and `disable-model-invocation: true`:
+
+- **Copilot — all four checks reached the router** ("Read skill · agento"):
+  `/agento delivery-status` printed `Receipt: accepted delivery-status:main:6ee4bdd`
+  and the session report; `/agento delivery-status.prompt` printed the redirect
+  sentence and ran delivery-status; `/agento not-a-command` listed all 25
+  `/agento <name>` names with no receipt; `/agento new-feature router smoke test`
+  ran the Planner up to its clarifying questions.
+- **Redirect sentence placement.** The redirect sentence is printed, but Copilot
+  places it inside the collapsed "Completed N steps" block rather than in the
+  final reply text.
+- **Structured ask-user card.** In Copilot the Planner's clarifying question
+  rendered as a structured ask-user card — numbered options with "(Recommended)",
+  a custom-answer field, and a Submit button — contradicting the "no ask-user
+  tool" finding elsewhere in this document (that finding concerns the `task`
+  subagent tool, not an inline run).
+- **Missing new-feature receipt.** The new-feature check showed no visible
+  `Receipt: accepted new-feature:…` line before the question — the Planner
+  summarised "Preflight passed …" instead. Fixed in step 2.9 (the skill now
+  requires the dispatched command's §9 receipt line printed verbatim before any
+  question or other output); re-checked in step 2.10 (result pending).
+- **Local takeover.** With the link installed, Local routes `/agento <name>`
+  through the router skill instead of the plugin prompt command — the reverse of
+  the harness-probe finding — so step 2.6's "no Read skill · agento" expectation
+  did not hold. The output was correct. Lost model switching (the command file's
+  profile-applied prompt `model:` and the agent-mode/pin switch for Planner,
+  Architect, Mechanic, and Autopilot, which run inline) is a known gap for
+  `harness-install` and `harness-docs`; Builder/Reviewer pins survive through
+  `runSubagent` + `subagentModel`.
+- **Settled value.** `disable-model-invocation: true` is settled: every Copilot
+  check reached the router with it, so steps 2.4/2.5 (flip to `false` and
+  re-check) were obsolete.
+- **Copilot turns are slow** (~12m 8s for delivery-status, ~4m 11s for the
+  redirect, ~8s for the unknown command).
+- **Step 2.10** (re-check that the new-feature receipt line appears before the
+  question): result pending.
 
 ## Dispatch
 
