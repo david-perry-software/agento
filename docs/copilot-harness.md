@@ -272,7 +272,7 @@ Phase 2 live results (2026-10-17), with the skill linked to
   `Receipt: accepted new-feature:…` line before the question — the Planner
   summarised "Preflight passed …" instead. Fixed in step 2.9 (the skill now
   requires the dispatched command's §9 receipt line printed verbatim before any
-  question or other output); re-checked in step 2.10 (result pending).
+  question or other output); re-checked in step 2.10 (confirmed).
 - **Local takeover.** With the link installed, Local routes `/agento <name>`
   through the router skill instead of the plugin prompt command — the reverse of
   the harness-probe finding — so step 2.6's "no Read skill · agento" expectation
@@ -287,7 +287,9 @@ Phase 2 live results (2026-10-17), with the skill linked to
 - **Copilot turns are slow** (~12m 8s for delivery-status, ~4m 11s for the
   redirect, ~8s for the unknown command).
 - **Step 2.10** (re-check that the new-feature receipt line appears before the
-  question): result pending.
+  question): confirmed 2026-10-17 — the receipt line
+  `Receipt: accepted new-feature:plan-20261016-191841:eea6bdd` is now printed
+  verbatim before the structured clarifying-question card.
 
 ## Dispatch
 
