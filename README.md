@@ -118,12 +118,11 @@ Command Palette → *Chat: Install Plugin From Source* →
 copilot plugin install david-perry-software/agento
 ```
 
-If the chat's Session Target is **Copilot**, the plugin's prompt commands do not
-load there — run `harness install` once from the clone so `/agento` resolves
-through the router skill. See [docs/install.md](docs/install.md) "Copilot harness"
-and [docs/copilot-harness.md](docs/copilot-harness.md).
-
-Full details and the developer-mode caveat: [docs/install.md](docs/install.md).
+`/agento <name>` resolves through the `agento` router skill in every session
+(Copilot and Local); neither harness loads the plugin's prompt commands. See
+[docs/install.md](docs/install.md) "Copilot harness" and
+[docs/copilot-harness.md](docs/copilot-harness.md) for per-harness details and
+the developer-mode caveat.
 
 Then register the router skill — required, because `/agento <name>` now resolves
 only through the `agento` router skill in every session (Copilot and Local):
