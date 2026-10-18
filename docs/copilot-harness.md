@@ -44,6 +44,58 @@ Screenshots and raw observation notes live in the companion artifact repository
 (`agento-docs`) under `features/2026/10/harness-probe/evidence/`; the table links
 the sanitized fixtures committed in this repository.
 
+## Two-harness acceptance (harness-docs)
+
+The `harness-docs` delivery ran the initiative's definition-of-done checks live
+in the target repository soshiki (the filled-in profile example) on 2026-10-18:
+VS Code `1.142.0`, Copilot Chat `0.70.0`, model Claude Opus 5.5. The plugin clone
+sat at `4dc0e3e` (its `origin/main`); Copilot ran the staged plugin copy
+`1a14d7020a8` (the `Agento CLI:` line names the staged copy), while Local named
+the real clone `node /home/david/DP/agento-plugin/scripts/agento.mjs`. Copilot
+checks ran under **Manual permissions** (with the Allow-all contrast noted
+below); Local under **Allow all**. The soshiki primary checkout stayed clean on
+`main`; the throwaway planning session `plan-20261017-183454` was driven in both
+harnesses and abandoned with `close-session`, leaving no worktree or branch.
+Evidence lives in the companion repository under
+`features/2026/10/harness-docs/evidence/`.
+
+| Check | Harness | Result | Evidence |
+| --- | --- | --- | --- |
+| `/agento delivery-status` prints its receipt | Copilot | pass — `Receipt: accepted delivery-status:main:897c27bf` | `features/2026/10/harness-docs/evidence/step-3-12-copilot-delivery-status.png` |
+| `/agento delivery-status` prints its receipt | Local | pass — `Receipt: accepted delivery-status:main:897c27bf` | `features/2026/10/harness-docs/evidence/step-3-7-local-dashboard-dispatch.png` |
+| `Agento CLI:` context line is present | Copilot | pass — names the staged copy `…/agentPlugins/…/1a14d7020a8` | `features/2026/10/harness-docs/evidence/step-3-12-copilot-context-line.png` |
+| `Agento CLI:` context line is present | Local | pass — names the real clone `node /home/david/DP/agento-plugin/scripts/agento.mjs` | `features/2026/10/harness-docs/evidence/step-3-7-local-context-line.png` |
+| `git push origin main --dry-run` is denied | Copilot | pass — "Direct commits/pushes to main are forbidden; use a work branch and a pull request." | `features/2026/10/harness-docs/evidence/step-3-12-copilot-push-denied.png` |
+| `git push origin main --dry-run` is denied | Local | pass — same denial | `features/2026/10/harness-docs/evidence/step-3-7-local-push-denied.png` |
+| `.github/hooks/x.json` write asks for approval | Copilot | pass under **Manual permissions** (card shown, Skip → nothing created); **fail under Allow all** (#123, write went through with no card) | `features/2026/10/harness-docs/evidence/step-3-12-copilot-hook-approval-card.png`, `features/2026/10/harness-docs/evidence/step-3-12-copilot-hook-skipped-not-created.png`, `features/2026/10/harness-docs/evidence/step-3-12-copilot-hook-write-unapproved-allow-all.png` |
+| `.github/hooks/x.json` write asks for approval | Local | pass — the guard's `ask` was honored even under **Allow all** ("the write was skipped when it came up for your approval") | `features/2026/10/harness-docs/evidence/step-3-7-local-hook-write-skipped.png` |
+| `/agento new-feature` runs the Planner in the throwaway session | Copilot | pass — `Receipt: accepted new-feature:plan-20261017-183454:897c27bf`, first question card, not answered | `features/2026/10/harness-docs/evidence/step-3-6-copilot-new-feature.png` |
+| `/agento new-feature` runs the Planner in the throwaway session | Local | pass — same receipt and question card, not answered | `features/2026/10/harness-docs/evidence/step-3-7-local-new-feature.png` |
+| Dashboard dispatch submits `/agento delivery-status` | Copilot | pass — new chat and existing chat both dispatch (the #122 fix) | `features/2026/10/harness-docs/evidence/step-3-12-copilot-dashboard-new-chat.png`, `features/2026/10/harness-docs/evidence/step-3-12-copilot-dashboard-existing-chat.png` |
+| Dashboard dispatch submits `/agento delivery-status` | Local | pass — new chat dispatches; the existing-chat dispatch opened a **fresh** chat rather than appending (observed) | `features/2026/10/harness-docs/evidence/step-3-7-local-dashboard-existing-chat.png` |
+
+### Known limitations (guard findings)
+
+- **HydraFusion multi-solver bypass.** The step 3.4 non-denial happened under the
+  HydraFusion "Critique" multi-solver mode before the debug marker existed; the
+  likeliest explanation is that its solver passes run tools outside the hook path.
+  A standard-model re-run denies the push (see the table). Follow-up: investigate
+  and harden the guard against multi-solver tool execution.
+- **Hook process `cwd` is the staged plugin root.** The PreToolUse payload's
+  top-level `cwd` is the staged plugin root (`…/agentPlugins/…/1a14b243302`), not
+  the repository (`/home/david/DP/soshiki`), while the tool payload's `cwd` is
+  correct — repository-dependent guard rules that read the process cwd may
+  evaluate the wrong repo.
+- **Read-only hook-file reads are falsely denied.** A plain read-only
+  `ls`/`cat`/`grep` of `.github/hooks/*` is denied as "Destructive shell changes
+  to hook files"; the guard should distinguish read-only inspection from writes.
+- **Copilot `ask` is not honored under Allow all (#123).** In Copilot with the
+  chat permission mode set to **Allow all** (auto-approve), the guard's `ask`
+  verdict for a hook-file write is not honored as a blocking card — the write went
+  through with no approval. Under **Manual permissions** the card appears and a
+  Skip leaves nothing created. Local honors the `ask` even under Allow all. Filed
+  as [#123](https://github.com/david-perry-software/agento/issues/123).
+
 ## Agents and models
 
 Measured 2026-10-16 (VS Code 1.141.0 / Copilot Chat 0.69.0) by selecting each
