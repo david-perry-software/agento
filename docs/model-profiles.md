@@ -148,8 +148,8 @@ unpinned. The router dispatch rule: the Builder and Reviewer are invoked as
 subagents with `runSubagent` (Local) passing `subagentModel` as its `model`, or
 `task` (Copilot) passing `copilotModel` as its `model` — the model is omitted when
 the value is `null`. Two harness caveats: an agent selected directly in a Copilot
-session ignores its `model:` pin and runs on the session's model, and once the
-router link is installed, Local's router takeover drops the prompt-level and
+session ignores its `model:` pin and runs on the session's model, and the router
+takeover — the required `harness install` link — drops the prompt-level and
 inline-agent model pins (Builder and Reviewer pins survive through `runSubagent`).
 
 The BYOK tier warning: when `autopilot` is pinned to a non-`copilot` (bring-your-own
