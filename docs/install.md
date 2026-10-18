@@ -125,11 +125,10 @@ command refuses while open delivery PRs exist unless you accept.
 - `/agento delivery-status` should respond (empty dashboard on a fresh project).
 - The doctor `harness` check reports the router link state:
   `node <clone>/scripts/agento.mjs doctor` — `ok` when the link is `installed`,
-  `warn` (with the `harness install` or `install --force` command as its fallback)
-  when it is `absent`, `foreign`, `dangling`, or `not-a-link`. In a **Copilot**
-  session `/agento delivery-status` prints its `Receipt: accepted …` line; in a
-  **Local** session `/agento delivery-status` responds too (through the router once
-  the link is installed).
+  `fail` (with the `harness install` or `install --force` command as its fallback)
+  when it is `absent`, `foreign`, `dangling`, or `not-a-link`. In either session
+  (Copilot or Local) `/agento delivery-status` prints its `Receipt: accepted …`
+  line through the router.
 - The Output panel channel **GitHub Copilot Chat Hooks** should list the Agento
   SessionStart and PreToolUse hooks, and a new chat's context should include an
   `Agento CLI: node .../scripts/agento.mjs` line.
