@@ -416,7 +416,7 @@ the named command's `Needs:` line requires and echoes them as `for.needs`;
 nothing pinned, or a named profile applied, `warn` on an invalid profiles file,
 `custom` pins, the BYOK tier conflict, or unqualified pins; `hook-wiring` is `warn`
 when the clone is also registered in `chat.pluginLocations`; `harness` is `ok` when
-the `~/.copilot/skills/agento` link is `installed`, `warn` otherwise with a
+the `~/.copilot/skills/agento` link is `installed`, `fail` otherwise with a
 `harness install` or `install --force` fallback),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
@@ -495,9 +495,8 @@ when the link is a real directory or file, and `foreign`/`dangling` without
 `--force` — and otherwise creates the `~/.copilot/skills/agento` symlink
 (`harness install` from the plugin clone), reporting `changed: true`. `uninstall`
 removes only Agento's own installed link (`changed: true`) and refuses everything
-else; `--force` is valid only with `install`. With the link installed, Local
-sessions also route `/agento` through the router — see
-[install.md](install.md)),
+else; `--force` is valid only with `install`. The router skill is the only `/agento`
+path in every session (Copilot and Local) — see [install.md](install.md)),
 `release <merge-sha> [--wait N] [--interval N]` (the deploy-wait verdict for
 `checks.releaseWorkflow`, derived afresh from the GitHub REST API on every call so a
 lost output costs nothing: `verdict` ∈ `success | superseded-success | not-triggered
@@ -600,15 +599,13 @@ proceeds, arguments unchanged, without asking for confirmation — per
 | `/agento <name>.prompt.md [args]` | `/agento <name> [args]` |
 | `/agento <name>.md [args]` | `/agento <name> [args]` |
 
-How `/agento <name>` resolves depends on the chat's Session Target. In **Local**
-the plugin's prompt commands load, so `/agento <name>` runs the matching
-`commands/<name>.md` directly. In **Copilot** no prompt commands load; the
-user-level router skill (`~/.copilot/skills/agento`, installed by
-`harness install`) resolves the command and dispatches by its `agent:` frontmatter
-— Planner, Architect, Mechanic, and Autopilot run inline, while Builder and
-Reviewer run as subagents (`runSubagent` in Local, `task` in Copilot). Once the
-link is installed, Local also routes through the router. See
-[architecture.md](architecture.md) "Two harnesses" and
+How `/agento <name>` resolves is the same in every session, whatever the chat's
+Session Target: neither harness loads the plugin's prompt commands, and the
+user-level router skill (`~/.copilot/skills/agento`, installed by the required
+`harness install`) reads `skills/agento/commands/<name>.md` and dispatches by its
+`agent:` frontmatter — Planner, Architect, Mechanic, and Autopilot run inline,
+while Builder and Reviewer run as subagents (`runSubagent` in Local, `task` in
+Copilot). See [architecture.md](architecture.md) "Two harnesses" and
 [copilot-harness.md](copilot-harness.md) "Router skill".
 
 ## Receipts
