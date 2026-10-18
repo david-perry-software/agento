@@ -97,6 +97,13 @@ environment where the harness was measured, so its plugin discovery and the rout
 link it would or would not create are untested. Use `harness install` for the
 Copilot harness.
 
+**Hook-file protection in Copilot needs Manual permissions.** The delivery guard's
+hook-file `ask` verdicts show an approval card in Copilot but then run under the
+session's permission mode, so with the chat permission mode set to **Allow all**
+(auto-approve) a hook-file write goes through with no approval card. Keep the chat
+permission mode on **Manual permissions** whenever the guard must stop hook-file
+writes.
+
 ## First run in a project
 
 Open your project and run `/agento agento-init`. It creates the companion artifact

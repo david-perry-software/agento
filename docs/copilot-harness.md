@@ -148,7 +148,8 @@ each harness reads a disjoint set of keys and ignores the other's.
 
 **Ask caveat.** A top-level `permissionDecision: "ask"` in Copilot shows a hook
 card and then lets the tool run under the session's permission mode (observed with
-"Manual permissions"); under auto-approve the tool is not stopped. `deny` verdicts
+"Manual permissions"); under **Allow all** (auto-approve) the tool is not stopped,
+so hook-file protection in Copilot **requires Manual permissions**. `deny` verdicts
 fail closed in both harnesses. The guard keeps its `ask` verdicts unchanged in both
 harnesses; the weaker Copilot `ask` is a documented risk, not a behavior change.
 

@@ -84,9 +84,11 @@ ids (`run_in_terminal`, `create_file`, `replace_string_in_file`) with shapes lik
 `Write`, `Read`, `Edit`, `Agent`) with shapes like `{command, description}` /
 `{path, file_text}` — the guard classifies by capability (shell, write) so one
 normalizer serves both. In Copilot an `ask` verdict shows a hook card and then runs
-under the session's permission mode rather than hard-blocking, so under auto-approve
-a hook-file edit is not stopped; `deny` verdicts (push to main, force-push, hook
-shell writes) are unaffected. A hook process that exits 2 fails closed in both
+under the session's permission mode rather than hard-blocking, so hook-file
+protection in Copilot requires **Manual permissions** — under **Allow all**
+(auto-approve) a hook-file edit goes through with no approval card; `deny` verdicts
+(push to main, force-push, hook shell writes) are unaffected. A hook process that
+exits 2 fails closed in both
 harnesses — Local blocks with the generic "Hook denied tool execution" (the reason
 is dropped) and Copilot with "hook exited with code 2" — so the guard emits a JSON
 verdict and exits 0, keeping its reason visible.
