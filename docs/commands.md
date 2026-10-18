@@ -475,7 +475,8 @@ default the clone the CLI runs from: every verb reports `profilesFile { path, ex
 config, attributes, state, stateFile, script, scriptCurrent, unrecorded[] }` (`null`
 outside git), `legacySkipWorktree` (`skipWorktree` is its deprecated alias), `dirty`,
 and `hint`; `apply`, `adopt`, and `clear` rewrite the agents, prompts, handoff pins,
-and `commands/` mirrors, install or remove the `agento-models` clean/smudge filter,
+and `skills/agento/commands/` mirrors, install or remove the `agento-models`
+clean/smudge filter,
 clear legacy skip-worktree bits, and report `changed[]`; `adopt` records the files'
 current pins byte-identically; `apply` and `adopt` refuse a linked worktree
 (`worktree`), git older than 2.31 (`git-too-old`), and edits git would see (`dirty`);

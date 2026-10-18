@@ -1,7 +1,7 @@
 // Issue #77 — plan-play-button-handoff. The New Plan play button in an unpromoted
 // planning window hands the plan to a new session instead of the current window,
-// the dispatched command carries no commands/<name>.md attachment, and the 120 s
-// handoff poll times out ~2 s before a ~2 min start-session finishes.
+// the dispatched command carries no skills/agento/commands/<name>.md attachment,
+// and the 120 s handoff poll times out ~2 s before a ~2 min start-session finishes.
 //
 // Evidence directory (companion repo): issues/2026/10/plan-play-button-handoff/evidence/.
 // These three tests are the exposing regression tests from plan.md "## Approach";
@@ -90,7 +90,7 @@ test("(a) a plan-role detached session submits the new-feature / new-issue comma
 });
 
 test("(b) chat.open options attach the command file, and the no-file fallback logs the omission", async () => {
-  const sentinel = "/plugin/commands/start-session.md";
+  const sentinel = "/plugin/skills/agento/commands/start-session.md";
   const calls: unknown[][] = [];
   const deps = {
     executeCommand: async (...args: unknown[]) => { calls.push(args); },

@@ -61,32 +61,35 @@ Plugins installed through the CLI are also discovered by VS Code.
 ## Copilot harness (Session Target Copilot)
 
 VS Code Copilot Chat has two harnesses, chosen by the chat's **Session Target**:
+**Local** and **Copilot**. Both resolve `/agento <name>` through the user-level
+router skill `~/.copilot/skills/agento`, a symlink to the plugin clone's
+`skills/agento/SKILL.md`. Neither harness loads `*.prompt.md` prompt commands — the
+router skill is the only `/agento` path.
 
-- **Local** loads the plugin's prompt commands (`.github/prompts/*.prompt.md`,
-  surfaced as `/agento <name>`), so `/agento` works out of the box.
-- **Copilot** does **not** load `*.prompt.md` prompt commands. Instead it resolves
-  `/agento <name>` through the user-level router skill `~/.copilot/skills/agento`,
-  a symlink to the plugin clone's `skills/agento/SKILL.md`. Without that link a
-  Copilot chat cannot run `/agento` at all.
+### Register the router skill (required)
 
-Install the router link with the plugin's `harness` subcommand:
+After installing the plugin (A, B, or C above), register the skill link once:
 
 ```bash
 node <clone>/scripts/agento.mjs harness install --plugin-root <clone>
 ```
 
-`harness status [--plugin-root <clone>]` reports the link's state (`absent`,
-`installed`, `foreign`, `dangling`, or `not-a-link`); `harness uninstall
---plugin-root <clone>` removes only Agento's own link; and `harness install --force
---plugin-root <clone>` replaces a `foreign` or `dangling` link. `--plugin-root`
-defaults to the clone the command runs in.
+`<clone>` is the plugin checkout (for Option A, `~/code/agento`). `harness status
+[--plugin-root <clone>]` reports the link's state (`absent`, `installed`, `foreign`,
+`dangling`, or `not-a-link`); `harness uninstall --plugin-root <clone>` removes only
+Agento's own link; and `harness install --force --plugin-root <clone>` replaces a
+`foreign` or `dangling` link. `--plugin-root` defaults to the clone the command
+runs in.
 
-Installing the link also changes **Local** sessions: `/agento <name>` now routes
-through the router skill instead of the plugin prompt command (the router reads the
-same `commands/<name>.md`). Builder and Reviewer keep their model pins through the
-subagent tool, but the inline agents and prompt-level model pins no longer switch —
-a known gap of the router takeover. `harness uninstall` removes the link and
-restores the Local prompt commands.
+Without the link `/agento` cannot run in any session and `agento.mjs doctor` fails
+naming the exact command. `harness uninstall --plugin-root <clone>` removes the
+link, after which `/agento` stops resolving.
+
+Routing every `/agento` through the router skill also changes **Local** sessions:
+Builder and Reviewer keep their model pins through the subagent tool, but the
+inline agents and prompt-level model pins no longer switch — a known gap of the
+router takeover. `harness uninstall` removes `/agento` entirely; it does not
+restore prompt commands.
 
 The Copilot CLI path (`copilot plugin install david-perry-software/agento` in
 Option C) is **unobserved**: the GitHub Copilot CLI is not installed in the

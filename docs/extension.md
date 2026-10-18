@@ -224,7 +224,8 @@ delivery selection is revalidated with `agento.mjs next <slug>` before dispatch.
 Current-window actions open Copilot Chat **in the command's agent** with the exact
 canonical `/agento <name> [args]` query: the `mode` passed to
 `workbench.action.chat.open` is the `agent:` frontmatter of the plugin command
-file `commands/<name>.md` (`"agent"` for built-in-agent commands), so the agent's
+file `skills/agento/commands/<name>.md` (`"agent"` for built-in-agent commands),
+so the agent's
 `model:` pin applies. Every dispatch also attaches that command file so the agent
 can read it directly. When no plugin clone can be resolved — set
 `agento.pluginRoot`, or register the clone in `chat.pluginLocations` — the

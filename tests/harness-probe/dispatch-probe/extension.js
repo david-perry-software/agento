@@ -17,14 +17,14 @@ const { buildVariants } = require("./variants.js");
 const OUTPUT_CHANNEL_NAME = "Agento Dispatch Probe";
 const COMMAND_ID = "agentoDispatchProbe.runVariant";
 
-// Resolves commands/delivery-status.md from the realpath of
+// Resolves skills/agento/commands/delivery-status.md from the realpath of
 // ~/.copilot/skills/agento, two levels up (the installed router skill's plugin
 // root), matching how the real extension resolves the command file.
 function resolveCommandFile() {
   const skillLink = path.join(os.homedir(), ".copilot", "skills", "agento");
   const real = fs.realpathSync(skillLink);
   const pluginRoot = path.resolve(real, "..", "..");
-  const file = path.join(pluginRoot, "commands", "delivery-status.md");
+  const file = path.join(pluginRoot, "skills", "agento", "commands", "delivery-status.md");
   if (!fs.existsSync(file)) {
     throw new Error(`command file missing: ${file}`);
   }
