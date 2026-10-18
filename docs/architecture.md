@@ -42,12 +42,13 @@ flowchart TD
 
 - **Prompts** (`.github/prompts/`) are the slash commands. They are thin: they set
   expectations and dispatch to an agent.
-- **Router skill** (`skills/agento/SKILL.md`) resolves `/agento <name>` in a
-  Copilot session, where the plugin's prompt commands do not load. It is installed
-  as the user-level link `~/.copilot/skills/agento` (by the `harness install`
-  subcommand, below), reads `commands/<name>.md`, and dispatches by that file's
-  `agent:` frontmatter — inline for missing/`agent` and for Planner, Architect,
-  Mechanic, and Autopilot; a subagent for Builder and Reviewer.
+- **Router skill** (`skills/agento/SKILL.md`) resolves `/agento <name>` in every
+  session (Copilot and Local) — neither harness loads the plugin's prompt commands,
+  so the router is the only `/agento` path. It is installed as the user-level link
+  `~/.copilot/skills/agento` (by the `harness install` subcommand, below), reads
+  `skills/agento/commands/<name>.md`, and dispatches by that file's `agent:`
+  frontmatter — inline for missing/`agent` and for Planner, Architect, Mechanic,
+  and Autopilot; a subagent for Builder and Reviewer.
 - **Agents** (`.github/agents/`) hold the durable behavior: the Architect's brief
   decomposition and self-contained publish, the Planner's resume protocol and
   dependency-gated initiative intake, the Builder's work loop and verification
@@ -136,14 +137,15 @@ differently under each:
 
 | What loads | Local | Copilot |
 | --- | --- | --- |
-| Prompt commands (`.github/prompts/*.prompt.md`) | loaded — `/agento <name>` works out of the box | not loaded — no `*.prompt.md` reaches the model |
-| Router skill (`~/.copilot/skills/agento`) | used once the link is installed (the takeover) | required — the only way `/agento <name>` resolves |
+| Prompt commands (`.github/prompts/*.prompt.md`) | not loaded | not loaded — no `*.prompt.md` reaches the model |
+| Router skill (`~/.copilot/skills/agento`) | required — the only `/agento <name>` path | required — the only `/agento <name>` path |
 | Hook output slots read | `hookSpecificOutput.*` | top-level `additionalContext` / `permissionDecision` |
 
-Dispatch rule: the router reads the `agent:` frontmatter of `commands/<name>.md` —
-Planner, Architect, Mechanic, and Autopilot run inline; Builder and Reviewer run as
-subagents (`runSubagent` in Local, `task` in Copilot). The observations behind each
-row are in [copilot-harness.md](copilot-harness.md) "Router skill".
+Dispatch rule: the router reads the `agent:` frontmatter of
+`skills/agento/commands/<name>.md` — Planner, Architect, Mechanic, and Autopilot run
+inline; Builder and Reviewer run as subagents (`runSubagent` in Local, `task` in
+Copilot). The observations behind each row are in
+[copilot-harness.md](copilot-harness.md) "Router skill".
 
 ## Extension acceptance boundary
 
