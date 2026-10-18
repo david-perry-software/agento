@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-10-17)
+
+- **Added.** Copilot-harness support ships end to end. The `agento` router skill
+  (`skills/agento/SKILL.md`, installed as the user-level link
+  `~/.copilot/skills/agento`) resolves `/agento <name>` in every session (Copilot
+  and Local); the new `harness install`, `harness status`, and `harness uninstall`
+  subcommand creates, reports, and removes that link, and doctor's `harness` check
+  reports its state. The hooks emit the dual-shape output both harnesses expect
+  (top-level Copilot slots plus `hookSpecificOutput` for Local), the Builder and
+  Reviewer subagent model is passed through `task` (Copilot) via `copilotModel` or
+  `runSubagent` (Local) via `subagentModel`, and the dashboard submits the same
+  `{ query, mode, attachFiles }` dispatch in both harnesses. The router skill is
+  the only `/agento` path in both harnesses; the known gap is that this takeover
+  drops prompt-level and inline-agent model pins (Builder and Reviewer pins
+  survive). Documented in install.md, hooks.md, architecture.md, extension.md,
+  commands.md, model-profiles.md, and copilot-harness.md.
 
 - **Breaking.** The plugin manifest no longer registers prompt `commands`, and the
   router's command files move out of the root: `.claude-plugin/plugin.json` drops

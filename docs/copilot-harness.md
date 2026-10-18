@@ -2,11 +2,14 @@
 
 This document records what the Copilot (Agent Host) harness actually does, as
 measured by the reproducible probe in `tests/harness-probe/` (see
-[Reproduce](#reproduce)). It replaces the "unverified" documentation claims in
-the `copilot-harness` initiative with recorded observations, so the later
-members (`copilot-hook-compat`, `agents-copilot-models`, `agento-router-skill`,
-`harness-install`, `dispatch-copilot-harness`) build against facts instead of
-guesses. It changes no runtime behavior.
+[Reproduce](#reproduce)). The Copilot harness is now **shipped**: the router
+skill, the `harness install|status|uninstall` CLI subcommand, the doctor `harness`
+check, dual-harness hooks, and dashboard dispatch in both harnesses are all part
+of this release — install the router link as described in
+[install.md](install.md) and run the subcommand documented in
+[commands.md](commands.md). The sections below keep the probe's recorded
+observations as the evidence behind those shipped behaviors; the document changes
+no runtime behavior.
 
 ## Versions observed
 
@@ -41,6 +44,58 @@ Screenshots and raw observation notes live in the companion artifact repository
 (`agento-docs`) under `features/2026/10/harness-probe/evidence/`; the table links
 the sanitized fixtures committed in this repository.
 
+## Two-harness acceptance (harness-docs)
+
+The `harness-docs` delivery ran the initiative's definition-of-done checks live
+in the target repository soshiki (the filled-in profile example) on 2026-10-18:
+VS Code `1.142.0`, Copilot Chat `0.70.0`, model Claude Opus 5.5. The plugin clone
+sat at `4dc0e3e` (its `origin/main`); Copilot ran the staged plugin copy
+`1a14d7020a8` (the `Agento CLI:` line names the staged copy), while Local named
+the real clone `node /home/david/DP/agento-plugin/scripts/agento.mjs`. Copilot
+checks ran under **Manual permissions** (with the Allow-all contrast noted
+below); Local under **Allow all**. The soshiki primary checkout stayed clean on
+`main`; the throwaway planning session `plan-20261017-183454` was driven in both
+harnesses and abandoned with `close-session`, leaving no worktree or branch.
+Evidence lives in the companion repository under
+`features/2026/10/harness-docs/evidence/`.
+
+| Check | Harness | Result | Evidence |
+| --- | --- | --- | --- |
+| `/agento delivery-status` prints its receipt | Copilot | pass — `Receipt: accepted delivery-status:main:897c27bf` | `features/2026/10/harness-docs/evidence/step-3-12-copilot-delivery-status.png` |
+| `/agento delivery-status` prints its receipt | Local | pass — `Receipt: accepted delivery-status:main:897c27bf` | `features/2026/10/harness-docs/evidence/step-3-7-local-dashboard-dispatch.png` |
+| `Agento CLI:` context line is present | Copilot | pass — names the staged copy `…/agentPlugins/…/1a14d7020a8` | `features/2026/10/harness-docs/evidence/step-3-12-copilot-context-line.png` |
+| `Agento CLI:` context line is present | Local | pass — names the real clone `node /home/david/DP/agento-plugin/scripts/agento.mjs` | `features/2026/10/harness-docs/evidence/step-3-7-local-context-line.png` |
+| `git push origin main --dry-run` is denied | Copilot | pass — "Direct commits/pushes to main are forbidden; use a work branch and a pull request." | `features/2026/10/harness-docs/evidence/step-3-12-copilot-push-denied.png` |
+| `git push origin main --dry-run` is denied | Local | pass — same denial | `features/2026/10/harness-docs/evidence/step-3-7-local-push-denied.png` |
+| `.github/hooks/x.json` write asks for approval | Copilot | pass under **Manual permissions** (card shown, Skip → nothing created); **fail under Allow all** (#123, write went through with no card) | `features/2026/10/harness-docs/evidence/step-3-12-copilot-hook-approval-card.png`, `features/2026/10/harness-docs/evidence/step-3-12-copilot-hook-skipped-not-created.png`, `features/2026/10/harness-docs/evidence/step-3-12-copilot-hook-write-unapproved-allow-all.png` |
+| `.github/hooks/x.json` write asks for approval | Local | pass — the guard's `ask` was honored even under **Allow all** ("the write was skipped when it came up for your approval") | `features/2026/10/harness-docs/evidence/step-3-7-local-hook-write-skipped.png` |
+| `/agento new-feature` runs the Planner in the throwaway session | Copilot | pass — `Receipt: accepted new-feature:plan-20261017-183454:897c27bf`, first question card, not answered | `features/2026/10/harness-docs/evidence/step-3-6-copilot-new-feature.png` |
+| `/agento new-feature` runs the Planner in the throwaway session | Local | pass — same receipt and question card, not answered | `features/2026/10/harness-docs/evidence/step-3-7-local-new-feature.png` |
+| Dashboard dispatch submits `/agento delivery-status` | Copilot | pass — new chat and existing chat both dispatch (the #122 fix) | `features/2026/10/harness-docs/evidence/step-3-12-copilot-dashboard-new-chat.png`, `features/2026/10/harness-docs/evidence/step-3-12-copilot-dashboard-existing-chat.png` |
+| Dashboard dispatch submits `/agento delivery-status` | Local | pass — new chat dispatches; the existing-chat dispatch opened a **fresh** chat rather than appending (observed) | `features/2026/10/harness-docs/evidence/step-3-7-local-dashboard-existing-chat.png` |
+
+### Known limitations (guard findings)
+
+- **HydraFusion multi-solver bypass.** The step 3.4 non-denial happened under the
+  HydraFusion "Critique" multi-solver mode before the debug marker existed; the
+  likeliest explanation is that its solver passes run tools outside the hook path.
+  A standard-model re-run denies the push (see the table). Follow-up: investigate
+  and harden the guard against multi-solver tool execution.
+- **Hook process `cwd` is the staged plugin root.** The PreToolUse payload's
+  top-level `cwd` is the staged plugin root (`…/agentPlugins/…/1a14b243302`), not
+  the repository (`/home/david/DP/soshiki`), while the tool payload's `cwd` is
+  correct — repository-dependent guard rules that read the process cwd may
+  evaluate the wrong repo.
+- **Read-only hook-file reads are falsely denied.** A plain read-only
+  `ls`/`cat`/`grep` of `.github/hooks/*` is denied as "Destructive shell changes
+  to hook files"; the guard should distinguish read-only inspection from writes.
+- **Copilot `ask` is not honored under Allow all (#123).** In Copilot with the
+  chat permission mode set to **Allow all** (auto-approve), the guard's `ask`
+  verdict for a hook-file write is not honored as a blocking card — the write went
+  through with no approval. Under **Manual permissions** the card appears and a
+  Skip leaves nothing created. Local honors the `ask` even under Allow all. Filed
+  as [#123](https://github.com/david-perry-software/agento/issues/123).
+
 ## Agents and models
 
 Measured 2026-10-16 (VS Code 1.141.0 / Copilot Chat 0.69.0) by selecting each
@@ -67,10 +122,12 @@ the companion repository under
   `read_agent`, `read_bash`, `skill`, `sql`, `stop_bash`, `task`, `view`,
   `write_agent`; a GPT-routed turn additionally showed `functions.*` plus
   `apply_patch` and `multi_tool_use.parallel`. There is **no ask-user tool and no
-  browser tool**, so `vscode/askQuestions` and `browser` are unavailable in
-  Copilot — the §10 `ask-questions` and `browser` fallbacks apply there. A
-  question asked as plain chat text works: the agent ends its turn and the user's
-  reply arrives as a new turn (~3–4 min round trip).
+  browser tool** in the model's tool set, so `vscode/askQuestions` and `browser`
+  are unavailable to the model — including to `task` subagents, which therefore
+  cannot ask the user at all. An inline run under the router asks through the chat
+  itself (not a tool), and Copilot renders that as a structured ask-user card (see
+  the router section below). A question asked as plain chat text works: the agent
+  ends its turn and the user's reply arrives as a new turn (~3–4 min round trip).
 - **Subagent model parameter.** The Copilot subagent tool is `task`; its optional
   `model` parameter takes bare ids for Copilot-hosted models (35 listed in the
   task-models screenshots, e.g. `claude-opus-5.5`, `gpt-5.6-luna`, …) and
@@ -143,7 +200,8 @@ each harness reads a disjoint set of keys and ignores the other's.
 
 **Ask caveat.** A top-level `permissionDecision: "ask"` in Copilot shows a hook
 card and then lets the tool run under the session's permission mode (observed with
-"Manual permissions"); under auto-approve the tool is not stopped. `deny` verdicts
+"Manual permissions"); under **Allow all** (auto-approve) the tool is not stopped,
+so hook-file protection in Copilot **requires Manual permissions**. `deny` verdicts
 fail closed in both harnesses. The guard keeps its `ask` verdicts unchanged in both
 harnesses; the weaker Copilot `ask` is a documented risk, not a behavior change.
 
@@ -282,9 +340,11 @@ Phase 2 live results (2026-10-17), with the skill linked to
   final reply text.
 - **Structured ask-user card.** In Copilot the Planner's clarifying question
   rendered as a structured ask-user card — numbered options with "(Recommended)",
-  a custom-answer field, and a Submit button — contradicting the "no ask-user
-  tool" finding elsewhere in this document (that finding concerns the `task`
-  subagent tool, not an inline run).
+  a custom-answer field, and a Submit button. This does not contradict the
+  "no ask-user tool" finding: that finding concerns the model's tool set (and so
+  `task` subagents and directly selected agents, which cannot ask the user at
+  all), whereas the card is the harness's own rendering of an inline run's chat
+  question.
 - **Missing new-feature receipt.** The new-feature check showed no visible
   `Receipt: accepted new-feature:…` line before the question — the Planner
   summarised "Preflight passed …" instead. Fixed in step 2.9 (the skill now
@@ -323,8 +383,11 @@ which equals the current payload, so no `chatOpenOptions` change is required.
 
 The earlier harness-probe observation — that the Copilot input filled but did not
 submit and would not send a slash-leading message — predates the router install and
-used the probe skill; it is superseded. The matrix and screenshots live in the
-companion repository under
+used the probe skill. That the missing router link explains the difference is a
+stated, untested hypothesis: V1 was observed submitting only after the router was
+installed, and the pre-router non-submit was never re-measured under the same
+setup, so the cause is inferred, not demonstrated. The matrix and screenshots live
+in the companion repository under
 `features/2026/10/dispatch-copilot-harness/evidence/step-1-2-dispatch-matrix.md`.
 
 **Existing-chat dispatch (#121).** In an existing Copilot chat the dispatch used

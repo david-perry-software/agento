@@ -143,7 +143,10 @@ runs no scripts, and its only link is the Session & Doctor focus command.
 The Session & Doctor view shows the current window role, worktree, branch,
 lifecycle, generated workspace, companion checkout and sync state, CLI warnings,
 and every environment check returned by `agento.mjs doctor`. Doctor findings are
-read-only; use the displayed fallback to repair the environment.
+read-only; use the displayed fallback to repair the environment. That includes
+the doctor `harness` check (the router link state): Session & Doctor shows its
+fallback text but offers no install action — create the link with
+`agento.mjs harness install` (see [install.md](install.md)).
 
 The status bar summarizes the same snapshot as `Agento: <role> · <N> active`.
 Select it to focus Session & Doctor. The view's play action offers the commands
@@ -230,6 +233,12 @@ dispatch keeps the currently selected agent and writes one
 `dispatch: no mode for <command>: <reason>` line to the Agento output channel; a
 missing or unreadable command file likewise omits the attachment and writes
 `dispatch: no command file for <name>: <reason>`.
+The same `{ query, mode, attachFiles }` dispatch submits in **both** harnesses
+through the router skill (`harness install`, see [install.md](install.md)): in
+both a **Copilot** and a **Local** session the router skill resolves the
+`/agento <name>` query — neither harness loads the plugin's prompt commands. A
+window without the link cannot resolve `/agento` at all — the submitted query has
+no router skill behind it.
 Cross-window actions save `/agento continue <slug>` for the CLI-selected folder
 or `.code-workspace`, then open or focus that target; the pending command is
 consumed with the same agent-mode dispatch. The New Plan action
@@ -319,3 +328,6 @@ description and first error — plus *Clear*. The choice runs `agento.mjs models
 - Marketplace publishing is not part of packaging; the release gate produces and
   validates a VSIX.
 - Linux and macOS are supported by the plugin workflow. Windows remains untested.
+- There is no extension install action for the router link: a Copilot session
+  cannot resolve `/agento` until `agento.mjs harness install` is run from the
+  CLI, and Session & Doctor only surfaces the doctor `harness` check.

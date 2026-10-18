@@ -140,10 +140,17 @@ defaults to the clone the CLI runs from; pass `--plugin-root` for another one.
 
 `models pins` (CLI-only, for the Autopilot) reports each agent's current pin read
 from the plugin root's files: `pins: { planner, builder, reviewer, autopilot,
-mechanic, architect }`, each `{ name, file, model, subagentModel }` where `model` is
-the parsed pin (a name, a list, or `null`) and `subagentModel` the name or its first
-entry. The Autopilot passes the Builder's and Reviewer's `subagentModel` as the
-`runSubagent` `model` when it invokes them.
+mechanic, architect }`, each `{ name, file, model, subagentModel, copilotModel }`
+where `model` is the parsed top-level pin (a name, a list, or `null`),
+`subagentModel` the name or its first entry, and `copilotModel` the `copilotModels`
+alias of that first entry (else `null`); all three are `null` when the agent is
+unpinned. The router dispatch rule: the Builder and Reviewer are invoked as
+subagents with `runSubagent` (Local) passing `subagentModel` as its `model`, or
+`task` (Copilot) passing `copilotModel` as its `model` — the model is omitted when
+the value is `null`. Two harness caveats: an agent selected directly in a Copilot
+session ignores its `model:` pin and runs on the session's model, and the router
+takeover — the required `harness install` link — drops the prompt-level and
+inline-agent model pins (Builder and Reviewer pins survive through `runSubagent`).
 
 The BYOK tier warning: when `autopilot` is pinned to a non-`copilot` (bring-your-own
 key) model while `builder` or `reviewer` pins a `copilot` model, `models
