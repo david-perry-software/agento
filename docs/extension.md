@@ -233,12 +233,12 @@ dispatch keeps the currently selected agent and writes one
 `dispatch: no mode for <command>: <reason>` line to the Agento output channel; a
 missing or unreadable command file likewise omits the attachment and writes
 `dispatch: no command file for <name>: <reason>`.
-The same `{ query, mode, attachFiles }` dispatch submits in **both** harnesses once
-the router link is installed (`harness install`, see [install.md](install.md)): in
-a **Copilot** session the router skill resolves the `/agento <name>` query, and in
-a **Local** session the plugin prompt command does. A Copilot window without the
-link cannot resolve `/agento` at all — the submitted query has no prompt command
-behind it and no router skill to fall back to.
+The same `{ query, mode, attachFiles }` dispatch submits in **both** harnesses
+through the router skill (`harness install`, see [install.md](install.md)): in
+both a **Copilot** and a **Local** session the router skill resolves the
+`/agento <name>` query — neither harness loads the plugin's prompt commands. A
+window without the link cannot resolve `/agento` at all — the submitted query has
+no router skill behind it.
 Cross-window actions save `/agento continue <slug>` for the CLI-selected folder
 or `.code-workspace`, then open or focus that target; the pending command is
 consumed with the same agent-mode dispatch. The New Plan action
