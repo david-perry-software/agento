@@ -244,13 +244,15 @@ node <clone>/scripts/agento.mjs harness install --plugin-root <clone>
 
 `harness status [--plugin-root <clone>]` reports the link state
 (`absent`/`installed`/`foreign`/`dangling`/`not-a-link`); `harness uninstall
---plugin-root <clone>` removes only Agento's own link; `harness install --force
---plugin-root <clone>` replaces a foreign or dangling link. Installing the link
-means Local sessions also route `/agento <name>` through the router instead of the
-plugin prompt command; `harness uninstall` restores the Local prompt commands.
+--plugin-root <clone>` removes only Agento's own link, after which `/agento`
+stops resolving; `harness install --force
+--plugin-root <clone>` replaces a foreign or dangling link. The plugin manifest
+registers no `commands`, so the router skill is the only `/agento` path in every
+session — Copilot and Local both resolve through it.
 
 The skill parses the command name from the arguments, applies the canonical
-spelling redirect rule, reads `commands/<name>.md`, and dispatches by that file's
+spelling redirect rule, reads `skills/agento/commands/<name>.md`, and dispatches
+by that file's
 `agent:` frontmatter:
 
 | `agent:` | Mode |
@@ -288,13 +290,13 @@ Phase 2 live results (2026-10-17), with the skill linked to
   summarised "Preflight passed …" instead. Fixed in step 2.9 (the skill now
   requires the dispatched command's §9 receipt line printed verbatim before any
   question or other output); re-checked in step 2.10 (confirmed).
-- **Local takeover.** With the link installed, Local routes `/agento <name>`
-  through the router skill instead of the plugin prompt command — the reverse of
-  the harness-probe finding — so step 2.6's "no Read skill · agento" expectation
-  did not hold. The output was correct. Lost model switching (the command file's
-  profile-applied prompt `model:` and the agent-mode/pin switch for Planner,
-  Architect, Mechanic, and Autopilot, which run inline) is a known gap for
-  `harness-install` and `harness-docs`; Builder/Reviewer pins survive through
+- **Local takeover.** With the manifest no longer registering `commands`, the
+  router skill is the only `/agento` path in every session: Local routes
+  `/agento <name>` through the router skill just like Copilot (so step 2.6's
+  "no Read skill · agento" expectation did not hold). The output was correct.
+  Lost model switching (the command file's profile-applied prompt `model:` and
+  the agent-mode/pin switch for Planner, Architect, Mechanic, and Autopilot,
+  which run inline) is a known gap; Builder/Reviewer pins survive through
   `runSubagent` + `subagentModel`.
 - **Settled value.** `disable-model-invocation: true` is settled: every Copilot
   check reached the router with it, so steps 2.4/2.5 (flip to `false` and
@@ -324,6 +326,17 @@ submit and would not send a slash-leading message — predates the router instal
 used the probe skill; it is superseded. The matrix and screenshots live in the
 companion repository under
 `features/2026/10/dispatch-copilot-harness/evidence/step-1-2-dispatch-matrix.md`.
+
+**Existing-chat dispatch (#121).** In an existing Copilot chat the dispatch used
+to fill the input but not send it: VS Code's plugin-content expansion scans the
+default plugin directories `agents`, `skills`, `commands`, and `rules`, so the
+root `commands/` directory's `.md` files were auto-discovered as prompt commands
+even after the manifest stopped registering them — the whole `/agento <name>`
+bound to that prompt command (tooltip → `commands/<name>.md`), which the Copilot
+harness does not execute. Moving the command files to `skills/agento/commands/`
+(which the skill collector never descends into) leaves the router skill as the
+only `/agento` binding, so the dispatch sends in new and existing chats. See
+issue [#121](https://github.com/david-perry-software/agento/issues/121).
 
 ## Reproduce
 

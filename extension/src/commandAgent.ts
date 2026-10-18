@@ -8,8 +8,8 @@ export function commandName(command: string): string | null {
   return command.split(/\s+/)[1] ?? null;
 }
 
-// The `agent:` frontmatter scalar of a `commands/<name>.md` body (quoted or bare),
-// null when the file has no frontmatter or no `agent:` line.
+// The `agent:` frontmatter scalar of a `skills/agento/commands/<name>.md` body
+// (quoted or bare), null when the file has no frontmatter or no `agent:` line.
 export function readCommandAgent(text: string): string | null {
   const lines = text.split("\n");
   if (lines[0].replace(/\r$/, "") !== "---") return null;
@@ -46,7 +46,7 @@ export function resolveChatMode(command: string, sources: ChatModeSources): Chat
   const name = commandName(command);
   if (name === null) return { mode: null, reason: "not a canonical /agento command" };
   if (sources.pluginRoot === null) return { mode: null, reason: "no plugin root" };
-  const filePath = path.join(sources.pluginRoot, "commands", `${name}.md`);
+  const filePath = path.join(sources.pluginRoot, "skills", "agento", "commands", `${name}.md`);
   let text: string;
   try {
     text = sources.readFile(filePath);
@@ -67,14 +67,14 @@ export type CommandFileResolution =
   | { path: string }
   | { path: null; reason: string };
 
-// The `commands/<name>.md` file a dispatch should attach to the chat request, or
-// a null-path reason when the command is not canonical, the plugin root is
-// unresolved, or the command file does not exist.
+// The `skills/agento/commands/<name>.md` file a dispatch should attach to the chat
+// request, or a null-path reason when the command is not canonical, the plugin root
+// is unresolved, or the command file does not exist.
 export function resolveCommandFile(command: string, sources: CommandFileSources): CommandFileResolution {
   const name = commandName(command);
   if (name === null) return { path: null, reason: "not a canonical /agento command" };
   if (sources.pluginRoot === null) return { path: null, reason: "no plugin root" };
-  const filePath = path.join(sources.pluginRoot, "commands", `${name}.md`);
+  const filePath = path.join(sources.pluginRoot, "skills", "agento", "commands", `${name}.md`);
   if (!sources.exists(filePath)) return { path: null, reason: `missing command file ${filePath}` };
   return { path: filePath };
 }

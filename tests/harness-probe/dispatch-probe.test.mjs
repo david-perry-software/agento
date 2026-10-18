@@ -7,7 +7,7 @@ const { CANONICAL_QUERY, buildVariants } = probeVariants;
 
 // A stand-in for the vscode.Uri the extension host passes as the attachFiles
 // element; the variant table is pure and must pass it through untouched.
-const sentinel = { $uri: "/plugin/commands/delivery-status.md" };
+const sentinel = { $uri: "/plugin/skills/agento/commands/delivery-status.md" };
 
 test("every variant id is unique", () => {
   const ids = buildVariants(sentinel).map((variant) => variant.id);

@@ -1,6 +1,6 @@
 ---
 description: "Use when running any /agento command or acting as an Agento agent (Planner, Builder, Reviewer, Autopilot, Architect, Mechanic): the full delivery policy — the agent/user work boundary, verification targets, evidence, manual and post-ship steps, pause kinds (paused vs. session break), the lint baseline gate, shell hygiene, git rules, the cross-window handoff, execution receipts with per-command idempotency, capability preflight, the window check every command runs against the session record, and command presentation"
-applyTo: ".github/agents/**,.github/prompts/**,.github/instructions/**,commands/**"
+applyTo: ".github/agents/**,.github/prompts/**,.github/instructions/**,skills/agento/commands/**"
 ---
 
 Single source for the rules every delivery role applies. Agents and prompts link here
