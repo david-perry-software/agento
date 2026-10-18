@@ -15,7 +15,11 @@
   dashboard dispatch in an existing Copilot chat, where `/agento <name>` used to
   bind to the auto-discovered prompt command and never send (#121). Prompt `model:`
   pins and inline agent-mode model switching are not applied through the router
-  (Builder and Reviewer pins survive through the subagent tool).
+  (Builder and Reviewer pins survive through the subagent tool). A released
+  dashboard extension older than this fix still resolves
+  `<pluginRoot>/commands/<name>.md`, so dashboard dispatch attaches no command file
+  once the move lands (dispatch still sends through the router); update the
+  extension to restore the attachment.
 
 - **Fixed.** Model-profile pins no longer break fast-forwards. `/agento ship`,
   `publish-pr --merge`, `/agento finish-freehand`, and a hand-run `git pull` in a
