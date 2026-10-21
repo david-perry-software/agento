@@ -88,7 +88,7 @@
   }
 
   function persistDraft() {
-    vscode.setState({ draft, baseHash });
+    vscode.setState({ draft, baseHash, dirty });
   }
 
   function markDirty() {
@@ -408,15 +408,28 @@
   }
 
   function receiveState(next) {
+    const saved = vscode.getState();
+    if (next.keepDraft && draft) {
+      // Keep the unsaved draft; only refresh the metadata (e.g. after addAlias).
+      baseHash = next.hash ?? baseHash;
+    } else if (saved && typeof saved === "object" && saved.draft && saved.baseHash === next.hash) {
+      // Restore a draft persisted across a hidden-panel re-render, for the same
+      // file hash the draft was made against.
+      draft = saved.draft;
+      baseHash = next.hash;
+      dirty = saved.dirty === true;
+    } else {
+      draft = next.form;
+      baseHash = next.hash;
+      dirty = false;
+    }
     state = next;
-    draft = next.form;
-    baseHash = next.hash;
-    dirty = false;
     errors = [];
     warnings = [];
     conflict = null;
     deleted = false;
     renderForm();
+    persistDraft();
   }
 
   window.addEventListener("message", (event) => {
