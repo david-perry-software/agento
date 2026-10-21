@@ -3,6 +3,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  aliasSetArgs,
   createProfileArgs,
   deleteProfileArgs,
   expandHome,
@@ -13,6 +14,7 @@ import {
   selectionToArgs,
   summarizeModelsResult,
   toQuickPickItems,
+  updateProfileArgs,
   type PluginRootSources,
 } from "../../src/modelProfiles.js";
 
@@ -104,6 +106,15 @@ test("write arg builders pass --expect from the snapshot hash and --force on app
   assert.deepEqual(renameProfileArgs("old", "new", "/p"), ["models", "rename", "old", "new", "--plugin-root", "/p"]);
   assert.deepEqual(deleteProfileArgs("mixed", "/p", { force: true, hash }), ["models", "delete", "mixed", "--force", "--expect", hash, "--plugin-root", "/p"]);
   assert.deepEqual(deleteProfileArgs("mixed", "/p"), ["models", "delete", "mixed", "--plugin-root", "/p"]);
+  assert.deepEqual(updateProfileArgs("mixed", "/p", { dryRun: true }), ["models", "update", "mixed", "--dry-run", "--plugin-root", "/p"]);
+  assert.deepEqual(updateProfileArgs("mixed", "/p", { expect: hash }), ["models", "update", "mixed", "--expect", hash, "--plugin-root", "/p"]);
+  assert.deepEqual(updateProfileArgs("mixed", "/p"), ["models", "update", "mixed", "--plugin-root", "/p"]);
+  assert.deepEqual(aliasSetArgs("Claude Opus (copilot)", "claude-opus-5", "/p", { expect: hash }), [
+    "models", "alias", "set", "Claude Opus (copilot)", "claude-opus-5", "--expect", hash, "--plugin-root", "/p",
+  ]);
+  assert.deepEqual(aliasSetArgs("Claude Opus (copilot)", "claude-opus-5", "/p"), [
+    "models", "alias", "set", "Claude Opus (copilot)", "claude-opus-5", "--plugin-root", "/p",
+  ]);
   assert.deepEqual(initProfilesArgs("/p"), ["models", "init", "--plugin-root", "/p"]);
 });
 
@@ -157,6 +168,27 @@ test("summarizeModelsResult reports the write verbs' success distinctly from app
   assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "init", created: false }), {
     ok: true,
     message: "The model profiles file already exists.",
+    dirty: [],
+    conflict: false,
+  });
+});
+
+test("summarizeModelsResult reports update (with reapply) and alias set successes", () => {
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "update", profile: "mixed" }), {
+    ok: true,
+    message: "Saved model profile mixed.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "update", profile: "mixed", reapply: "agento.mjs models apply mixed --plugin-root /p" }), {
+    ok: true,
+    message: "Saved model profile mixed. Run agento.mjs models apply mixed --plugin-root /p to update the active models.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "alias set", picker: "Claude Opus (copilot)" }), {
+    ok: true,
+    message: "Saved the Copilot model alias for Claude Opus (copilot).",
     dirty: [],
     conflict: false,
   });
