@@ -1,14 +1,18 @@
 import { execFileSync } from "node:child_process";
-import { access, chmod, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { runTests } from "@vscode/test-electron";
+// @ts-expect-error generated CLI bundle ships runtime JS only
+import { setHandoffModels, setModel } from "../../../cli/model-profiles.mjs";
 
 interface Scenario {
   name: "in-repo" | "companion" | "workspace" | "no-markdown";
   workspace: string;
   cleanup: string;
+  configHome: string;
+  pluginRoot: string;
   bin: string;
   launchArgs: string[];
 }
@@ -174,11 +178,38 @@ printf '{"number":%s,"state":"OPEN","isDraft":true,"mergeStateStatus":"CLEAN","u
   return bin;
 }
 
+// A temp git clone of the files `models` reads, committed once, so the electron
+// suite can apply and create profiles against a disposable plugin root instead of
+// the developer's registered clone. The agent, prompt, and mirror files are
+// committed pin-free (their `model:` lines stripped), exactly as the git filter
+// commits them in a real clone.
+async function buildPluginClone(source: string, destination: string): Promise<void> {
+  for (const rel of [".github/agents", ".github/prompts", "skills/agento/commands"]) {
+    const entries = await readdir(path.join(source, rel));
+    for (const file of entries) {
+      const target = path.join(destination, rel, file);
+      await mkdir(path.dirname(target), { recursive: true });
+      const text = await readFile(path.join(source, rel, file), "utf8");
+      await writeFile(target, setHandoffModels(setModel(text, null), null));
+    }
+  }
+  await mkdir(path.join(destination, ".claude-plugin"), { recursive: true });
+  await cp(path.join(source, ".claude-plugin", "plugin.json"), path.join(destination, ".claude-plugin", "plugin.json"));
+  await mkdir(path.join(destination, "templates"), { recursive: true });
+  await cp(path.join(source, "templates", "model-profiles.json"), path.join(destination, "templates", "model-profiles.json"));
+  execFileSync("git", ["init", "-b", "main"], { cwd: destination });
+  execFileSync("git", ["add", "."], { cwd: destination });
+  execFileSync("git", ["-c", "user.name=Agento Test", "-c", "user.email=agento@example.invalid", "commit", "-m", "plugin fixture"], { cwd: destination });
+}
+
 async function createScenario(sourceFixture: string, extensionDevelopmentPath: string, name: Scenario["name"]): Promise<Scenario> {
   const cleanup = await mkdtemp(path.join(os.tmpdir(), `agento-extension-${name}-`));
   const workspace = path.join(cleanup, "product");
   await cp(sourceFixture, workspace, { recursive: true });
   const bin = await createGhStub(cleanup);
+  const configHome = await mkdtemp(path.join(os.tmpdir(), `agento-extension-config-${name}-`));
+  const pluginRoot = await mkdtemp(path.join(os.tmpdir(), `agento-extension-plugin-${name}-`));
+  await buildPluginClone(path.resolve(extensionDevelopmentPath, ".."), pluginRoot);
 
   if (name !== "in-repo" && name !== "no-markdown") {
     const artifacts = path.join(cleanup, "artifacts");
@@ -222,6 +253,8 @@ async function createScenario(sourceFixture: string, extensionDevelopmentPath: s
       name,
       workspace: document.path,
       cleanup,
+      configHome,
+      pluginRoot,
       bin,
       launchArgs: [document.path, "--disable-extensions", "--disable-workspace-trust"],
     };
@@ -233,6 +266,8 @@ async function createScenario(sourceFixture: string, extensionDevelopmentPath: s
       name,
       workspace,
       cleanup,
+      configHome,
+      pluginRoot,
       bin,
       launchArgs: [workspace, "--disable-extension", "vscode.markdown-language-features"],
     };
@@ -242,6 +277,8 @@ async function createScenario(sourceFixture: string, extensionDevelopmentPath: s
     name,
     workspace,
     cleanup,
+    configHome,
+    pluginRoot,
     bin,
     launchArgs: [workspace, "--disable-extensions"],
   };
@@ -272,12 +309,18 @@ async function main(): Promise<void> {
         extensionTestsEnv: {
           ...process.env,
           AGENTO_ELECTRON_SCENARIO: scenario.name,
+          AGENTO_CONFIG_HOME: scenario.configHome,
+          AGENTO_E2E_PLUGIN_ROOT: scenario.pluginRoot,
           PATH: `${scenario.bin}${path.delimiter}${process.env.PATH ?? ""}`,
         },
       });
     } finally {
       await rm(scenario.cleanup, { recursive: true, force: true });
       await assertRemoved(scenario.cleanup);
+      await rm(scenario.configHome, { recursive: true, force: true });
+      await assertRemoved(scenario.configHome);
+      await rm(scenario.pluginRoot, { recursive: true, force: true });
+      await assertRemoved(scenario.pluginRoot);
     }
   }
 }

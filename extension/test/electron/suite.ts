@@ -6,7 +6,8 @@ import path from "node:path";
 
 import * as vscode from "vscode";
 
-import type { ExtensionApi } from "../../src/extension.js";
+import type { ExtensionApi, ModelProfilePrompts } from "../../src/extension.js";
+import type { ModelProfilesElement } from "../../src/modelProfilesProvider.js";
 // @ts-expect-error generated CLI bundle ships runtime JS only
 import { SESSION_WORKSPACE_SETTINGS } from "../../../cli/session-state.mjs";
 import { dispatchCommandAction, dispatchCommandToTarget } from "../../src/commandDispatcher.js";
@@ -634,6 +635,255 @@ async function waitForRoadmapRefresh(api: ExtensionApi, roadmap: vscode.Uri): Pr
   throw new Error(`Timed out waiting for roadmap refresh; observed: ${observedReasons.join(", ") || "none"}`);
 }
 
+async function waitForModelProfiles(
+  api: ExtensionApi,
+  predicate: () => boolean,
+  description: string,
+  action?: () => Thenable<void> | void,
+): Promise<void> {
+  if (predicate()) return;
+  const refreshed = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      subscription.dispose();
+      reject(new Error(`Timed out waiting for Model Profiles ${description}; state: ${api.modelProfiles.current.state}`));
+    }, 20_000);
+    const subscription = api.modelProfiles.onDidChangeTreeData(() => {
+      if (!predicate()) return;
+      clearTimeout(timeout);
+      subscription.dispose();
+      resolve();
+    });
+  });
+  await action?.();
+  await refreshed;
+}
+
+function modelProfileElement(api: ExtensionApi, name: string): ModelProfilesElement {
+  const element = api.modelProfiles.getChildren().find(
+    (child): child is Extract<ModelProfilesElement, { kind: "profile" }> => child.kind === "profile" && child.profile.name === name,
+  );
+  assert.ok(element, `profile element ${name} is listed`);
+  return element;
+}
+
+// Drives the Model Profiles view in the in-repo scenario: temp AGENTO_CONFIG_HOME
+// and a temp plugin clone (AGENTO_E2E_PLUGIN_ROOT) isolate every write from the
+// developer's real state, and the prompts are stubbed through setModelProfilePrompts.
+async function assertModelProfilesView(api: ExtensionApi, extensionPath: string): Promise<void> {
+  const pluginRoot = process.env.AGENTO_E2E_PLUGIN_ROOT;
+  const configHome = process.env.AGENTO_CONFIG_HOME;
+  assert.ok(pluginRoot, "AGENTO_E2E_PLUGIN_ROOT is set");
+  assert.ok(configHome, "AGENTO_CONFIG_HOME is set");
+  const cliPath = path.join(extensionPath, "cli", "agento.mjs");
+  const runCli = (args: string[], input?: string): unknown => {
+    const stdout = execFileSync("node", [cliPath, ...args, "--plugin-root", pluginRoot], { encoding: "utf8", input });
+    return JSON.parse(stdout);
+  };
+  const profilesFilePath = path.join(configHome, "model-profiles.json");
+  const noOpPrompts: ModelProfilePrompts = {
+    enterName: async () => "unused",
+    chooseNewKind: async () => ({ kind: "empty" }),
+    confirmDelete: async () => true,
+    pickProfile: async () => ({ kind: "apply", profile: "mixed" }),
+  };
+
+  const configuration = vscode.workspace.getConfiguration("agento");
+  const previous = configuration.inspect<string>("pluginRoot");
+  await configuration.update("pluginRoot", pluginRoot, vscode.ConfigurationTarget.Workspace);
+  try {
+    // 1. The no-file state, then init.
+    await waitForModelProfiles(api, () => api.modelProfiles.current.state === "no-file", "to reach the no-file state");
+    assert.ok(api.modelProfiles.current.profilesFile, "the no-file model carries profilesFile");
+    assert.ok(
+      api.modelProfiles.current.profilesFile!.path.startsWith(configHome),
+      `profilesFile.path is under AGENTO_CONFIG_HOME: ${api.modelProfiles.current.profilesFile!.path}`,
+    );
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.state === "ready",
+      "init",
+      () => vscode.commands.executeCommand("agento.modelProfiles.init"),
+    );
+
+    // 2. Write valid profiles through the CLI and check the listed rows and tooltip pins.
+    runCli(["models", "update", "mixed"], JSON.stringify({
+      description: "Everyday models",
+      default: "Claude Opus 5.5 (copilot)",
+      agents: { builder: "DeepSeek V4 Pro (deepseek)" },
+    }));
+    runCli(["models", "create", "review", "--description", "Review pass"]);
+    runCli(["models", "update", "review"], JSON.stringify({
+      description: "Review pass",
+      default: "DeepSeek V4 Pro (deepseek)",
+      agents: { planner: "Claude Opus 5.5 (copilot)" },
+    }));
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.profiles.some((profile) => profile.name === "review"),
+      "the CLI-written profiles",
+      () => vscode.commands.executeCommand("agento.refresh"),
+    );
+    let children = api.modelProfiles.getChildren();
+    assert.deepEqual(
+      children.filter((child) => child.kind === "profile").map((child) => (child.kind === "profile" ? child.profile.name : "")),
+      ["mixed", "review"],
+    );
+    const mixedTooltip = String(api.modelProfiles.getTreeItem(modelProfileElement(api, "mixed")).tooltip);
+    assert.match(mixedTooltip, /delivery-builder: DeepSeek V4 Pro \(deepseek\)/);
+    assert.match(mixedTooltip, /delivery-planner: Claude Opus 5\.5 \(copilot\)/);
+
+    // 3. New (empty and copy-from), Duplicate, and Rename.
+    api.setModelProfilePrompts({ ...noOpPrompts, enterName: async () => "fresh" });
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.profiles.some((profile) => profile.name === "fresh"),
+      "new (empty)",
+      () => vscode.commands.executeCommand("agento.modelProfiles.new"),
+    );
+    api.setModelProfilePrompts({
+      ...noOpPrompts,
+      enterName: async () => "copied",
+      chooseNewKind: async () => ({ kind: "copy", from: "review" }),
+    });
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.profiles.some((profile) => profile.name === "copied"),
+      "new (copy-from)",
+      () => vscode.commands.executeCommand("agento.modelProfiles.new"),
+    );
+    api.setModelProfilePrompts({ ...noOpPrompts, enterName: async () => "review-copy" });
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.profiles.some((profile) => profile.name === "review-copy"),
+      "duplicate",
+      () => vscode.commands.executeCommand("agento.modelProfiles.duplicate", modelProfileElement(api, "review")),
+    );
+    api.setModelProfilePrompts({ ...noOpPrompts, enterName: async () => "fresh2" });
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.profiles.some((profile) => profile.name === "fresh2")
+        && !api.modelProfiles.current.profiles.some((profile) => profile.name === "fresh"),
+      "rename",
+      () => vscode.commands.executeCommand("agento.modelProfiles.rename", modelProfileElement(api, "fresh")),
+    );
+
+    // 4. Apply: the applied marker and description, and the clone's model: lines changed.
+    const reviewerFile = path.join(pluginRoot, ".github", "agents", "delivery-reviewer.agent.md");
+    assert.doesNotMatch(fs.readFileSync(reviewerFile, "utf8"), /^model:/m, "the clone commits pin-free");
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.active === "mixed",
+      "apply",
+      () => vscode.commands.executeCommand("agento.modelProfiles.apply", modelProfileElement(api, "mixed")),
+    );
+    const appliedItem = api.modelProfiles.getTreeItem(modelProfileElement(api, "mixed"));
+    assert.equal(appliedItem.description, "applied · Everyday models");
+    assert.equal(appliedItem.contextValue, "agento.modelProfile.applied");
+    assert.match(fs.readFileSync(reviewerFile, "utf8"), /model: "Claude Opus 5\.5 \(copilot\)"/);
+
+    // 5. Clear.
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.active === null,
+      "clear",
+      () => vscode.commands.executeCommand("agento.modelProfiles.clear"),
+    );
+    assert.equal(api.modelProfiles.getTreeItem(modelProfileElement(api, "mixed")).contextValue, "agento.modelProfile");
+
+    // 6. Delete of the applied profile, which confirms and passes --force, leaving active: custom.
+    api.setModelProfilePrompts({
+      ...noOpPrompts,
+      confirmDelete: async (profile) => {
+        assert.equal(profile.name, "mixed");
+        assert.equal(profile.applied, true);
+        return true;
+      },
+    });
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.active === "mixed",
+      "re-apply before delete",
+      () => vscode.commands.executeCommand("agento.modelProfiles.apply", modelProfileElement(api, "mixed")),
+    );
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.active === "custom"
+        && !api.modelProfiles.current.profiles.some((profile) => profile.name === "mixed"),
+      "delete of the applied profile",
+      () => vscode.commands.executeCommand("agento.modelProfiles.delete", modelProfileElement(api, "mixed")),
+    );
+    children = api.modelProfiles.getChildren();
+    assert.equal(children[0]?.kind, "info", "deleting the applied profile leaves custom pins");
+
+    // 7. A stale --expect conflict that reloads.
+    const reviewElement = modelProfileElement(api, "review");
+    const staleHash = api.modelProfiles.current.profilesFile!.hash;
+    const conflictContent = (() => {
+      const parsed = JSON.parse(fs.readFileSync(profilesFilePath, "utf8"));
+      parsed.profiles.copied.description = "Changed under the view";
+      return `${JSON.stringify(parsed, null, 2)}\n`;
+    })();
+    api.setModelProfilePrompts({
+      ...noOpPrompts,
+      enterName: async () => {
+        fs.writeFileSync(profilesFilePath, conflictContent);
+        return "renamed-review";
+      },
+    });
+    // The watcher also reloads after the file write, so wait specifically for the
+    // conflict path's retry warning — the only signal that distinguishes it from a
+    // plain watcher refresh — and for the reloaded hash.
+    const window = vscode.window as { -readonly [K in keyof typeof vscode.window]: (typeof vscode.window)[K] };
+    const originalWarning = window.showWarningMessage;
+    const warnings: string[] = [];
+    window.showWarningMessage = (async (message: string) => {
+      warnings.push(message);
+      return undefined;
+    }) as typeof window.showWarningMessage;
+    try {
+      await waitForModelProfiles(
+        api,
+        () => warnings.some((message) => message.includes("profiles file changed since the view loaded"))
+          && api.modelProfiles.current.profilesFile?.hash !== staleHash
+          && api.modelProfiles.current.profiles.some((profile) => profile.name === "review"),
+        "the conflict warning and reload",
+        () => vscode.commands.executeCommand("agento.modelProfiles.rename", reviewElement),
+      );
+    } finally {
+      window.showWarningMessage = originalWarning;
+    }
+    assert.ok(
+      warnings.some((message) => message.includes("profiles file changed since the view loaded")),
+      "the conflict retry warning is shown",
+    );
+    assert.ok(
+      !api.modelProfiles.current.profiles.some((profile) => profile.name === "renamed-review"),
+      "the conflicted rename did not apply",
+    );
+
+    // 8. A profile created by a direct CLI call appears through the watcher, no refresh.
+    runCli(["models", "create", "watched", "--description", "via CLI"]);
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.profiles.some((profile) => profile.name === "watched"),
+      "the watcher to list a CLI-created profile",
+    );
+
+    // 9. The quick pick still applies through runModelsSelection.
+    api.setModelProfilePrompts({ ...noOpPrompts, pickProfile: async () => ({ kind: "apply", profile: "review" }) });
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.active === "review",
+      "the quick pick to apply",
+      () => vscode.commands.executeCommand("agento.selectModelProfile"),
+    );
+    assert.equal(api.modelProfiles.getTreeItem(modelProfileElement(api, "review")).description, "applied · Review pass");
+  } finally {
+    api.setModelProfilePrompts();
+    await configuration.update("pluginRoot", previous?.workspaceValue ?? previous?.globalValue, vscode.ConfigurationTarget.Workspace);
+  }
+}
+
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<ExtensionApi>("david-perry-software.agento-dashboard");
   assert.ok(extension, "Agento extension is installed in the test host");
@@ -652,6 +902,9 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.newInitiative"));
   assert.ok(commands.includes("agento.planInitiativeMember"));
   assert.ok(commands.includes("agento.selectModelProfile"));
+  for (const command of ["apply", "new", "clear", "openFile", "edit", "duplicate", "rename", "delete", "init"]) {
+    assert.ok(commands.includes(`agento.modelProfiles.${command}`), `agento.modelProfiles.${command} is registered`);
+  }
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
@@ -1279,5 +1532,10 @@ export async function run(): Promise<void> {
   assert.ok(api.windowBanner.html?.includes("PRIMARY WINDOW"), "an attached banner re-renders on refresh");
   assert.ok(api.windowBanner.html?.includes("--vscode-agento-role-primary"));
 
-  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, window banner, roadmap refresh, diagnostics, stale/error handling`);
+  if (process.env.AGENTO_ELECTRON_SCENARIO === "in-repo") {
+    await assertModelProfilesView(api, extension.extensionPath);
+  }
+
+  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles" : "";
+  console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, window banner, roadmap refresh, diagnostics, stale/error handling${modelProfiles}`);
 }

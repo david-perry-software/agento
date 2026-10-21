@@ -70,8 +70,10 @@ placeholders).
 
 ## Editing profiles
 
-The CLI is the only writer of the profiles file, and the CRUD verbs edit it without
-opening it by hand:
+In the VS Code extension, the **Model Profiles** sidebar view offers New, Duplicate,
+Rename, Delete, and Edit for these CRUD verbs — see
+[extension.md](extension.md#model-profiles). The CLI is the only writer of the
+profiles file, and the CRUD verbs edit it without opening it by hand:
 
 - `models create <name> [--from <src>] [--description <text>]` appends a new
   profile — empty, a deep copy of `<src>` (so `create --from` also duplicates), or
@@ -97,6 +99,14 @@ bytes are written to a temporary file with the existing mode, fsynced, and renam
 into place, so a reader never sees a half-written file. The output is
 2-space-indented JSON with a trailing newline and key order preserved; when a write
 reformats a hand-formatted file, the result reports `reformatted: true`.
+
+`models list` (the default verb) reports `profiles[]`, one entry per profile, as
+`{ name, description, errors, warnings, targets }`. `targets` is the same
+`[{ file, value }]` shape as `models show` for that profile — the resolved model for
+every agent, prompt, and mirror (`value` a string, or a string array for a fallback
+list) — or `[]` when the profile has errors. `warnings` is the same `warnings[]` as
+`models show` for that profile (`[]` when the profile has errors), so callers can
+render badges and tooltips from one `list` call instead of one `show` per profile.
 
 Write verbs validate before writing and answer `status: invalid` (exit 3) for a
 file-level error, a malformed profile body, or an invalid picker or id. `create` of
@@ -150,9 +160,11 @@ unchanged.
 node <agento-root>/scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]
 ```
 
-`/agento models …` runs the same verbs from chat, and the extension's
-*Agento: Select Model Profile* command offers them as a quick pick. The plugin root
-defaults to the clone the CLI runs from; pass `--plugin-root` for another one.
+`/agento models …` runs the same verbs from chat, the extension's *Agento: Select
+Model Profile* command offers them as a quick pick, and the **Model Profiles** view
+applies and clears with a single click — see
+[extension.md](extension.md#model-profiles). The plugin root defaults to the clone
+the CLI runs from; pass `--plugin-root` for another one.
 
 - `apply <name>` writes one `model:` line into every agent, prompt, and mirror (after
   `argument-hint:`, else after `description:`), and a nested `model:` line into every
@@ -196,7 +208,7 @@ inline-agent model pins (Builder and Reviewer pins survive through `runSubagent`
 
 The BYOK tier warning: when `autopilot` is pinned to a non-`copilot` (bring-your-own
 key) model while `builder` or `reviewer` pins a `copilot` model, `models
-show`/`apply`/`pins` report a `warnings[]` entry naming the pins and the fix — pin
+list`/`show`/`apply`/`pins` report a `warnings[]` entry naming the pins and the fix — pin
 `autopilot` at least as high as the highest-tier model it delegates to. `apply` still
 succeeds. `agento.mjs doctor`'s `model-profile` check returns `warn` with the same
 detail when the applied pins trigger it. Unqualified names give no tier warning
@@ -205,15 +217,15 @@ because the vendor is unknown.
 The vendor-suffix warning: a value without a `(vendor)` suffix gets one
 `warnings[]` entry, `model values without a (vendor) suffix: …`, naming each
 distinct unqualified value once with every place it is used (`default`, an agent
-alias, `prompts.<name>`; list entries included). `models show`/`apply` check the
-profile's own entries, `models pins` the agents' current pins. `apply` still
+alias, `prompts.<name>`; list entries included). `models list`/`show`/`apply` check
+the profile's own entries, `models pins` the agents' current pins. `apply` still
 succeeds (exit 0) and writes the pins. `agento.mjs doctor`'s `model-profile` check
 returns `warn` when an applied, named profile pins an unqualified value; when the
 BYOK tier warning applies too, the detail joins both with `; `.
 
 The missing-Copilot-alias warning: when `copilotModels` is present and a pinned
-agent's first picker entry has no entry in it, `models show`/`apply`/`pins` report
-`agent pins without a Copilot alias: …` naming each such agent and its picker
+agent's first picker entry has no entry in it, `models list`/`show`/`apply`/`pins`
+report `agent pins without a Copilot alias: …` naming each such agent and its picker
 name. `apply` still succeeds (exit 0). `agento.mjs doctor`'s `model-profile` check
 returns `warn` with the same detail; when the BYOK tier or vendor-suffix warning
 applies too, the detail joins them with `; `.

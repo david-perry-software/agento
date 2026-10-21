@@ -20,6 +20,10 @@ export interface ModelProfileQuickPickItem {
 export interface ModelsSummary {
   ok: boolean;
   message: string;
+  /** The files the CLI reported as dirty (status `dirty`), for the Source Control action. */
+  dirty: string[];
+  /** True when the write hit a stale `--expect` (status `conflict`). */
+  conflict: boolean;
 }
 
 export function expandHome(filePath: string, homedir: string): string {
@@ -95,17 +99,76 @@ export function selectionToArgs(selection: ModelsSelection, pluginRoot: string):
     : ["models", "clear", "--plugin-root", pluginRoot];
 }
 
+// Arg builders for the write verbs. Every write passes `--expect <hash>` from the
+// snapshot the action was taken on, when a hash exists, so a file changed by
+// another window is a `conflict` instead of a silent clobber.
+export function createProfileArgs(name: string, pluginRoot: string, options: { from?: string; description?: string; hash?: string | null } = {}): string[] {
+  return [
+    "models", "create", name,
+    ...(options.from ? ["--from", options.from] : []),
+    ...(options.description ? ["--description", options.description] : []),
+    ...(options.hash ? ["--expect", options.hash] : []),
+    "--plugin-root", pluginRoot,
+  ];
+}
+
+export function renameProfileArgs(oldName: string, newName: string, pluginRoot: string, options: { hash?: string | null } = {}): string[] {
+  return [
+    "models", "rename", oldName, newName,
+    ...(options.hash ? ["--expect", options.hash] : []),
+    "--plugin-root", pluginRoot,
+  ];
+}
+
+export function deleteProfileArgs(name: string, pluginRoot: string, options: { force?: boolean; hash?: string | null } = {}): string[] {
+  return [
+    "models", "delete", name,
+    ...(options.force ? ["--force"] : []),
+    ...(options.hash ? ["--expect", options.hash] : []),
+    "--plugin-root", pluginRoot,
+  ];
+}
+
+export function initProfilesArgs(pluginRoot: string): string[] {
+  return ["models", "init", "--plugin-root", pluginRoot];
+}
+
+const STATUS_FALLBACK: Record<string, string> = {
+  exists: "A profile with that name already exists",
+  "not-found": "No profile with that name was found",
+  active: "That profile is applied in this clone",
+  conflict: "The profiles file changed since it was read; refresh and try again",
+  invalid: "The profile is invalid",
+  dirty: "The clone has changes beyond the model pins",
+};
+
 export function summarizeModelsResult(json: unknown): ModelsSummary {
-  const result = (json ?? {}) as { status?: unknown; profile?: unknown; changed?: unknown; errors?: unknown; dirty?: unknown; message?: unknown };
+  const result = (json ?? {}) as {
+    status?: unknown;
+    verb?: unknown;
+    profile?: unknown;
+    changed?: unknown;
+    created?: unknown;
+    errors?: unknown;
+    dirty?: unknown;
+    message?: unknown;
+  };
   if (result.status === "ok") {
+    const verb = typeof result.verb === "string" ? result.verb : null;
+    const profile = typeof result.profile === "string" ? result.profile : null;
+    if (verb === "create") return { ok: true, message: `Created model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
+    if (verb === "rename") return { ok: true, message: "Renamed the model profile.", dirty: [], conflict: false };
+    if (verb === "delete") return { ok: true, message: `Deleted model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
+    if (verb === "init") return { ok: true, message: result.created === true ? "Created the model profiles file." : "The model profiles file already exists.", dirty: [], conflict: false };
     const changed = Array.isArray(result.changed) ? result.changed.length : 0;
-    const what = typeof result.profile === "string" ? `Applied model profile ${result.profile}` : "Cleared the model profile";
-    return { ok: true, message: `${what}: ${changed} file(s) changed. Run Developer: Reload Window if the model picker does not update.` };
+    const what = profile ? `Applied model profile ${profile}` : "Cleared the model profile";
+    return { ok: true, message: `${what}: ${changed} file(s) changed. Run Developer: Reload Window if the model picker does not update.`, dirty: [], conflict: false };
   }
-  const details = [
-    ...(Array.isArray(result.errors) ? result.errors : []),
-    ...(Array.isArray(result.dirty) && result.status === "dirty" ? result.dirty : []),
-  ].filter((d): d is string => typeof d === "string");
-  const message = typeof result.message === "string" ? result.message : `models ${String(result.status ?? "failed")}`;
-  return { ok: false, message: details.length ? `${message}: ${details.join("; ")}` : message };
+  const dirty = Array.isArray(result.dirty) ? result.dirty.filter((d): d is string => typeof d === "string") : [];
+  const errors = Array.isArray(result.errors) ? result.errors.filter((e): e is string => typeof e === "string") : [];
+  const conflict = result.status === "conflict";
+  const details = [...errors, ...(result.status === "dirty" ? dirty : [])];
+  const status = String(result.status ?? "failed");
+  const message = typeof result.message === "string" && result.message ? result.message : (STATUS_FALLBACK[status] ?? `models ${status}`);
+  return { ok: false, message: details.length ? `${message}: ${details.join("; ")}` : message, dirty, conflict };
 }

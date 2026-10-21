@@ -18,7 +18,27 @@ import { initiativeMemberActionSource } from "./initiativeMemberActions.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "./initiativeTreeModel.js";
 import { InitiativeTreeProvider, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
-import { missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
+import {
+  createProfileArgs,
+  deleteProfileArgs,
+  initProfilesArgs,
+  missingPluginRootMessage,
+  renameProfileArgs,
+  resolvePluginRoot,
+  selectionToArgs,
+  summarizeModelsResult,
+  toQuickPickItems,
+  type ModelsSelection,
+  type ModelsSummary,
+} from "./modelProfiles.js";
+import { ModelProfilesProvider } from "./modelProfilesProvider.js";
+import {
+  createModelProfilesModel,
+  suggestCopyName,
+  validateProfileName,
+  type ModelProfileEntry,
+  type ModelProfilesElement,
+} from "./modelProfilesTree.js";
 import { openArtifactPreview } from "./openArtifact.js";
 import {
   primaryInitiativeTarget,
@@ -52,6 +72,7 @@ export interface ExtensionApi {
   deliveries: DeliveryTreeProvider;
   initiatives: InitiativeTreeProvider;
   sessionDoctor: SessionDoctorProvider;
+  modelProfiles: ModelProfilesProvider;
   sessionDoctorView: vscode.TreeView<unknown>;
   statusBar: vscode.StatusBarItem;
   windowBanner: WindowBannerProvider;
@@ -66,6 +87,7 @@ export interface ExtensionApi {
   startNewInitiative: (input: NewInitiativeInput, dependencies?: NewInitiativeFlowDependencies) => Promise<NewInitiativeFlowResult>;
   setNewInitiativeRunner: (runner?: (input: NewInitiativeInput) => Promise<NewInitiativeFlowResult>) => void;
   setNewInitiativePrompts: (prompts?: NewInitiativePrompts) => void;
+  setModelProfilePrompts: (prompts?: ModelProfilePrompts) => void;
   windowGate: () => WindowGate;
 }
 
@@ -78,6 +100,23 @@ interface NewInitiativePrompts {
   chooseInput: () => Promise<"brief" | "file" | undefined>;
   enterBrief: () => Promise<string | undefined>;
   pickFile: (primaryPath: string) => Promise<string | undefined>;
+}
+
+export interface ModelProfileNamePrompt {
+  title: string;
+  prompt: string;
+  placeHolder: string;
+  value?: string;
+  validate?: (value: string) => string | undefined;
+}
+
+export type ModelProfileNewKind = { kind: "empty" } | { kind: "copy"; from: string };
+
+export interface ModelProfilePrompts {
+  enterName: (options: ModelProfileNamePrompt) => Promise<string | undefined>;
+  chooseNewKind: (existing: string[]) => Promise<ModelProfileNewKind | undefined>;
+  confirmDelete: (profile: { name: string; applied: boolean }) => Promise<boolean>;
+  pickProfile: (listJson: unknown, placeHolder: string) => Promise<ModelsSelection | undefined>;
 }
 
 interface ConfigResult {
@@ -109,6 +148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const sessionDoctor = new SessionDoctorProvider(treeId);
+  const modelProfiles = new ModelProfilesProvider();
   const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
@@ -118,6 +158,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.show();
   const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current));
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
+  const latestModelProfilesRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
   let gate = CLOSED_GATE;
@@ -134,6 +175,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     exists: (filePath) => fs.existsSync(filePath),
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
   });
+  // Rebuilt whenever the plugin root or the profiles-file path changes; assigned
+  // after `scheduleModelProfilesReload` below.
+  let rebuildModelProfileWatchers = (): void => {};
+  const reloadModelProfiles = async (): Promise<void> => {
+    const root = pluginRoot();
+    await latestModelProfilesRefresh.run(
+      async () => {
+        if (root === null) return createModelProfilesModel({ pluginRoot: null });
+        const result = await client.run(["models", "list", "--plugin-root", root], root);
+        const listError =
+          result.code !== 0 && typeof (result.json as { message?: unknown } | null)?.message === "string"
+            ? ((result.json as { message: string }).message)
+            : null;
+        return createModelProfilesModel({ pluginRoot: root, listResult: result.json, listError });
+      },
+      (snapshot) => {
+        modelProfiles.update(snapshot);
+        rebuildModelProfileWatchers();
+      },
+      (error) => {
+        modelProfiles.update(createModelProfilesModel({ pluginRoot: root, listError: String(error) }));
+        rebuildModelProfileWatchers();
+        output.appendLine(`model profiles: ${String(error)}`);
+      },
+    );
+  };
+  let modelProfileDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleModelProfilesReload = (reason: string): void => {
+    output.appendLine(`model profiles: ${reason}`);
+    if (modelProfileDebounceTimer !== undefined) clearTimeout(modelProfileDebounceTimer);
+    modelProfileDebounceTimer = setTimeout(() => {
+      modelProfileDebounceTimer = undefined;
+      void reloadModelProfiles();
+    }, 500);
+  };
+  let modelProfileWatcherDisposables: vscode.Disposable[] = [];
+  let modelProfileWatcherKey: string | null = null;
+  rebuildModelProfileWatchers = (): void => {
+    const root = pluginRoot();
+    const profilesFilePath = modelProfiles.current.profilesFile?.path ?? null;
+    const key = `${root ?? ""}\u0000${profilesFilePath ?? ""}`;
+    if (key === modelProfileWatcherKey) return;
+    modelProfileWatcherKey = key;
+    for (const disposable of modelProfileWatcherDisposables) disposable.dispose();
+    modelProfileWatcherDisposables = [];
+    if (root) {
+      try {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(root), ".github/agents/*.agent.md"),
+        );
+        watcher.onDidCreate((uri) => scheduleModelProfilesReload(`agent created ${uri.fsPath}`));
+        watcher.onDidChange((uri) => scheduleModelProfilesReload(`agent changed ${uri.fsPath}`));
+        watcher.onDidDelete((uri) => scheduleModelProfilesReload(`agent deleted ${uri.fsPath}`));
+        modelProfileWatcherDisposables.push(watcher);
+      } catch (error) {
+        output.appendLine(`model profiles watcher (agents): ${String(error)}`);
+      }
+    }
+    if (profilesFilePath) {
+      try {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(path.dirname(profilesFilePath)), "model-profiles.json"),
+        );
+        watcher.onDidCreate((uri) => scheduleModelProfilesReload(`profiles file created ${uri.fsPath}`));
+        watcher.onDidChange((uri) => scheduleModelProfilesReload(`profiles file changed ${uri.fsPath}`));
+        watcher.onDidDelete((uri) => scheduleModelProfilesReload(`profiles file deleted ${uri.fsPath}`));
+        modelProfileWatcherDisposables.push(watcher);
+      } catch (error) {
+        output.appendLine(`model profiles watcher (profiles file): ${String(error)}`);
+      }
+    }
+  };
   const chatMode: ChatModeResolver = (command) => resolveChatMode(command, {
     pluginRoot: pluginRoot(),
     readFile: (filePath) => fs.readFileSync(filePath, "utf8"),
@@ -189,6 +302,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const refreshSubscription = scheduler.onDidRefresh(({ reasons }) => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     output.appendLine(`refresh: ${reasons.join(", ")}`);
+    void reloadModelProfiles();
     if (!folder) {
       const message = "No workspace folder is open.";
       applyGate(CLOSED_GATE);
@@ -519,40 +633,230 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     },
   );
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
-  const selectModelProfileCommand = vscode.commands.registerCommand("agento.selectModelProfile", async () => {
-    const reportError = async (message: string) => {
-      output.appendLine(`models: ${message}`);
-      await vscode.window.showErrorMessage(message);
-    };
-    const root = pluginRoot();
-    if (!root) {
-      await reportError(missingPluginRootMessage(vscode.workspace.getConfiguration("agento").get<string>("pluginRoot", ""), os.homedir()));
+  const reportModelsError = async (summary: ModelsSummary): Promise<void> => {
+    output.appendLine(`models: ${summary.message}`);
+    if (summary.dirty.length) {
+      const choice = await vscode.window.showErrorMessage(summary.message, "Open Output", "Show in Source Control");
+      if (choice === "Open Output") output.show();
+      if (choice === "Show in Source Control") void vscode.commands.executeCommand("workbench.view.scm");
       return;
     }
+    await vscode.window.showErrorMessage(summary.message);
+  };
+  const resolveModelsRoot = (): string | null => {
+    const root = pluginRoot();
+    if (root) return root;
+    const message = missingPluginRootMessage(vscode.workspace.getConfiguration("agento").get<string>("pluginRoot", ""), os.homedir());
+    output.appendLine(`models: ${message}`);
+    void vscode.window.showErrorMessage(message);
+    return null;
+  };
+  const handleModelsSummary = async (summary: ModelsSummary): Promise<void> => {
+    if (summary.ok) {
+      void vscode.window.showInformationMessage(summary.message);
+      void reloadModelProfiles();
+      scheduler.refreshNow("model profile");
+    } else if (summary.conflict) {
+      output.appendLine(`models: ${summary.message}`);
+      void vscode.window.showWarningMessage("The profiles file changed since the view loaded — refreshed; try again.");
+      void reloadModelProfiles();
+    } else {
+      await reportModelsError(summary);
+    }
+  };
+  const runModelsAction = async (args: string[], root: string): Promise<unknown> => {
+    const result = await client.run(args, root);
+    await handleModelsSummary(summarizeModelsResult(result.json));
+    return result.json;
+  };
+  const runModelsSelection = async (selection: ModelsSelection): Promise<unknown> => {
+    const root = resolveModelsRoot();
+    if (!root) return undefined;
+    return runModelsAction(selectionToArgs(selection, root), root);
+  };
+  const modelProfilesHash = (): string | null => modelProfiles.current.profilesFile?.hash ?? null;
+  const modelProfileNames = (): string[] => modelProfiles.current.profiles.map((profile) => profile.name);
+  const profileOf = (element?: ModelProfilesElement): ModelProfileEntry | undefined =>
+    element?.kind === "profile" ? element.profile : undefined;
+  const openProfilesFile = async (profileKey?: string): Promise<void> => {
+    const file = modelProfiles.current.profilesFile?.path;
+    if (!file) {
+      await vscode.window.showInformationMessage("The model profiles file does not exist yet; create a profile first.");
+      return;
+    }
+    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+    if (profileKey === undefined) {
+      await vscode.window.showTextDocument(document);
+      return;
+    }
+    const key = `"${profileKey}"`;
+    const index = document.getText().indexOf(key);
+    if (index < 0) {
+      await vscode.window.showTextDocument(document);
+      return;
+    }
+    const start = document.positionAt(index);
+    const end = document.positionAt(index + key.length);
+    await vscode.window.showTextDocument(document, { selection: new vscode.Selection(start, end) });
+  };
+
+  const defaultModelProfilePrompts: ModelProfilePrompts = {
+    enterName: async (options) => vscode.window.showInputBox({
+      title: options.title,
+      prompt: options.prompt,
+      placeHolder: options.placeHolder,
+      value: options.value,
+      validateInput: options.validate,
+    }),
+    chooseNewKind: async (existing) => {
+      const picked = await vscode.window.showQuickPick(
+        [
+          { label: "Empty profile", description: "No pins; resolves nothing", newKind: "empty" as const },
+          ...existing.map((name) => ({ label: `Copy from ${name}`, description: "Duplicate the profile's pins", newKind: "copy" as const, from: name })),
+        ],
+        { title: "New Model Profile", placeHolder: "Start empty or copy an existing profile" },
+      );
+      if (!picked) return undefined;
+      return picked.newKind === "empty" ? { kind: "empty" } : { kind: "copy", from: picked.from };
+    },
+    confirmDelete: async (profile) => {
+      const message = profile.applied
+        ? `Delete the applied profile ${profile.name}? Its pins stay in the clone and will show as custom.`
+        : `Delete model profile ${profile.name}?`;
+      const choice = await vscode.window.showWarningMessage(message, { modal: true }, "Delete");
+      return choice === "Delete";
+    },
+    pickProfile: async (listJson, placeHolder) => {
+      const picked = await vscode.window.showQuickPick(toQuickPickItems(listJson), {
+        title: "Agento: Select Model Profile",
+        placeHolder,
+      });
+      return picked?.selection;
+    },
+  };
+  let modelProfilePrompts = defaultModelProfilePrompts;
+  const setModelProfilePrompts = (prompts?: ModelProfilePrompts): void => {
+    modelProfilePrompts = prompts ?? defaultModelProfilePrompts;
+  };
+
+  const selectModelProfileCommand = vscode.commands.registerCommand("agento.selectModelProfile", async () => {
+    const root = resolveModelsRoot();
+    if (!root) return;
     try {
       const list = await client.run(["models", "list", "--plugin-root", root], root);
       if (list.code !== 0) {
-        await reportError(summarizeModelsResult(list.json).message);
+        await reportModelsError(summarizeModelsResult(list.json));
         return;
       }
       const profilesFile = (list.json as { profilesFile?: { path?: unknown } }).profilesFile?.path;
-      const picked = await vscode.window.showQuickPick(toQuickPickItems(list.json), {
-        title: "Agento: Select Model Profile",
-        placeHolder: `Profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}, applied to ${root}`,
-      });
-      if (!picked) return;
-      const result = await client.run(selectionToArgs(picked.selection, root), root);
-      const summary = summarizeModelsResult(result.json);
-      if (summary.ok) {
-        void vscode.window.showInformationMessage(summary.message);
-        scheduler.refreshNow("model profile");
-      } else {
-        await reportError(summary.message);
-      }
-      return result.json;
+      const selection = await modelProfilePrompts.pickProfile(
+        list.json,
+        `Profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}, applied to ${root}`,
+      );
+      if (!selection) return;
+      return runModelsSelection(selection);
     } catch (error) {
-      await reportError(`Unable to select a model profile: ${error instanceof Error ? error.message : String(error)}`);
+      const message = `Unable to select a model profile: ${error instanceof Error ? error.message : String(error)}`;
+      output.appendLine(`models: ${message}`);
+      await vscode.window.showErrorMessage(message);
     }
+  });
+  const modelProfilesApplyCommand = vscode.commands.registerCommand("agento.modelProfiles.apply", async (element?: ModelProfilesElement) => {
+    const profile = profileOf(element);
+    if (!profile) {
+      await vscode.window.showErrorMessage("No model profile selected.");
+      return;
+    }
+    return runModelsSelection({ kind: "apply", profile: profile.name });
+  });
+  const modelProfilesClearCommand = vscode.commands.registerCommand("agento.modelProfiles.clear", () => runModelsSelection({ kind: "clear" }));
+  const modelProfilesNewCommand = vscode.commands.registerCommand("agento.modelProfiles.new", async () => {
+    const root = resolveModelsRoot();
+    if (!root) return;
+    const existing = modelProfileNames();
+    const name = await modelProfilePrompts.enterName({
+      title: "New Model Profile",
+      prompt: "Name the new profile (lowercase letters, digits, and hyphens).",
+      placeHolder: "copilot-daily",
+      validate: (value) => validateProfileName(value, existing) ?? undefined,
+    });
+    if (!name) return;
+    const kind = await modelProfilePrompts.chooseNewKind(existing);
+    if (!kind) return;
+    return runModelsAction(
+      createProfileArgs(name, root, { ...(kind.kind === "copy" ? { from: kind.from } : {}), hash: modelProfilesHash() }),
+      root,
+    );
+  });
+  const modelProfilesDuplicateCommand = vscode.commands.registerCommand("agento.modelProfiles.duplicate", async (element?: ModelProfilesElement) => {
+    const profile = profileOf(element);
+    if (!profile) {
+      await vscode.window.showErrorMessage("No model profile selected.");
+      return;
+    }
+    const root = resolveModelsRoot();
+    if (!root) return;
+    const existing = modelProfileNames();
+    const suggested = suggestCopyName(profile.name, existing);
+    const name = await modelProfilePrompts.enterName({
+      title: "Duplicate Model Profile",
+      prompt: "Name the copy.",
+      placeHolder: suggested,
+      value: suggested,
+      validate: (value) => validateProfileName(value, existing) ?? undefined,
+    });
+    if (!name) return;
+    return runModelsAction(createProfileArgs(name, root, { from: profile.name, hash: modelProfilesHash() }), root);
+  });
+  const modelProfilesRenameCommand = vscode.commands.registerCommand("agento.modelProfiles.rename", async (element?: ModelProfilesElement) => {
+    const profile = profileOf(element);
+    if (!profile) {
+      await vscode.window.showErrorMessage("No model profile selected.");
+      return;
+    }
+    const root = resolveModelsRoot();
+    if (!root) return;
+    const existing = modelProfileNames().filter((name) => name !== profile.name);
+    const name = await modelProfilePrompts.enterName({
+      title: "Rename Model Profile",
+      prompt: "Rename the profile.",
+      placeHolder: profile.name,
+      value: profile.name,
+      validate: (value) => validateProfileName(value, existing) ?? undefined,
+    });
+    if (!name || name === profile.name) return;
+    return runModelsAction(renameProfileArgs(profile.name, name, root, { hash: modelProfilesHash() }), root);
+  });
+  const modelProfilesDeleteCommand = vscode.commands.registerCommand("agento.modelProfiles.delete", async (element?: ModelProfilesElement) => {
+    const profile = profileOf(element);
+    if (!profile) {
+      await vscode.window.showErrorMessage("No model profile selected.");
+      return;
+    }
+    const root = resolveModelsRoot();
+    if (!root) return;
+    const applied = modelProfiles.current.active === profile.name;
+    const confirmed = await modelProfilePrompts.confirmDelete({ name: profile.name, applied });
+    if (!confirmed) return;
+    return runModelsAction(deleteProfileArgs(profile.name, root, { force: applied, hash: modelProfilesHash() }), root);
+  });
+  const modelProfilesEditCommand = vscode.commands.registerCommand("agento.modelProfiles.edit", async (element?: ModelProfilesElement) => {
+    const profile = profileOf(element);
+    if (!profile) {
+      await vscode.window.showErrorMessage("No model profile selected.");
+      return;
+    }
+    if (!resolveModelsRoot()) return;
+    await openProfilesFile(profile.name);
+  });
+  const modelProfilesOpenFileCommand = vscode.commands.registerCommand("agento.modelProfiles.openFile", async () => {
+    if (!resolveModelsRoot()) return;
+    await openProfilesFile();
+  });
+  const modelProfilesInitCommand = vscode.commands.registerCommand("agento.modelProfiles.init", async () => {
+    const root = resolveModelsRoot();
+    if (!root) return;
+    return runModelsAction(initProfilesArgs(root), root);
   });
   const showActionsCommand = vscode.commands.registerCommand("agento.showActions", async (element?: DeliveryTreeElement | InitiativeTreeElement) => {
     const source = element?.kind === "member"
@@ -574,6 +878,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
   const initiativesView = vscode.window.createTreeView("agento.initiatives", { treeDataProvider: initiatives });
   const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
+  const modelProfilesView = vscode.window.createTreeView("agento.modelProfiles", { treeDataProvider: modelProfiles });
   const windowBannerRegistration = vscode.window.registerWebviewViewProvider("agento.windowBanner", windowBanner);
   let sessionDoctorWasVisible = false;
   const sessionDoctorVisibility = sessionDoctorView.onDidChangeVisibility(({ visible }) => {
@@ -581,6 +886,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       sessionDoctorWasVisible = true;
       scheduler.refreshNow("session doctor visible");
     }
+  });
+  const modelProfilesVisibility = modelProfilesView.onDidChangeVisibility(({ visible }) => {
+    if (visible) scheduleModelProfilesReload("view visible");
   });
   const consumePending = () => consumePendingCommands(
     [vscode.workspace.workspaceFile?.fsPath, ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)].filter(
@@ -596,10 +904,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     },
   );
   const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {
-    if (focused) void consumePending();
+    if (focused) {
+      void consumePending();
+      scheduleModelProfilesReload("window focus");
+    }
   });
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => void rebuildWatchers());
+  const modelProfileConfigSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("agento.pluginRoot") || event.affectsConfiguration("chat.pluginLocations")) {
+      rebuildModelProfileWatchers();
+      scheduleModelProfilesReload("plugin root changed");
+    }
+  });
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };
+  const modelProfileWatcherManager = {
+    dispose: () => {
+      if (modelProfileDebounceTimer !== undefined) {
+        clearTimeout(modelProfileDebounceTimer);
+        modelProfileDebounceTimer = undefined;
+      }
+      for (const disposable of modelProfileWatcherDisposables.splice(0)) disposable.dispose();
+    },
+  };
 
   context.subscriptions.push(
     output,
@@ -607,6 +933,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     deliveries,
     initiatives,
     sessionDoctor,
+    modelProfiles,
     statusBar,
     refreshSubscription,
     refreshCommand,
@@ -618,23 +945,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     planInitiativeMemberCommand,
     dispatchActionCommand,
     selectModelProfileCommand,
+    modelProfilesApplyCommand,
+    modelProfilesClearCommand,
+    modelProfilesNewCommand,
+    modelProfilesDuplicateCommand,
+    modelProfilesRenameCommand,
+    modelProfilesDeleteCommand,
+    modelProfilesEditCommand,
+    modelProfilesOpenFileCommand,
+    modelProfilesInitCommand,
     showActionsCommand,
     deliveriesView,
     initiativesView,
     sessionDoctorView,
+    modelProfilesView,
     windowBannerRegistration,
     sessionDoctorVisibility,
+    modelProfilesVisibility,
     windowFocusSubscription,
     workspaceSubscription,
+    modelProfileConfigSubscription,
     watcherManager,
+    modelProfileWatcherManager,
   );
   await rebuildWatchers();
   await consumePending();
   scheduler.refreshNow("activate");
   return {
-    client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
+    client, scheduler, deliveries, initiatives, sessionDoctor, modelProfiles, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
     startNewPlan, setNewPlanRunner, setNewPlanPrompts,
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
+    setModelProfilePrompts,
     windowGate: () => gate,
   };
 }

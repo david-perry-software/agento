@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.0 (2026-10-21)
+
+- **Added.** Model Profiles sidebar view. The Agento container gains a **Model
+  Profiles** tree view listing each profile with its description, an applied marker,
+  error and warning badges, and a tooltip of the profile's resolved pins. One click
+  applies a profile; the context menu offers Edit, Duplicate, Rename, and Delete;
+  the title bar offers New Profile, Clear, Refresh, and Open Profiles File; and an
+  empty state offers to create the profiles file. The view reloads when the profiles
+  file or the clone's agent files change, and `models list` now reports each
+  profile's `warnings` and `targets` so the view renders badges and tooltips from
+  one call.
+
 ## 0.9.0 (2026-10-21)
 
 - **Added.** Model-profile CRUD verbs. `agento.mjs models` (and `/agento models`)

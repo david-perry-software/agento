@@ -19,6 +19,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
     { id: "agento.deliveries", name: "Deliveries" },
     { id: "agento.initiatives", name: "Initiatives" },
     { id: "agento.sessionDoctor", name: "Session & Doctor" },
+    { id: "agento.modelProfiles", name: "Model Profiles" },
   ]);
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openRoadmap"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openBreakdown"));
@@ -27,6 +28,12 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.planInitiativeMember"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.showActions"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.selectModelProfile"));
+  for (const command of ["apply", "new", "clear", "openFile", "edit", "duplicate", "rename", "delete", "init"]) {
+    assert.ok(
+      manifest.contributes.commands.some((entry) => entry.command === `agento.modelProfiles.${command}`),
+      `agento.modelProfiles.${command} is contributed`,
+    );
+  }
   assert.ok(!manifest.contributes.commands.some((command) => /\.(?:build|review|ship|ap)$/.test(command.command)));
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.refresh"),
@@ -34,6 +41,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
       { command: "agento.refresh", when: "view == agento.deliveries", group: "navigation" },
       { command: "agento.refresh", when: "view == agento.initiatives", group: "navigation" },
       { command: "agento.refresh", when: "view == agento.sessionDoctor", group: "navigation" },
+      { command: "agento.refresh", when: "view == agento.modelProfiles", group: "navigation@3" },
     ],
   );
   assert.deepEqual(
@@ -55,6 +63,11 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
     { command: "agento.showActions", when: "view == agento.deliveries && viewItem == agento.delivery", group: "inline" },
     { command: "agento.planInitiativeMember", when: "view == agento.initiatives && viewItem == agento.initiativeMember.ready && agento.canPlan", group: "inline" },
     { command: "agento.showActions", when: "view == agento.initiatives && viewItem == agento.initiativeMember.in-flight", group: "inline" },
+    { command: "agento.modelProfiles.apply", when: "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.invalid)?$/", group: "inline" },
+    { command: "agento.modelProfiles.edit", when: "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/", group: "1_modify@1" },
+    { command: "agento.modelProfiles.duplicate", when: "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/", group: "1_modify@2" },
+    { command: "agento.modelProfiles.rename", when: "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/", group: "1_modify@3" },
+    { command: "agento.modelProfiles.delete", when: "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/", group: "1_modify@4" },
   ]);
 });
 
@@ -74,8 +87,12 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.doesNotMatch(refresh, /\["doctor"/);
   assert.match(source, /splitDashboardDocument\(result\.json\)/);
   assert.match(refresh, /createDeliveryTreeModel\(status, metrics === null \? null : createTimelineRows\(metrics\)\)/, "Timeline rows come from the same dashboard document");
-  assert.equal(source.match(/new LatestDeliveryRefresh\(\)/g)?.length, 1);
+  assert.equal(source.match(/new LatestDeliveryRefresh\(\)/g)?.length, 2);
   assert.doesNotMatch(source, /latestInitiativeRefresh/);
+  assert.match(source, /void reloadModelProfiles\(\)/);
+  assert.match(source, /client\.run\(\["models", "list", "--plugin-root", root\], root\)/);
+  assert.match(source, /createModelProfilesModel\(/);
+  assert.match(source, /createTreeView\("agento\.modelProfiles", \{ treeDataProvider: modelProfiles \}\)/);
   assert.match(source, /registerCommand\("agento\.selectModelProfile"/);
   assert.match(source, /getConfiguration\("chat"\)\.get<Record<string, unknown>>\("pluginLocations"\)/);
   assert.match(source, /sessionDoctorView\.onDidChangeVisibility/);
