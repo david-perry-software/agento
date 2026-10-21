@@ -2,6 +2,7 @@
 // each Agento agent and built-in-agent prompt pins through its `model:` frontmatter
 // line; the CLI rewrites the plugin clone from the resolved targets.
 
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -23,6 +24,30 @@ export const AGENT_ALIASES = {
   mechanic: "copilot-mechanic.agent.md",
   architect: "initiative-architect.agent.md",
 };
+
+// The profiles file as written to disk: 2-space-indented JSON plus a trailing
+// newline. Key order is insertion order, so it is preserved across a rewrite.
+export function serializeProfiles(data) {
+  return JSON.stringify(data, null, 2) + "\n";
+}
+
+// The sha256 hex digest of a file's bytes, used for `--expect` compare-and-swap.
+export function profilesHash(text) {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+// The `copilotModels` value rules, applied to a picker name and a Copilot model id
+// independently: each must be a non-empty string with no `<`/`>` placeholder and no
+// control character. Returns an array of error strings (empty when both are valid).
+export function aliasErrors(picker, id) {
+  const errors = [];
+  for (const [value, label] of [[picker, "alias picker"], [id, "Copilot model id"]]) {
+    if (typeof value !== "string" || !value.trim()) errors.push(`${label} must be a non-empty string`);
+    else if (/[<>]/.test(value)) errors.push(`${label}: ${JSON.stringify(value)} must not contain a placeholder`);
+    else if (CONTROL.test(value)) errors.push(`${label}: ${JSON.stringify(value)} must not contain a control character`);
+  }
+  return errors;
+}
 
 function valueErrors(value, where) {
   const strings = typeof value === "string" ? [value] : Array.isArray(value) ? value : null;

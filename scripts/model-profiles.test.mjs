@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, renderFileModel, renderModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, renderFileModel, renderModel, resolveTargets, serializeProfiles, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -336,4 +336,40 @@ test("unqualifiedWarning: the same bare value in two places is named once with b
   const warning = unqualifiedWarning([{ where: "default", value: "Bare" }, { where: "planner", value: "P (copilot)" }, { where: "prompts.doctor", value: ["Bare"] }, { where: "other", value: "Other" }]);
   assert.match(warning, /^model values without a \(vendor\) suffix: "Bare" \(default, prompts\.doctor\); "Other" \(other\); /);
   assert.equal(warning.match(/"Bare"/g).length, 1);
+});
+
+test("serializeProfiles round-trips and keeps key order with a trailing newline", () => {
+  const data = { copilotModels: { "A (copilot)": "a" }, profiles: { second: { default: "M" }, first: { description: "d" } } };
+  const text = serializeProfiles(data);
+  assert.ok(text.endsWith("\n"));
+  assert.equal(text.slice(0, -1), JSON.stringify(data, null, 2));
+  assert.deepEqual(JSON.parse(text), data);
+  // The first top-level key keeps its position, so a second serialize is stable.
+  assert.equal(serializeProfiles(JSON.parse(text)), text);
+});
+
+test("profilesHash is the sha256 hex of the UTF-8 bytes", () => {
+  assert.equal(profilesHash("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  assert.equal(profilesHash(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  assert.equal(profilesHash("héllo").length, 64);
+  assert.notEqual(profilesHash("a"), profilesHash("b"));
+});
+
+test("aliasErrors accepts a valid picker and id", () => {
+  assert.deepEqual(aliasErrors("Claude Opus 5.5 (copilot)", "claude-opus-5.5"), []);
+  assert.deepEqual(aliasErrors("DeepSeek V4 Pro (deepseek)", "deepseek/deepseek-v4-pro"), []);
+});
+
+test("aliasErrors rejects an empty picker or id", () => {
+  assert.deepEqual(aliasErrors("", "a"), ["alias picker must be a non-empty string"]);
+  assert.deepEqual(aliasErrors("   ", "a"), ["alias picker must be a non-empty string"]);
+  assert.deepEqual(aliasErrors("A (copilot)", ""), ["Copilot model id must be a non-empty string"]);
+  assert.equal(aliasErrors("", "").length, 2);
+});
+
+test("aliasErrors rejects placeholders and control characters", () => {
+  assert.deepEqual(aliasErrors("<Picker>", "a"), ['alias picker: "<Picker>" must not contain a placeholder']);
+  assert.deepEqual(aliasErrors("A (copilot)", "<id>"), ['Copilot model id: "<id>" must not contain a placeholder']);
+  assert.deepEqual(aliasErrors("A\nB", "a"), ['alias picker: "A\\nB" must not contain a control character']);
+  assert.deepEqual(aliasErrors("A (copilot)", "a\u0000b"), ['Copilot model id: "a\\u0000b" must not contain a control character']);
 });
