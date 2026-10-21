@@ -65,6 +65,29 @@ it: Deliveries for `deliveries`, Initiatives for `initiatives`, and Session & Do
 for `session`, `doctor`, or `deliveries`. The CLI's per-section `timings` are
 written to the Agento output channel.
 
+## Model Profiles
+
+The Model Profiles view reads `agento.mjs models list --plugin-root <clone>` and
+shows one row per profile: the name, the description (prefixed with `applied ·` on
+the applied profile), and an icon — `pass-filled` for the applied profile, `error`
+for a profile with errors, `warning` for one with warnings, and a plain glyph
+otherwise. The tooltip lists the description, every error, every warning, and the
+resolved pins: each `.github/agents/<name>.agent.md` value by agent name, and command
+files collapsed to one line per model value. When the clone's pins match no profile,
+a leading info row says so.
+
+An inline Apply button applies the profile; the context menu offers Edit, Duplicate,
+Rename, and Delete; the title bar offers New Profile, Clear (when the view is ready),
+Refresh, and the overflow Open Profiles File. Two empty states invite you to create
+the profiles file, or to set `agento.pluginRoot` / `chat.pluginLocations` when no
+Agento plugin clone is found.
+
+The view refreshes on activation, on every `agento.refresh`, when it becomes visible,
+on window focus, and from watchers on the profiles file and the clone's
+`.github/agents/*.agent.md` files, so an apply from a terminal or another window shows
+up without a manual refresh. Writes pass the profiles-file hash as `--expect`, so a
+stale view shows a retry message and reloads instead of clobbering a concurrent edit.
+
 ## Commands
 
 The play action in a delivery row, an in-flight initiative member, or the Session &
@@ -92,6 +115,11 @@ profile — or *Clear* — to the Agento plugin clone through the bundled CLI
 `agento.pluginRoot` setting, else the first enabled `chat.pluginLocations` entry whose
 `.claude-plugin/plugin.json` is named `agento`. Run *Developer: Reload Window* if the
 model picker does not update; failures go to the Agento output channel.
+
+The Model Profiles view is driven by the `agento.modelProfiles.*` commands — Apply,
+New Profile, Clear, Open Profiles File, Edit, Duplicate, Rename, Delete, and Create
+Profiles File — which run the bundled CLI (`agento.mjs models …`) and share the quick
+pick's apply/clear path.
 
 ## Settings
 

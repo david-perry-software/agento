@@ -301,15 +301,28 @@ from the CLI.
 
 ## Model profiles
 
-**Agento: Select Model Profile** (Command Palette) shows a quick pick of the profiles
-in `~/.config/agento/model-profiles.json` — the applied one marked, each with its
-description and first error — plus *Clear*. The choice runs `agento.mjs models apply
-<name>` or `models clear` with `--plugin-root` set to the plugin clone: the
-`agento.pluginRoot` setting, else the first enabled `chat.pluginLocations` entry whose
-`.claude-plugin/plugin.json` is named `agento`. The bundled CLI's own plugin root is
-`extension/`, so the extension always passes `--plugin-root`; the refresh's
-`dashboard` call passes it too, so the Session & Doctor `model-profile` check reports the clone. See
-[model-profiles.md](model-profiles.md).
+The **Model Profiles** view in the Agento container shows one row per profile from
+`agento.mjs models list --plugin-root <clone>`: the name, the description (prefixed
+with `applied ·` on the applied profile), and an icon for applied, error, warning, or
+plain. The tooltip lists the description, every error and warning, and the profile's
+resolved pins. An inline Apply button applies the profile; the context menu offers
+Edit, Duplicate, Rename, and Delete; the title bar offers New Profile, Clear (when
+the view is ready), Refresh, and Open Profiles File. Empty states invite you to
+create the profiles file or to set `agento.pluginRoot` / `chat.pluginLocations`. The
+view refreshes when the profiles file or the clone's agent files change, when it
+becomes visible, on window focus, and on Refresh, and writes pass `--expect` so a
+stale view reloads instead of clobbering a concurrent edit.
+
+The plugin clone is the `agento.pluginRoot` setting, else the first enabled
+`chat.pluginLocations` entry whose `.claude-plugin/plugin.json` is named `agento`.
+The bundled CLI's own plugin root is `extension/`, so the extension always passes
+`--plugin-root`; the refresh's `dashboard` call passes it too, so the Session &
+Doctor `model-profile` check reports the clone.
+
+**Agento: Select Model Profile** (Command Palette) keeps the quick pick of the same
+profiles — the applied one marked, each with its description and first error — plus
+*Clear*. It runs the same `agento.mjs models apply <name>` / `models clear` path as
+the view's Apply and Clear. See [model-profiles.md](model-profiles.md).
 
 ## Settings
 

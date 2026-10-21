@@ -70,8 +70,10 @@ placeholders).
 
 ## Editing profiles
 
-The CLI is the only writer of the profiles file, and the CRUD verbs edit it without
-opening it by hand:
+In the VS Code extension, the **Model Profiles** sidebar view offers New, Duplicate,
+Rename, Delete, and Edit for these CRUD verbs — see
+[extension.md](extension.md#model-profiles). The CLI is the only writer of the
+profiles file, and the CRUD verbs edit it without opening it by hand:
 
 - `models create <name> [--from <src>] [--description <text>]` appends a new
   profile — empty, a deep copy of `<src>` (so `create --from` also duplicates), or
@@ -158,9 +160,11 @@ unchanged.
 node <agento-root>/scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]
 ```
 
-`/agento models …` runs the same verbs from chat, and the extension's
-*Agento: Select Model Profile* command offers them as a quick pick. The plugin root
-defaults to the clone the CLI runs from; pass `--plugin-root` for another one.
+`/agento models …` runs the same verbs from chat, the extension's *Agento: Select
+Model Profile* command offers them as a quick pick, and the **Model Profiles** view
+applies and clears with a single click — see
+[extension.md](extension.md#model-profiles). The plugin root defaults to the clone
+the CLI runs from; pass `--plugin-root` for another one.
 
 - `apply <name>` writes one `model:` line into every agent, prompt, and mirror (after
   `argument-hint:`, else after `description:`), and a nested `model:` line into every
