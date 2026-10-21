@@ -13,7 +13,9 @@ committed.
 `~/.config/agento/model-profiles.json` — or `$XDG_CONFIG_HOME/agento/model-profiles.json`
 when `XDG_CONFIG_HOME` is set; `AGENTO_CONFIG_HOME` replaces the directory (tests use
 it). `agento.mjs models init` (or `/agento models init`) creates it from
-`templates/model-profiles.json` when it does not exist yet.
+`templates/model-profiles.json` when it does not exist yet; `agento.mjs models
+create <name>` creates a new file holding only that profile (no template
+placeholders).
 
 ```json
 {
@@ -65,6 +67,46 @@ it). `agento.mjs models init` (or `/agento models init`) creates it from
   `mechanic`, `architect`.
 - `prompts` keys are command names (`doctor`, `ship`, …) of commands that run on the
   built-in agent.
+
+## Editing profiles
+
+The CLI is the only writer of the profiles file, and the CRUD verbs edit it without
+opening it by hand:
+
+- `models create <name> [--from <src>] [--description <text>]` appends a new
+  profile — empty, a deep copy of `<src>` (so `create --from` also duplicates), or
+  with `--description` set (it overrides a copied one).
+- `models update <name> [--dry-run]` replaces a profile in place from the full
+  profile object as JSON on stdin. `--dry-run` runs every check and reports
+  `errors`, `warnings`, `written: false`, and `dryRun: true` without writing.
+- `models rename <old> <new>` renames a profile in place. The applied profile
+  follows by content, so it stays `active` under the new name.
+- `models delete <name> [--force]` deletes a profile. Deleting the applied profile
+  is refused with `status: active` (exit 3) unless `--force` is given, in which
+  case `active` becomes `custom` (or another identical profile).
+- `models alias set "<picker> (<vendor>)" <copilot-id>` and
+  `models alias remove "<picker> (<vendor>)"` edit the top-level `copilotModels`
+  map.
+
+Every `models` result carries `profilesFile.hash`, the sha256 of the file's bytes
+(`null` when the file does not exist). The write verbs — `create`, `update`,
+`rename`, `delete`, `alias set`, and `alias remove` — accept `--expect <hash>`: if
+the file has changed since that hash was read, the write is refused with
+`status: conflict` (exit 3) and the file is left untouched. Writes are atomic: the
+bytes are written to a temporary file with the existing mode, fsynced, and renamed
+into place, so a reader never sees a half-written file. The output is
+2-space-indented JSON with a trailing newline and key order preserved; when a write
+reformats a hand-formatted file, the result reports `reformatted: true`.
+
+Write verbs validate before writing and answer `status: invalid` (exit 3) for a
+file-level error, a malformed profile body, or an invalid picker or id. `create` of
+an existing name answers `status: exists`, a write naming a missing `--from` profile
+or an unknown picker on `alias remove` answers `status: not-found`, and `not-found`
+is also the finding for `update`/`rename`/`delete` of a missing profile. Updating
+the applied profile is allowed: the result carries `activeBefore`/`active` and
+`reapply` (re-run `models apply <name>`). Which profile is `active` is
+clone-scoped — the delete guard checks only the clone named by `--plugin-root`, and
+another clone with the same profile applied would turn `custom`.
 
 ## Resolution
 
@@ -277,3 +319,8 @@ Planner's `Claude Opus 5.5 (copilot)`.
   per-project profiles.
 - From-source and Copilot CLI installs (install options B and C) are replaced on
   update; apply the profile again afterwards.
+- A profile name may be purely numeric (for example `42`), but JSON object keys
+  that look like integers are ordered first by the serializer regardless of
+  insertion order. A purely numeric profile name is therefore hoisted to the front
+  of `profiles` and its position is not preserved across writes; use a name with at
+  least one letter to keep the file order predictable.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, readModel, renderFileModel, renderModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -336,4 +336,127 @@ test("unqualifiedWarning: the same bare value in two places is named once with b
   const warning = unqualifiedWarning([{ where: "default", value: "Bare" }, { where: "planner", value: "P (copilot)" }, { where: "prompts.doctor", value: ["Bare"] }, { where: "other", value: "Other" }]);
   assert.match(warning, /^model values without a \(vendor\) suffix: "Bare" \(default, prompts\.doctor\); "Other" \(other\); /);
   assert.equal(warning.match(/"Bare"/g).length, 1);
+});
+
+test("serializeProfiles round-trips and keeps key order with a trailing newline", () => {
+  const data = { copilotModels: { "A (copilot)": "a" }, profiles: { second: { default: "M" }, first: { description: "d" } } };
+  const text = serializeProfiles(data);
+  assert.ok(text.endsWith("\n"));
+  assert.equal(text.slice(0, -1), JSON.stringify(data, null, 2));
+  assert.deepEqual(JSON.parse(text), data);
+  // The first top-level key keeps its position, so a second serialize is stable.
+  assert.equal(serializeProfiles(JSON.parse(text)), text);
+});
+
+test("profilesHash is the sha256 hex of the UTF-8 bytes", () => {
+  assert.equal(profilesHash("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  assert.equal(profilesHash(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  assert.equal(profilesHash("héllo").length, 64);
+  assert.notEqual(profilesHash("a"), profilesHash("b"));
+});
+
+test("aliasErrors accepts a valid picker and id", () => {
+  assert.deepEqual(aliasErrors("Claude Opus 5.5 (copilot)", "claude-opus-5.5"), []);
+  assert.deepEqual(aliasErrors("DeepSeek V4 Pro (deepseek)", "deepseek/deepseek-v4-pro"), []);
+});
+
+test("aliasErrors rejects an empty picker or id", () => {
+  assert.deepEqual(aliasErrors("", "a"), ["alias picker must be a non-empty string"]);
+  assert.deepEqual(aliasErrors("   ", "a"), ["alias picker must be a non-empty string"]);
+  assert.deepEqual(aliasErrors("A (copilot)", ""), ["Copilot model id must be a non-empty string"]);
+  assert.equal(aliasErrors("", "").length, 2);
+});
+
+test("aliasErrors rejects placeholders and control characters", () => {
+  assert.deepEqual(aliasErrors("<Picker>", "a"), ['alias picker: "<Picker>" must not contain a placeholder']);
+  assert.deepEqual(aliasErrors("A (copilot)", "<id>"), ['Copilot model id: "<id>" must not contain a placeholder']);
+  assert.deepEqual(aliasErrors("A\nB", "a"), ['alias picker: "A\\nB" must not contain a control character']);
+  assert.deepEqual(aliasErrors("A (copilot)", "a\u0000b"), ['Copilot model id: "a\\u0000b" must not contain a control character']);
+});
+
+const MUTATE_FIXTURE = { profiles: { a: { description: "A", agents: { planner: ["P (copilot)"] } }, b: { default: "B" } }, copilotModels: { "A (copilot)": "a" } };
+
+const deepFreeze = (value) => {
+  if (value !== null && typeof value === "object") {
+    for (const key of Object.keys(value)) deepFreeze(value[key]);
+    Object.freeze(value);
+  }
+  return value;
+};
+
+test("createProfile appends last, copies deeply, and honors description", () => {
+  const data = structuredClone(MUTATE_FIXTURE);
+  const empty = createProfile(data, "c", {});
+  assert.deepEqual(empty.profiles.c, {});
+  assert.deepEqual(Object.keys(empty.profiles), ["a", "b", "c"]);
+
+  const copy = createProfile(data, "copy", { from: "a" });
+  assert.deepEqual(copy.profiles.copy, data.profiles.a);
+  assert.notEqual(copy.profiles.copy, data.profiles.a);
+  assert.notEqual(copy.profiles.copy.agents, data.profiles.a.agents);
+  // Mutating the copy leaves the source untouched.
+  copy.profiles.copy.agents.planner[0] = "Changed (copilot)";
+  copy.profiles.copy.description = "Changed";
+  assert.deepEqual(data.profiles.a, { description: "A", agents: { planner: ["P (copilot)"] } });
+
+  const described = createProfile(data, "copy2", { from: "a", description: "Override" });
+  assert.equal(described.profiles.copy2.description, "Override");
+  assert.deepEqual(described.profiles.copy2.agents, { planner: ["P (copilot)"] });
+
+  const describedEmpty = createProfile(data, "copy3", { description: "Only" });
+  assert.deepEqual(describedEmpty.profiles.copy3, { description: "Only" });
+});
+
+test("replaceProfile replaces in place, keeping its position", () => {
+  const data = structuredClone(MUTATE_FIXTURE);
+  const next = replaceProfile(data, "a", { default: "New (copilot)" });
+  assert.deepEqual(next.profiles.a, { default: "New (copilot)" });
+  assert.deepEqual(Object.keys(next.profiles), ["a", "b"]);
+  // The input is untouched.
+  assert.deepEqual(data.profiles.a, { description: "A", agents: { planner: ["P (copilot)"] } });
+});
+
+test("renameProfile swaps the key in place, keeping order", () => {
+  const data = structuredClone(MUTATE_FIXTURE);
+  const next = renameProfile(data, "a", "renamed");
+  assert.deepEqual(Object.keys(next.profiles), ["renamed", "b"]);
+  assert.deepEqual(next.profiles.renamed, data.profiles.a);
+  assert.equal(next.profiles.a, undefined);
+});
+
+test("deleteProfile removes the named profile", () => {
+  const data = structuredClone(MUTATE_FIXTURE);
+  const next = deleteProfile(data, "a");
+  assert.deepEqual(Object.keys(next.profiles), ["b"]);
+  assert.deepEqual(Object.keys(data.profiles), ["a", "b"]);
+});
+
+test("setAlias creates copilotModels when absent and updates in place", () => {
+  const withoutMap = structuredClone(MUTATE_FIXTURE);
+  delete withoutMap.copilotModels;
+  const created = setAlias(withoutMap, "B (copilot)", "b");
+  assert.deepEqual(created.copilotModels, { "B (copilot)": "b" });
+  assert.equal(withoutMap.copilotModels, undefined);
+
+  const updated = setAlias(structuredClone(MUTATE_FIXTURE), "A (copilot)", "new-id");
+  assert.deepEqual(updated.copilotModels, { "A (copilot)": "new-id" });
+  assert.deepEqual(Object.keys(updated.copilotModels), ["A (copilot)"]);
+});
+
+test("removeAlias removes one and leaves an empty copilotModels in place", () => {
+  const removed = removeAlias(structuredClone(MUTATE_FIXTURE), "A (copilot)");
+  assert.deepEqual(removed.copilotModels, {});
+  assert.deepEqual(MUTATE_FIXTURE.copilotModels, { "A (copilot)": "a" });
+});
+
+test("every mutation helper leaves a deep-frozen input untouched", () => {
+  const data = deepFreeze(structuredClone(MUTATE_FIXTURE));
+  const before = JSON.stringify(data);
+  createProfile(data, "c", { from: "a", description: "d" });
+  replaceProfile(data, "a", { default: "X" });
+  renameProfile(data, "a", "z");
+  deleteProfile(data, "b");
+  setAlias(data, "B (copilot)", "b");
+  removeAlias(data, "A (copilot)");
+  assert.equal(JSON.stringify(data), before);
 });

@@ -2,6 +2,7 @@
 // each Agento agent and built-in-agent prompt pins through its `model:` frontmatter
 // line; the CLI rewrites the plugin clone from the resolved targets.
 
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 
@@ -23,6 +24,82 @@ export const AGENT_ALIASES = {
   mechanic: "copilot-mechanic.agent.md",
   architect: "initiative-architect.agent.md",
 };
+
+// The profiles file as written to disk: 2-space-indented JSON plus a trailing
+// newline. Key order is insertion order, so it is preserved across a rewrite.
+export function serializeProfiles(data) {
+  return JSON.stringify(data, null, 2) + "\n";
+}
+
+// The sha256 hex digest of a file's bytes, used for `--expect` compare-and-swap.
+export function profilesHash(text) {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+// The `copilotModels` value rules, applied to a picker name and a Copilot model id
+// independently: each must be a non-empty string with no `<`/`>` placeholder and no
+// control character. Returns an array of error strings (empty when both are valid).
+export function aliasErrors(picker, id) {
+  const errors = [];
+  for (const [value, label] of [[picker, "alias picker"], [id, "Copilot model id"]]) {
+    if (typeof value !== "string" || !value.trim()) errors.push(`${label} must be a non-empty string`);
+    else if (/[<>]/.test(value)) errors.push(`${label}: ${JSON.stringify(value)} must not contain a placeholder`);
+    else if (CONTROL.test(value)) errors.push(`${label}: ${JSON.stringify(value)} must not contain a control character`);
+  }
+  return errors;
+}
+
+// Pure mutation helpers. Each takes the parsed file object
+// `{ profiles, copilotModels? }` and returns a new object with the change applied;
+// the input is never mutated. They handle structure only: callers check that names
+// exist or are free, so a helper cannot fail halfway.
+
+// Appends `name` last. With `from`, the new profile is a deep copy of that profile;
+// with `description`, that value is set or overrides a copied one; otherwise `{}`.
+export function createProfile(data, name, { from, description } = {}) {
+  const source = from === undefined || from === null ? {} : data.profiles[from] ?? {};
+  const body = structuredClone(source);
+  if (description !== undefined) body.description = description;
+  const profiles = { ...data.profiles };
+  profiles[name] = body;
+  return { ...data, profiles };
+}
+
+// Replaces a profile's body in place, keeping its position.
+export function replaceProfile(data, name, body) {
+  const profiles = { ...data.profiles };
+  profiles[name] = structuredClone(body);
+  return { ...data, profiles };
+}
+
+// Rebuilds `profiles` with the same order and the key swapped.
+export function renameProfile(data, old, next) {
+  const profiles = {};
+  for (const [key, value] of Object.entries(data.profiles)) {
+    profiles[key === old ? next : key] = value;
+  }
+  return { ...data, profiles };
+}
+
+export function deleteProfile(data, name) {
+  const profiles = { ...data.profiles };
+  delete profiles[name];
+  return { ...data, profiles };
+}
+
+// Inserts or updates a `copilotModels` entry in place, creating the map when absent.
+export function setAlias(data, picker, id) {
+  const copilotModels = { ...(data.copilotModels ?? {}) };
+  copilotModels[picker] = id;
+  return { ...data, copilotModels };
+}
+
+// Removes one entry and leaves an empty `copilotModels: {}` in place.
+export function removeAlias(data, picker) {
+  const copilotModels = { ...(data.copilotModels ?? {}) };
+  delete copilotModels[picker];
+  return { ...data, copilotModels };
+}
 
 function valueErrors(value, where) {
   const strings = typeof value === "string" ? [value] : Array.isArray(value) ? value : null;

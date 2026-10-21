@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0 (2026-10-21)
+
+- **Added.** Model-profile CRUD verbs. `agento.mjs models` (and `/agento models`)
+  gains `create`, `update`, `rename`, `delete`, `alias set`, and `alias remove`:
+  create a profile empty or copied from another, replace a profile from stdin JSON
+  (with `--dry-run`), rename and delete profiles, and edit `copilotModels` aliases.
+  Every `models` result reports `profilesFile.hash` (the sha256 of the file's
+  bytes), the write verbs accept `--expect <hash>` compare-and-swap and refuse a
+  stale write with `status: conflict`, writes are validated and atomic (temp file,
+  fsync, rename), and `models list` now reports `copilotModels`.
+
 ## 0.8.0 (2026-10-17)
 
 - **Added.** Copilot-harness support ships end to end. The `agento` router skill

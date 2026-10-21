@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
 import { linkType } from "./harness.mjs";
-import { setHandoffModels, setModel } from "./model-profiles.mjs";
+import { profilesHash, setHandoffModels, setModel } from "./model-profiles.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -85,8 +85,8 @@ baseEnv.AGENTO_VSCODE_SETTINGS = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-s
 // Never touch the real ~/.copilot/skills (harness install/status/uninstall).
 baseEnv.AGENTO_COPILOT_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
 
-function runWith({ cwd, env }, ...args) {
-  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
+function runWith({ cwd, env, input }, ...args) {
+  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv, input: input ?? undefined });
   let json;
   try {
     json = JSON.parse(result.stdout);
@@ -3083,11 +3083,12 @@ function modelsFixture({ gitInit = true } = {}) {
   const home = path.join(base, "config");
   const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
   const models = (...args) => runWith({ cwd: plugin, env }, "models", ...args, "--plugin-root", plugin);
+  const modelsInput = (input, ...args) => runWith({ cwd: plugin, env, input }, "models", ...args, "--plugin-root", plugin);
   const writeProfiles = (profiles) => {
     fs.mkdirSync(home, { recursive: true });
     fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ profiles }));
   };
-  return { plugin, home, env, models, writeProfiles };
+  return { plugin, home, env, models, modelsInput, writeProfiles };
 }
 
 test("models list without a profiles file reports nothing applied", () => {
@@ -3097,7 +3098,7 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.equal(json.status, "ok");
   assert.equal(json.verb, "list");
   assert.deepEqual(json.profiles, []);
-  assert.deepEqual(json.profilesFile, { path: path.join(home, "model-profiles.json"), exists: false });
+  assert.deepEqual(json.profilesFile, { path: path.join(home, "model-profiles.json"), exists: false, hash: null });
   assert.equal(json.pluginRoot, plugin);
   assert.equal(json.active, null);
   assert.deepEqual(json.skipWorktree, []);
@@ -3106,6 +3107,373 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.deepEqual(json.filter.unrecorded, []);
   assert.deepEqual(json.dirty, []);
   assert.match(json.hint, /git filter.*survive pull, merge, switch, and stash/);
+});
+
+test("models reports profilesFile.hash and list reports copilotModels", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  const absent = models("list");
+  assert.equal(absent.code, 0);
+  assert.equal(absent.json.profilesFile.hash, null);
+  assert.deepEqual(absent.json.copilotModels, {});
+
+  writeProfiles({ mixed: { description: "d" } });
+  const file = path.join(home, "model-profiles.json");
+  const expected = profilesHash(fs.readFileSync(file, "utf8"));
+  const listed = models("list");
+  assert.equal(listed.code, 0);
+  assert.equal(listed.json.profilesFile.hash, expected);
+  assert.deepEqual(listed.json.copilotModels, {});
+
+  fs.writeFileSync(file, JSON.stringify({ copilotModels: { "A (copilot)": "a" }, profiles: { mixed: {} } }));
+  const withAlias = models("list");
+  assert.equal(withAlias.code, 0);
+  assert.deepEqual(withAlias.json.copilotModels, { "A (copilot)": "a" });
+  assert.equal(withAlias.json.profilesFile.hash, profilesHash(fs.readFileSync(file, "utf8")));
+});
+
+test("models create writes only the new profile to a missing file", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  const { code, json } = models("create", "a");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.verb, "create");
+  assert.equal(json.written, true);
+  assert.equal(json.profilesFile.exists, true);
+  const text = fs.readFileSync(file, "utf8");
+  assert.deepEqual(JSON.parse(text), { profiles: { a: {} } });
+  assert.ok(!/[<>]/.test(text));
+  assert.equal(json.profilesFile.hash, profilesHash(text));
+});
+
+test("models create empty, from a deep copy, and with --description", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ src: { description: "Source", default: "S (copilot)", agents: { planner: ["P (copilot)"] } } });
+  const file = path.join(home, "model-profiles.json");
+
+  const empty = models("create", "empty");
+  assert.equal(empty.code, 0, JSON.stringify(empty.json));
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).profiles.empty, {});
+
+  const copy = models("create", "copy", "--from", "src");
+  assert.equal(copy.code, 0, JSON.stringify(copy.json));
+  const afterCopy = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(afterCopy.profiles.copy, afterCopy.profiles.src);
+  assert.deepEqual(afterCopy.profiles.src, { description: "Source", default: "S (copilot)", agents: { planner: ["P (copilot)"] } });
+
+  const described = models("create", "described", "--from", "src", "--description", "Override");
+  assert.equal(described.code, 0, JSON.stringify(described.json));
+  const afterDescribed = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(afterDescribed.profiles.described.description, "Override");
+  assert.deepEqual(afterDescribed.profiles.described.default, "S (copilot)");
+});
+
+test("models create exists and --from not-found exit 3", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const exists = models("create", "a");
+  assert.equal(exists.code, 3);
+  assert.equal(exists.json.status, "exists");
+  const notFound = models("create", "b", "--from", "nope");
+  assert.equal(notFound.code, 3);
+  assert.equal(notFound.json.status, "not-found");
+  assert.deepEqual(notFound.json.known, ["a"]);
+});
+
+test("models create --from an invalid profile is invalid", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ bad: { default: "<placeholder>" } });
+  const { code, json } = models("create", "copy", "--from", "bad");
+  assert.equal(code, 3);
+  assert.equal(json.status, "invalid");
+  assert.ok(json.errors.some((e) => /placeholder/.test(e)), JSON.stringify(json.errors));
+});
+
+test("models create honors --expect with conflict and success", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const file = path.join(home, "model-profiles.json");
+  const stale = "0".repeat(64);
+  const before = fs.readFileSync(file, "utf8");
+  const conflict = models("create", "b", "--expect", stale);
+  assert.equal(conflict.code, 3);
+  assert.equal(conflict.json.status, "conflict");
+  assert.equal(conflict.json.expected, stale);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+
+  const hash = profilesHash(before);
+  const ok = models("create", "b", "--expect", hash);
+  assert.equal(ok.code, 0, JSON.stringify(ok.json));
+  assert.equal(ok.json.status, "ok");
+  assert.equal(ok.json.previousHash, hash);
+});
+
+test("models create refuses an unparseable file without touching it", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(file, "{ not json");
+  const before = fs.readFileSync(file, "utf8");
+  const { code, json } = models("create", "a");
+  assert.equal(code, 3);
+  assert.equal(json.status, "invalid");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
+test("models create on a hand-formatted file reports reformatted", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(file, '{"profiles":{"a":{}}}');
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.reformatted, true);
+  const text = fs.readFileSync(file, "utf8");
+  assert.ok(text.endsWith("\n"));
+  assert.ok(text.includes('  "profiles"'));
+});
+
+test("models create leaves no temp files and keeps the mode", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const file = path.join(home, "model-profiles.json");
+  fs.chmodSync(file, 0o600);
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(fs.readdirSync(home).filter((f) => f.startsWith(".model-profiles.json.")), []);
+});
+
+test("models create works alongside the template's placeholder mixed profile", () => {
+  const { home, models } = modelsFixture();
+  assert.equal(models("init").code, 0);
+  const { code, json } = models("create", "clean");
+  assert.equal(code, 0, JSON.stringify(json));
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.ok(Object.hasOwn(parsed.profiles, "mixed"));
+  assert.ok(Object.hasOwn(parsed.profiles, "clean"));
+  assert.deepEqual(parsed.profiles.clean, {});
+});
+
+test("models create preserves the template's top-level key order after init", () => {
+  const { home, models } = modelsFixture();
+  assert.equal(models("init").code, 0);
+  const { code, json } = models("create", "x");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.reformatted, false);
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed), ["copilotModels", "profiles"]);
+});
+
+test("models create keeps an existing empty copilotModels key", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ copilotModels: {}, profiles: { a: {} } }, null, 2) + "\n");
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.reformatted, false);
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed), ["copilotModels", "profiles"]);
+  assert.deepEqual(parsed.copilotModels, {});
+  assert.deepEqual(Object.keys(parsed.profiles), ["a", "b"]);
+});
+
+test("models create keeps a profiles-first file profiles-first", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed), ["profiles"]);
+  assert.deepEqual(Object.keys(parsed.profiles), ["a", "b"]);
+});
+
+test("models update replaces the profile in place from stdin", () => {
+  const { home, models, modelsInput } = modelsFixture();
+  assert.equal(models("init").code, 0);
+  assert.equal(models("create", "other").code, 0);
+  const body = JSON.stringify({ description: "Real", default: "M (copilot)", agents: { planner: "P (copilot)" } });
+  const { code, json } = modelsInput(body, "update", "mixed");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.written, true);
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["mixed", "other"]);
+  assert.deepEqual(parsed.profiles.mixed, { description: "Real", default: "M (copilot)", agents: { planner: "P (copilot)" } });
+});
+
+test("models update rejects non-JSON and array input without touching the file", () => {
+  const { home, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  const before = fs.readFileSync(file, "utf8");
+  const nonJson = modelsInput("{ not json", "update", "a");
+  assert.equal(nonJson.code, 3);
+  assert.equal(nonJson.json.status, "invalid");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  const array = modelsInput("[]", "update", "a");
+  assert.equal(array.code, 3);
+  assert.equal(array.json.status, "invalid");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
+test("models update --dry-run validates without writing", () => {
+  const { home, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  const before = fs.readFileSync(file, "utf8");
+  const { code, json } = modelsInput(JSON.stringify({ default: "N (copilot)" }), "update", "a", "--dry-run");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.dryRun, true);
+  assert.equal(json.written, false);
+  assert.deepEqual(json.errors, []);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
+test("models update --expect conflicts after an out-of-band write", () => {
+  const { home, models, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  const show = models("show", "a");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  const hash = show.json.profilesFile.hash;
+  writeProfiles({ a: { default: "Changed (copilot)" } });
+  const after = fs.readFileSync(file, "utf8");
+  const { code, json } = modelsInput(JSON.stringify({ default: "N (copilot)" }), "update", "a", "--expect", hash);
+  assert.equal(code, 3);
+  assert.equal(json.status, "conflict");
+  assert.equal(fs.readFileSync(file, "utf8"), after);
+});
+
+test("models update of the applied profile reports reapply and active custom", () => {
+  const { plugin, models, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  assert.equal(models("apply", "a").code, 0);
+  const { code, json } = modelsInput(JSON.stringify({ default: "N (copilot)" }), "update", "a");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.activeBefore, "a");
+  assert.equal(json.active, "custom");
+  assert.equal(json.reapply, `agento.mjs models apply a --plugin-root ${plugin}`);
+});
+
+test("models rename rejects not-found and exists", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {}, b: {} });
+  const notFound = models("rename", "nope", "x");
+  assert.equal(notFound.code, 3);
+  assert.equal(notFound.json.status, "not-found");
+  const exists = models("rename", "a", "b");
+  assert.equal(exists.code, 3);
+  assert.equal(exists.json.status, "exists");
+});
+
+test("models rename keeps position and active follows by content", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" }, b: {} });
+  assert.equal(models("apply", "a").code, 0);
+  const { code, json } = models("rename", "a", "z");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.activeBefore, "a");
+  assert.equal(json.active, "z");
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["z", "b"]);
+  assert.deepEqual(parsed.profiles.z, { default: "M (copilot)" });
+});
+
+test("models delete rejects not-found and the applied profile without --force", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  assert.equal(models("apply", "a").code, 0);
+  const before = fs.readFileSync(file, "utf8");
+  const active = models("delete", "a");
+  assert.equal(active.code, 3);
+  assert.equal(active.json.status, "active");
+  assert.match(active.json.message, /models clear/);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+
+  const notFound = models("delete", "nope");
+  assert.equal(notFound.code, 3);
+  assert.equal(notFound.json.status, "not-found");
+});
+
+test("models delete --force removes the applied profile and active becomes custom", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" }, b: {} });
+  assert.equal(models("apply", "a").code, 0);
+  const { code, json } = models("delete", "a", "--force");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.activeBefore, "a");
+  assert.equal(json.active, "custom");
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["b"]);
+});
+
+test("models delete of a non-applied profile succeeds", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" }, b: {} });
+  const { code, json } = models("delete", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["a"]);
+});
+
+test("models alias set creates, updates, and remove deletes a copilotModels entry", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ profiles: { a: {} } }));
+
+  const set1 = models("alias", "set", "A (copilot)", "a-id");
+  assert.equal(set1.code, 0, JSON.stringify(set1.json));
+  assert.equal(set1.json.status, "ok");
+  assert.deepEqual(set1.json.copilotModels, { "A (copilot)": "a-id" });
+
+  const set2 = models("alias", "set", "A (copilot)", "new-id");
+  assert.equal(set2.code, 0, JSON.stringify(set2.json));
+  assert.deepEqual(set2.json.copilotModels, { "A (copilot)": "new-id" });
+
+  const remove = models("alias", "remove", "A (copilot)");
+  assert.equal(remove.code, 0, JSON.stringify(remove.json));
+  assert.deepEqual(remove.json.copilotModels, {});
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).copilotModels, {});
+
+  const removeUnknown = models("alias", "remove", "No Such (copilot)");
+  assert.equal(removeUnknown.code, 3);
+  assert.equal(removeUnknown.json.status, "not-found");
+});
+
+test("models alias set rejects an invalid id or picker", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const badId = models("alias", "set", "A (copilot)", "<x>");
+  assert.equal(badId.code, 3);
+  assert.equal(badId.json.status, "invalid");
+  const emptyPicker = models("alias", "set", "", "a-id");
+  assert.equal(emptyPicker.code, 3);
+  assert.equal(emptyPicker.json.status, "invalid");
+});
+
+test("models alias picker is one argument with spaces and parentheses", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const { code, json } = models("alias", "set", "Claude Opus 5.5 (copilot)", "claude-opus-5.5");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.deepEqual(json.copilotModels, { "Claude Opus 5.5 (copilot)": "claude-opus-5.5" });
+});
+
+test("models pins picks up a new alias as copilotModel", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { agents: { planner: "Planner Model (copilot)" } } });
+  assert.equal(models("apply", "a").code, 0);
+  assert.equal(models("alias", "set", "Planner Model (copilot)", "planner-copilot-id").code, 0);
+  const pins = models("pins");
+  assert.equal(pins.code, 0, JSON.stringify(pins.json));
+  assert.equal(pins.json.pins.planner.copilotModel, "planner-copilot-id");
 });
 
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
@@ -3163,6 +3531,34 @@ test("models usage errors: bad verb, arguments, profile name, and plugin root", 
   assert.equal(notPlugin.code, 1);
   assert.match(notPlugin.json.message, /not an Agento plugin clone/);
   assert.equal(runWith({ cwd: plugin, env }, "models", "--plugin-root").code, 1);
+});
+
+test("models usage errors: options a verb does not accept", () => {
+  const { models } = modelsFixture();
+  const hash = "a".repeat(64);
+  assert.equal(models("list", "--force").code, 1);
+  assert.equal(models("show", "a", "--force").code, 1);
+  assert.equal(models("apply", "a", "--expect", hash).code, 1);
+  assert.equal(models("pins", "--dry-run").code, 1);
+  assert.equal(models("init", "--from", "a").code, 1);
+});
+
+test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {
+  const { models } = modelsFixture();
+  // Wrong arity for each new verb.
+  assert.equal(models("create").code, 1);
+  assert.equal(models("update").code, 1);
+  assert.equal(models("rename", "a").code, 1);
+  assert.equal(models("delete").code, 1);
+  assert.equal(models("alias", "set", "only-picker").code, 1);
+  assert.equal(models("alias", "remove").code, 1);
+  // Malformed --expect and missing --from value are parser usage errors.
+  assert.equal(models("create", "a", "--expect", "not-hex").code, 1);
+  assert.equal(models("create", "a", "--from").code, 1);
+  assert.equal(models("update", "a", "--expect", "A".repeat(64)).code, 1);
+  // Unknown or missing alias sub-verb.
+  assert.equal(models("alias", "bogus").code, 1);
+  assert.equal(models("alias").code, 1);
 });
 
 test("models pins reads each agent's current pin and rejects an argument", () => {
@@ -3300,7 +3696,7 @@ test("doctor model-profile warns for agent pins without a Copilot alias", () => 
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
   const repo = makeRepo();
   const usage = run(repo, "bogus").json.usage;
-  assert.ok(usage.some((line) => line.includes("models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  assert.ok(usage.some((line) => line.includes("models <verb> [--plugin-root <dir>]")), JSON.stringify(usage));
   const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
   assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });
