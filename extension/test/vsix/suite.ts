@@ -12,10 +12,10 @@ export async function run(): Promise<void> {
   assert.equal(extension.isActive, true);
 
   const commands = await vscode.commands.getCommands(true);
-  for (const command of ["agento.refresh", "agento.showActions", "agento.newPlan", "agento.planInitiativeMember"]) {
+  for (const command of ["agento.refresh", "agento.showActions", "agento.newPlan", "agento.planInitiativeMember", "agento.editModelProfile"]) {
     assert.ok(commands.includes(command), `${command} is contributed by the installed VSIX`);
   }
 
   const viewIds = extension.packageJSON.contributes.views.agento.map((view: { id: string }) => view.id);
-  assert.deepEqual(viewIds, ["agento.windowBanner", "agento.deliveries", "agento.initiatives", "agento.sessionDoctor"]);
+  assert.deepEqual(viewIds, ["agento.windowBanner", "agento.deliveries", "agento.initiatives", "agento.sessionDoctor", "agento.modelProfiles"]);
 }
