@@ -49,6 +49,58 @@ export function aliasErrors(picker, id) {
   return errors;
 }
 
+// Pure mutation helpers. Each takes the parsed file object
+// `{ profiles, copilotModels? }` and returns a new object with the change applied;
+// the input is never mutated. They handle structure only: callers check that names
+// exist or are free, so a helper cannot fail halfway.
+
+// Appends `name` last. With `from`, the new profile is a deep copy of that profile;
+// with `description`, that value is set or overrides a copied one; otherwise `{}`.
+export function createProfile(data, name, { from, description } = {}) {
+  const source = from === undefined || from === null ? {} : data.profiles[from] ?? {};
+  const body = structuredClone(source);
+  if (description !== undefined) body.description = description;
+  const profiles = { ...data.profiles };
+  profiles[name] = body;
+  return { ...data, profiles };
+}
+
+// Replaces a profile's body in place, keeping its position.
+export function replaceProfile(data, name, body) {
+  const profiles = { ...data.profiles };
+  profiles[name] = structuredClone(body);
+  return { ...data, profiles };
+}
+
+// Rebuilds `profiles` with the same order and the key swapped.
+export function renameProfile(data, old, next) {
+  const profiles = {};
+  for (const [key, value] of Object.entries(data.profiles)) {
+    profiles[key === old ? next : key] = value;
+  }
+  return { ...data, profiles };
+}
+
+export function deleteProfile(data, name) {
+  const profiles = { ...data.profiles };
+  delete profiles[name];
+  return { ...data, profiles };
+}
+
+// Inserts or updates a `copilotModels` entry in place, creating the map when absent.
+export function setAlias(data, picker, id) {
+  const copilotModels = { ...(data.copilotModels ?? {}) };
+  copilotModels[picker] = id;
+  return { ...data, copilotModels };
+}
+
+// Removes one entry and leaves an empty `copilotModels: {}` in place.
+export function removeAlias(data, picker) {
+  const copilotModels = { ...(data.copilotModels ?? {}) };
+  delete copilotModels[picker];
+  return { ...data, copilotModels };
+}
+
 function valueErrors(value, where) {
   const strings = typeof value === "string" ? [value] : Array.isArray(value) ? value : null;
   if (!strings) return [`${where}: must be a model name or a non-empty list of model names`];
