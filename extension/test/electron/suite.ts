@@ -878,10 +878,182 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
       () => vscode.commands.executeCommand("agento.selectModelProfile"),
     );
     assert.equal(api.modelProfiles.getTreeItem(modelProfileElement(api, "review")).description, "applied · Review pass");
+
+    // 10. The model-profile editor: panel lifecycle, CLI-backed writes, conflicts.
+    await assertModelProfileEditor(api, pluginRoot, runCli);
   } finally {
     api.setModelProfilePrompts();
     await configuration.update("pluginRoot", previous?.workspaceValue ?? previous?.globalValue, vscode.ConfigurationTarget.Workspace);
   }
+}
+
+async function waitForEditorPanels(api: ExtensionApi, predicate: (names: string[]) => boolean, description: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (predicate(api.profileEditor.openNames)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.fail(`Timed out waiting for editor panels ${description}; open: ${api.profileEditor.openNames.join(", ")}`);
+}
+
+async function waitForEditorPosted(
+  api: ExtensionApi,
+  name: string,
+  predicate: (message: EditorPostedState | null) => boolean,
+  description: string,
+): Promise<EditorPostedState | null> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const message = api.profileEditor.lastPosted(name) as EditorPostedState | null;
+    if (predicate(message)) return message;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.fail(`Timed out waiting for editor message ${description} on ${name}; last: ${JSON.stringify(api.profileEditor.lastPosted(name))}`);
+}
+
+interface EditorPostedState {
+  type?: string;
+  hash?: string | null;
+  pinnable?: { agents?: string[]; prompts?: string[] };
+  choices?: Array<{ label: string }>;
+  errors?: string[];
+  changed?: string[];
+}
+
+// Drives the model-profile editor webview host through the registered commands and
+// `profileEditor.handleMessage`, against a stubbed `ModelSource` (one Copilot and
+// one BYOK model). The webview itself is not executed in the electron host, so the
+// message handler is driven directly and the posted messages are asserted.
+async function assertModelProfileEditor(
+  api: ExtensionApi,
+  pluginRoot: string,
+  runCli: (args: string[], input?: string) => unknown,
+): Promise<void> {
+  api.setProfileEditorModelSource(async () => [
+    { id: "claude-opus-5.5", name: "Claude Opus 5.5", vendor: "copilot", family: "claude-opus-5.5" },
+    { id: "grok-4", name: "Grok 4", vendor: "grok", family: "grok-4" },
+  ]);
+  const posted = (name: string): EditorPostedState | null => api.profileEditor.lastPosted(name) as EditorPostedState | null;
+
+  // 1. Row Edit opens one panel, and a second Edit reveals the same one.
+  //    (New and Duplicate in the view flow above already opened panels of their own.)
+  await vscode.commands.executeCommand("agento.modelProfiles.edit", modelProfileElement(api, "review"));
+  const namesAfterFirstEdit = api.profileEditor.openNames;
+  assert.ok(namesAfterFirstEdit.includes("review"), "row Edit opens a panel for review");
+  await vscode.commands.executeCommand("agento.modelProfiles.edit", modelProfileElement(api, "review"));
+  assert.deepEqual(api.profileEditor.openNames, namesAfterFirstEdit, "a second Edit reveals the already-open panel");
+
+  // 2. Load posts `state` with pinnable and the stubbed choices.
+  const loaded = await waitForEditorPosted(api, "review", (message) => message?.type === "state", "the load state");
+  assert.equal(loaded?.type, "state");
+  assert.deepEqual(loaded?.pinnable?.agents, ["planner", "builder", "reviewer", "autopilot", "mechanic", "architect"]);
+  assert.ok(loaded?.pinnable?.prompts?.includes("doctor"), "a built-in-agent prompt is pinnable");
+  assert.ok(!loaded?.pinnable?.prompts?.includes("build-feature"), "a custom-agent prompt is not pinnable");
+  assert.deepEqual(loaded?.choices?.map((choice) => choice.label), ["Claude Opus 5.5 (copilot)", "Grok 4 (grok)"]);
+
+  // 3. Validate with a custom-agent command override reports the CLI error.
+  await api.profileEditor.handleMessage("review", {
+    type: "validate",
+    form: { name: "review", description: "", default: [], agents: {}, prompts: { "build-feature": ["X (copilot)"] } },
+  });
+  const validation = posted("review");
+  assert.equal(validation?.type, "validateResult");
+  assert.ok(validation?.errors?.some((error) => error.includes("inherits its model")), `validation surfaces the custom-agent error: ${JSON.stringify(validation?.errors)}`);
+
+  // 4. Save writes the body, matching `models show` `body`.
+  await api.profileEditor.handleMessage("review", {
+    type: "save",
+    form: { name: "review", description: "Edited in the panel", default: ["Claude Opus 5.5 (copilot)"], agents: { reviewer: ["Grok 4 (grok)"] }, prompts: {} },
+  });
+  const shown = runCli(["models", "show", "review"]) as { body?: unknown };
+  assert.deepEqual(shown.body, { description: "Edited in the panel", default: "Claude Opus 5.5 (copilot)", agents: { reviewer: "Grok 4 (grok)" } });
+
+  // 5. A rename plus Save re-keys the panel.
+  await api.profileEditor.handleMessage("review", {
+    type: "save",
+    form: { name: "editor-renamed", description: "Edited in the panel", default: ["Claude Opus 5.5 (copilot)"], agents: {}, prompts: {} },
+  });
+  await waitForEditorPanels(api, (names) => names.includes("editor-renamed") && !names.includes("review"), "the rename to re-key the panel");
+
+  // 6. Save & Apply changes the clone's model: lines.
+  await api.profileEditor.handleMessage("editor-renamed", {
+    type: "saveAndApply",
+    form: { name: "editor-renamed", description: "Edited in the panel", default: ["Grok 4 (grok)"], agents: {}, prompts: {} },
+  });
+  const plannerFile = path.join(pluginRoot, ".github", "agents", "delivery-planner.agent.md");
+  const plannerPinned = await (async () => {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      if (fs.readFileSync(plannerFile, "utf8").includes('model: "Grok 4 (grok)"')) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  })();
+  assert.equal(plannerPinned, true, "Save & Apply writes the clone's model: lines");
+
+  // 7. A stale hash posts `conflict` with the changed fields and leaves the file untouched.
+  await vscode.commands.executeCommand("agento.modelProfiles.edit", modelProfileElement(api, "copied"));
+  const copiedState = await waitForEditorPosted(api, "copied", (message) => message?.type === "state", "the copied load state");
+  assert.equal(copiedState?.type, "state");
+  const staleHash = copiedState?.hash ?? null;
+  assert.ok(staleHash, "the editor loads a base hash");
+  await api.profileEditor.handleMessage("copied", {
+    type: "change",
+    form: { name: "copied", description: "My stale draft", default: [], agents: {}, prompts: {} },
+    dirty: true,
+  });
+  runCli(["models", "update", "copied"], JSON.stringify({ description: "Changed through a direct CLI call" }));
+  await api.profileEditor.handleMessage("copied", {
+    type: "save",
+    form: { name: "copied", description: "My stale draft", default: [], agents: {}, prompts: {} },
+  });
+  const conflicted = posted("copied");
+  assert.equal(conflicted?.type, "conflict");
+  assert.ok(conflicted?.changed?.includes("description"), `conflict names the changed field: ${JSON.stringify(conflicted?.changed)}`);
+  assert.deepEqual((runCli(["models", "show", "copied"]) as { body?: unknown }).body, { description: "Changed through a direct CLI call" }, "the conflicted save left the file untouched");
+
+  // 8. Add alias writes `copilotModels`. Open a fresh panel so its hash is the
+  //    current file hash (the panel load is awaited by the Edit command).
+  await vscode.commands.executeCommand("agento.modelProfiles.edit", modelProfileElement(api, "watched"));
+  await api.profileEditor.handleMessage("watched", { type: "addAlias", value: "Grok 4 (grok)", id: "grok/grok-4" });
+  const list = runCli(["models", "list"]) as { copilotModels?: Record<string, string> };
+  assert.deepEqual(list.copilotModels?.["Grok 4 (grok)"], "grok/grok-4");
+
+  // 9. New and Duplicate open the editor on the created profile.
+  const editorPrompts: ModelProfilePrompts = {
+    enterName: async () => "unused",
+    chooseNewKind: async () => ({ kind: "empty" }),
+    confirmDelete: async () => true,
+    pickProfile: async () => ({ kind: "apply", profile: "editor-renamed" }),
+  };
+  api.setModelProfilePrompts({ ...editorPrompts, enterName: async () => "from-editor" });
+  await waitForModelProfiles(
+    api,
+    () => api.modelProfiles.current.profiles.some((profile) => profile.name === "from-editor"),
+    "new opens the editor",
+    () => vscode.commands.executeCommand("agento.modelProfiles.new"),
+  );
+  await waitForEditorPanels(api, (names) => names.includes("from-editor"), "the new profile's panel");
+
+  api.setModelProfilePrompts({ ...editorPrompts, enterName: async () => "watched-copy" });
+  await waitForModelProfiles(
+    api,
+    () => api.modelProfiles.current.profiles.some((profile) => profile.name === "watched-copy"),
+    "duplicate opens the editor",
+    () => vscode.commands.executeCommand("agento.modelProfiles.duplicate", modelProfileElement(api, "watched")),
+  );
+  await waitForEditorPanels(api, (names) => names.includes("watched-copy"), "the duplicated profile's panel");
+
+  // 10. Agento: Edit Model Profile opens through the stubbed quick pick.
+  const windowApi = vscode.window as { -readonly [K in keyof typeof vscode.window]: (typeof vscode.window)[K] };
+  const originalQuickPick = windowApi.showQuickPick;
+  windowApi.showQuickPick = (async () => ({ label: "fresh2" })) as unknown as typeof windowApi.showQuickPick;
+  try {
+    await vscode.commands.executeCommand("agento.editModelProfile");
+  } finally {
+    windowApi.showQuickPick = originalQuickPick;
+  }
+  await waitForEditorPanels(api, (names) => names.includes("fresh2"), "the palette command to open the picked profile");
 }
 
 export async function run(): Promise<void> {
@@ -902,6 +1074,7 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.newInitiative"));
   assert.ok(commands.includes("agento.planInitiativeMember"));
   assert.ok(commands.includes("agento.selectModelProfile"));
+  assert.ok(commands.includes("agento.editModelProfile"), "agento.editModelProfile is registered");
   for (const command of ["apply", "new", "clear", "openFile", "edit", "duplicate", "rename", "delete", "init"]) {
     assert.ok(commands.includes(`agento.modelProfiles.${command}`), `agento.modelProfiles.${command} is registered`);
   }
@@ -1536,6 +1709,6 @@ export async function run(): Promise<void> {
     await assertModelProfilesView(api, extension.extensionPath);
   }
 
-  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles" : "";
+  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles, model-profile editor" : "";
   console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, window banner, roadmap refresh, diagnostics, stale/error handling${modelProfiles}`);
 }

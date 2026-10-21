@@ -34,6 +34,9 @@ interface PanelState {
   baseBody: Record<string, unknown>;
   unknown: Record<string, unknown>;
   lastPosted: unknown;
+  /** Bumped by every load and by marking dirty, so a load that finishes after the
+   *  panel turned dirty (or a newer load started) never clobbers the draft. */
+  loadToken: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -83,7 +86,7 @@ export class ProfileEditorPanels {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
     });
-    const state: PanelState = { panel, name, hash: null, dirty: false, baseBody: {}, unknown: {}, lastPosted: null };
+    const state: PanelState = { panel, name, hash: null, dirty: false, baseBody: {}, unknown: {}, lastPosted: null, loadToken: 0 };
     this.panels.set(name, state);
     panel.onDidDispose(() => {
       if (this.panels.get(state.name) === state) this.panels.delete(state.name);
@@ -148,10 +151,13 @@ export class ProfileEditorPanels {
   private async load(name: string): Promise<void> {
     const state = this.panels.get(name);
     if (!state) return;
+    state.loadToken += 1;
+    const token = state.loadToken;
     const root = this.host.pluginRoot();
     if (!root) return;
 
     const show = await this.client.run(["models", "show", name, "--plugin-root", root], root);
+    if (state.loadToken !== token || state.dirty) return;
     const showJson = isRecord(show.json) ? show.json : {};
     if (show.code === 3 && showJson.status === "not-found") {
       this.post(name, { type: "deleted" });
@@ -168,6 +174,7 @@ export class ProfileEditorPanels {
     const hash = isRecord(showJson.profilesFile) && typeof showJson.profilesFile.hash === "string" ? showJson.profilesFile.hash : null;
 
     const form = profileToForm(body, pinnable);
+    if (state.loadToken !== token || state.dirty) return;
     form.name = name;
     state.baseBody = body;
     state.unknown = form.unknown;
@@ -225,6 +232,7 @@ export class ProfileEditorPanels {
   private markDirty(name: string, dirty: boolean): void {
     const state = this.panels.get(name);
     if (!state) return;
+    if (dirty) state.loadToken += 1; // cancel any in-flight load
     state.dirty = dirty;
     this.updateTitle(name);
   }
