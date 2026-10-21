@@ -137,6 +137,11 @@
         "icon": "$(edit)"
       },
       {
+        "command": "agento.editModelProfile",
+        "title": "Edit Model Profile",
+        "category": "Agento"
+      },
+      {
         "command": "agento.modelProfiles.duplicate",
         "title": "Duplicate",
         "category": "Agento",
