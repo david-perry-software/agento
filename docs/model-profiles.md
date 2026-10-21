@@ -319,3 +319,8 @@ Planner's `Claude Opus 5.5 (copilot)`.
   per-project profiles.
 - From-source and Copilot CLI installs (install options B and C) are replaced on
   update; apply the profile again afterwards.
+- A profile name may be purely numeric (for example `42`), but JSON object keys
+  that look like integers are ordered first by the serializer regardless of
+  insertion order. A purely numeric profile name is therefore hoisted to the front
+  of `profiles` and its position is not preserved across writes; use a name with at
+  least one letter to keep the file order predictable.
