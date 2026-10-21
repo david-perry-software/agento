@@ -4843,11 +4843,18 @@ switch (command) {
     const state = modelsState(pluginRoot, loaded);
     if (verb === "list") {
       const fileErrors = loaded.errors.filter((e) => !e.startsWith("profiles."));
-      const profiles = Object.keys(loaded.profiles).map((n) => ({
-        name: n,
-        description: typeof loaded.profiles[n]?.description === "string" ? loaded.profiles[n].description : null,
-        errors: state.resolved.find((p) => p.name === n)?.errors ?? errorsFor(loaded.errors, n),
-      }));
+      const profiles = Object.keys(loaded.profiles).map((n) => {
+        const resolved = state.resolved.find((p) => p.name === n);
+        const errors = resolved?.errors ?? errorsFor(loaded.errors, n);
+        const targets = errors.length ? [] : (resolved?.targets ?? []);
+        return {
+          name: n,
+          description: typeof loaded.profiles[n]?.description === "string" ? loaded.profiles[n].description : null,
+          errors,
+          warnings: errors.length ? [] : tierWarnings(targets, loaded.profiles[n], loaded.copilotModels),
+          targets,
+        };
+      });
       emit({ status: "ok", verb, profiles, copilotModels: loaded.copilotModels, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
     }
 
