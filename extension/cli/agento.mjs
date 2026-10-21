@@ -103,6 +103,18 @@ function parseArgs(argv) {
     else if (arg === "--resume") options.resume = true;
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--dry-run") options.dryRun = true;
+    else if (arg === "--from") {
+      options.from = argv[++i];
+      if (!options.from || options.from.startsWith("--")) usage("--from takes a profile name");
+    }
+    else if (arg === "--description") {
+      options.description = argv[++i];
+      if (!options.description || options.description.startsWith("--")) usage("--description takes a value");
+    }
+    else if (arg === "--expect") {
+      options.expect = argv[++i];
+      if (!/^[0-9a-f]{64}$/.test(options.expect ?? "")) usage(`--expect takes a 64-character lowercase sha256 hash, got ${JSON.stringify(options.expect ?? "")}`);
+    }
     else if (arg === "--ignore-occupants") options.ignoreOccupants = true;
     else if (arg === "--confirm") {
       options.confirm = argv[++i];
@@ -4696,11 +4708,42 @@ switch (command) {
   }
 
   case "models": {
-    const [verb = "list", name, ...extra] = rest;
-    const verbs = { list: 0, pins: 0, show: 1, apply: 1, adopt: 0, clear: 0, init: 0 };
-    if (!Object.hasOwn(verbs, verb)) usage(`models: unknown verb ${verb}; known: ${Object.keys(verbs).join(", ")}`);
-    if (extra.length || (verbs[verb] === 1 ? !name : name !== undefined)) usage(`models ${verb} takes ${verbs[verb] ? "exactly one profile name" : "no arguments"}`);
-    if (verbs[verb] && !/^[a-z0-9-]+$/.test(name)) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(name)}`);
+    // The verbs implemented so far; the rest answer a usage error until their step.
+    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init"]);
+    // Each verb: its positional count, which positionals are profile names, the
+    // options it accepts beyond --plugin-root, and whether it writes the file.
+    const MODEL_VERBS = {
+      list: { argc: 0, names: [], accepts: [], writes: false },
+      pins: { argc: 0, names: [], accepts: [], writes: false },
+      show: { argc: 1, names: [0], accepts: [], writes: false },
+      apply: { argc: 1, names: [0], accepts: [], writes: true },
+      adopt: { argc: 0, names: [], accepts: [], writes: true },
+      clear: { argc: 0, names: [], accepts: [], writes: true },
+      init: { argc: 0, names: [], accepts: [], writes: true },
+      create: { argc: 1, names: [0], accepts: ["from", "description", "expect"], writes: true },
+      update: { argc: 1, names: [0], accepts: ["dryRun", "expect"], writes: true },
+      rename: { argc: 2, names: [0, 1], accepts: ["expect"], writes: true },
+      delete: { argc: 1, names: [0], accepts: ["force", "expect"], writes: true },
+      "alias set": { argc: 2, names: [], accepts: ["expect"], writes: true },
+      "alias remove": { argc: 1, names: [], accepts: ["expect"], writes: true },
+    };
+    const [head = "list", ...modelsArgs] = rest;
+    let verb = head;
+    let args = modelsArgs;
+    if (head === "alias") {
+      const [sub = "", ...subArgs] = modelsArgs;
+      if (sub === "set" || sub === "remove") { verb = `alias ${sub}`; args = subArgs; }
+      else usage(`models alias: unknown sub-verb ${JSON.stringify(sub)}; known: set, remove`);
+    }
+    const spec = MODEL_VERBS[verb];
+    if (!spec) usage(`models: unknown verb ${verb}; known: ${Object.keys(MODEL_VERBS).join(", ")}`);
+    if (args.length !== spec.argc) usage(`models ${verb} takes ${spec.argc === 0 ? "no arguments" : `exactly ${spec.argc} ${spec.argc === 1 ? "argument" : "arguments"}`}`);
+    for (const at of spec.names) if (!/^[a-z0-9-]+$/.test(args[at])) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(args[at])}`);
+    for (const option of ["force", "dryRun", "from", "description", "expect"]) {
+      if (options[option] !== undefined && !spec.accepts.includes(option)) usage(`models ${verb} does not accept --${option}`);
+    }
+    if (!IMPLEMENTED_MODEL_VERBS.has(verb)) usage(`models ${verb}: not implemented yet`);
+    const name = args[0];
     const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
     if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) usage(`--plugin-root ${pluginRoot} is not an Agento plugin clone (no .github/agents)`);
     const loaded = loadProfiles();

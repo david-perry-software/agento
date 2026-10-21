@@ -85,8 +85,8 @@ baseEnv.AGENTO_VSCODE_SETTINGS = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-s
 // Never touch the real ~/.copilot/skills (harness install/status/uninstall).
 baseEnv.AGENTO_COPILOT_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
 
-function runWith({ cwd, env }, ...args) {
-  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv });
+function runWith({ cwd, env, input }, ...args) {
+  const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv, input: input ?? undefined });
   let json;
   try {
     json = JSON.parse(result.stdout);
@@ -3185,6 +3185,41 @@ test("models usage errors: bad verb, arguments, profile name, and plugin root", 
   assert.equal(notPlugin.code, 1);
   assert.match(notPlugin.json.message, /not an Agento plugin clone/);
   assert.equal(runWith({ cwd: plugin, env }, "models", "--plugin-root").code, 1);
+});
+
+test("models usage errors: options a verb does not accept", () => {
+  const { models } = modelsFixture();
+  const hash = "a".repeat(64);
+  assert.equal(models("list", "--force").code, 1);
+  assert.equal(models("show", "a", "--force").code, 1);
+  assert.equal(models("apply", "a", "--expect", hash).code, 1);
+  assert.equal(models("pins", "--dry-run").code, 1);
+  assert.equal(models("init", "--from", "a").code, 1);
+});
+
+test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {
+  const { models } = modelsFixture();
+  // Wrong arity for each new verb.
+  assert.equal(models("create").code, 1);
+  assert.equal(models("update").code, 1);
+  assert.equal(models("rename", "a").code, 1);
+  assert.equal(models("delete").code, 1);
+  assert.equal(models("alias", "set", "only-picker").code, 1);
+  assert.equal(models("alias", "remove").code, 1);
+  // Malformed --expect and missing --from value are parser usage errors.
+  assert.equal(models("create", "a", "--expect", "not-hex").code, 1);
+  assert.equal(models("create", "a", "--from").code, 1);
+  assert.equal(models("update", "a", "--expect", "A".repeat(64)).code, 1);
+  // Unknown or missing alias sub-verb.
+  assert.equal(models("alias", "bogus").code, 1);
+  assert.equal(models("alias").code, 1);
+  // The new verbs exist in the table but are not implemented yet.
+  assert.equal(models("create", "a").code, 1);
+  assert.equal(models("update", "a").code, 1);
+  assert.equal(models("rename", "a", "b").code, 1);
+  assert.equal(models("delete", "a").code, 1);
+  assert.equal(models("alias", "set", "A (copilot)", "a").code, 1);
+  assert.equal(models("alias", "remove", "A (copilot)").code, 1);
 });
 
 test("models pins reads each agent's current pin and rejects an argument", () => {
