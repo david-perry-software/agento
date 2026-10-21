@@ -53,7 +53,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
@@ -3580,9 +3580,10 @@ function modelTargetFiles(pluginRoot) {
 function loadProfiles() {
   const file = profilesFile();
   const exists = fs.existsSync(file);
-  if (!exists) return { profilesFile: { path: file, exists }, profiles: {}, copilotModels: {}, errors: [] };
-  const { profiles, copilotModels, errors } = parseProfiles(fs.readFileSync(file, "utf8"));
-  return { profilesFile: { path: file, exists }, profiles, copilotModels, errors };
+  const raw = exists ? fs.readFileSync(file, "utf8") : null;
+  if (!exists) return { profilesFile: { path: file, exists, hash: null }, raw, profiles: {}, copilotModels: {}, errors: [] };
+  const { profiles, copilotModels, errors } = parseProfiles(raw);
+  return { profilesFile: { path: file, exists, hash: profilesHash(raw) }, raw, profiles, copilotModels, errors };
 }
 
 // Resolved targets (mirrors included) plus every error that blocks applying `name`.
@@ -4725,7 +4726,7 @@ switch (command) {
         description: typeof loaded.profiles[n]?.description === "string" ? loaded.profiles[n].description : null,
         errors: state.resolved.find((p) => p.name === n)?.errors ?? errorsFor(loaded.errors, n),
       }));
-      emit({ status: "ok", verb, profiles, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
+      emit({ status: "ok", verb, profiles, copilotModels: loaded.copilotModels, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     if (verb === "show") {

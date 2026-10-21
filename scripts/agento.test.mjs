@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 import { completeRoadmap, reopenRoadmap } from "./delivery-roadmap-resolver.mjs";
 import { linkType } from "./harness.mjs";
-import { setHandoffModels, setModel } from "./model-profiles.mjs";
+import { profilesHash, setHandoffModels, setModel } from "./model-profiles.mjs";
 import { LIFECYCLES, SESSION_WORKSPACE_SETTINGS } from "./session-state.mjs";
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -3097,7 +3097,7 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.equal(json.status, "ok");
   assert.equal(json.verb, "list");
   assert.deepEqual(json.profiles, []);
-  assert.deepEqual(json.profilesFile, { path: path.join(home, "model-profiles.json"), exists: false });
+  assert.deepEqual(json.profilesFile, { path: path.join(home, "model-profiles.json"), exists: false, hash: null });
   assert.equal(json.pluginRoot, plugin);
   assert.equal(json.active, null);
   assert.deepEqual(json.skipWorktree, []);
@@ -3106,6 +3106,28 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.deepEqual(json.filter.unrecorded, []);
   assert.deepEqual(json.dirty, []);
   assert.match(json.hint, /git filter.*survive pull, merge, switch, and stash/);
+});
+
+test("models reports profilesFile.hash and list reports copilotModels", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  const absent = models("list");
+  assert.equal(absent.code, 0);
+  assert.equal(absent.json.profilesFile.hash, null);
+  assert.deepEqual(absent.json.copilotModels, {});
+
+  writeProfiles({ mixed: { description: "d" } });
+  const file = path.join(home, "model-profiles.json");
+  const expected = profilesHash(fs.readFileSync(file, "utf8"));
+  const listed = models("list");
+  assert.equal(listed.code, 0);
+  assert.equal(listed.json.profilesFile.hash, expected);
+  assert.deepEqual(listed.json.copilotModels, {});
+
+  fs.writeFileSync(file, JSON.stringify({ copilotModels: { "A (copilot)": "a" }, profiles: { mixed: {} } }));
+  const withAlias = models("list");
+  assert.equal(withAlias.code, 0);
+  assert.deepEqual(withAlias.json.copilotModels, { "A (copilot)": "a" });
+  assert.equal(withAlias.json.profilesFile.hash, profilesHash(fs.readFileSync(file, "utf8")));
 });
 
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
