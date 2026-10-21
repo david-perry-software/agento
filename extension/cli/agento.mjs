@@ -4769,7 +4769,7 @@ switch (command) {
 
   case "models": {
     // The verbs implemented so far; the rest answer a usage error until their step.
-    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create", "update", "rename", "delete"]);
+    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create", "update", "rename", "delete", "alias set", "alias remove"]);
     // Each verb: its positional count, which positionals are profile names, the
     // options it accepts beyond --plugin-root, and whether it writes the file.
     const MODEL_VERBS = {
@@ -4904,6 +4904,25 @@ switch (command) {
       if (Object.keys(loaded.copilotModels ?? {}).length) nextData.copilotModels = loaded.copilotModels;
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [name] });
       emit({ verb, profile: name, ...result }, code);
+    }
+
+    if (verb === "alias set") {
+      const [picker, id] = args;
+      const errors = aliasErrors(picker, id);
+      if (errors.length) emit({ status: "invalid", verb, picker, errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const aliased = setAlias(loaded, picker, id);
+      const nextData = { profiles: loaded.profiles, copilotModels: aliased.copilotModels };
+      const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect });
+      emit({ verb, picker, copilotModels: aliased.copilotModels, ...result }, code);
+    }
+
+    if (verb === "alias remove") {
+      const [picker] = args;
+      if (!Object.hasOwn(loaded.copilotModels ?? {}, picker)) emit({ status: "not-found", verb, picker, message: `no alias for picker ${JSON.stringify(picker)}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const removed = removeAlias(loaded, picker);
+      const nextData = { profiles: loaded.profiles, copilotModels: removed.copilotModels };
+      const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect });
+      emit({ verb, picker, copilotModels: removed.copilotModels, ...result }, code);
     }
 
     // apply | adopt | clear

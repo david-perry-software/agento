@@ -3389,6 +3389,60 @@ test("models delete of a non-applied profile succeeds", () => {
   assert.deepEqual(Object.keys(parsed.profiles), ["a"]);
 });
 
+test("models alias set creates, updates, and remove deletes a copilotModels entry", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ profiles: { a: {} } }));
+
+  const set1 = models("alias", "set", "A (copilot)", "a-id");
+  assert.equal(set1.code, 0, JSON.stringify(set1.json));
+  assert.equal(set1.json.status, "ok");
+  assert.deepEqual(set1.json.copilotModels, { "A (copilot)": "a-id" });
+
+  const set2 = models("alias", "set", "A (copilot)", "new-id");
+  assert.equal(set2.code, 0, JSON.stringify(set2.json));
+  assert.deepEqual(set2.json.copilotModels, { "A (copilot)": "new-id" });
+
+  const remove = models("alias", "remove", "A (copilot)");
+  assert.equal(remove.code, 0, JSON.stringify(remove.json));
+  assert.deepEqual(remove.json.copilotModels, {});
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).copilotModels, {});
+
+  const removeUnknown = models("alias", "remove", "No Such (copilot)");
+  assert.equal(removeUnknown.code, 3);
+  assert.equal(removeUnknown.json.status, "not-found");
+});
+
+test("models alias set rejects an invalid id or picker", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const badId = models("alias", "set", "A (copilot)", "<x>");
+  assert.equal(badId.code, 3);
+  assert.equal(badId.json.status, "invalid");
+  const emptyPicker = models("alias", "set", "", "a-id");
+  assert.equal(emptyPicker.code, 3);
+  assert.equal(emptyPicker.json.status, "invalid");
+});
+
+test("models alias picker is one argument with spaces and parentheses", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const { code, json } = models("alias", "set", "Claude Opus 5.5 (copilot)", "claude-opus-5.5");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.deepEqual(json.copilotModels, { "Claude Opus 5.5 (copilot)": "claude-opus-5.5" });
+});
+
+test("models pins picks up a new alias as copilotModel", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { agents: { planner: "Planner Model (copilot)" } } });
+  assert.equal(models("apply", "a").code, 0);
+  assert.equal(models("alias", "set", "Planner Model (copilot)", "planner-copilot-id").code, 0);
+  const pins = models("pins");
+  assert.equal(pins.code, 0, JSON.stringify(pins.json));
+  assert.equal(pins.json.pins.planner.copilotModel, "planner-copilot-id");
+});
+
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
   const { home, models } = modelsFixture();
   const first = models("init");
@@ -3472,9 +3526,6 @@ test("models usage errors: new verb arity, malformed options, and alias sub-verb
   // Unknown or missing alias sub-verb.
   assert.equal(models("alias", "bogus").code, 1);
   assert.equal(models("alias").code, 1);
-  // The not-yet-implemented verbs exist in the table but answer a usage error.
-  assert.equal(models("alias", "set", "A (copilot)", "a").code, 1);
-  assert.equal(models("alias", "remove", "A (copilot)").code, 1);
 });
 
 test("models pins reads each agent's current pin and rejects an argument", () => {
