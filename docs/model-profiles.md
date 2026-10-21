@@ -72,7 +72,11 @@ placeholders).
 
 In the VS Code extension, the **Model Profiles** sidebar view offers New, Duplicate,
 Rename, Delete, and Edit for these CRUD verbs — see
-[extension.md](extension.md#model-profiles). The CLI is the only writer of the
+[extension.md](extension.md#model-profiles). **Edit** opens a webview form editor
+instead of the raw JSON: it edits the profile's name, description, default model,
+the six agent pins, and per-command overrides, and writes only through the CLI —
+**Save** via `models update` (renaming through `models rename` when the name
+changed), **Add alias** via `models alias set`. The CLI is the only writer of the
 profiles file, and the CRUD verbs edit it without opening it by hand:
 
 - `models create <name> [--from <src>] [--description <text>]` appends a new
