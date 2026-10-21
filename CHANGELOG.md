@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.9.0 (2026-10-21)
 
 - **Added.** Model-profile CRUD verbs. `agento.mjs models` (and `/agento models`)
   gains `create`, `update`, `rename`, `delete`, `alias set`, and `alias remove`:
