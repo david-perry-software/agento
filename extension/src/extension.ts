@@ -184,7 +184,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       async () => {
         if (root === null) return createModelProfilesModel({ pluginRoot: null });
         const result = await client.run(["models", "list", "--plugin-root", root], root);
-        return createModelProfilesModel({ pluginRoot: root, listResult: result.json });
+        const listError =
+          result.code !== 0 && typeof (result.json as { message?: unknown } | null)?.message === "string"
+            ? ((result.json as { message: string }).message)
+            : null;
+        return createModelProfilesModel({ pluginRoot: root, listResult: result.json, listError });
       },
       (snapshot) => {
         modelProfiles.update(snapshot);

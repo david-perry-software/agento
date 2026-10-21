@@ -54,6 +54,16 @@ test("createModelProfilesModel is error on a CLI failure", () => {
   assert.deepEqual(model.messages, ["spawn ENOENT"]);
 });
 
+test("createModelProfilesModel prefers listError over a non-zero list result without profilesFile", () => {
+  const model = createModelProfilesModel({
+    pluginRoot: "/p",
+    listError: "--plugin-root /nope is not an Agento plugin clone (no .github/agents)",
+    listResult: { status: "usage-error", message: "--plugin-root /nope is not an Agento plugin clone (no .github/agents)" },
+  });
+  assert.equal(model.state, "error");
+  assert.deepEqual(model.messages, ["--plugin-root /nope is not an Agento plugin clone (no .github/agents)"]);
+});
+
 test("createModelProfilesModel is error on a missing or file-errored result", () => {
   assert.equal(createModelProfilesModel({ pluginRoot: "/p" }).state, "error");
   assert.equal(createModelProfilesModel({ pluginRoot: "/p", listResult: "nope" }).state, "error");
