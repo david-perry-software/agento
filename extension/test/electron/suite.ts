@@ -830,12 +830,31 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
         return "renamed-review";
       },
     });
-    await waitForModelProfiles(
-      api,
-      () => api.modelProfiles.current.profilesFile?.hash !== staleHash
-        && api.modelProfiles.current.profiles.some((profile) => profile.name === "review"),
-      "the conflict reload",
-      () => vscode.commands.executeCommand("agento.modelProfiles.rename", reviewElement),
+    // The watcher also reloads after the file write, so wait specifically for the
+    // conflict path's retry warning — the only signal that distinguishes it from a
+    // plain watcher refresh — and for the reloaded hash.
+    const window = vscode.window as { -readonly [K in keyof typeof vscode.window]: (typeof vscode.window)[K] };
+    const originalWarning = window.showWarningMessage;
+    const warnings: string[] = [];
+    window.showWarningMessage = (async (message: string) => {
+      warnings.push(message);
+      return undefined;
+    }) as typeof window.showWarningMessage;
+    try {
+      await waitForModelProfiles(
+        api,
+        () => warnings.some((message) => message.includes("profiles file changed since the view loaded"))
+          && api.modelProfiles.current.profilesFile?.hash !== staleHash
+          && api.modelProfiles.current.profiles.some((profile) => profile.name === "review"),
+        "the conflict warning and reload",
+        () => vscode.commands.executeCommand("agento.modelProfiles.rename", reviewElement),
+      );
+    } finally {
+      window.showWarningMessage = originalWarning;
+    }
+    assert.ok(
+      warnings.some((message) => message.includes("profiles file changed since the view loaded")),
+      "the conflict retry warning is shown",
     );
     assert.ok(
       !api.modelProfiles.current.profiles.some((profile) => profile.name === "renamed-review"),
