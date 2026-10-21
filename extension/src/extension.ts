@@ -174,6 +174,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     exists: (filePath) => fs.existsSync(filePath),
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
   });
+  // Rebuilt whenever the plugin root or the profiles-file path changes; assigned
+  // after `scheduleModelProfilesReload` below.
+  let rebuildModelProfileWatchers = (): void => {};
   const reloadModelProfiles = async (): Promise<void> => {
     const root = pluginRoot();
     await latestModelProfilesRefresh.run(
@@ -182,12 +185,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         const result = await client.run(["models", "list", "--plugin-root", root], root);
         return createModelProfilesModel({ pluginRoot: root, listResult: result.json });
       },
-      (snapshot) => modelProfiles.update(snapshot),
+      (snapshot) => {
+        modelProfiles.update(snapshot);
+        rebuildModelProfileWatchers();
+      },
       (error) => {
         modelProfiles.update(createModelProfilesModel({ pluginRoot: root, listError: String(error) }));
+        rebuildModelProfileWatchers();
         output.appendLine(`model profiles: ${String(error)}`);
       },
     );
+  };
+  let modelProfileDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleModelProfilesReload = (reason: string): void => {
+    output.appendLine(`model profiles: ${reason}`);
+    if (modelProfileDebounceTimer !== undefined) clearTimeout(modelProfileDebounceTimer);
+    modelProfileDebounceTimer = setTimeout(() => {
+      modelProfileDebounceTimer = undefined;
+      void reloadModelProfiles();
+    }, 500);
+  };
+  let modelProfileWatcherDisposables: vscode.Disposable[] = [];
+  rebuildModelProfileWatchers = (): void => {
+    for (const disposable of modelProfileWatcherDisposables) disposable.dispose();
+    modelProfileWatcherDisposables = [];
+    const root = pluginRoot();
+    if (root) {
+      try {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(root), ".github/agents/*.agent.md"),
+        );
+        watcher.onDidCreate((uri) => scheduleModelProfilesReload(`agent created ${uri.fsPath}`));
+        watcher.onDidChange((uri) => scheduleModelProfilesReload(`agent changed ${uri.fsPath}`));
+        watcher.onDidDelete((uri) => scheduleModelProfilesReload(`agent deleted ${uri.fsPath}`));
+        modelProfileWatcherDisposables.push(watcher);
+      } catch (error) {
+        output.appendLine(`model profiles watcher (agents): ${String(error)}`);
+      }
+    }
+    const profilesFilePath = modelProfiles.current.profilesFile?.path;
+    if (profilesFilePath) {
+      try {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(path.dirname(profilesFilePath)), "model-profiles.json"),
+        );
+        watcher.onDidCreate((uri) => scheduleModelProfilesReload(`profiles file created ${uri.fsPath}`));
+        watcher.onDidChange((uri) => scheduleModelProfilesReload(`profiles file changed ${uri.fsPath}`));
+        watcher.onDidDelete((uri) => scheduleModelProfilesReload(`profiles file deleted ${uri.fsPath}`));
+        modelProfileWatcherDisposables.push(watcher);
+      } catch (error) {
+        output.appendLine(`model profiles watcher (profiles file): ${String(error)}`);
+      }
+    }
   };
   const chatMode: ChatModeResolver = (command) => resolveChatMode(command, {
     pluginRoot: pluginRoot(),
@@ -822,6 +871,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       scheduler.refreshNow("session doctor visible");
     }
   });
+  const modelProfilesVisibility = modelProfilesView.onDidChangeVisibility(({ visible }) => {
+    if (visible) scheduleModelProfilesReload("view visible");
+  });
   const consumePending = () => consumePendingCommands(
     [vscode.workspace.workspaceFile?.fsPath, ...(vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath)].filter(
       (target): target is string => Boolean(target),
@@ -836,10 +888,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     },
   );
   const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {
-    if (focused) void consumePending();
+    if (focused) {
+      void consumePending();
+      scheduleModelProfilesReload("window focus");
+    }
   });
   const workspaceSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() => void rebuildWatchers());
+  const modelProfileConfigSubscription = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration("agento.pluginRoot") || event.affectsConfiguration("chat.pluginLocations")) {
+      rebuildModelProfileWatchers();
+      scheduleModelProfilesReload("plugin root changed");
+    }
+  });
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };
+  const modelProfileWatcherManager = {
+    dispose: () => {
+      if (modelProfileDebounceTimer !== undefined) {
+        clearTimeout(modelProfileDebounceTimer);
+        modelProfileDebounceTimer = undefined;
+      }
+      for (const disposable of modelProfileWatcherDisposables.splice(0)) disposable.dispose();
+    },
+  };
 
   context.subscriptions.push(
     output,
@@ -875,9 +945,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     modelProfilesView,
     windowBannerRegistration,
     sessionDoctorVisibility,
+    modelProfilesVisibility,
     windowFocusSubscription,
     workspaceSubscription,
+    modelProfileConfigSubscription,
     watcherManager,
+    modelProfileWatcherManager,
   );
   await rebuildWatchers();
   await consumePending();
