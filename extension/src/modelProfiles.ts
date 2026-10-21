@@ -145,15 +145,23 @@ const STATUS_FALLBACK: Record<string, string> = {
 export function summarizeModelsResult(json: unknown): ModelsSummary {
   const result = (json ?? {}) as {
     status?: unknown;
+    verb?: unknown;
     profile?: unknown;
     changed?: unknown;
+    created?: unknown;
     errors?: unknown;
     dirty?: unknown;
     message?: unknown;
   };
   if (result.status === "ok") {
+    const verb = typeof result.verb === "string" ? result.verb : null;
+    const profile = typeof result.profile === "string" ? result.profile : null;
+    if (verb === "create") return { ok: true, message: `Created model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
+    if (verb === "rename") return { ok: true, message: "Renamed the model profile.", dirty: [], conflict: false };
+    if (verb === "delete") return { ok: true, message: `Deleted model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
+    if (verb === "init") return { ok: true, message: result.created === true ? "Created the model profiles file." : "The model profiles file already exists.", dirty: [], conflict: false };
     const changed = Array.isArray(result.changed) ? result.changed.length : 0;
-    const what = typeof result.profile === "string" ? `Applied model profile ${result.profile}` : "Cleared the model profile";
+    const what = profile ? `Applied model profile ${profile}` : "Cleared the model profile";
     return { ok: true, message: `${what}: ${changed} file(s) changed. Run Developer: Reload Window if the model picker does not update.`, dirty: [], conflict: false };
   }
   const dirty = Array.isArray(result.dirty) ? result.dirty.filter((d): d is string => typeof d === "string") : [];

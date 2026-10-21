@@ -129,6 +129,39 @@ test("summarizeModelsResult reports changes, the reload hint, and failures", () 
   });
 });
 
+test("summarizeModelsResult reports the write verbs' success distinctly from apply/clear", () => {
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "create", profile: "new" }), {
+    ok: true,
+    message: "Created model profile new.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "rename", profile: "old" }), {
+    ok: true,
+    message: "Renamed the model profile.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "delete", profile: "new" }), {
+    ok: true,
+    message: "Deleted model profile new.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "init", created: true }), {
+    ok: true,
+    message: "Created the model profiles file.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "init", created: false }), {
+    ok: true,
+    message: "The model profiles file already exists.",
+    dirty: [],
+    conflict: false,
+  });
+});
+
 test("summarizeModelsResult exposes dirty files and the conflict flag, with clear messages", () => {
   const conflict = summarizeModelsResult({ status: "conflict", message: "stale", expected: "a", actual: "b" });
   assert.equal(conflict.ok, false);
