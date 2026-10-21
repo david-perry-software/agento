@@ -440,7 +440,7 @@ Mechanic.
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
 | `/agento delivery-status [filter]` | any | default | Read-only dashboard |
 | `/agento doctor [--for <command>]` | any | default | Read-only environment readiness check with fallbacks |
-| `/agento models [list \| show <name> \| apply <name> \| clear \| init]` | any | default | Pin agents and commands to models from a named profile in `~/.config/agento/model-profiles.json` ([docs/model-profiles.md](docs/model-profiles.md)) |
+| `/agento models [list \| show <name> \| apply <name> \| clear \| init \| create <name> \| update <name> \| rename <old> <new> \| delete <name> \| alias set <picker> <id> \| alias remove <picker>]` | any | default | Manage model profiles in `~/.config/agento/model-profiles.json` — pin agents and commands to models, and create, update, rename, delete, and alias-edit profiles ([docs/model-profiles.md](docs/model-profiles.md)) |
 | `/agento triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |
 | `/agento extend-copilot` · `/agento fix-copilot` | any | 🛠️ Mechanic | Add or repair prompts, agents, instructions, hooks, skills |
 
