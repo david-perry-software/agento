@@ -46,6 +46,10 @@ export interface CliClientOptions {
 
 export interface CliRunOptions {
   timeoutMs?: number;
+  /** Written to the child's stdin and the stream ended. When unset, stdin is
+   *  closed immediately so a CLI that reads stdin fails fast instead of hanging
+   *  until the timeout. */
+  input?: string;
 }
 
 // `start-session` runs two bounded 30 s fetches plus worktree checkouts.
@@ -61,7 +65,7 @@ export class CliClient {
   run(args: string[], root: string, runOptions: CliRunOptions = {}): Promise<CliResult> {
     const startedAt = Date.now();
     return new Promise((resolve, reject) => {
-      execFile(
+      const child = execFile(
         this.options.nodePath,
         buildCliArgs(this.options.cliPath, args, root),
         {
@@ -95,6 +99,19 @@ export class CliClient {
           resolve({ code, json, stderr });
         },
       );
+
+      // Deliver stdin (if any) and end the stream. Without input, closing it
+      // immediately lets a CLI that reads stdin (e.g. `models update`) fail fast
+      // instead of hanging until the timeout. The child may exit before reading
+      // stdin, so ignore EPIPE.
+      if (child.stdin) {
+        child.stdin.on("error", () => {});
+        if (runOptions.input === undefined) {
+          child.stdin.end();
+        } else {
+          child.stdin.end(runOptions.input);
+        }
+      }
     });
   }
 }
