@@ -29,7 +29,7 @@
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
-//   node scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]   (pin agent/prompt model: lines from ~/.config/agento/model-profiles.json through a local git clean/smudge filter; adopt records the pins the files carry now)
+//   node scripts/agento.mjs models <verb> [--plugin-root <dir>]   (model profiles in ~/.config/agento/model-profiles.json; read: list | pins | show <name>; write: create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker> | apply <name> | adopt | clear | init; write verbs accept --expect <sha256> and report profilesFile.hash)
 //   node scripts/agento.mjs harness <status|install|uninstall> [--plugin-root <dir>] [--force]   (create/report/remove the ~/.copilot/skills/agento link to the router skill; --force replaces a foreign or dangling link on install only)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
 //

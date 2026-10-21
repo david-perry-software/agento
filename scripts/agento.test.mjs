@@ -3663,7 +3663,7 @@ test("doctor model-profile warns for agent pins without a Copilot alias", () => 
 test("models: the usage header lists the subcommand and keeps the full Options paragraph", () => {
   const repo = makeRepo();
   const usage = run(repo, "bogus").json.usage;
-  assert.ok(usage.some((line) => line.includes("models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]")), JSON.stringify(usage));
+  assert.ok(usage.some((line) => line.includes("models <verb> [--plugin-root <dir>]")), JSON.stringify(usage));
   const options = usage.slice(usage.findIndex((l) => l.startsWith("Options:"))).join(" ");
   assert.match(options, /^Options: --root <dir> .* re-anchors on its product checkout\)\.$/);
 });
