@@ -3538,6 +3538,43 @@ test("models list entries carry warnings and targets matching models show", () =
   assert.deepEqual(Object.keys(entry).sort(), ["description", "errors", "name", "targets", "warnings"]);
 });
 
+test("models list pinnable equals the prompts update --dry-run accepts as prompts.<command>", () => {
+  const { plugin, models, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const listed = models("list");
+  assert.equal(listed.code, 0, JSON.stringify(listed.json));
+  // The six agent aliases, in AGENT_ALIASES key order.
+  assert.deepEqual(listed.json.pinnable.agents, ["planner", "builder", "reviewer", "autopilot", "mechanic", "architect"]);
+
+  // Every prompt in the plugin: accepted by `prompts.<command>` unless the dry run
+  // reports the custom-agent error. `pinnable.prompts` must be exactly that set.
+  const promptNames = fs.readdirSync(path.join(plugin, ".github", "prompts")).filter((f) => f.endsWith(".prompt.md")).map((f) => path.basename(f, ".prompt.md"));
+  assert.ok(promptNames.length > 0, "the fixture has prompts");
+  const accepted = [];
+  const custom = [];
+  for (const name of promptNames) {
+    const { code, json } = modelsInput(JSON.stringify({ prompts: { [name]: "M (copilot)" } }), "update", "a", "--dry-run");
+    assert.equal(code, 0, JSON.stringify(json));
+    if ((json.errors ?? []).some((e) => e.includes("inherits its model"))) custom.push(name);
+    else accepted.push(name);
+  }
+  assert.ok(custom.length > 0, "the fixture has custom-agent prompts");
+  assert.deepEqual(listed.json.pinnable.prompts, [...accepted].sort(), "pinnable.prompts is exactly the commands accepted without the custom-agent error");
+
+  // Existing `list` fields are unchanged: same profile entry keys, and the same
+  // top-level report fields as before `pinnable` was added.
+  assert.equal(listed.json.status, "ok");
+  assert.equal(listed.json.verb, "list");
+  const entry = listed.json.profiles.find((p) => p.name === "a");
+  assert.ok(entry, "profile a listed");
+  assert.equal(entry.description, null);
+  assert.deepEqual(entry.errors, []);
+  assert.deepEqual(Object.keys(entry).sort(), ["description", "errors", "name", "targets", "warnings"]);
+  assert.deepEqual(listed.json.copilotModels, {});
+  assert.deepEqual(listed.json.errors, []);
+  assert.equal(listed.json.profilesFile.exists, true);
+});
+
 test("models list entries for an invalid profile have empty targets and its errors", () => {
   const { models, writeProfiles } = modelsFixture();
   writeProfiles({ good: { default: "Cheap (copilot)" }, bad: { default: "<placeholder>" } });

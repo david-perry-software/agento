@@ -209,6 +209,14 @@ export function frontmatterField(text, key) {
 
 const BUILT_IN_AGENT = "agent";
 
+// A prompt is pinnable — a profile can set `prompts.<command>` — unless it runs on
+// a custom agent known by `name:` (`agentNames` is the set of agent `name:` values);
+// such a prompt inherits its agent's model instead. `resolveTargets` applies exactly
+// this rule, so the two cannot drift.
+export function isPinnablePrompt(prompt, agentNames) {
+  return !(prompt.agent && prompt.agent !== BUILT_IN_AGENT && agentNames.has(prompt.agent));
+}
+
 // agents: [{ file, name }] (`name:` of each agent file); prompts: [{ file, name, agent }]
 // with `name` the command name and `agent` its `agent:` value or null. Returns one
 // target per agent and prompt; value null means "no model: line".
@@ -239,7 +247,7 @@ export function resolveTargets({ profile, agents, prompts }) {
     if (!known.has(key)) errors.push(`prompts.${key}: no prompt named ${JSON.stringify(key)} in .github/prompts`);
   }
   for (const prompt of prompts) {
-    const custom = prompt.agent && prompt.agent !== BUILT_IN_AGENT && byName.has(prompt.agent);
+    const custom = !isPinnablePrompt(prompt, byName);
     if (custom) {
       if (Object.hasOwn(promptEntries, prompt.name)) errors.push(`prompts.${prompt.name}: runs on ${prompt.agent} and inherits its model; set the agent's model instead`);
       targets.push({ file: prompt.file, value: byName.get(prompt.agent) });
