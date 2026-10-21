@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0 (unreleased)
+## 0.10.0 (2026-10-21)
 
 - **Added.** Model Profiles sidebar view. The Agento container gains a **Model
   Profiles** tree view listing each profile with its description, an applied marker,
