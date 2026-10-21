@@ -1,0 +1,190 @@
+:root {
+  --editor-gap: 12px;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+#root {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--editor-gap);
+  padding: var(--editor-gap);
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.heading {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 0;
+}
+
+.editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--editor-gap);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  color: var(--vscode-foreground);
+  font-weight: 600;
+}
+
+.agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: var(--editor-gap);
+}
+
+.value-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.value-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.value-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.value-row input[type="text"],
+input[type="text"] {
+  flex: 1;
+  min-width: 180px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-family: var(--vscode-font-family);
+}
+
+input[type="text"]:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.btn {
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  border: none;
+  border-radius: 2px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: var(--vscode-font-family);
+}
+
+.btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
+.btn:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.alias-hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alias-suggested {
+  color: var(--vscode-charts-yellow, var(--vscode-descriptionForeground));
+}
+
+.add-override select {
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  border: 1px solid var(--vscode-dropdown-border, var(--vscode-input-border, transparent));
+  border-radius: 2px;
+  padding: 4px 6px;
+}
+
+.feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, transparent);
+  border-radius: 2px;
+  padding: 6px 8px;
+}
+
+.warning {
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-descriptionForeground));
+  background: var(--vscode-inputValidation-warningBackground);
+  border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
+  border-radius: 2px;
+  padding: 6px 8px;
+}
+
+.conflict-banner,
+.deleted-banner,
+.unknown-notice,
+.empty-models {
+  border-radius: 2px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.conflict-banner {
+  background: var(--vscode-inputValidation-warningBackground);
+  border: 1px solid var(--vscode-inputValidation-warningBorder, transparent);
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+}
+
+.deleted-banner {
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, transparent);
+  color: var(--vscode-errorForeground);
+}
+
+.unknown-notice,
+.empty-models {
+  background: var(--vscode-editorInfo-background, var(--vscode-input-background));
+  color: var(--vscode-descriptionForeground);
+}
+
+.footer {
+  display: flex;
+  gap: 8px;
+  padding-top: var(--editor-gap);
+  border-top: 1px solid var(--vscode-panel-border, transparent);
+}
