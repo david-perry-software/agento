@@ -207,10 +207,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     }, 500);
   };
   let modelProfileWatcherDisposables: vscode.Disposable[] = [];
+  let modelProfileWatcherKey: string | null = null;
   rebuildModelProfileWatchers = (): void => {
+    const root = pluginRoot();
+    const profilesFilePath = modelProfiles.current.profilesFile?.path ?? null;
+    const key = `${root ?? ""}\u0000${profilesFilePath ?? ""}`;
+    if (key === modelProfileWatcherKey) return;
+    modelProfileWatcherKey = key;
     for (const disposable of modelProfileWatcherDisposables) disposable.dispose();
     modelProfileWatcherDisposables = [];
-    const root = pluginRoot();
     if (root) {
       try {
         const watcher = vscode.workspace.createFileSystemWatcher(
@@ -224,7 +229,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         output.appendLine(`model profiles watcher (agents): ${String(error)}`);
       }
     }
-    const profilesFilePath = modelProfiles.current.profilesFile?.path;
     if (profilesFilePath) {
       try {
         const watcher = vscode.workspace.createFileSystemWatcher(
