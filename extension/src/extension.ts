@@ -116,6 +116,7 @@ export interface ModelProfilePrompts {
   enterName: (options: ModelProfileNamePrompt) => Promise<string | undefined>;
   chooseNewKind: (existing: string[]) => Promise<ModelProfileNewKind | undefined>;
   confirmDelete: (profile: { name: string; applied: boolean }) => Promise<boolean>;
+  pickProfile: (listJson: unknown, placeHolder: string) => Promise<ModelsSelection | undefined>;
 }
 
 interface ConfigResult {
@@ -649,7 +650,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       scheduler.refreshNow("model profile");
     } else if (summary.conflict) {
       output.appendLine(`models: ${summary.message}`);
-      await vscode.window.showWarningMessage("The profiles file changed since the view loaded — refreshed; try again.");
+      void vscode.window.showWarningMessage("The profiles file changed since the view loaded — refreshed; try again.");
       void reloadModelProfiles();
     } else {
       await reportModelsError(summary);
@@ -717,6 +718,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       const choice = await vscode.window.showWarningMessage(message, { modal: true }, "Delete");
       return choice === "Delete";
     },
+    pickProfile: async (listJson, placeHolder) => {
+      const picked = await vscode.window.showQuickPick(toQuickPickItems(listJson), {
+        title: "Agento: Select Model Profile",
+        placeHolder,
+      });
+      return picked?.selection;
+    },
   };
   let modelProfilePrompts = defaultModelProfilePrompts;
   const setModelProfilePrompts = (prompts?: ModelProfilePrompts): void => {
@@ -733,12 +741,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         return;
       }
       const profilesFile = (list.json as { profilesFile?: { path?: unknown } }).profilesFile?.path;
-      const picked = await vscode.window.showQuickPick(toQuickPickItems(list.json), {
-        title: "Agento: Select Model Profile",
-        placeHolder: `Profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}, applied to ${root}`,
-      });
-      if (!picked) return;
-      return runModelsSelection(picked.selection);
+      const selection = await modelProfilePrompts.pickProfile(
+        list.json,
+        `Profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}, applied to ${root}`,
+      );
+      if (!selection) return;
+      return runModelsSelection(selection);
     } catch (error) {
       const message = `Unable to select a model profile: ${error instanceof Error ? error.message : String(error)}`;
       output.appendLine(`models: ${message}`);
