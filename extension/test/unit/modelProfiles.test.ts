@@ -2,7 +2,19 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { expandHome, missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems, type PluginRootSources } from "../../src/modelProfiles.js";
+import {
+  createProfileArgs,
+  deleteProfileArgs,
+  expandHome,
+  initProfilesArgs,
+  missingPluginRootMessage,
+  renameProfileArgs,
+  resolvePluginRoot,
+  selectionToArgs,
+  summarizeModelsResult,
+  toQuickPickItems,
+  type PluginRootSources,
+} from "../../src/modelProfiles.js";
 
 const home = "/home/u";
 
@@ -79,12 +91,62 @@ test("selectionToArgs always passes --plugin-root", () => {
   assert.deepEqual(selectionToArgs({ kind: "clear" }, "/p"), ["models", "clear", "--plugin-root", "/p"]);
 });
 
+test("write arg builders pass --expect from the snapshot hash and --force on applied delete", () => {
+  const hash = "a".repeat(64);
+  assert.deepEqual(createProfileArgs("new", "/p"), ["models", "create", "new", "--plugin-root", "/p"]);
+  assert.deepEqual(createProfileArgs("new", "/p", { from: "mixed", description: "d", hash }), [
+    "models", "create", "new", "--from", "mixed", "--description", "d", "--expect", hash, "--plugin-root", "/p",
+  ]);
+  assert.deepEqual(createProfileArgs("new", "/p", { description: "d", hash: null }), [
+    "models", "create", "new", "--description", "d", "--plugin-root", "/p",
+  ]);
+  assert.deepEqual(renameProfileArgs("old", "new", "/p", { hash }), ["models", "rename", "old", "new", "--expect", hash, "--plugin-root", "/p"]);
+  assert.deepEqual(renameProfileArgs("old", "new", "/p"), ["models", "rename", "old", "new", "--plugin-root", "/p"]);
+  assert.deepEqual(deleteProfileArgs("mixed", "/p", { force: true, hash }), ["models", "delete", "mixed", "--force", "--expect", hash, "--plugin-root", "/p"]);
+  assert.deepEqual(deleteProfileArgs("mixed", "/p"), ["models", "delete", "mixed", "--plugin-root", "/p"]);
+  assert.deepEqual(initProfilesArgs("/p"), ["models", "init", "--plugin-root", "/p"]);
+});
+
 test("summarizeModelsResult reports changes, the reload hint, and failures", () => {
   assert.deepEqual(summarizeModelsResult({ status: "ok", profile: "mixed", changed: ["a", "b"] }), {
     ok: true,
     message: "Applied model profile mixed: 2 file(s) changed. Run Developer: Reload Window if the model picker does not update.",
+    dirty: [],
+    conflict: false,
   });
   assert.match(summarizeModelsResult({ status: "ok", profile: null, changed: [] }).message, /^Cleared the model profile: 0 file\(s\) changed/);
-  assert.deepEqual(summarizeModelsResult({ status: "invalid", errors: ["e1", "e2"] }), { ok: false, message: "models invalid: e1; e2" });
-  assert.deepEqual(summarizeModelsResult({ status: "dirty", message: "edited", dirty: ["x.md"] }), { ok: false, message: "edited: x.md" });
+  assert.deepEqual(summarizeModelsResult({ status: "invalid", errors: ["e1", "e2"] }), {
+    ok: false,
+    message: "The profile is invalid: e1; e2",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "dirty", message: "edited", dirty: ["x.md"] }), {
+    ok: false,
+    message: "edited: x.md",
+    dirty: ["x.md"],
+    conflict: false,
+  });
+});
+
+test("summarizeModelsResult exposes dirty files and the conflict flag, with clear messages", () => {
+  const conflict = summarizeModelsResult({ status: "conflict", message: "stale", expected: "a", actual: "b" });
+  assert.equal(conflict.ok, false);
+  assert.equal(conflict.conflict, true);
+  assert.deepEqual(conflict.dirty, []);
+  assert.equal(conflict.message, "stale");
+
+  const bareConflict = summarizeModelsResult({ status: "conflict" });
+  assert.equal(bareConflict.conflict, true);
+  assert.match(bareConflict.message, /changed since it was read/);
+
+  const dirty = summarizeModelsResult({ status: "dirty", dirty: ["a.md", 7, "b.md"] });
+  assert.deepEqual(dirty.dirty, ["a.md", "b.md"]);
+  assert.equal(dirty.conflict, false);
+  assert.match(dirty.message, /a\.md; b\.md/);
+
+  assert.match(summarizeModelsResult({ status: "exists" }).message, /already exists/);
+  assert.match(summarizeModelsResult({ status: "not-found" }).message, /No profile with that name/);
+  assert.match(summarizeModelsResult({ status: "active" }).message, /applied in this clone/);
+  assert.match(summarizeModelsResult({ status: "invalid" }).message, /The profile is invalid/);
 });
