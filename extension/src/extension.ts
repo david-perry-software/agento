@@ -19,6 +19,8 @@ import { createInitiativeTreeError, createInitiativeTreeModel } from "./initiati
 import { InitiativeTreeProvider, type InitiativeTreeElement, type InitiativeTreeSnapshot } from "./initiativeTreeProvider.js";
 import { LatestDeliveryRefresh } from "./latestDeliveryRefresh.js";
 import { missingPluginRootMessage, resolvePluginRoot, selectionToArgs, summarizeModelsResult, toQuickPickItems } from "./modelProfiles.js";
+import { ModelProfilesProvider } from "./modelProfilesProvider.js";
+import { createModelProfilesModel } from "./modelProfilesTree.js";
 import { openArtifactPreview } from "./openArtifact.js";
 import {
   primaryInitiativeTarget,
@@ -52,6 +54,7 @@ export interface ExtensionApi {
   deliveries: DeliveryTreeProvider;
   initiatives: InitiativeTreeProvider;
   sessionDoctor: SessionDoctorProvider;
+  modelProfiles: ModelProfilesProvider;
   sessionDoctorView: vscode.TreeView<unknown>;
   statusBar: vscode.StatusBarItem;
   windowBanner: WindowBannerProvider;
@@ -109,6 +112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveries = new DeliveryTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const sessionDoctor = new SessionDoctorProvider(treeId);
+  const modelProfiles = new ModelProfilesProvider();
   const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
@@ -118,6 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.show();
   const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current));
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
+  const latestModelProfilesRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
   let watcherDisposables: vscode.Disposable[] = [];
   let gate = CLOSED_GATE;
@@ -134,6 +139,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     exists: (filePath) => fs.existsSync(filePath),
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
   });
+  const reloadModelProfiles = async (): Promise<void> => {
+    const root = pluginRoot();
+    await latestModelProfilesRefresh.run(
+      async () => {
+        if (root === null) return createModelProfilesModel({ pluginRoot: null });
+        const result = await client.run(["models", "list", "--plugin-root", root], root);
+        return createModelProfilesModel({ pluginRoot: root, listResult: result.json });
+      },
+      (snapshot) => modelProfiles.update(snapshot),
+      (error) => {
+        modelProfiles.update(createModelProfilesModel({ pluginRoot: root, listError: String(error) }));
+        output.appendLine(`model profiles: ${String(error)}`);
+      },
+    );
+  };
   const chatMode: ChatModeResolver = (command) => resolveChatMode(command, {
     pluginRoot: pluginRoot(),
     readFile: (filePath) => fs.readFileSync(filePath, "utf8"),
@@ -189,6 +209,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const refreshSubscription = scheduler.onDidRefresh(({ reasons }) => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     output.appendLine(`refresh: ${reasons.join(", ")}`);
+    void reloadModelProfiles();
     if (!folder) {
       const message = "No workspace folder is open.";
       applyGate(CLOSED_GATE);
@@ -574,6 +595,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const deliveriesView = vscode.window.createTreeView("agento.deliveries", { treeDataProvider: deliveries });
   const initiativesView = vscode.window.createTreeView("agento.initiatives", { treeDataProvider: initiatives });
   const sessionDoctorView = vscode.window.createTreeView("agento.sessionDoctor", { treeDataProvider: sessionDoctor });
+  const modelProfilesView = vscode.window.createTreeView("agento.modelProfiles", { treeDataProvider: modelProfiles });
   const windowBannerRegistration = vscode.window.registerWebviewViewProvider("agento.windowBanner", windowBanner);
   let sessionDoctorWasVisible = false;
   const sessionDoctorVisibility = sessionDoctorView.onDidChangeVisibility(({ visible }) => {
@@ -607,6 +629,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     deliveries,
     initiatives,
     sessionDoctor,
+    modelProfiles,
     statusBar,
     refreshSubscription,
     refreshCommand,
@@ -622,6 +645,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     deliveriesView,
     initiativesView,
     sessionDoctorView,
+    modelProfilesView,
     windowBannerRegistration,
     sessionDoctorVisibility,
     windowFocusSubscription,
@@ -632,7 +656,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   await consumePending();
   scheduler.refreshNow("activate");
   return {
-    client, scheduler, deliveries, initiatives, sessionDoctor, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
+    client, scheduler, deliveries, initiatives, sessionDoctor, modelProfiles, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
     startNewPlan, setNewPlanRunner, setNewPlanPrompts,
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
     windowGate: () => gate,

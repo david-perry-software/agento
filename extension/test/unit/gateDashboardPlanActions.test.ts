@@ -48,6 +48,11 @@ test("(a) manifest gates New Plan, New Initiative, and Plan on the window role k
     { command: "agento.newPlan", when: "agento.canPlan" },
     { command: "agento.newInitiative", when: "agento.primary" },
     { command: "agento.planInitiativeMember", when: "false" },
+    { command: "agento.modelProfiles.apply", when: "false" },
+    { command: "agento.modelProfiles.edit", when: "false" },
+    { command: "agento.modelProfiles.duplicate", when: "false" },
+    { command: "agento.modelProfiles.rename", when: "false" },
+    { command: "agento.modelProfiles.delete", when: "false" },
   ]);
 });
 

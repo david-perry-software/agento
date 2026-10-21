@@ -49,6 +49,10 @@
         {
           "id": "agento.sessionDoctor",
           "name": "Session & Doctor"
+        },
+        {
+          "id": "agento.modelProfiles",
+          "name": "Model Profiles"
         }
       ]
     },
@@ -101,6 +105,60 @@
         "command": "agento.selectModelProfile",
         "title": "Select Model Profile",
         "category": "Agento"
+      },
+      {
+        "command": "agento.modelProfiles.apply",
+        "title": "Apply",
+        "category": "Agento",
+        "icon": "$(check)"
+      },
+      {
+        "command": "agento.modelProfiles.new",
+        "title": "New Profile",
+        "category": "Agento",
+        "icon": "$(add)"
+      },
+      {
+        "command": "agento.modelProfiles.clear",
+        "title": "Clear",
+        "category": "Agento",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "agento.modelProfiles.openFile",
+        "title": "Open Profiles File",
+        "category": "Agento",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "agento.modelProfiles.edit",
+        "title": "Edit",
+        "category": "Agento",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "agento.modelProfiles.duplicate",
+        "title": "Duplicate",
+        "category": "Agento",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "agento.modelProfiles.rename",
+        "title": "Rename",
+        "category": "Agento",
+        "icon": "$(pencil)"
+      },
+      {
+        "command": "agento.modelProfiles.delete",
+        "title": "Delete",
+        "category": "Agento",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "agento.modelProfiles.init",
+        "title": "Create Profiles File",
+        "category": "Agento",
+        "icon": "$(new-file)"
       }
     ],
     "menus": {
@@ -139,6 +197,25 @@
           "command": "agento.showActions",
           "when": "view == agento.sessionDoctor",
           "group": "navigation@3"
+        },
+        {
+          "command": "agento.modelProfiles.new",
+          "when": "view == agento.modelProfiles",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agento.modelProfiles.clear",
+          "when": "view == agento.modelProfiles && agento.modelProfiles.state == ready",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agento.refresh",
+          "when": "view == agento.modelProfiles",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agento.modelProfiles.openFile",
+          "when": "view == agento.modelProfiles"
         }
       ],
       "view/item/context": [
@@ -156,6 +233,31 @@
           "command": "agento.showActions",
           "when": "view == agento.initiatives && viewItem == agento.initiativeMember.in-flight",
           "group": "inline"
+        },
+        {
+          "command": "agento.modelProfiles.apply",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.invalid)?$/",
+          "group": "inline"
+        },
+        {
+          "command": "agento.modelProfiles.edit",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "agento.modelProfiles.duplicate",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/",
+          "group": "1_modify@2"
+        },
+        {
+          "command": "agento.modelProfiles.rename",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/",
+          "group": "1_modify@3"
+        },
+        {
+          "command": "agento.modelProfiles.delete",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile/",
+          "group": "1_modify@4"
         }
       ],
       "commandPalette": [
@@ -170,9 +272,41 @@
         {
           "command": "agento.planInitiativeMember",
           "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.apply",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.edit",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.duplicate",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.rename",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.delete",
+          "when": "false"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "agento.modelProfiles",
+        "contents": "No model profiles file yet.\n[Create Profiles File](command:agento.modelProfiles.init)",
+        "when": "agento.modelProfiles.state == no-file"
+      },
+      {
+        "view": "agento.modelProfiles",
+        "contents": "No Agento plugin clone found. Set agento.pluginRoot or register the clone in chat.pluginLocations.\n[Open Settings](command:workbench.action.openSettings?%5B%22agento.pluginRoot%22%5D)",
+        "when": "agento.modelProfiles.state == no-plugin-root"
+      }
+    ],
     "configuration": {
       "title": "Agento",
       "properties": {
