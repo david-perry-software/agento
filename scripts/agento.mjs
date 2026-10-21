@@ -3606,6 +3606,28 @@ function candidateErrors(loaded, next, name, layout) {
   return resolveProfile(candidate, name, layout).errors;
 }
 
+// The full new profiles-file object for a write: the existing file's top-level key
+// order is preserved, and an existing `copilotModels` key is kept even when empty.
+// A brand-new file puts `profiles` first; an alias write to a file without
+// `copilotModels` appends it after `profiles`. `loaded.raw` is only consulted for
+// key order — `writeProfiles` re-reads and re-validates the bytes before writing.
+function nextProfilesObject(loaded, profiles, copilotModels) {
+  if (loaded.raw !== null) {
+    try {
+      const base = JSON.parse(loaded.raw);
+      const next = { ...base };
+      next.profiles = profiles;
+      if (Object.hasOwn(base, "copilotModels") || Object.keys(copilotModels ?? {}).length) next.copilotModels = copilotModels;
+      return next;
+    } catch {
+      // Unparseable raw is refused by writeProfiles before anything is written.
+    }
+  }
+  const next = { profiles };
+  if (Object.keys(copilotModels ?? {}).length) next.copilotModels = copilotModels;
+  return next;
+}
+
 // The atomic, validated write of the profiles file. `loaded` is the snapshot the
 // caller read; `next` the full new file object ({ profiles, copilotModels });
 // `names` the profiles this write is responsible for (their re-parsed errors block
@@ -4768,8 +4790,6 @@ switch (command) {
   }
 
   case "models": {
-    // The verbs implemented so far; the rest answer a usage error until their step.
-    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create", "update", "rename", "delete", "alias set", "alias remove"]);
     // Each verb: its positional count, which positionals are profile names, the
     // options it accepts beyond --plugin-root, and whether it writes the file.
     const MODEL_VERBS = {
@@ -4802,7 +4822,6 @@ switch (command) {
     for (const option of ["force", "dryRun", "from", "description", "expect"]) {
       if (options[option] !== undefined && !spec.accepts.includes(option)) usage(`models ${verb} does not accept --${option}`);
     }
-    if (!IMPLEMENTED_MODEL_VERBS.has(verb)) usage(`models ${verb}: not implemented yet`);
     const name = args[0];
     const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
     if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) usage(`--plugin-root ${pluginRoot} is not an Agento plugin clone (no .github/agents)`);
@@ -4851,8 +4870,7 @@ switch (command) {
       if (Object.hasOwn(loaded.profiles, name)) emit({ status: "exists", verb, profile: name, message: `profile ${name} already exists in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       if (options.from !== undefined && !Object.hasOwn(loaded.profiles, options.from)) emit({ status: "not-found", verb, profile: name, from: options.from, message: `no profile ${options.from} to copy from`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const created = createProfile(loaded, name, { from: options.from, description: options.description });
-      const next = { profiles: created.profiles };
-      if (Object.keys(loaded.copilotModels ?? {}).length) next.copilotModels = loaded.copilotModels;
+      const next = nextProfilesObject(loaded, created.profiles, loaded.copilotModels);
       const errors = candidateErrors(loaded, next, name, state.layout);
       if (errors.length) emit({ status: "invalid", verb, profile: name, errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { code, result } = writeProfiles(pluginRoot, loaded, next, { expect: options.expect, names: [name] });
@@ -4870,8 +4888,7 @@ switch (command) {
       }
       if (typeof body !== "object" || body === null || Array.isArray(body)) emit({ status: "invalid", verb, profile: name, errors: ["the profile body must be a JSON object"], ...modelsReport(pluginRoot, loaded, state) }, 3);
       const replaced = replaceProfile(loaded, name, body);
-      const next = { profiles: replaced.profiles };
-      if (Object.keys(loaded.copilotModels ?? {}).length) next.copilotModels = loaded.copilotModels;
+      const next = nextProfilesObject(loaded, replaced.profiles, loaded.copilotModels);
       const reparsed = parseProfiles(serializeProfiles(next));
       const candidate = { ...loaded, profiles: next.profiles, copilotModels: next.copilotModels ?? loaded.copilotModels ?? {}, errors: reparsed.errors };
       const resolved = resolveProfile(candidate, name, state.layout);
@@ -4890,8 +4907,7 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, old)) emit({ status: "not-found", verb, profile: old, message: `no profile ${old} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       if (Object.hasOwn(loaded.profiles, next)) emit({ status: "exists", verb, profile: next, message: `profile ${next} already exists in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const renamed = renameProfile(loaded, old, next);
-      const nextData = { profiles: renamed.profiles };
-      if (Object.keys(loaded.copilotModels ?? {}).length) nextData.copilotModels = loaded.copilotModels;
+      const nextData = nextProfilesObject(loaded, renamed.profiles, loaded.copilotModels);
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [next] });
       emit({ verb, profile: old, ...result }, code);
     }
@@ -4900,8 +4916,7 @@ switch (command) {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       if (state.active === name && !options.force) emit({ status: "active", verb, profile: name, message: `profile ${name} is applied in ${pluginRoot}; run agento.mjs models clear or pass --force to delete it`, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const deleted = deleteProfile(loaded, name);
-      const nextData = { profiles: deleted.profiles };
-      if (Object.keys(loaded.copilotModels ?? {}).length) nextData.copilotModels = loaded.copilotModels;
+      const nextData = nextProfilesObject(loaded, deleted.profiles, loaded.copilotModels);
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [name] });
       emit({ verb, profile: name, ...result }, code);
     }
@@ -4911,7 +4926,7 @@ switch (command) {
       const errors = aliasErrors(picker, id);
       if (errors.length) emit({ status: "invalid", verb, picker, errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const aliased = setAlias(loaded, picker, id);
-      const nextData = { profiles: loaded.profiles, copilotModels: aliased.copilotModels };
+      const nextData = nextProfilesObject(loaded, loaded.profiles, aliased.copilotModels);
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect });
       emit({ verb, picker, copilotModels: aliased.copilotModels, ...result }, code);
     }
@@ -4920,7 +4935,7 @@ switch (command) {
       const [picker] = args;
       if (!Object.hasOwn(loaded.copilotModels ?? {}, picker)) emit({ status: "not-found", verb, picker, message: `no alias for picker ${JSON.stringify(picker)}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const removed = removeAlias(loaded, picker);
-      const nextData = { profiles: loaded.profiles, copilotModels: removed.copilotModels };
+      const nextData = nextProfilesObject(loaded, loaded.profiles, removed.copilotModels);
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect });
       emit({ verb, picker, copilotModels: removed.copilotModels, ...result }, code);
     }

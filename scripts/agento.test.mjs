@@ -3255,6 +3255,39 @@ test("models create works alongside the template's placeholder mixed profile", (
   assert.deepEqual(parsed.profiles.clean, {});
 });
 
+test("models create preserves the template's top-level key order after init", () => {
+  const { home, models } = modelsFixture();
+  assert.equal(models("init").code, 0);
+  const { code, json } = models("create", "x");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.reformatted, false);
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed), ["copilotModels", "profiles"]);
+});
+
+test("models create keeps an existing empty copilotModels key", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ copilotModels: {}, profiles: { a: {} } }, null, 2) + "\n");
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.reformatted, false);
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed), ["copilotModels", "profiles"]);
+  assert.deepEqual(parsed.copilotModels, {});
+  assert.deepEqual(Object.keys(parsed.profiles), ["a", "b"]);
+});
+
+test("models create keeps a profiles-first file profiles-first", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed), ["profiles"]);
+  assert.deepEqual(Object.keys(parsed.profiles), ["a", "b"]);
+});
+
 test("models update replaces the profile in place from stdin", () => {
   const { home, models, modelsInput } = modelsFixture();
   assert.equal(models("init").code, 0);
