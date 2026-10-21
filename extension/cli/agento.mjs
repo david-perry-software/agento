@@ -4769,7 +4769,7 @@ switch (command) {
 
   case "models": {
     // The verbs implemented so far; the rest answer a usage error until their step.
-    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create"]);
+    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create", "update"]);
     // Each verb: its positional count, which positionals are profile names, the
     // options it accepts beyond --plugin-root, and whether it writes the file.
     const MODEL_VERBS = {
@@ -4856,6 +4856,32 @@ switch (command) {
       const errors = candidateErrors(loaded, next, name, state.layout);
       if (errors.length) emit({ status: "invalid", verb, profile: name, errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { code, result } = writeProfiles(pluginRoot, loaded, next, { expect: options.expect, names: [name] });
+      emit({ verb, profile: name, ...result }, code);
+    }
+
+    if (verb === "update") {
+      if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}; create it first with models create ${name}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      if (process.stdin.isTTY) usage("models update reads the profile JSON from stdin");
+      let body;
+      try {
+        body = JSON.parse(fs.readFileSync(0, "utf8"));
+      } catch (error) {
+        emit({ status: "invalid", verb, profile: name, errors: [`invalid JSON on stdin: ${error.message}`], ...modelsReport(pluginRoot, loaded, state) }, 3);
+      }
+      if (typeof body !== "object" || body === null || Array.isArray(body)) emit({ status: "invalid", verb, profile: name, errors: ["the profile body must be a JSON object"], ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const replaced = replaceProfile(loaded, name, body);
+      const next = { profiles: replaced.profiles };
+      if (Object.keys(loaded.copilotModels ?? {}).length) next.copilotModels = loaded.copilotModels;
+      const reparsed = parseProfiles(serializeProfiles(next));
+      const candidate = { ...loaded, profiles: next.profiles, copilotModels: next.copilotModels ?? loaded.copilotModels ?? {}, errors: reparsed.errors };
+      const resolved = resolveProfile(candidate, name, state.layout);
+      const warnings = tierWarnings(resolved.targets, next.profiles[name], candidate.copilotModels);
+      if (options.dryRun) {
+        emit({ status: "ok", verb, profile: name, dryRun: true, written: false, errors: resolved.errors, warnings, ...modelsReport(pluginRoot, loaded, state) });
+      }
+      if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const { code, result } = writeProfiles(pluginRoot, loaded, next, { expect: options.expect, names: [name] });
+      if (result.status === "ok" && result.active !== result.activeBefore) result.reapply = `agento.mjs models apply ${name} --plugin-root ${pluginRoot}`;
       emit({ verb, profile: name, ...result }, code);
     }
 

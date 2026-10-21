@@ -3083,11 +3083,12 @@ function modelsFixture({ gitInit = true } = {}) {
   const home = path.join(base, "config");
   const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
   const models = (...args) => runWith({ cwd: plugin, env }, "models", ...args, "--plugin-root", plugin);
+  const modelsInput = (input, ...args) => runWith({ cwd: plugin, env, input }, "models", ...args, "--plugin-root", plugin);
   const writeProfiles = (profiles) => {
     fs.mkdirSync(home, { recursive: true });
     fs.writeFileSync(path.join(home, "model-profiles.json"), JSON.stringify({ profiles }));
   };
-  return { plugin, home, env, models, writeProfiles };
+  return { plugin, home, env, models, modelsInput, writeProfiles };
 }
 
 test("models list without a profiles file reports nothing applied", () => {
@@ -3254,6 +3255,75 @@ test("models create works alongside the template's placeholder mixed profile", (
   assert.deepEqual(parsed.profiles.clean, {});
 });
 
+test("models update replaces the profile in place from stdin", () => {
+  const { home, models, modelsInput } = modelsFixture();
+  assert.equal(models("init").code, 0);
+  assert.equal(models("create", "other").code, 0);
+  const body = JSON.stringify({ description: "Real", default: "M (copilot)", agents: { planner: "P (copilot)" } });
+  const { code, json } = modelsInput(body, "update", "mixed");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.written, true);
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["mixed", "other"]);
+  assert.deepEqual(parsed.profiles.mixed, { description: "Real", default: "M (copilot)", agents: { planner: "P (copilot)" } });
+});
+
+test("models update rejects non-JSON and array input without touching the file", () => {
+  const { home, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  const before = fs.readFileSync(file, "utf8");
+  const nonJson = modelsInput("{ not json", "update", "a");
+  assert.equal(nonJson.code, 3);
+  assert.equal(nonJson.json.status, "invalid");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+  const array = modelsInput("[]", "update", "a");
+  assert.equal(array.code, 3);
+  assert.equal(array.json.status, "invalid");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
+test("models update --dry-run validates without writing", () => {
+  const { home, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  const before = fs.readFileSync(file, "utf8");
+  const { code, json } = modelsInput(JSON.stringify({ default: "N (copilot)" }), "update", "a", "--dry-run");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.dryRun, true);
+  assert.equal(json.written, false);
+  assert.deepEqual(json.errors, []);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
+test("models update --expect conflicts after an out-of-band write", () => {
+  const { home, models, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  const show = models("show", "a");
+  assert.equal(show.code, 0, JSON.stringify(show.json));
+  const hash = show.json.profilesFile.hash;
+  writeProfiles({ a: { default: "Changed (copilot)" } });
+  const after = fs.readFileSync(file, "utf8");
+  const { code, json } = modelsInput(JSON.stringify({ default: "N (copilot)" }), "update", "a", "--expect", hash);
+  assert.equal(code, 3);
+  assert.equal(json.status, "conflict");
+  assert.equal(fs.readFileSync(file, "utf8"), after);
+});
+
+test("models update of the applied profile reports reapply and active custom", () => {
+  const { plugin, models, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  assert.equal(models("apply", "a").code, 0);
+  const { code, json } = modelsInput(JSON.stringify({ default: "N (copilot)" }), "update", "a");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.activeBefore, "a");
+  assert.equal(json.active, "custom");
+  assert.equal(json.reapply, `agento.mjs models apply a --plugin-root ${plugin}`);
+});
+
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
   const { home, models } = modelsFixture();
   const first = models("init");
@@ -3338,7 +3408,6 @@ test("models usage errors: new verb arity, malformed options, and alias sub-verb
   assert.equal(models("alias", "bogus").code, 1);
   assert.equal(models("alias").code, 1);
   // The not-yet-implemented verbs exist in the table but answer a usage error.
-  assert.equal(models("update", "a").code, 1);
   assert.equal(models("rename", "a", "b").code, 1);
   assert.equal(models("delete", "a").code, 1);
   assert.equal(models("alias", "set", "A (copilot)", "a").code, 1);
