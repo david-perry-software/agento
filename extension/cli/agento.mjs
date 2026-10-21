@@ -4769,7 +4769,7 @@ switch (command) {
 
   case "models": {
     // The verbs implemented so far; the rest answer a usage error until their step.
-    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create", "update"]);
+    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create", "update", "rename", "delete"]);
     // Each verb: its positional count, which positionals are profile names, the
     // options it accepts beyond --plugin-root, and whether it writes the file.
     const MODEL_VERBS = {
@@ -4882,6 +4882,27 @@ switch (command) {
       if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const { code, result } = writeProfiles(pluginRoot, loaded, next, { expect: options.expect, names: [name] });
       if (result.status === "ok" && result.active !== result.activeBefore) result.reapply = `agento.mjs models apply ${name} --plugin-root ${pluginRoot}`;
+      emit({ verb, profile: name, ...result }, code);
+    }
+
+    if (verb === "rename") {
+      const [old, next] = args;
+      if (!Object.hasOwn(loaded.profiles, old)) emit({ status: "not-found", verb, profile: old, message: `no profile ${old} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      if (Object.hasOwn(loaded.profiles, next)) emit({ status: "exists", verb, profile: next, message: `profile ${next} already exists in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const renamed = renameProfile(loaded, old, next);
+      const nextData = { profiles: renamed.profiles };
+      if (Object.keys(loaded.copilotModels ?? {}).length) nextData.copilotModels = loaded.copilotModels;
+      const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [next] });
+      emit({ verb, profile: old, ...result }, code);
+    }
+
+    if (verb === "delete") {
+      if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      if (state.active === name && !options.force) emit({ status: "active", verb, profile: name, message: `profile ${name} is applied in ${pluginRoot}; run agento.mjs models clear or pass --force to delete it`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const deleted = deleteProfile(loaded, name);
+      const nextData = { profiles: deleted.profiles };
+      if (Object.keys(loaded.copilotModels ?? {}).length) nextData.copilotModels = loaded.copilotModels;
+      const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [name] });
       emit({ verb, profile: name, ...result }, code);
     }
 

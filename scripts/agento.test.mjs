@@ -3324,6 +3324,71 @@ test("models update of the applied profile reports reapply and active custom", (
   assert.equal(json.reapply, `agento.mjs models apply a --plugin-root ${plugin}`);
 });
 
+test("models rename rejects not-found and exists", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {}, b: {} });
+  const notFound = models("rename", "nope", "x");
+  assert.equal(notFound.code, 3);
+  assert.equal(notFound.json.status, "not-found");
+  const exists = models("rename", "a", "b");
+  assert.equal(exists.code, 3);
+  assert.equal(exists.json.status, "exists");
+});
+
+test("models rename keeps position and active follows by content", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" }, b: {} });
+  assert.equal(models("apply", "a").code, 0);
+  const { code, json } = models("rename", "a", "z");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.activeBefore, "a");
+  assert.equal(json.active, "z");
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["z", "b"]);
+  assert.deepEqual(parsed.profiles.z, { default: "M (copilot)" });
+});
+
+test("models delete rejects not-found and the applied profile without --force", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" } });
+  const file = path.join(home, "model-profiles.json");
+  assert.equal(models("apply", "a").code, 0);
+  const before = fs.readFileSync(file, "utf8");
+  const active = models("delete", "a");
+  assert.equal(active.code, 3);
+  assert.equal(active.json.status, "active");
+  assert.match(active.json.message, /models clear/);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+
+  const notFound = models("delete", "nope");
+  assert.equal(notFound.code, 3);
+  assert.equal(notFound.json.status, "not-found");
+});
+
+test("models delete --force removes the applied profile and active becomes custom", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" }, b: {} });
+  assert.equal(models("apply", "a").code, 0);
+  const { code, json } = models("delete", "a", "--force");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.activeBefore, "a");
+  assert.equal(json.active, "custom");
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["b"]);
+});
+
+test("models delete of a non-applied profile succeeds", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "M (copilot)" }, b: {} });
+  const { code, json } = models("delete", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.deepEqual(Object.keys(parsed.profiles), ["a"]);
+});
+
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
   const { home, models } = modelsFixture();
   const first = models("init");
@@ -3408,8 +3473,6 @@ test("models usage errors: new verb arity, malformed options, and alias sub-verb
   assert.equal(models("alias", "bogus").code, 1);
   assert.equal(models("alias").code, 1);
   // The not-yet-implemented verbs exist in the table but answer a usage error.
-  assert.equal(models("rename", "a", "b").code, 1);
-  assert.equal(models("delete", "a").code, 1);
   assert.equal(models("alias", "set", "A (copilot)", "a").code, 1);
   assert.equal(models("alias", "remove", "A (copilot)").code, 1);
 });
