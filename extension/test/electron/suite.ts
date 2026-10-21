@@ -652,6 +652,9 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.newInitiative"));
   assert.ok(commands.includes("agento.planInitiativeMember"));
   assert.ok(commands.includes("agento.selectModelProfile"));
+  for (const command of ["apply", "new", "clear", "openFile", "edit", "duplicate", "rename", "delete", "init"]) {
+    assert.ok(commands.includes(`agento.modelProfiles.${command}`), `agento.modelProfiles.${command} is registered`);
+  }
 
   const fixture = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   assert.ok(fixture, "fixture workspace is open");
