@@ -3520,6 +3520,21 @@ test("models show resolves agents, inherited prompts, and mirrors", () => {
   assert.equal(value(".github/prompts/start-session.prompt.md"), "Cheap");
 });
 
+test("models show reports the stored body and update round-trips through it", () => {
+  const { models, modelsInput, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const empty = models("show", "a");
+  assert.equal(empty.code, 0, JSON.stringify(empty.json));
+  assert.deepEqual(empty.json.body, {});
+
+  const body = { description: "d", default: "M (copilot)", agents: { planner: ["A (copilot)", "B (copilot)"] }, prompts: { doctor: "T (copilot)" } };
+  const updated = modelsInput(JSON.stringify(body), "update", "a");
+  assert.equal(updated.code, 0, JSON.stringify(updated.json));
+  const shown = models("show", "a");
+  assert.equal(shown.code, 0, JSON.stringify(shown.json));
+  assert.deepEqual(shown.json.body, body);
+});
+
 test("models list entries carry warnings and targets matching models show", () => {
   const { models, writeProfiles } = modelsFixture();
   writeProfiles({ mixed: { description: "d", default: "Cheap", agents: { planner: "Strong" }, prompts: { doctor: "Tiny" } } });

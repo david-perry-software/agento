@@ -107,6 +107,13 @@ every agent, prompt, and mirror (`value` a string, or a string array for a fallb
 list) — or `[]` when the profile has errors. `warnings` is the same `warnings[]` as
 `models show` for that profile (`[]` when the profile has errors), so callers can
 render badges and tooltips from one `list` call instead of one `show` per profile.
+`models list` also reports `pinnable: { agents, prompts }` — `agents` is the six
+agent aliases and `prompts` is the sorted list of commands a profile may pin with
+`prompts.<command>` (the prompts whose `agent:` is not a custom agent), computed
+from the plugin's prompts and reported even when there is no profiles file.
+`models show <name>` additionally reports `body`, the stored profile object exactly
+as written (`{}` for an empty profile), so the editor can round-trip the file
+through `update` without re-deriving it from the resolved targets.
 
 Write verbs validate before writing and answer `status: invalid` (exit 3) for a
 file-level error, a malformed profile body, or an invalid picker or id. `create` of

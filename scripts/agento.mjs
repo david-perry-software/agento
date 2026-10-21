@@ -4867,7 +4867,7 @@ switch (command) {
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
       const warnings = tierWarnings(targets, loaded.profiles[name], loaded.copilotModels);
-      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, body: loaded.profiles[name], targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
     }
 
     if (verb === "pins") {
