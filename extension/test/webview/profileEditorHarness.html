@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-profile-editor-harness'; script-src 'nonce-profile-editor-harness'; img-src 'self' data:; font-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model profile editor — harness</title>
+<style nonce="profile-editor-harness">
+  :root {
+    --vscode-foreground: #cccccc;
+    --vscode-editor-background: #1e1e1e;
+    --vscode-font-family: sans-serif;
+    --vscode-font-size: 13px;
+    --vscode-input-background: #3c3c3c;
+    --vscode-input-foreground: #cccccc;
+    --vscode-input-border: #3c3c3c;
+    --vscode-focusBorder: #007fd4;
+    --vscode-button-secondaryBackground: #3a3d41;
+    --vscode-button-secondaryForeground: #cccccc;
+    --vscode-button-background: #0e639c;
+    --vscode-button-foreground: #ffffff;
+    --vscode-button-secondaryHoverBackground: #45494e;
+    --vscode-button-hoverBackground: #1177bb;
+    --vscode-descriptionForeground: #9d9d9d;
+    --vscode-charts-yellow: #dcdcaa;
+    --vscode-dropdown-background: #3c3c3c;
+    --vscode-dropdown-foreground: #f0f0f0;
+    --vscode-dropdown-border: #3c3c3c;
+    --vscode-errorForeground: #f48771;
+    --vscode-inputValidation-errorBackground: #5a1d1d;
+    --vscode-inputValidation-errorBorder: #be1100;
+    --vscode-inputValidation-warningForeground: #cca700;
+    --vscode-inputValidation-warningBackground: #4a4100;
+    --vscode-inputValidation-warningBorder: #a08f00;
+    --vscode-editorInfo-background: #063b49;
+    --vscode-panel-border: #3c3c3c;
+  }
+  body { max-width: 900px; margin: 0 auto; padding: 16px; }
+  #fixture-choices {
+    margin-top: 24px; padding: 12px; border: 1px dashed #555;
+    color: #9d9d9d; font-size: 12px;
+  }
+  #fixture-choices h2 { margin: 0 0 8px; font-size: 13px; }
+  #fixture-choices ul { margin: 0; padding-left: 20px; }
+</style>
+<script nonce="profile-editor-harness">
+  // The webview API stub the editor script consumes. Messages the script posts are
+  // recorded for the harness; getState starts empty so the draft loads fresh.
+  window.__messages = [];
+  window.acquireVsCodeApi = function () {
+    return {
+      postMessage: function (message) { window.__messages.push(message); },
+      getState: function () { return null; },
+      setState: function (state) { window.__state = state; },
+    };
+  };
+  // Any CSP violation is surfaced in the DOM so the screenshot run can assert none.
+  document.addEventListener("securitypolicyviolation", function (event) {
+    var marker = document.createElement("div");
+    marker.id = "csp-violation";
+    marker.textContent = "CSP violation: " + event.violatedDirective + " " + event.blockedURI;
+    document.body.appendChild(marker);
+  });
+</script>
+<link rel="stylesheet" nonce="profile-editor-harness" href="../../media/profileEditor.css">
+</head>
+<body>
+<div id="root"></div>
+
+<section id="fixture-choices">
+  <h2>Fixture model choices (datalist, grouped by vendor)</h2>
+  <ul>
+    <li>copilot — Claude Opus 5.5 (copilot)</li>
+    <li>grok — Grok 4 (grok)</li>
+    <li>deepseek — DeepSeek V4 Pro (deepseek)</li>
+  </ul>
+</section>
+
+<script nonce="profile-editor-harness" src="../../media/profileEditor.js"></script>
+<script nonce="profile-editor-harness">
+  var params = new URLSearchParams(window.location.search);
+
+  window.postMessage({
+    type: "state",
+    name: "daily",
+    form: {
+      name: "daily",
+      description: "Everyday models",
+      default: ["Claude Opus 5.5 (copilot)", "Grok 4 (grok)"],
+      agents: {
+        planner: ["Claude Opus 5.5 (copilot)"],
+        builder: [],
+        reviewer: [],
+        autopilot: [],
+        mechanic: [],
+        architect: [],
+      },
+      prompts: { doctor: ["DeepSeek V4 Pro (deepseek)"] },
+    },
+    pinnable: {
+      agents: ["planner", "builder", "reviewer", "autopilot", "mechanic", "architect"],
+      prompts: ["doctor", "start-session", "delivery-status", "commit-current-changes"],
+    },
+    choices: [
+      { id: "claude-opus-5.5", name: "Claude Opus 5.5", vendor: "copilot", label: "Claude Opus 5.5 (copilot)" },
+      { id: "grok-4", name: "Grok 4", vendor: "grok", label: "Grok 4 (grok)" },
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", vendor: "deepseek", label: "DeepSeek V4 Pro (deepseek)" },
+    ],
+    copilotModels: {},
+    hash: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    unknownKeys: [],
+  }, "*");
+
+  window.postMessage({
+    type: "validateResult",
+    errors: ["profiles.daily.agents.planner: placeholder \u003cmissing\u003e must be replaced with a model name"],
+    warnings: ["DeepSeek V4 Pro (deepseek) has no Copilot alias; BYOK models need `models alias set` to pin"],
+  }, "*");
+
+  if (params.get("conflict") === "1") {
+    window.postMessage({ type: "conflict", changed: ["default", "agents.planner"] }, "*");
+  }
+</script>
+</body>
+</html>
