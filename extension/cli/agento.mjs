@@ -53,7 +53,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, byokTierWarning, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, resolveTargets, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
@@ -3598,6 +3598,66 @@ function loadProfiles() {
   return { profilesFile: { path: file, exists, hash: profilesHash(raw) }, raw, profiles, copilotModels, errors };
 }
 
+// The errors a candidate file would report for `name`: the re-parsed errors that
+// belong to `name` (or are file-level) plus the layout errors from resolveTargets.
+function candidateErrors(loaded, next, name, layout) {
+  const reparsed = parseProfiles(serializeProfiles(next));
+  const candidate = { ...loaded, profiles: next.profiles, copilotModels: next.copilotModels ?? loaded.copilotModels ?? {}, errors: reparsed.errors };
+  return resolveProfile(candidate, name, layout).errors;
+}
+
+// The atomic, validated write of the profiles file. `loaded` is the snapshot the
+// caller read; `next` the full new file object ({ profiles, copilotModels });
+// `names` the profiles this write is responsible for (their re-parsed errors block
+// the write). Returns { code, result } ready to emit.
+function writeProfiles(pluginRoot, loaded, next, { expect, names = [] } = {}) {
+  const file = loaded.profilesFile.path;
+  const before = modelsState(pluginRoot, loaded);
+  const currentRaw = loaded.profilesFile.exists ? fs.readFileSync(file, "utf8") : null;
+  const actual = currentRaw === null ? null : profilesHash(currentRaw);
+  const conflict = (message, expected) => ({ code: 3, result: { status: "conflict", message, expected, actual, ...modelsReport(pluginRoot, loaded, before) } });
+  // 1. The file must still be what the caller read; --expect must match it. An
+  //    absent file never matches an --expect value.
+  if (currentRaw !== loaded.raw) return conflict("the profiles file changed since it was read; re-read it and re-run", loaded.profilesFile.hash);
+  if (expect !== undefined && expect !== null && (currentRaw === null || actual !== expect)) return conflict("the profiles file does not match --expect; re-read profilesFile.hash and re-run", expect);
+  // 2. Refuse a current file with file-level errors.
+  const fileErrors = loaded.errors.filter((e) => !e.startsWith("profiles."));
+  if (fileErrors.length) return { code: 3, result: { status: "invalid", errors: fileErrors, message: "the profiles file has errors and was left untouched", ...modelsReport(pluginRoot, loaded, before) } };
+  // 3. Serialize and re-parse: no new file-level errors and none for the written names.
+  const reparsed = parseProfiles(serializeProfiles(next));
+  const writtenErrors = reparsed.errors.filter((e) => !e.startsWith("profiles.") || names.some((n) => e.startsWith(`profiles.${n}.`) || e.startsWith(`profiles.${n}:`)));
+  if (writtenErrors.length) return { code: 3, result: { status: "invalid", errors: writtenErrors, message: "the new file would be invalid and was not written", ...modelsReport(pluginRoot, loaded, before) } };
+  // 4. Atomic write: a temp file with the existing mode, fsynced, then renamed.
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const mode = loaded.profilesFile.exists ? fs.statSync(file).mode : 0o644;
+  const tmp = path.join(dir, `.model-profiles.json.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+  let fd = null;
+  try {
+    fd = fs.openSync(tmp, "wx", mode);
+    fs.writeFileSync(fd, serializeProfiles(next), "utf8");
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+    try { fs.unlinkSync(tmp); } catch { /* nothing to clean */ }
+    return { code: 3, result: { status: "failed", message: `writing the profiles file failed: ${error.message}; re-send is safe`, ...modelsReport(pluginRoot, loaded, before) } };
+  }
+  let reformatted = false;
+  if (currentRaw !== null) {
+    try {
+      reformatted = serializeProfiles(JSON.parse(currentRaw)) !== currentRaw;
+    } catch {
+      reformatted = true;
+    }
+  }
+  const reloaded = loadProfiles();
+  const after = modelsState(pluginRoot, reloaded);
+  return { code: 0, result: { status: "ok", written: true, previousHash: loaded.profilesFile.hash, reformatted, activeBefore: before.active, active: after.active, ...modelsReport(pluginRoot, reloaded, after) } };
+}
+
 // Resolved targets (mirrors included) plus every error that blocks applying `name`.
 function resolveProfile(loaded, name, layout) {
   const parseErrors = errorsFor(loaded.errors, name);
@@ -4709,7 +4769,7 @@ switch (command) {
 
   case "models": {
     // The verbs implemented so far; the rest answer a usage error until their step.
-    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init"]);
+    const IMPLEMENTED_MODEL_VERBS = new Set(["list", "pins", "show", "apply", "adopt", "clear", "init", "create"]);
     // Each verb: its positional count, which positionals are profile names, the
     // options it accepts beyond --plugin-root, and whether it writes the file.
     const MODEL_VERBS = {
@@ -4785,6 +4845,18 @@ switch (command) {
       const { byok, unqualified, missingAlias } = pinWarnings(pins, loaded.copilotModels);
       const warnings = [byok, unqualified, missingAlias].filter(Boolean);
       emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
+    }
+
+    if (verb === "create") {
+      if (Object.hasOwn(loaded.profiles, name)) emit({ status: "exists", verb, profile: name, message: `profile ${name} already exists in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      if (options.from !== undefined && !Object.hasOwn(loaded.profiles, options.from)) emit({ status: "not-found", verb, profile: name, from: options.from, message: `no profile ${options.from} to copy from`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const created = createProfile(loaded, name, { from: options.from, description: options.description });
+      const next = { profiles: created.profiles };
+      if (Object.keys(loaded.copilotModels ?? {}).length) next.copilotModels = loaded.copilotModels;
+      const errors = candidateErrors(loaded, next, name, state.layout);
+      if (errors.length) emit({ status: "invalid", verb, profile: name, errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const { code, result } = writeProfiles(pluginRoot, loaded, next, { expect: options.expect, names: [name] });
+      emit({ verb, profile: name, ...result }, code);
     }
 
     // apply | adopt | clear

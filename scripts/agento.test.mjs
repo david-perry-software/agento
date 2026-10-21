@@ -3130,6 +3130,130 @@ test("models reports profilesFile.hash and list reports copilotModels", () => {
   assert.equal(withAlias.json.profilesFile.hash, profilesHash(fs.readFileSync(file, "utf8")));
 });
 
+test("models create writes only the new profile to a missing file", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  const { code, json } = models("create", "a");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.status, "ok");
+  assert.equal(json.verb, "create");
+  assert.equal(json.written, true);
+  assert.equal(json.profilesFile.exists, true);
+  const text = fs.readFileSync(file, "utf8");
+  assert.deepEqual(JSON.parse(text), { profiles: { a: {} } });
+  assert.ok(!/[<>]/.test(text));
+  assert.equal(json.profilesFile.hash, profilesHash(text));
+});
+
+test("models create empty, from a deep copy, and with --description", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ src: { description: "Source", default: "S (copilot)", agents: { planner: ["P (copilot)"] } } });
+  const file = path.join(home, "model-profiles.json");
+
+  const empty = models("create", "empty");
+  assert.equal(empty.code, 0, JSON.stringify(empty.json));
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).profiles.empty, {});
+
+  const copy = models("create", "copy", "--from", "src");
+  assert.equal(copy.code, 0, JSON.stringify(copy.json));
+  const afterCopy = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(afterCopy.profiles.copy, afterCopy.profiles.src);
+  assert.deepEqual(afterCopy.profiles.src, { description: "Source", default: "S (copilot)", agents: { planner: ["P (copilot)"] } });
+
+  const described = models("create", "described", "--from", "src", "--description", "Override");
+  assert.equal(described.code, 0, JSON.stringify(described.json));
+  const afterDescribed = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(afterDescribed.profiles.described.description, "Override");
+  assert.deepEqual(afterDescribed.profiles.described.default, "S (copilot)");
+});
+
+test("models create exists and --from not-found exit 3", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const exists = models("create", "a");
+  assert.equal(exists.code, 3);
+  assert.equal(exists.json.status, "exists");
+  const notFound = models("create", "b", "--from", "nope");
+  assert.equal(notFound.code, 3);
+  assert.equal(notFound.json.status, "not-found");
+  assert.deepEqual(notFound.json.known, ["a"]);
+});
+
+test("models create --from an invalid profile is invalid", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ bad: { default: "<placeholder>" } });
+  const { code, json } = models("create", "copy", "--from", "bad");
+  assert.equal(code, 3);
+  assert.equal(json.status, "invalid");
+  assert.ok(json.errors.some((e) => /placeholder/.test(e)), JSON.stringify(json.errors));
+});
+
+test("models create honors --expect with conflict and success", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const file = path.join(home, "model-profiles.json");
+  const stale = "0".repeat(64);
+  const before = fs.readFileSync(file, "utf8");
+  const conflict = models("create", "b", "--expect", stale);
+  assert.equal(conflict.code, 3);
+  assert.equal(conflict.json.status, "conflict");
+  assert.equal(conflict.json.expected, stale);
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+
+  const hash = profilesHash(before);
+  const ok = models("create", "b", "--expect", hash);
+  assert.equal(ok.code, 0, JSON.stringify(ok.json));
+  assert.equal(ok.json.status, "ok");
+  assert.equal(ok.json.previousHash, hash);
+});
+
+test("models create refuses an unparseable file without touching it", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(file, "{ not json");
+  const before = fs.readFileSync(file, "utf8");
+  const { code, json } = models("create", "a");
+  assert.equal(code, 3);
+  assert.equal(json.status, "invalid");
+  assert.equal(fs.readFileSync(file, "utf8"), before);
+});
+
+test("models create on a hand-formatted file reports reformatted", () => {
+  const { home, models } = modelsFixture();
+  const file = path.join(home, "model-profiles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(file, '{"profiles":{"a":{}}}');
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.reformatted, true);
+  const text = fs.readFileSync(file, "utf8");
+  assert.ok(text.endsWith("\n"));
+  assert.ok(text.includes('  "profiles"'));
+});
+
+test("models create leaves no temp files and keeps the mode", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  const file = path.join(home, "model-profiles.json");
+  fs.chmodSync(file, 0o600);
+  const { code, json } = models("create", "b");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(fs.readdirSync(home).filter((f) => f.startsWith(".model-profiles.json.")), []);
+});
+
+test("models create works alongside the template's placeholder mixed profile", () => {
+  const { home, models } = modelsFixture();
+  assert.equal(models("init").code, 0);
+  const { code, json } = models("create", "clean");
+  assert.equal(code, 0, JSON.stringify(json));
+  const parsed = JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8"));
+  assert.ok(Object.hasOwn(parsed.profiles, "mixed"));
+  assert.ok(Object.hasOwn(parsed.profiles, "clean"));
+  assert.deepEqual(parsed.profiles.clean, {});
+});
+
 test("models init copies the template once; show reports placeholders and unknown profiles", () => {
   const { home, models } = modelsFixture();
   const first = models("init");
@@ -3213,8 +3337,7 @@ test("models usage errors: new verb arity, malformed options, and alias sub-verb
   // Unknown or missing alias sub-verb.
   assert.equal(models("alias", "bogus").code, 1);
   assert.equal(models("alias").code, 1);
-  // The new verbs exist in the table but are not implemented yet.
-  assert.equal(models("create", "a").code, 1);
+  // The not-yet-implemented verbs exist in the table but answer a usage error.
   assert.equal(models("update", "a").code, 1);
   assert.equal(models("rename", "a", "b").code, 1);
   assert.equal(models("delete", "a").code, 1);
