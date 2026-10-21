@@ -3520,6 +3520,38 @@ test("models show resolves agents, inherited prompts, and mirrors", () => {
   assert.equal(value(".github/prompts/start-session.prompt.md"), "Cheap");
 });
 
+test("models list entries carry warnings and targets matching models show", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ mixed: { description: "d", default: "Cheap", agents: { planner: "Strong" }, prompts: { doctor: "Tiny" } } });
+  const listed = models("list");
+  assert.equal(listed.code, 0, JSON.stringify(listed.json));
+  const entry = listed.json.profiles.find((p) => p.name === "mixed");
+  assert.ok(entry, "mixed profile listed");
+  const shown = models("show", "mixed");
+  assert.equal(shown.code, 0, JSON.stringify(shown.json));
+  assert.deepEqual(entry.targets, shown.json.targets);
+  assert.deepEqual(entry.warnings, shown.json.warnings);
+  // Existing fields are unchanged and the keys are exactly the expected set.
+  assert.equal(entry.name, "mixed");
+  assert.equal(entry.description, "d");
+  assert.deepEqual(entry.errors, []);
+  assert.deepEqual(Object.keys(entry).sort(), ["description", "errors", "name", "targets", "warnings"]);
+});
+
+test("models list entries for an invalid profile have empty targets and its errors", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ good: { default: "Cheap (copilot)" }, bad: { default: "<placeholder>" } });
+  const { code, json } = models("list");
+  assert.equal(code, 0, JSON.stringify(json));
+  const bad = json.profiles.find((p) => p.name === "bad");
+  assert.ok(bad, "bad profile listed");
+  assert.deepEqual(bad.targets, []);
+  assert.deepEqual(bad.warnings, []);
+  assert.ok(bad.errors.some((e) => /placeholder/.test(e)), JSON.stringify(bad.errors));
+  const good = json.profiles.find((p) => p.name === "good");
+  assert.ok(good.targets.length > 0, JSON.stringify(good));
+});
+
 test("models usage errors: bad verb, arguments, profile name, and plugin root", () => {
   const { models, env, plugin } = modelsFixture();
   assert.equal(models("bogus").code, 1);
