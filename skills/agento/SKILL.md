@@ -58,12 +58,15 @@ The command file's `agent:` frontmatter decides how it runs:
   (matched by its `name:`) and follow its body as the operating rules, then the
   command body. Where the agent needs `ask-questions` or `browser` and the tool is
   absent, its §10 fallback applies (numbered questions in chat; headless verify).
-- **Subagent**: run `node <agento-root>/scripts/agento.mjs models pins`, take the
-  agent's pin (`builder` / `reviewer`), and invoke the agent with the subagent tool
-  available — `task` (Copilot) with `copilotModel` as its `model`, or `runSubagent`
-  (Local) with `subagentModel` as its `model`, omitting the model when it is `null`
-  — passing the command body and the argument. Relay the subagent's final message
-  verbatim, including its receipt and result lines and its command blocks.
+- **Subagent**: run `node <agento-root>/scripts/agento.mjs models pins` — it
+  resolves the current window role's profile (the secondary profile in plan, build,
+  and freehand windows; the clone's file pins otherwise), so the call stays as
+  written, without `--role` — and take the agent's pin (`builder` / `reviewer`), and
+  invoke the agent with the subagent tool available — `task` (Copilot) with
+  `copilotModel` as its `model`, or `runSubagent` (Local) with `subagentModel` as its
+  `model`, omitting the model when it is `null` — passing the command body and the
+  argument. Relay the subagent's final message verbatim, including its receipt and
+  result lines and its command blocks.
 
 Whichever mode applies, the dispatched command's §9 receipt line must be printed verbatim as visible text, before any question or other output.
 

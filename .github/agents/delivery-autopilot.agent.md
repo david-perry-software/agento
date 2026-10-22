@@ -65,8 +65,11 @@ being run.
    branch, stop and report the record's alternatives
    (`/agento start-session <type>/<slug> --resume`).
 2. Read the model pins — run `node <agento-root>/scripts/agento.mjs models pins`
-   and keep `pins.builder.subagentModel`, `pins.builder.copilotModel`,
-   `pins.reviewer.subagentModel`, and `pins.reviewer.copilotModel`. Pass the right
+   (`models pins` resolves the current window role's profile: the secondary profile
+   in plan, build, and freehand windows; the clone's file pins otherwise, so the
+   call stays as written, without `--role`) and keep `pins.builder.subagentModel`,
+   `pins.builder.copilotModel`, `pins.reviewer.subagentModel`, and
+   `pins.reviewer.copilotModel`. Pass the right
    one as the matching subagent's model in every invocation below, chosen by the
    subagent tool you actually have: `runSubagent` (Local harness) → pass
    `subagentModel` as the `runSubagent` `model`; `task` (Copilot harness) → pass
