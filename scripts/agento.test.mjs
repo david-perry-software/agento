@@ -3091,6 +3091,24 @@ function modelsFixture({ gitInit = true } = {}) {
   return { plugin, home, env, models, modelsInput, writeProfiles };
 }
 
+// A primary plugin clone plus managed worktrees: `plan-1` on feature/x (role build)
+// and `freehand-1` on changes/fh (role freehand), for role-resolved pins tests.
+function rolePinsFixture() {
+  const { plugin, home, env, models, writeProfiles } = modelsFixture();
+  const config = { worktrees: { dir: "../wt" }, branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
+  fs.mkdirSync(path.join(plugin, ".github"), { recursive: true });
+  fs.writeFileSync(path.join(plugin, ".github", "agento.json"), JSON.stringify(config));
+  git(plugin, "add", "-A");
+  git(plugin, "commit", "-q", "-m", "config");
+  const wtDir = path.resolve(plugin, "../wt");
+  const buildWt = path.join(wtDir, "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "feature/x", buildWt);
+  const freeWt = path.join(wtDir, "freehand-1");
+  git(plugin, "worktree", "add", "-q", "-b", "changes/fh", freeWt);
+  const pinsFrom = (cwd, ...args) => runWith({ cwd, env }, "models", ...args, "--plugin-root", plugin);
+  return { plugin, home, env, models, writeProfiles, buildWt, freeWt, pinsFrom };
+}
+
 test("models list without a profiles file reports nothing applied", () => {
   const { plugin, home, models } = modelsFixture();
   const { code, json } = models();
@@ -3779,6 +3797,91 @@ test("models create none and rename to none are usage errors", () => {
   assert.equal(models("create", "none").code, 1);
   writeProfiles({ a: {} });
   assert.equal(models("rename", "a", "none").code, 1);
+});
+
+test("models pins resolves the window role in managed worktrees and the primary", () => {
+  const { home, models, buildWt, freeWt, pinsFrom } = rolePinsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: { "Builder Model (copilot)": "builder-copilot-id", "Reviewer Model (copilot)": "reviewer-copilot-id" },
+      profiles: { b: { agents: { builder: ["Builder Model (copilot)", "Builder Fallback (copilot)"], reviewer: "Reviewer Model (copilot)" } } },
+    }),
+  );
+  assert.equal(models("use", "b", "--role", "secondary").code, 0);
+
+  const build = pinsFrom(buildWt, "pins");
+  assert.equal(build.code, 0, JSON.stringify(build.json));
+  assert.equal(build.json.windowRole, "build");
+  assert.equal(build.json.role, "secondary");
+  assert.equal(build.json.roleSource, "window");
+  assert.equal(build.json.source, "role-profile");
+  assert.equal(build.json.profile, "b");
+  assert.equal(build.json.pins.builder.subagentModel, "Builder Model (copilot)");
+  assert.equal(build.json.pins.builder.copilotModel, "builder-copilot-id");
+  assert.equal(build.json.pins.reviewer.subagentModel, "Reviewer Model (copilot)");
+  assert.equal(build.json.pins.reviewer.copilotModel, "reviewer-copilot-id");
+
+  const freehand = pinsFrom(freeWt, "pins");
+  assert.equal(freehand.json.windowRole, "freehand");
+  assert.equal(freehand.json.role, "secondary");
+  assert.equal(freehand.json.source, "role-profile");
+
+  const primary = models("pins");
+  assert.equal(primary.json.windowRole, "primary");
+  assert.equal(primary.json.role, "primary");
+  assert.equal(primary.json.source, "file-pins");
+
+  const flagPrimary = pinsFrom(buildWt, "pins", "--role", "primary");
+  assert.equal(flagPrimary.json.roleSource, "flag");
+  assert.equal(flagPrimary.json.role, "primary");
+  assert.equal(flagPrimary.json.source, "file-pins");
+
+  const flagSecondary = models("pins", "--role", "secondary");
+  assert.equal(flagSecondary.json.role, "secondary");
+  assert.equal(flagSecondary.json.roleSource, "flag");
+  assert.equal(flagSecondary.json.source, "role-profile");
+});
+
+test("models pins falls back to file pins when the secondary role is off", () => {
+  const { models, buildWt, pinsFrom } = rolePinsFixture();
+  const primary = models("pins");
+  const build = pinsFrom(buildWt, "pins");
+  assert.equal(build.code, 0, JSON.stringify(build.json));
+  assert.equal(build.json.windowRole, "build");
+  assert.equal(build.json.role, "secondary");
+  assert.equal(build.json.source, "file-pins");
+  assert.deepEqual(build.json.pins, primary.json.pins);
+  assert.deepEqual(build.json.warnings, primary.json.warnings);
+});
+
+test("models pins warns and falls back to file pins for a dangling or invalid secondary", () => {
+  const { home, buildWt, pinsFrom } = rolePinsFixture();
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "gone" }));
+  const dangling = pinsFrom(buildWt, "pins");
+  assert.equal(dangling.code, 0, JSON.stringify(dangling.json));
+  assert.equal(dangling.json.source, "file-pins");
+  assert.ok(dangling.json.warnings.some((w) => /models use none --role secondary/.test(w)), JSON.stringify(dangling.json.warnings));
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "Bad_Name" }));
+  const invalid = pinsFrom(buildWt, "pins");
+  assert.equal(invalid.code, 0, JSON.stringify(invalid.json));
+  assert.equal(invalid.json.source, "file-pins");
+  assert.ok(invalid.json.warnings.some((w) => /models use none --role secondary/.test(w)), JSON.stringify(invalid.json.warnings));
+});
+
+test("models pins outside any repository reports windowRole unmanaged and role primary", () => {
+  const { env, plugin } = rolePinsFixture();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agento-outside-"));
+  const outside = runWith({ cwd: tmp, env }, "models", "pins", "--plugin-root", plugin);
+  assert.equal(outside.code, 0, JSON.stringify(outside.json));
+  assert.equal(outside.json.windowRole, "unmanaged");
+  assert.equal(outside.json.role, "primary");
+  assert.equal(outside.json.roleSource, "window");
 });
 
 test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {

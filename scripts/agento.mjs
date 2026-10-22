@@ -3858,6 +3858,44 @@ function modelsReport(pluginRoot, loaded, state) {
   };
 }
 
+// The window role of the current cwd, derived with the same inputs sessionContext
+// uses and no gh/PR lookups. Any failure (outside a repository, an unreadable
+// config, a missing worktree list) falls back to `unmanaged`, which maps to the
+// primary bucket (today's file pins).
+function currentWindowRole() {
+  try {
+    const worktrees = productWorktrees();
+    const worktreesDir = primaryWorktreesDir(worktrees);
+    const { role } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir, config, env: process.env, companionWorktreesDir });
+    return role;
+  } catch {
+    return "unmanaged";
+  }
+}
+
+// The pins a secondary role profile resolves: the same shape as modelsPins, but the
+// values come from the profile's resolved targets instead of the files.
+function rolePins(pluginRoot, loaded, state, name) {
+  const resolved = resolveProfile(loaded, name, state.layout);
+  const pins = {};
+  for (const [alias, file] of Object.entries(AGENT_ALIASES)) {
+    const rel = `.github/agents/${file}`;
+    const abs = path.join(pluginRoot, rel);
+    if (!fs.existsSync(abs)) continue;
+    const text = fs.readFileSync(abs, "utf8");
+    const model = agentTargetValue(resolved.targets, alias);
+    const subagentModel = Array.isArray(model) ? model[0] : model;
+    pins[alias] = {
+      name: frontmatterField(text, "name"),
+      file: rel,
+      model,
+      subagentModel,
+      copilotModel: typeof subagentModel === "string" ? (loaded.copilotModels[subagentModel] ?? null) : null,
+    };
+  }
+  return pins;
+}
+
 // The pin each agent file currently carries, read from the plugin root's files:
 // { alias: { name, file, model, subagentModel, copilotModel } }. `model` is the
 // parsed top-level pin (a string, a list, or null); `subagentModel` is the string
@@ -4925,7 +4963,7 @@ switch (command) {
     // options it accepts beyond --plugin-root, and whether it writes the file.
     const MODEL_VERBS = {
       list: { argc: 0, names: [], accepts: [], writes: false },
-      pins: { argc: 0, names: [], accepts: [], writes: false },
+      pins: { argc: 0, names: [], accepts: ["role"], writes: false },
       show: { argc: 1, names: [0], accepts: [], writes: false },
       apply: { argc: 1, names: [0], accepts: [], writes: true },
       adopt: { argc: 0, names: [], accepts: [], writes: true },
@@ -5004,10 +5042,35 @@ switch (command) {
     }
 
     if (verb === "pins") {
-      const pins = modelsPins(pluginRoot, loaded.copilotModels);
+      const windowRole = currentWindowRole();
+      const role = options.role ?? roleBucket(windowRole);
+      const roleSource = options.role !== undefined ? "flag" : "window";
+      let pins = modelsPins(pluginRoot, loaded.copilotModels);
+      let source = "file-pins";
+      let profile = state.active;
+      const roleWarnings = [];
+      if (role === "secondary") {
+        if (loadedRoles.errors.length) {
+          roleWarnings.push(`the roles file ${loadedRoles.rolesFile.path} has errors and was ignored; run models use none --role secondary to turn the secondary role off`);
+        } else if (loadedRoles.secondary !== null) {
+          const assigned = loadedRoles.secondary;
+          if (!Object.hasOwn(loaded.profiles, assigned)) {
+            roleWarnings.push(`secondary role ${JSON.stringify(assigned)} names a profile that does not exist; run models use none --role secondary to turn it off, or create it and run models use ${assigned} --role secondary`);
+          } else {
+            const resolved = resolveProfile(loaded, assigned, state.layout);
+            if (resolved.errors.length) {
+              roleWarnings.push(`secondary role ${JSON.stringify(assigned)} has errors; run models use none --role secondary to turn it off, or fix it and run models use ${assigned} --role secondary`);
+            } else {
+              pins = rolePins(pluginRoot, loaded, state, assigned);
+              source = "role-profile";
+              profile = assigned;
+            }
+          }
+        }
+      }
       const { byok, unqualified, missingAlias } = pinWarnings(pins, loaded.copilotModels);
-      const warnings = [byok, unqualified, missingAlias].filter(Boolean);
-      emit({ status: "ok", verb, pins, warnings, ...modelsReport(pluginRoot, loaded, state) });
+      const warnings = [byok, unqualified, missingAlias, ...roleWarnings].filter(Boolean);
+      emit({ status: "ok", verb, pins, warnings, role, roleSource, windowRole, profile, source, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     if (verb === "create") {
