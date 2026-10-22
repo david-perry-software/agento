@@ -29,7 +29,7 @@
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
-//   node scripts/agento.mjs models <verb> [--plugin-root <dir>]   (model profiles in ~/.config/agento/model-profiles.json; read: list | pins [--role primary|secondary] | show <name>; write: create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker> | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init; write verbs accept --expect <sha256> and report profilesFile.hash)
+//   node scripts/agento.mjs models <verb> [--plugin-root <dir>]   (model profiles in ~/.config/agento/model-profiles.json; read: list | pins [--role primary|secondary] | resolve <command> [--role primary|secondary] | show <name>; write: create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker> | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init; write verbs accept --expect <sha256> and report profilesFile.hash)
 //   node scripts/agento.mjs harness <status|install|uninstall> [--plugin-root <dir>] [--force]   (create/report/remove the ~/.copilot/skills/agento link to the router skill; --force replaces a foreign or dangling link on install only)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
 //
@@ -53,7 +53,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, isPinnablePrompt, missingAliasWarning, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, isPinnablePrompt, missingAliasWarning, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, splitQualified, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
@@ -3897,6 +3897,35 @@ function currentWindowRole() {
   }
 }
 
+// The shared secondary-profile lookup for `models pins` and `models resolve`.
+// Returns { profile, source, warnings, resolved }: `profile` is the active primary
+// profile for file pins or the assigned secondary profile name; `source` is
+// "role-profile" or "file-pins"; `warnings` the role warnings (dangling/invalid
+// assignments and a broken roles file); `resolved` the assigned profile's
+// resolveProfile result, or null. Both verbs default the role identically, so the
+// two cannot drift.
+function secondaryProfileLookup(loaded, loadedRoles, state, role) {
+  const filePins = (warnings) => ({ profile: state.active, source: "file-pins", warnings, resolved: null });
+  if (role !== "secondary") return filePins([]);
+  const roleWarnings = [];
+  if (loadedRoles.errors.length) {
+    roleWarnings.push(`the roles file ${loadedRoles.rolesFile.path} has errors and was ignored; run models use none --role secondary to turn the secondary role off`);
+    return filePins(roleWarnings);
+  }
+  if (loadedRoles.secondary === null) return filePins(roleWarnings);
+  const assigned = loadedRoles.secondary;
+  if (!Object.hasOwn(loaded.profiles, assigned)) {
+    roleWarnings.push(`secondary role ${JSON.stringify(assigned)} names a profile that does not exist; run models use none --role secondary to turn it off, or create it and run models use ${assigned} --role secondary`);
+    return filePins(roleWarnings);
+  }
+  const resolved = resolveProfile(loaded, assigned, state.layout);
+  if (resolved.errors.length) {
+    roleWarnings.push(`secondary role ${JSON.stringify(assigned)} has errors; run models use none --role secondary to turn it off, or fix it and run models use ${assigned} --role secondary`);
+    return filePins(roleWarnings);
+  }
+  return { profile: assigned, source: "role-profile", warnings: roleWarnings, resolved };
+}
+
 // The pins a secondary role profile resolves: the same shape as modelsPins, but the
 // values come from the profile's resolved targets instead of the files.
 function rolePins(pluginRoot, loaded, state, name) {
@@ -4988,6 +5017,7 @@ switch (command) {
     const MODEL_VERBS = {
       list: { argc: 0, names: [], accepts: [], writes: false },
       pins: { argc: 0, names: [], accepts: ["role"], writes: false },
+      resolve: { argc: 1, names: [], accepts: ["role"], writes: false },
       show: { argc: 1, names: [0], accepts: [], writes: false },
       apply: { argc: 1, names: [0], accepts: [], writes: true },
       adopt: { argc: 0, names: [], accepts: [], writes: true },
@@ -5069,32 +5099,26 @@ switch (command) {
       const windowRole = currentWindowRole();
       const role = options.role ?? roleBucket(windowRole);
       const roleSource = options.role !== undefined ? "flag" : "window";
-      let pins = modelsPins(pluginRoot, loaded.copilotModels);
-      let source = "file-pins";
-      let profile = state.active;
-      const roleWarnings = [];
-      if (role === "secondary") {
-        if (loadedRoles.errors.length) {
-          roleWarnings.push(`the roles file ${loadedRoles.rolesFile.path} has errors and was ignored; run models use none --role secondary to turn the secondary role off`);
-        } else if (loadedRoles.secondary !== null) {
-          const assigned = loadedRoles.secondary;
-          if (!Object.hasOwn(loaded.profiles, assigned)) {
-            roleWarnings.push(`secondary role ${JSON.stringify(assigned)} names a profile that does not exist; run models use none --role secondary to turn it off, or create it and run models use ${assigned} --role secondary`);
-          } else {
-            const resolved = resolveProfile(loaded, assigned, state.layout);
-            if (resolved.errors.length) {
-              roleWarnings.push(`secondary role ${JSON.stringify(assigned)} has errors; run models use none --role secondary to turn it off, or fix it and run models use ${assigned} --role secondary`);
-            } else {
-              pins = rolePins(pluginRoot, loaded, state, assigned);
-              source = "role-profile";
-              profile = assigned;
-            }
-          }
-        }
-      }
+      const { profile, source, warnings: roleWarnings } = secondaryProfileLookup(loaded, loadedRoles, state, role);
+      const pins = source === "role-profile" ? rolePins(pluginRoot, loaded, state, profile) : modelsPins(pluginRoot, loaded.copilotModels);
       const { byok, unqualified, missingAlias } = pinWarnings(pins, loaded.copilotModels);
       const warnings = [byok, unqualified, missingAlias, ...roleWarnings].filter(Boolean);
       emit({ status: "ok", verb, pins, warnings, role, roleSource, windowRole, profile, source, ...modelsReport(pluginRoot, loaded, state) });
+    }
+
+    if (verb === "resolve") {
+      const command = args[0];
+      const prompt = state.layout.prompts.find((p) => p.name === command);
+      if (!prompt) emit({ status: "not-found", verb, command, message: `no prompt named ${JSON.stringify(command)} in .github/prompts`, known: state.layout.prompts.map((p) => p.name).sort(), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      const windowRole = currentWindowRole();
+      const role = options.role ?? roleBucket(windowRole);
+      const roleSource = options.role !== undefined ? "flag" : "window";
+      const { profile, source, warnings, resolved } = secondaryProfileLookup(loaded, loadedRoles, state, role);
+      const model = source === "role-profile" ? (resolved.targets.find((t) => t.file === prompt.file)?.value ?? null) : parseModelValue(state.texts[prompt.file]);
+      const qualified = Array.isArray(model) ? (model[0] ?? null) : model;
+      const { name, vendor } = splitQualified(qualified);
+      const copilotModel = typeof qualified === "string" ? (loaded.copilotModels[qualified] ?? null) : null;
+      emit({ status: "ok", verb, command, agent: prompt.agent ?? null, role, roleSource, windowRole, profile, source, model, qualified, name, vendor, copilotModel, warnings, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     if (verb === "create") {
