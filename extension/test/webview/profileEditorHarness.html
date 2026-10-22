@@ -61,6 +61,14 @@
     marker.textContent = "CSP violation: " + event.violatedDirective + " " + event.blockedURI;
     document.body.appendChild(marker);
   });
+  // Any uncaught webview error is surfaced in the DOM too, so the keepDraft
+  // refresh check can assert renderForm did not throw.
+  window.addEventListener("error", function (event) {
+    var marker = document.createElement("div");
+    marker.id = "uncaught-error";
+    marker.textContent = "Uncaught error: " + (event.message || event.error || "unknown");
+    document.body.appendChild(marker);
+  });
 </script>
 <link rel="stylesheet" nonce="profile-editor-harness" href="../../media/profileEditor.css">
 </head>
@@ -119,6 +127,45 @@
 
   if (params.get("conflict") === "1") {
     window.postMessage({ type: "conflict", changed: ["default", "agents.planner"] }, "*");
+  }
+
+  if (params.get("keepDraft") === "1") {
+    // The post-addAlias refresh contract (review Finding 2): the host re-posts the
+    // FULL editor state with `keepDraft` so the webview keeps any unsaved draft
+    // while refreshing copilotModels and the hash. A partial `{ type: "state",
+    // keepDraft, name, copilotModels, hash }` message used to crash renderForm on
+    // the missing `unknownKeys`; this full message must render without error.
+    window.postMessage({
+      type: "state",
+      keepDraft: true,
+      name: "daily",
+      form: {
+        name: "daily",
+        description: "Everyday models",
+        default: ["Claude Opus 5.5 (copilot)", "Grok 4 (grok)"],
+        agents: {
+          planner: ["Claude Opus 5.5 (copilot)"],
+          builder: [],
+          reviewer: [],
+          autopilot: [],
+          mechanic: [],
+          architect: [],
+        },
+        prompts: { doctor: ["DeepSeek V4 Pro (deepseek)"] },
+      },
+      pinnable: {
+        agents: ["planner", "builder", "reviewer", "autopilot", "mechanic", "architect"],
+        prompts: ["doctor", "start-session", "delivery-status", "commit-current-changes"],
+      },
+      choices: [
+        { id: "claude-opus-5.5", name: "Claude Opus 5.5", vendor: "copilot", label: "Claude Opus 5.5 (copilot)" },
+        { id: "grok-4", name: "Grok 4", vendor: "grok", label: "Grok 4 (grok)" },
+        { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", vendor: "deepseek", label: "DeepSeek V4 Pro (deepseek)" },
+      ],
+      copilotModels: { "Grok 4 (grok)": "grok/grok-4" },
+      hash: "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      unknownKeys: [],
+    }, "*");
   }
 </script>
 </body>

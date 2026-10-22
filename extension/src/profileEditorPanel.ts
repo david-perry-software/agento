@@ -148,7 +148,7 @@ export class ProfileEditorPanels {
     this.updateTitle(newName);
   }
 
-  private async load(name: string): Promise<void> {
+  private async load(name: string, opts: { keepDraft?: boolean } = {}): Promise<void> {
     const state = this.panels.get(name);
     if (!state) return;
     state.loadToken += 1;
@@ -157,7 +157,7 @@ export class ProfileEditorPanels {
     if (!root) return;
 
     const show = await this.client.run(["models", "show", name, "--plugin-root", root], root);
-    if (state.loadToken !== token || state.dirty) return;
+    if (!opts.keepDraft && (state.loadToken !== token || state.dirty)) return;
     const showJson = isRecord(show.json) ? show.json : {};
     if (show.code === 3 && showJson.status === "not-found") {
       this.post(name, { type: "deleted" });
@@ -174,13 +174,15 @@ export class ProfileEditorPanels {
     const hash = isRecord(showJson.profilesFile) && typeof showJson.profilesFile.hash === "string" ? showJson.profilesFile.hash : null;
 
     const form = profileToForm(body, pinnable);
-    if (state.loadToken !== token || state.dirty) return;
+    if (!opts.keepDraft && (state.loadToken !== token || state.dirty)) return;
     form.name = name;
     state.baseBody = body;
     state.unknown = form.unknown;
     state.hash = hash;
-    state.dirty = false;
-    this.updateTitle(name);
+    if (!opts.keepDraft) {
+      state.dirty = false;
+      this.updateTitle(name);
+    }
 
     this.post(name, {
       type: "state",
@@ -191,6 +193,7 @@ export class ProfileEditorPanels {
       copilotModels,
       hash,
       unknownKeys: Object.keys(form.unknown),
+      ...(opts.keepDraft ? { keepDraft: true } : {}),
     });
   }
 
@@ -323,18 +326,13 @@ export class ProfileEditorPanels {
       this.post(name, { type: "validateResult", errors: [typeof json.message === "string" ? json.message : "The alias was not saved"], warnings: [] });
       return;
     }
-    state.hash = isRecord(json.profilesFile) && typeof json.profilesFile.hash === "string" ? json.profilesFile.hash : null;
     await this.host.reload();
-    // Adopt the new hash but keep the unsaved draft and just refresh the aliases.
-    const list = await this.client.run(["models", "list", "--plugin-root", root], root);
-    const listJson = isRecord(list.json) ? list.json : {};
-    const latest = this.panels.get(state.name);
-    if (latest) {
-      latest.lastPosted = null;
-      const copilotModels = isRecord(listJson.copilotModels) ? listJson.copilotModels : {};
-      const refresh = { type: "state", keepDraft: true, name: latest.name, copilotModels, hash: latest.hash };
-      this.post(latest.name, refresh);
-    }
+    // The alias changed `copilotModels`; re-post the full editor state (so the
+    // webview has everything `renderForm` reads) while keeping any unsaved
+    // draft. The previous partial `{ type: "state", keepDraft: true, name,
+    // copilotModels, hash }` message crashed `receiveState`/`renderForm` on the
+    // missing `unknownKeys`.
+    await this.load(state.name, { keepDraft: true });
   }
 
   private async conflict(name: string): Promise<void> {
