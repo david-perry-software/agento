@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0 (unreleased)
+## 0.13.0 (2026-10-22)
 
 - **Added.** Role-aware Model Profiles sidebar and window banner. The view pins
   Primary and Secondary role rows, labels each profile row with the roles that use
