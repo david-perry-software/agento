@@ -295,6 +295,12 @@ export class ProfileEditorPanels {
       return;
     }
 
+    // A successful save is no longer dirty; clear it before the reload so `load`
+    // posts the new state and hash instead of returning early on `state.dirty`
+    // (which left the stale hash and `●` marker, and made the next Save answer a
+    // spurious conflict).
+    state.dirty = false;
+    this.updateTitle(currentName);
     await this.load(currentName);
     await this.host.reload();
     const summary = summarizeModelsResult(updateResult.json);
