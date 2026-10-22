@@ -20,8 +20,8 @@ export interface ProfileEditorHost {
   pluginRoot: () => string | null;
   /** Reload the Model Profiles tree view (and its file watchers). */
   reload: () => Promise<void>;
-  /** Apply a profile through the existing `models apply` path. */
-  apply: (profile: string) => Promise<unknown>;
+  /** Use the profile in this window's role. */
+  useHere: (profile: string) => Promise<unknown>;
   /** Open the profiles file for raw editing. */
   openFile: () => Promise<void>;
 }
@@ -308,7 +308,7 @@ export class ProfileEditorPanels {
     await this.host.reload();
     const summary = summarizeModelsResult(updateResult.json);
     if (summary.ok) void vscode.window.showInformationMessage(summary.message);
-    if (apply) await this.host.apply(currentName);
+    if (apply) await this.host.useHere(currentName);
   }
 
   private async addAlias(name: string, value: string, id: string): Promise<void> {

@@ -1006,7 +1006,7 @@ async function assertModelProfileEditor(
   assert.equal(renamedState?.type, "state");
   assert.equal(renamedState?.hash, renamed.profilesFile?.hash, "a dirty rename+save posts the new file hash");
 
-  // 6. Save & Apply changes the clone's model: lines.
+  // 6. Save & Use Here changes the clone's model: lines.
   await api.profileEditor.handleMessage("editor-renamed", {
     type: "change",
     form: { name: "editor-renamed", description: "Edited in the panel", default: ["Grok 4 (grok)"], agents: {}, prompts: {} },
@@ -1025,7 +1025,7 @@ async function assertModelProfileEditor(
     }
     return false;
   })();
-  assert.equal(plannerPinned, true, "Save & Apply writes the clone's model: lines");
+  assert.equal(plannerPinned, true, "Save & Use Here writes the clone's model: lines");
   const applied = runCli(["models", "show", "editor-renamed"]) as { profilesFile?: { hash?: string } };
   const appliedState = await waitForStateHash("editor-renamed", applied.profilesFile?.hash, "the post-apply state with the new hash");
   assert.equal(appliedState?.type, "state");

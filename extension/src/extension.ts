@@ -754,7 +754,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     reload: async () => {
       await reloadModelProfiles();
     },
-    apply: (profile) => runModelsSelection({ kind: "use", role: currentWindowRole(), profile }),
+    useHere: (profile) => runModelsSelection({ kind: "use", role: currentWindowRole(), profile }),
     openFile: async () => {
       await openProfilesFile();
     },

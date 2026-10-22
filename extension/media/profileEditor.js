@@ -380,7 +380,7 @@
 
     const footer = el("div", "footer");
     footer.appendChild(button("Save", "Validate and write the profile through the CLI", () => post({ type: "save", form: formFromDraft() })));
-    footer.appendChild(button("Save & Apply", "Save, then apply the profile to this clone", () => post({ type: "saveAndApply", form: formFromDraft() })));
+    footer.appendChild(button("Save & Use Here", "Save, then use the profile in this window's role", () => post({ type: "saveAndApply", form: formFromDraft() })));
     footer.appendChild(button("Open file", "Open the profiles file for raw editing", () => post({ type: "openFile" })));
     root.appendChild(footer);
 
