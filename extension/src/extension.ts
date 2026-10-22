@@ -23,6 +23,7 @@ import {
   deleteProfileArgs,
   initProfilesArgs,
   missingPluginRootMessage,
+  needsPrimaryConfirm,
   renameProfileArgs,
   resolvePluginRoot,
   selectionToArgs,
@@ -40,6 +41,7 @@ import {
   windowProfileRole,
   type ModelProfileEntry,
   type ModelProfilesElement,
+  type ModelProfilesModelInput,
   type ProfileRole,
 } from "./modelProfilesTree.js";
 import { openArtifactPreview } from "./openArtifact.js";
@@ -120,8 +122,9 @@ export type ModelProfileNewKind = { kind: "empty" } | { kind: "copy"; from: stri
 export interface ModelProfilePrompts {
   enterName: (options: ModelProfileNamePrompt) => Promise<string | undefined>;
   chooseNewKind: (existing: string[]) => Promise<ModelProfileNewKind | undefined>;
-  confirmDelete: (profile: { name: string; applied: boolean }) => Promise<boolean>;
-  pickProfile: (listJson: unknown, placeHolder: string) => Promise<ModelsSelection | undefined>;
+  confirmDelete: (profile: { name: string; applied: boolean; assignedSecondary: boolean }) => Promise<boolean>;
+  confirmPrimaryChange: () => Promise<boolean>;
+  pickProfile: (listJson: unknown, placeHolder: string, role?: ProfileRole) => Promise<ModelsSelection | undefined>;
 }
 
 interface ConfigResult {
@@ -180,32 +183,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     exists: (filePath) => fs.existsSync(filePath),
     readJson: (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
   });
+  // The window's role bucket, derived from the live Session & Doctor model (no
+  // session yet counts as primary).
+  const currentWindowRole = (): ProfileRole =>
+    sessionDoctor.current.kind === "ready" ? windowProfileRole(sessionDoctor.current.session.role) : "primary";
   // Rebuilt whenever the plugin root or the profiles-file path changes; assigned
   // after `scheduleModelProfilesReload` below.
   let rebuildModelProfileWatchers = (): void => {};
+  // The last `models list` input, kept so a session update can rebuild the model
+  // with the new window role without an extra CLI call.
+  let lastModelProfilesInput: ModelProfilesModelInput | null = null;
+  const applyModelProfilesModel = (input: ModelProfilesModelInput): void => {
+    modelProfiles.update(createModelProfilesModel(input));
+    rebuildModelProfileWatchers();
+    void profileEditor.notifyProfilesChanged();
+  };
   const reloadModelProfiles = async (): Promise<void> => {
     const root = pluginRoot();
     await latestModelProfilesRefresh.run(
-      async () => {
-        if (root === null) return createModelProfilesModel({ pluginRoot: null });
+      async (): Promise<ModelProfilesModelInput> => {
+        if (root === null) return { pluginRoot: null, windowRole: currentWindowRole() };
         const result = await client.run(["models", "list", "--plugin-root", root], root);
         const listError =
           result.code !== 0 && typeof (result.json as { message?: unknown } | null)?.message === "string"
             ? ((result.json as { message: string }).message)
             : null;
-        return createModelProfilesModel({ pluginRoot: root, listResult: result.json, listError });
+        return { pluginRoot: root, listResult: result.json, listError, windowRole: currentWindowRole() };
       },
-      (snapshot) => {
-        modelProfiles.update(snapshot);
-        rebuildModelProfileWatchers();
-        void profileEditor.notifyProfilesChanged();
+      (input) => {
+        lastModelProfilesInput = input;
+        applyModelProfilesModel(input);
       },
       (error) => {
-        modelProfiles.update(createModelProfilesModel({ pluginRoot: root, listError: String(error) }));
-        rebuildModelProfileWatchers();
+        const input: ModelProfilesModelInput = { pluginRoot: root, listError: String(error), windowRole: currentWindowRole() };
+        lastModelProfilesInput = input;
+        applyModelProfilesModel(input);
         output.appendLine(`model profiles: ${String(error)}`);
       },
     );
+  };
+  const rebuildModelProfilesForWindowRole = (): void => {
+    if (!lastModelProfilesInput) return;
+    applyModelProfilesModel({ ...lastModelProfilesInput, windowRole: currentWindowRole() });
   };
   let modelProfileDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleModelProfilesReload = (reason: string): void => {
@@ -354,6 +373,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         applyGate(snapshot.gate);
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
+        rebuildModelProfilesForWindowRole();
         applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor);
         initiatives.update(snapshot.initiatives);
         if (snapshot.timings) {
@@ -388,6 +408,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         deliveries.update({ model: createDeliveryTreeError(error), roadmapRoot: artifactRoot });
         const model = createSessionDoctorError(error);
         sessionDoctor.update(model);
+        rebuildModelProfilesForWindowRole();
         applySessionIndicators(statusBar, windowBanner, model);
         initiatives.update({ model: createInitiativeTreeError(error), artifactRoot });
         output.appendLine(String(error));
@@ -675,12 +696,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     await handleModelsSummary(summarizeModelsResult(result.json));
     return result.json;
   };
-  const currentWindowRole = (): ProfileRole =>
-    sessionDoctor.current.kind === "ready" ? windowProfileRole(sessionDoctor.current.session.role) : "primary";
   const runModelsSelection = async (selection: ModelsSelection): Promise<unknown> => {
     const root = resolveModelsRoot();
     if (!root) return undefined;
     return runModelsAction(selectionToArgs(selection, root, { rolesHash: modelProfilesRolesHash() }), root);
+  };
+  const runRoleSelection = async (role: ProfileRole, profile: string | null): Promise<unknown> => {
+    if (needsPrimaryConfirm(role, currentWindowRole())) {
+      const proceed = await modelProfilePrompts.confirmPrimaryChange();
+      if (!proceed) return undefined;
+    }
+    return runModelsSelection(profile === null ? { kind: "off", role } : { kind: "use", role, profile });
   };
   const modelProfilesHash = (): string | null => modelProfiles.current.profilesFile?.hash ?? null;
   const modelProfilesRolesHash = (): string | null => modelProfiles.current.roles?.rolesFile?.hash ?? null;
@@ -740,14 +766,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       return picked.newKind === "empty" ? { kind: "empty" } : { kind: "copy", from: picked.from };
     },
     confirmDelete: async (profile) => {
-      const message = profile.applied
-        ? `Delete the applied profile ${profile.name}? Its pins stay in the clone and will show as custom.`
+      const roles = [profile.applied ? "primary" : null, profile.assignedSecondary ? "secondary" : null].filter((role): role is string => role !== null);
+      const message = roles.length
+        ? `Delete model profile ${profile.name}? It is used by ${roles.join(" and ")} windows, which will fall back to their pins.`
         : `Delete model profile ${profile.name}?`;
       const choice = await vscode.window.showWarningMessage(message, { modal: true }, "Delete");
       return choice === "Delete";
     },
-    pickProfile: async (listJson, placeHolder) => {
-      const picked = await vscode.window.showQuickPick(toQuickPickItems(listJson, currentWindowRole()), {
+    confirmPrimaryChange: async () => {
+      const choice = await vscode.window.showWarningMessage(
+        "This changes the clone's file pins, used by every primary window and by directly selected agents.",
+        { modal: true },
+        "Change Primary Profile",
+      );
+      return choice === "Change Primary Profile";
+    },
+    pickProfile: async (listJson, placeHolder, role) => {
+      const picked = await vscode.window.showQuickPick(toQuickPickItems(listJson, role ?? currentWindowRole()), {
         title: "Agento: Select Model Profile",
         placeHolder,
       });
@@ -771,7 +806,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       const profilesFile = (list.json as { profilesFile?: { path?: unknown } }).profilesFile?.path;
       const selection = await modelProfilePrompts.pickProfile(
         list.json,
-        `Profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}, applied to ${root}`,
+        `${currentWindowRole() === "primary" ? "Primary windows" : "Secondary windows"} — profiles from ${typeof profilesFile === "string" ? profilesFile : "model-profiles.json"}`,
       );
       if (!selection) return;
       return runModelsSelection(selection);
@@ -790,6 +825,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     return runModelsSelection({ kind: "use", role: currentWindowRole(), profile: profile.name });
   });
   const modelProfilesClearCommand = vscode.commands.registerCommand("agento.modelProfiles.clear", () => runModelsSelection({ kind: "off", role: currentWindowRole() }));
+  const useRoleCommand = (role: ProfileRole) => vscode.commands.registerCommand(`agento.modelProfiles.${role === "primary" ? "usePrimary" : "useSecondary"}`, async (element?: ModelProfilesElement) => {
+    const profile = profileOf(element);
+    if (!profile) {
+      await vscode.window.showErrorMessage("No model profile selected.");
+      return;
+    }
+    return runRoleSelection(role, profile.name);
+  });
+  const offRoleCommand = (role: ProfileRole) => vscode.commands.registerCommand(`agento.modelProfiles.${role === "primary" ? "offPrimary" : "offSecondary"}`, () => runRoleSelection(role, null));
+  const modelProfilesUsePrimaryCommand = useRoleCommand("primary");
+  const modelProfilesUseSecondaryCommand = useRoleCommand("secondary");
+  const modelProfilesOffPrimaryCommand = offRoleCommand("primary");
+  const modelProfilesOffSecondaryCommand = offRoleCommand("secondary");
+  const modelProfilesPickForRoleCommand = vscode.commands.registerCommand("agento.modelProfiles.pickForRole", async (role?: unknown) => {
+    const targetRole: ProfileRole = role === "secondary" ? "secondary" : "primary";
+    const root = resolveModelsRoot();
+    if (!root) return;
+    try {
+      const list = await client.run(["models", "list", "--plugin-root", root], root);
+      if (list.code !== 0) {
+        await reportModelsError(summarizeModelsResult(list.json));
+        return;
+      }
+      const selection = await modelProfilePrompts.pickProfile(
+        list.json,
+        targetRole === "primary" ? "Use in primary windows" : "Use in secondary windows",
+        targetRole,
+      );
+      if (!selection) return;
+      return runRoleSelection(selection.role, selection.kind === "use" ? selection.profile : null);
+    } catch (error) {
+      const message = `Unable to pick a model profile: ${error instanceof Error ? error.message : String(error)}`;
+      output.appendLine(`models: ${message}`);
+      await vscode.window.showErrorMessage(message);
+    }
+  });
   const modelProfilesNewCommand = vscode.commands.registerCommand("agento.modelProfiles.new", async () => {
     const root = resolveModelsRoot();
     if (!root) return;
@@ -860,7 +931,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     const applied = modelProfiles.current.active === profile.name;
     const assignedSecondary =
       modelProfiles.current.roles?.secondary === profile.name && modelProfiles.current.roles.secondaryState === "on";
-    const confirmed = await modelProfilePrompts.confirmDelete({ name: profile.name, applied: applied || assignedSecondary });
+    const confirmed = await modelProfilePrompts.confirmDelete({ name: profile.name, applied, assignedSecondary });
     if (!confirmed) return;
     return runModelsAction(deleteProfileArgs(profile.name, root, { force: applied || assignedSecondary, hash: modelProfilesHash() }), root);
   });
@@ -992,6 +1063,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     selectModelProfileCommand,
     modelProfilesApplyCommand,
     modelProfilesClearCommand,
+    modelProfilesUsePrimaryCommand,
+    modelProfilesUseSecondaryCommand,
+    modelProfilesOffPrimaryCommand,
+    modelProfilesOffSecondaryCommand,
+    modelProfilesPickForRoleCommand,
     modelProfilesNewCommand,
     modelProfilesDuplicateCommand,
     modelProfilesRenameCommand,

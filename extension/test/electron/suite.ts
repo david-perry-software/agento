@@ -684,6 +684,7 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
     enterName: async () => "unused",
     chooseNewKind: async () => ({ kind: "empty" }),
     confirmDelete: async () => true,
+    confirmPrimaryChange: async () => true,
     pickProfile: async () => ({ kind: "use", role: "primary", profile: "mixed" }),
   };
 
@@ -1098,6 +1099,7 @@ async function assertModelProfileEditor(
     enterName: async () => "unused",
     chooseNewKind: async () => ({ kind: "empty" }),
     confirmDelete: async () => true,
+    confirmPrimaryChange: async () => true,
     pickProfile: async () => ({ kind: "use", role: "primary", profile: "editor-renamed" }),
   };
   api.setModelProfilePrompts({ ...editorPrompts, enterName: async () => "from-editor" });
