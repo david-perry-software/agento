@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.0 (unreleased)
+## 0.11.0 (2026-10-22)
 
 - **Added.** Model profile editor. The Model Profiles view's **Edit** action now
   opens a webview form editor — and the palette command *Agento: Edit Model
