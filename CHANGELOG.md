@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0 (unreleased)
+
+- **Added.** Role-active model profiles. `models use <name|none> --role
+  primary|secondary` keeps a separate secondary-window profile in `model-roles.json`
+  beside `model-profiles.json` (plan, build, and freehand windows), while
+  `--role primary` behaves exactly like `apply`/`clear`. `models pins` resolves the
+  current window role's profile (overridable with `--role`), `models list` reports
+  `roles`, rename and delete keep the secondary assignment consistent, and doctor's
+  `model-profile` check reports both roles and warns on a dangling or invalid
+  secondary assignment.
+
 ## 0.11.0 (2026-10-22)
 
 - **Added.** Model profile editor. The Model Profiles view's **Edit** action now
