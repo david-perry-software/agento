@@ -19,10 +19,34 @@ export interface ModelProfileEntry {
 
 export type ModelProfilesState = "no-plugin-root" | "no-file" | "error" | "ready";
 
+/** The two window buckets: primary (clone file pins) and secondary (plan/build/freehand). */
+export type ProfileRole = "primary" | "secondary";
+
+/** The secondary role's state beyond the raw assigned name. */
+export type SecondaryState = "on" | "off" | "dangling" | "invalid";
+
 export interface ModelProfilesFile {
   path: string;
   exists: boolean;
   hash: string | null;
+}
+
+export interface ModelProfilesRoles {
+  /** The primary assignment: a profile name, `custom` (pins match no profile), or null (off). */
+  primary: string | null;
+  /** The secondary assignment: a profile name, or null when the role is off/invalid/dangling. */
+  secondary: string | null;
+  secondaryState: SecondaryState;
+  rolesFile: ModelProfilesFile | null;
+  rolesErrors: string[];
+}
+
+export interface EffectiveProfile {
+  role: ProfileRole;
+  /** The profile in effect, or null when the effective state has no single profile (off/custom). */
+  name: string | null;
+  source: "role-profile" | "file-pins";
+  label: string;
 }
 
 export interface ModelProfilesModel {
@@ -31,6 +55,8 @@ export interface ModelProfilesModel {
   messages: string[];
   active: string | null;
   profilesFile: ModelProfilesFile | null;
+  windowRole: ProfileRole;
+  roles: ModelProfilesRoles | null;
 }
 
 export interface ModelProfilesModelInput {
@@ -40,6 +66,8 @@ export interface ModelProfilesModelInput {
   listResult?: unknown;
   /** The CLI failure message, when `listResult` is absent. */
   listError?: string | null;
+  /** The role of this window, bucketed by `windowProfileRole`; defaults to `primary`. */
+  windowRole?: ProfileRole;
 }
 
 export interface ModelProfileItemSpec {
@@ -51,6 +79,7 @@ export interface ModelProfileItemSpec {
 }
 
 export type ModelProfilesElement =
+  | { kind: "role"; role: ProfileRole }
   | { kind: "profile"; profile: ModelProfileEntry }
   | { kind: "message"; label: string }
   | { kind: "info"; label: string; tooltip: string };
@@ -94,43 +123,88 @@ function parseProfilesFile(value: unknown): ModelProfilesFile | null {
   return { path: value.path, exists: value.exists, hash: typeof value.hash === "string" ? value.hash : null };
 }
 
+// Maps a session role to the profile bucket it reads. `plan`, `build`, and
+// `freehand` are secondary windows; primary, unmanaged, unknown, and no session
+// are primary (matches the CLI's `roleBucket`).
+export function windowProfileRole(sessionRole: string | null): ProfileRole {
+  return sessionRole === "plan" || sessionRole === "build" || sessionRole === "freehand" ? "secondary" : "primary";
+}
+
+// Parses the `roles`/`rolesFile`/`rolesErrors` section of `models list`. The
+// secondary state is derived from the errors and the profile list: `invalid` when
+// the roles file has errors, `dangling` when it names a profile that does not
+// exist, `off` when the role is null, and `on` otherwise.
+function parseRolesValue(listResult: UnknownRecord, active: string | null, profiles: ModelProfileEntry[]): ModelProfilesRoles {
+  const rolesRecord = isRecord(listResult.roles) ? listResult.roles : {};
+  const primaryValue = rolesRecord.primary;
+  const secondaryValue = rolesRecord.secondary;
+  const primary =
+    typeof primaryValue === "string" ? primaryValue : primaryValue === null ? null : active ?? null;
+  const secondary = typeof secondaryValue === "string" ? secondaryValue : null;
+  const rolesFile = parseProfilesFile(listResult.rolesFile);
+  const rolesErrors = stringArray(listResult.rolesErrors);
+  let secondaryState: SecondaryState;
+  if (rolesErrors.length > 0) secondaryState = "invalid";
+  else if (secondary === null) secondaryState = "off";
+  else if (!profiles.some((profile) => profile.name === secondary)) secondaryState = "dangling";
+  else secondaryState = "on";
+  return { primary, secondary, secondaryState, rolesFile, rolesErrors };
+}
+
 // Builds the model from the `models list` JSON (or a CLI failure). The state
 // precedence mirrors what the view must render: a missing plugin root, then a CLI
 // or file-level error, then a missing profiles file, then the ready rows.
 export function createModelProfilesModel(input: ModelProfilesModelInput): ModelProfilesModel {
+  const windowRole = input.windowRole ?? "primary";
   if (input.pluginRoot === null) {
-    return { state: "no-plugin-root", profiles: [], messages: [], active: null, profilesFile: null };
+    return { state: "no-plugin-root", profiles: [], messages: [], active: null, profilesFile: null, windowRole, roles: null };
   }
   if (input.listError) {
-    return { state: "error", profiles: [], messages: [input.listError], active: null, profilesFile: null };
+    return { state: "error", profiles: [], messages: [input.listError], active: null, profilesFile: null, windowRole, roles: null };
   }
   if (!isRecord(input.listResult)) {
-    return { state: "error", profiles: [], messages: ["The models list returned no result."], active: null, profilesFile: null };
+    return { state: "error", profiles: [], messages: ["The models list returned no result."], active: null, profilesFile: null, windowRole, roles: null };
   }
   const profilesFile = parseProfilesFile(input.listResult.profilesFile);
   if (profilesFile === null) {
-    return { state: "error", profiles: [], messages: ["The models list result is missing profilesFile."], active: null, profilesFile: null };
+    return { state: "error", profiles: [], messages: ["The models list result is missing profilesFile."], active: null, profilesFile: null, windowRole, roles: null };
   }
   const fileErrors = stringArray(input.listResult.errors);
   if (fileErrors.length) {
-    return { state: "error", profiles: [], messages: fileErrors, active: null, profilesFile };
+    return { state: "error", profiles: [], messages: fileErrors, active: null, profilesFile, windowRole, roles: null };
   }
   if (!profilesFile.exists) {
-    return { state: "no-file", profiles: [], messages: [], active: null, profilesFile };
+    return { state: "no-file", profiles: [], messages: [], active: null, profilesFile, windowRole, roles: null };
   }
   const rawProfiles = Array.isArray(input.listResult.profiles) ? input.listResult.profiles : [];
   const profiles = rawProfiles.map(parseProfile).filter((profile): profile is ModelProfileEntry => profile !== null);
   const active = typeof input.listResult.active === "string" ? input.listResult.active : null;
-  return { state: "ready", profiles, messages: [], active, profilesFile };
+  const roles = parseRolesValue(input.listResult, active, profiles);
+  return { state: "ready", profiles, messages: [], active, profilesFile, windowRole, roles };
 }
 
-// The root rows: message rows in the error state; otherwise the `custom` info row
-// (when the clone's pins match no profile) followed by one row per profile. Empty
-// in the two states the viewsWelcome content covers.
+// The profile in effect in this window: the secondary profile when the window is
+// secondary and the role is on, otherwise the primary file pins (a profile name,
+// custom pins, or the picker default when off).
+export function effectiveProfile(model: ModelProfilesModel): EffectiveProfile | null {
+  if (model.state !== "ready" || model.roles === null) return null;
+  if (model.windowRole === "secondary" && model.roles.secondaryState === "on") {
+    return { role: "secondary", name: model.roles.secondary, source: "role-profile", label: model.roles.secondary ?? "" };
+  }
+  const primary = model.roles.primary;
+  if (primary === "custom") return { role: "primary", name: null, source: "file-pins", label: "custom pins" };
+  if (primary === null) return { role: "primary", name: null, source: "file-pins", label: "picker default" };
+  return { role: "primary", name: primary, source: "file-pins", label: primary };
+}
+
+// The root rows: message rows in the error state; in the ready state the two
+// pinned role rows, then the `custom` info row (when the clone's pins match no
+// profile), then one row per profile. Empty in the two states the viewsWelcome
+// content covers.
 export function modelProfilesChildren(model: ModelProfilesModel): ModelProfilesElement[] {
   if (model.state === "no-plugin-root" || model.state === "no-file") return [];
   if (model.state === "error") return model.messages.map((label) => ({ kind: "message", label }));
-  const children: ModelProfilesElement[] = [];
+  const children: ModelProfilesElement[] = [{ kind: "role", role: "primary" }, { kind: "role", role: "secondary" }];
   if (model.active === "custom") {
     children.push({
       kind: "info",
@@ -177,34 +251,95 @@ export function summarizePins(targets: ModelProfileTarget[]): string[] {
   return lines;
 }
 
-// The tooltip: the description, every error, every warning, and the pins summary.
-function profileTooltip(profile: ModelProfileEntry): string | undefined {
+// The tooltip: the description, every error, every warning, the pins summary,
+// and the role assignment of this profile.
+function profileTooltip(profile: ModelProfileEntry, model: ModelProfilesModel): string | undefined {
   const sections: string[] = [];
   if (profile.description) sections.push(profile.description);
   if (profile.errors.length) sections.push(`**Errors**\n${profile.errors.map((error) => `- ${error}`).join("\n")}`);
   if (profile.warnings.length) sections.push(`**Warnings**\n${profile.warnings.map((warning) => `- ${warning}`).join("\n")}`);
   const pins = summarizePins(profile.targets);
   if (pins.length) sections.push(`**Pins**\n${pins.map((pin) => `- ${pin}`).join("\n")}`);
+  const roles = model.roles;
+  const roleLines: string[] = [];
+  if (roles?.primary === profile.name) roleLines.push("- Used by primary windows");
+  if (roles?.secondary === profile.name && roles.secondaryState === "on") roleLines.push("- Used by secondary windows");
+  if (effectiveProfile(model)?.name === profile.name) roleLines.push("- In effect in this window");
+  if (roleLines.length) sections.push(`**Roles**\n${roleLines.join("\n")}`);
   return sections.length ? sections.join("\n\n") : undefined;
 }
 
-export function profileItemSpec(profile: ModelProfileEntry, active: string | null): ModelProfileItemSpec {
-  const applied = active === profile.name;
+// The role-label prefix of a profile row: `primary` / `secondary` when the role
+// uses this profile, joined with ` · `.
+function roleLabels(profile: ModelProfileEntry, model: ModelProfilesModel): string[] {
+  const labels: string[] = [];
+  if (model.roles?.primary === profile.name) labels.push("primary");
+  if (model.roles?.secondary === profile.name && model.roles.secondaryState === "on") labels.push("secondary");
+  return labels;
+}
+
+export function profileItemSpec(profile: ModelProfileEntry, model: ModelProfilesModel): ModelProfileItemSpec {
+  const here = effectiveProfile(model)?.name === profile.name;
   const invalid = profile.errors.length > 0;
   const hasWarnings = !invalid && profile.warnings.length > 0;
-  const icon = applied ? "pass-filled" : invalid ? "error" : hasWarnings ? "warning" : "symbol-misc";
-  const contextValue = `agento.modelProfile${applied ? ".applied" : ""}${invalid ? ".invalid" : ""}`;
-  const description = applied
+  const icon = here ? "pass-filled" : invalid ? "error" : hasWarnings ? "warning" : "symbol-misc";
+  const labels = roleLabels(profile, model);
+  const contextValue = `agento.modelProfile${labels.includes("primary") ? ".primary" : ""}${labels.includes("secondary") ? ".secondary" : ""}${here ? ".here" : ""}${invalid ? ".invalid" : ""}`;
+  const labelPrefix = labels.join(" · ");
+  const description = labelPrefix
     ? profile.description
-      ? `applied · ${profile.description}`
-      : "applied"
+      ? `${labelPrefix} · ${profile.description}`
+      : labelPrefix
     : (profile.description ?? undefined);
-  const tooltip = profileTooltip(profile);
+  const tooltip = profileTooltip(profile, model);
   return { label: profile.name, description, icon, contextValue, ...(tooltip ? { tooltip } : {}) };
 }
 
-export function modelProfilesItemSpec(element: ModelProfilesElement, active: string | null): ModelProfileItemSpec {
-  if (element.kind === "profile") return profileItemSpec(element.profile, active);
+// One pinned role row (`Primary windows` / `Secondary windows`): the assignment,
+// the current-window suffix, the state icon, and the on/off contextValue token.
+export function roleItemSpec(role: ProfileRole, model: ModelProfilesModel): ModelProfileItemSpec {
+  const roles = model.roles;
+  const label = role === "primary" ? "Primary windows" : "Secondary windows";
+  const thisWindow = model.windowRole === role;
+  let assignment: string;
+  let icon: string;
+  let on: boolean;
+  let tooltip: string;
+  if (role === "primary") {
+    const primary = roles?.primary ?? null;
+    assignment = primary === "custom" ? "custom pins" : primary ?? "off";
+    on = primary !== null && primary !== "custom";
+    icon = on ? "pass-filled" : "circle-slash";
+    tooltip = `**Primary windows**\nThe clone's file pins, used by primary windows and directly selected agents.\n\nCurrently: ${assignment}.`;
+  } else {
+    const state = roles?.secondaryState ?? "off";
+    on = state === "on";
+    if (state === "dangling") {
+      assignment = `${roles?.secondary ?? "unknown"} (missing) → primary pins`;
+      icon = "warning";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nThe secondary role names ${JSON.stringify(roles?.secondary)} which is not a profile; secondary windows use the primary pins. Create it or run \`models use none --role secondary\` to turn the role off.`;
+    } else if (state === "invalid") {
+      assignment = "invalid roles file → primary pins";
+      icon = "warning";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nThe roles file is invalid${roles?.rolesErrors[0] ? ` (${roles.rolesErrors[0]})` : ""}; secondary windows use the primary pins. Fix or delete it, or run \`models use none --role secondary\` to turn the role off.`;
+    } else if (state === "on") {
+      assignment = roles?.secondary ?? "";
+      icon = "pass-filled";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nCurrently: ${assignment}.`;
+    } else {
+      assignment = "off";
+      icon = "circle-slash";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nSecondary windows use the primary pins.`;
+    }
+  }
+  const description = thisWindow ? `${assignment} · this window` : assignment;
+  const contextValue = `agento.modelRole.${role}.${on ? "on" : "off"}`;
+  return { label, description, icon, contextValue, tooltip };
+}
+
+export function modelProfilesItemSpec(element: ModelProfilesElement, model: ModelProfilesModel): ModelProfileItemSpec {
+  if (element.kind === "role") return roleItemSpec(element.role, model);
+  if (element.kind === "profile") return profileItemSpec(element.profile, model);
   if (element.kind === "info") {
     return { label: element.label, icon: "info", contextValue: "agento.modelProfileInfo", tooltip: element.tooltip };
   }

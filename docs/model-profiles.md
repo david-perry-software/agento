@@ -286,6 +286,12 @@ doctor`'s `model-profile` check reports `primary: <active|none>; secondary:
 <name|off|invalid>` (`invalid` when the roles file has errors) and warns on a
 dangling assignment, a secondary profile with errors, or an invalid roles file.
 
+The extension sidebar exposes both roles: the **Model Profiles** view pins Primary
+and Secondary role rows, labels each profile row with the roles that use it, and
+offers **Use Here** (this window's role) plus use/turn-off actions for either role,
+and the window banner shows a `Models:` line for the profile in effect. See
+`extension/README.md` "Model Profiles" and `docs/extension.md` "Model profiles".
+
 ## The pin filter
 
 `apply` and `adopt` install a git clean/smudge filter named `agento-models` in the

@@ -1,4 +1,5 @@
 import type { SessionDoctorModel } from "./sessionDoctorModel.js";
+import type { ModelProfilesModel } from "./modelProfilesTree.js";
 import { ROLE_FOREGROUND_COLOR, roleBannerColor } from "./statusStyle.js";
 
 export const BANNER_CLICK_COMMAND = "agento.sessionDoctor.focus";
@@ -9,6 +10,8 @@ export interface WindowBannerModel {
   detail: string;
   tooltip: string;
   colorId: string;
+  /** The optional third banner line naming the model profile in effect. */
+  models?: string;
 }
 
 const CLICK_HINT = "Click to open Session & Doctor";
@@ -17,7 +20,7 @@ function toneOf(colorId: string): string {
   return colorId.slice("agento.role.".length);
 }
 
-export function createWindowBannerModel(model: SessionDoctorModel): WindowBannerModel {
+export function createWindowBannerModel(model: SessionDoctorModel, models?: string): WindowBannerModel {
   if (model.kind === "error") {
     const colorId = roleBannerColor("");
     return {
@@ -44,9 +47,26 @@ export function createWindowBannerModel(model: SessionDoctorModel): WindowBanner
     tone: toneOf(colorId),
     title: `${session.role.toUpperCase()} WINDOW`,
     detail: parts.join(" · "),
-    tooltip: `${session.worktreePath}\n${CLICK_HINT}`,
+    tooltip: models ? `${session.worktreePath}\n${models}\n${CLICK_HINT}` : `${session.worktreePath}\n${CLICK_HINT}`,
     colorId,
+    ...(models ? { models } : {}),
   };
+}
+
+// The third banner line: the profile in effect in this window, or null when the
+// model profiles view is not ready (no line is rendered then).
+export function modelsBannerLine(model: ModelProfilesModel): string | null {
+  if (model.state !== "ready" || model.roles === null) return null;
+  const primaryLabel = model.roles.primary === "custom" ? "custom pins" : model.roles.primary ?? "picker default";
+  if (model.windowRole === "secondary") {
+    if (model.roles.secondaryState === "on") return `Models: ${model.roles.secondary} (secondary)`;
+    if (model.roles.secondaryState === "off") return `Models: secondary off → primary pins: ${primaryLabel}`;
+    if (model.roles.secondaryState === "dangling") return `Models: secondary ${model.roles.secondary} missing → primary pins: ${primaryLabel}`;
+    return `Models: secondary invalid → primary pins: ${primaryLabel}`;
+  }
+  if (model.roles.primary === "custom") return "Models: custom pins (primary)";
+  if (model.roles.primary === null) return "Models: picker default (primary off)";
+  return `Models: ${model.roles.primary} (primary)`;
 }
 
 export function escapeHtml(value: string): string {
@@ -92,12 +112,14 @@ a.banner {
 a.banner:focus-visible { outline: 2px solid ${cssColor(ROLE_FOREGROUND_COLOR)}; outline-offset: -4px; }
 .title { display: block; font-weight: 800; font-size: 1.2em; line-height: 1.2; letter-spacing: 0.08em; text-transform: uppercase; }
 .detail { display: block; margin-top: 2px; font-size: 0.95em; overflow-wrap: anywhere; }
+.models { display: block; margin-top: 2px; font-size: 0.9em; opacity: 0.95; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
 <a class="banner" href="command:${BANNER_CLICK_COMMAND}" title="${escapeHtml(banner.tooltip)}">
 <span class="title">${escapeHtml(banner.title)}</span>
 <span class="detail">${escapeHtml(banner.detail)}</span>
+${banner.models ? `<span class="models">${escapeHtml(banner.models)}</span>` : ""}
 </a>
 </body>
 </html>

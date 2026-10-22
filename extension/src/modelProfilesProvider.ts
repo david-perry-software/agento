@@ -35,12 +35,15 @@ export class ModelProfilesProvider implements vscode.TreeDataProvider<ModelProfi
   }
 
   getTreeItem(element: ModelProfilesElement): vscode.TreeItem {
-    const spec = modelProfilesItemSpec(element, this.model.active);
+    const spec = modelProfilesItemSpec(element, this.model);
     const item = new vscode.TreeItem(spec.label, vscode.TreeItemCollapsibleState.None);
     item.contextValue = spec.contextValue;
     item.iconPath = new vscode.ThemeIcon(spec.icon);
     item.description = spec.description;
     item.tooltip = spec.tooltip;
+    if (element.kind === "role") {
+      item.command = { command: "agento.modelProfiles.pickForRole", title: "Pick for role", arguments: [element.role] };
+    }
     return item;
   }
 

@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import type { ProfileRole } from "./modelProfilesTree.js";
+
 export interface PluginRootSources {
   configured: string | undefined;
   pluginLocations: Record<string, unknown> | undefined;
@@ -8,7 +10,8 @@ export interface PluginRootSources {
   readJson: (filePath: string) => unknown;
 }
 
-export type ModelsSelection = { kind: "apply"; profile: string } | { kind: "clear" };
+/** A role-aware selection: use a profile for a role, or turn a role off. */
+export type ModelsSelection = { kind: "use"; role: ProfileRole; profile: string } | { kind: "off"; role: ProfileRole };
 
 export interface ModelProfileQuickPickItem {
   label: string;
@@ -74,29 +77,71 @@ interface ListedProfile {
   errors?: unknown;
 }
 
-export function toQuickPickItems(listJson: unknown): ModelProfileQuickPickItem[] {
-  const list = (listJson ?? {}) as { profiles?: unknown; active?: unknown };
+// The quick pick: each profile marked with its role labels, then a "Turn off"
+// item for this window's role. Primary's turn-off uses the picker's model;
+// secondary's uses the primary windows' pins.
+export function toQuickPickItems(listJson: unknown, windowRole: ProfileRole): ModelProfileQuickPickItem[] {
+  const list = (listJson ?? {}) as { profiles?: unknown; roles?: unknown };
+  const roles = (list.roles ?? {}) as { primary?: unknown; secondary?: unknown };
+  const primaryName = typeof roles.primary === "string" ? roles.primary : null;
+  const secondaryName = typeof roles.secondary === "string" ? roles.secondary : null;
   const profiles = Array.isArray(list.profiles) ? (list.profiles as ListedProfile[]) : [];
   const items: ModelProfileQuickPickItem[] = [];
   for (const profile of profiles) {
     if (typeof profile.name !== "string") continue;
     const errors = Array.isArray(profile.errors) ? profile.errors.filter((e): e is string => typeof e === "string") : [];
     const description = typeof profile.description === "string" ? profile.description : "";
+    const labels = [primaryName === profile.name ? "primary" : null, secondaryName === profile.name ? "secondary" : null].filter(
+      (label): label is ProfileRole => label !== null,
+    );
+    const labelText = labels.join(" · ");
     items.push({
       label: profile.name,
-      description: list.active === profile.name ? `applied${description ? ` · ${description}` : ""}` : description,
+      description: labelText ? (description ? `${labelText} · ${description}` : labelText) : description,
       ...(errors.length ? { detail: `${errors.length} error(s): ${errors[0]}` } : {}),
-      selection: { kind: "apply", profile: profile.name },
+      selection: { kind: "use", role: windowRole, profile: profile.name },
     });
   }
-  items.push({ label: "Clear", description: "use the picker's model", selection: { kind: "clear" } });
+  items.push({
+    label: "Turn off",
+    description: windowRole === "primary" ? "use the picker's model" : "use the primary windows' pins",
+    selection: { kind: "off", role: windowRole },
+  });
   return items;
 }
 
-export function selectionToArgs(selection: ModelsSelection, pluginRoot: string): string[] {
-  return selection.kind === "apply"
-    ? ["models", "apply", selection.profile, "--plugin-root", pluginRoot]
-    : ["models", "clear", "--plugin-root", pluginRoot];
+export function selectionToArgs(
+  selection: ModelsSelection,
+  pluginRoot: string,
+  options: { rolesHash?: string | null } = {},
+): string[] {
+  const expect = options.rolesHash ? ["--expect", options.rolesHash] : [];
+  if (selection.kind === "use") {
+    return selection.role === "primary"
+      ? ["models", "apply", selection.profile, "--plugin-root", pluginRoot]
+      : ["models", "use", selection.profile, "--role", "secondary", ...expect, "--plugin-root", pluginRoot];
+  }
+  return selection.role === "primary"
+    ? ["models", "clear", "--plugin-root", pluginRoot]
+    : ["models", "use", "none", "--role", "secondary", ...expect, "--plugin-root", pluginRoot];
+}
+
+// A primary-role change from a secondary window surprises every primary window,
+// so it needs the modal confirm; in a primary window it does not.
+export function needsPrimaryConfirm(targetRole: ProfileRole, windowRole: ProfileRole): boolean {
+  return targetRole === "primary" && windowRole === "secondary";
+}
+
+// The role-selection gate: asks for the primary confirm exactly when the change
+// targets the primary role from a secondary window, and returns false (so the
+// caller writes nothing) when the user declines.
+export async function gateRoleSelection(
+  targetRole: ProfileRole,
+  windowRole: ProfileRole,
+  confirmPrimaryChange: () => Promise<boolean>,
+): Promise<boolean> {
+  if (!needsPrimaryConfirm(targetRole, windowRole)) return true;
+  return confirmPrimaryChange();
 }
 
 // Arg builders for the write verbs. Every write passes `--expect <hash>` from the
@@ -154,6 +199,7 @@ const STATUS_FALLBACK: Record<string, string> = {
   exists: "A profile with that name already exists",
   "not-found": "No profile with that name was found",
   active: "That profile is applied in this clone",
+  assigned: "That profile is assigned to the secondary role",
   conflict: "The profiles file changed since it was read; refresh and try again",
   invalid: "The profile is invalid",
   dirty: "The clone has changes beyond the model pins",
@@ -164,6 +210,7 @@ export function summarizeModelsResult(json: unknown): ModelsSummary {
     status?: unknown;
     verb?: unknown;
     profile?: unknown;
+    role?: unknown;
     changed?: unknown;
     created?: unknown;
     reapply?: unknown;
@@ -175,6 +222,17 @@ export function summarizeModelsResult(json: unknown): ModelsSummary {
   if (result.status === "ok") {
     const verb = typeof result.verb === "string" ? result.verb : null;
     const profile = typeof result.profile === "string" ? result.profile : null;
+    const role = typeof result.role === "string" ? result.role : null;
+    if (verb === "use" && role === "secondary") {
+      return {
+        ok: true,
+        message: profile
+          ? `Secondary windows now use ${profile}.`
+          : "Turned off the secondary profile; secondary windows use the primary pins.",
+        dirty: [],
+        conflict: false,
+      };
+    }
     if (verb === "create") return { ok: true, message: `Created model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
     if (verb === "rename") return { ok: true, message: "Renamed the model profile.", dirty: [], conflict: false };
     if (verb === "delete") return { ok: true, message: `Deleted model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
