@@ -1488,6 +1488,20 @@ test("doctor model-profile names both roles and warns on a dangling or invalid s
   assert.match(invalid.fallback, /models use none --role secondary/);
 });
 
+test("doctor model-profile reports secondary invalid when the roles file has errors", () => {
+  const { plugin, home, writeProfiles } = modelsFixture();
+  const { env } = restrictedPath(okStubs);
+  env.AGENTO_CONFIG_HOME = home;
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+
+  writeProfiles({ a: { default: "A (copilot)" } });
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "a", extra: 1 }));
+  const invalid = check();
+  assert.equal(invalid.status, "warn", JSON.stringify(invalid));
+  assert.match(invalid.detail, /secondary: invalid/);
+});
+
 test("doctor session-workspace is ok for non-pairs, warn for stale/missing, and ok after workspace --write", () => {
   const { repo, docs, wt, docsWt } = makePairRepo();
   const { env } = restrictedPath(okStubs);

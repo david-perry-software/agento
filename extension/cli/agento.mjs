@@ -985,7 +985,7 @@ const DOCTOR_CHECKS = {
     if (filter?.unrecorded.length) {
       filterIssues.push([`${filter.unrecorded.length} agent/prompt file(s) added since the last apply carry no pin: ${filter.unrecorded.join(", ")}`, `re-run ${apply}`]);
     }
-    const rolesDetail = `primary: ${active === null ? "none" : active}; secondary: ${loadedRoles.secondary ?? "off"}`;
+    const rolesDetail = `primary: ${active === null ? "none" : active}; secondary: ${loadedRoles.errors.length ? "invalid" : (loadedRoles.secondary ?? "off")}`;
     const rolesIssue = (() => {
       if (loadedRoles.errors.length) {
         return { detail: `${loadedRoles.rolesFile.path} has ${loadedRoles.errors.length} error(s), first: ${loadedRoles.errors[0]}`, fallback: `fix or delete ${loadedRoles.rolesFile.path}, or run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn the secondary role off` };

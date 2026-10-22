@@ -283,8 +283,8 @@ the secondary assignment to the new name; `models delete <name>` of the secondar
 profile refuses (`status: "assigned"`, exit 3, both files untouched) without
 `--force`, and with `--force` deletes the profile and turns the role off. `agento.mjs
 doctor`'s `model-profile` check reports `primary: <active|none>; secondary:
-<name|off>` and warns on a dangling assignment, a secondary profile with errors, or
-an invalid roles file.
+<name|off|invalid>` (`invalid` when the roles file has errors) and warns on a
+dangling assignment, a secondary profile with errors, or an invalid roles file.
 
 ## The pin filter
 
