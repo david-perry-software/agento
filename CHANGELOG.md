@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.12.0 (unreleased)
+## 0.12.0 (2026-10-22)
 
 - **Added.** Role-active model profiles. `models use <name|none> --role
   primary|secondary` keeps a separate secondary-window profile in `model-roles.json`
