@@ -3109,6 +3109,34 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.match(json.hint, /git filter.*survive pull, merge, switch, and stash/);
 });
 
+test("models list reports roles: the derived active profile and the roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  const bare = models("list");
+  assert.equal(bare.code, 0, JSON.stringify(bare.json));
+  assert.equal(bare.json.roles.primary, null);
+  assert.equal(bare.json.roles.secondary, null);
+  assert.deepEqual(bare.json.rolesFile, { path: path.join(home, "model-roles.json"), exists: false, hash: null });
+  assert.deepEqual(bare.json.rolesErrors, []);
+
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("apply", "a").code, 0);
+  const applied = models("list");
+  assert.equal(applied.code, 0, JSON.stringify(applied.json));
+  assert.equal(applied.json.roles.primary, "a");
+  assert.equal(applied.json.roles.secondary, null);
+});
+
+test("models list reports rolesErrors for an invalid roles file but still exits 0", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "Bad_Name" }));
+  const { code, json } = models("list");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.ok(json.rolesErrors.length > 0, JSON.stringify(json.rolesErrors));
+  assert.equal(json.rolesFile.exists, true);
+  assert.equal(json.roles.secondary, null);
+});
+
 test("models reports profilesFile.hash and list reports copilotModels", () => {
   const { home, models, writeProfiles } = modelsFixture();
   const absent = models("list");
@@ -3625,6 +3653,14 @@ test("models usage errors: options a verb does not accept", () => {
   assert.equal(models("apply", "a", "--expect", hash).code, 1);
   assert.equal(models("pins", "--dry-run").code, 1);
   assert.equal(models("init", "--from", "a").code, 1);
+});
+
+test("models --role usage errors: bad value, missing value, and verbs that do not accept it", () => {
+  const { models } = modelsFixture();
+  assert.equal(models("list", "--role", "bogus").code, 1);
+  assert.equal(models("list", "--role").code, 1);
+  assert.equal(models("list", "--role", "primary").code, 1);
+  assert.equal(models("apply", "a", "--role", "primary").code, 1);
 });
 
 test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {

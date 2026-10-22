@@ -53,7 +53,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, isPinnablePrompt, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, isPinnablePrompt, missingAliasWarning, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
@@ -114,6 +114,10 @@ function parseArgs(argv) {
     else if (arg === "--expect") {
       options.expect = argv[++i];
       if (!/^[0-9a-f]{64}$/.test(options.expect ?? "")) usage(`--expect takes a 64-character lowercase sha256 hash, got ${JSON.stringify(options.expect ?? "")}`);
+    }
+    else if (arg === "--role") {
+      options.role = argv[++i];
+      if (options.role !== "primary" && options.role !== "secondary") usage(`--role takes primary or secondary, got ${JSON.stringify(options.role ?? "")}`);
     }
     else if (arg === "--ignore-occupants") options.ignoreOccupants = true;
     else if (arg === "--confirm") {
@@ -3598,6 +3602,18 @@ function loadProfiles() {
   return { profilesFile: { path: file, exists, hash: profilesHash(raw) }, raw, profiles, copilotModels, errors };
 }
 
+// The roles file: `{ secondary: <profile-name|null> }` beside the profiles file.
+// An absent file means the secondary role is off; an unparseable one keeps `errors`
+// non-empty while the callers fall back to file pins and warn.
+function loadRoles() {
+  const file = rolesFile();
+  const exists = fs.existsSync(file);
+  const raw = exists ? fs.readFileSync(file, "utf8") : null;
+  if (!exists) return { rolesFile: { path: file, exists, hash: null }, raw, secondary: null, errors: [] };
+  const { secondary, errors } = parseRoles(raw);
+  return { rolesFile: { path: file, exists, hash: profilesHash(raw) }, raw, secondary, errors };
+}
+
 // The errors a candidate file would report for `name`: the re-parsed errors that
 // belong to `name` (or are file-level) plus the layout errors from resolveTargets.
 function candidateErrors(loaded, next, name, layout) {
@@ -3678,6 +3694,46 @@ function writeProfiles(pluginRoot, loaded, next, { expect, names = [] } = {}) {
   const reloaded = loadProfiles();
   const after = modelsState(pluginRoot, reloaded);
   return { code: 0, result: { status: "ok", written: true, previousHash: loaded.profilesFile.hash, reformatted, activeBefore: before.active, active: after.active, ...modelsReport(pluginRoot, reloaded, after) } };
+}
+
+// The atomic, validated write of the roles file, mirroring writeProfiles. `loaded`
+// is the snapshot `loadRoles` returned; `next` the full new file object
+// ({ secondary }). Returns { code, result } ready to emit; a failed or refused
+// write leaves the file byte-identical.
+function writeRoles(loaded, next, { expect } = {}) {
+  const file = loaded.rolesFile.path;
+  const currentRaw = loaded.rolesFile.exists ? fs.readFileSync(file, "utf8") : null;
+  const actual = currentRaw === null ? null : profilesHash(currentRaw);
+  const conflict = (message, expected) => ({ code: 3, result: { status: "conflict", message, expected, actual } });
+  // 1. The file must still be what the caller read; --expect must match it. An
+  //    absent file never matches an --expect value.
+  if (currentRaw !== loaded.raw) return conflict("the roles file changed since it was read; re-read it and re-run", loaded.rolesFile.hash);
+  if (expect !== undefined && expect !== null && (currentRaw === null || actual !== expect)) return conflict("the roles file does not match --expect; re-read rolesFile.hash and re-run", expect);
+  // 2. Refuse a current file with errors.
+  if (loaded.errors.length) return { code: 3, result: { status: "invalid", errors: loaded.errors, message: "the roles file has errors and was left untouched" } };
+  // 3. Serialize and re-parse: no new errors.
+  const reparsed = parseRoles(serializeRoles(next));
+  if (reparsed.errors.length) return { code: 3, result: { status: "invalid", errors: reparsed.errors, message: "the new roles file would be invalid and was not written" } };
+  // 4. Atomic write: a temp file with the existing mode, fsynced, then renamed.
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true });
+  const mode = loaded.rolesFile.exists ? fs.statSync(file).mode : 0o644;
+  const tmp = path.join(dir, `.model-roles.json.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`);
+  let fd = null;
+  try {
+    fd = fs.openSync(tmp, "wx", mode);
+    fs.writeFileSync(fd, serializeRoles(next), "utf8");
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    if (fd !== null) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+    try { fs.unlinkSync(tmp); } catch { /* nothing to clean */ }
+    return { code: 3, result: { status: "failed", message: `writing the roles file failed: ${error.message}; re-send is safe` } };
+  }
+  const reloaded = loadRoles();
+  return { code: 0, result: { status: "ok", written: true, previousHash: loaded.rolesFile.hash, roles: { secondary: reloaded.secondary }, rolesFile: reloaded.rolesFile, rolesErrors: reloaded.errors } };
 }
 
 // Resolved targets (mirrors included) plus every error that blocks applying `name`.
@@ -4819,13 +4875,14 @@ switch (command) {
     if (!spec) usage(`models: unknown verb ${verb}; known: ${Object.keys(MODEL_VERBS).join(", ")}`);
     if (args.length !== spec.argc) usage(`models ${verb} takes ${spec.argc === 0 ? "no arguments" : `exactly ${spec.argc} ${spec.argc === 1 ? "argument" : "arguments"}`}`);
     for (const at of spec.names) if (!/^[a-z0-9-]+$/.test(args[at])) usage(`models ${verb}: profile names match [a-z0-9-]+, got ${JSON.stringify(args[at])}`);
-    for (const option of ["force", "dryRun", "from", "description", "expect"]) {
+    for (const option of ["force", "dryRun", "from", "description", "expect", "role"]) {
       if (options[option] !== undefined && !spec.accepts.includes(option)) usage(`models ${verb} does not accept --${option}`);
     }
     const name = args[0];
     const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
     if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) usage(`--plugin-root ${pluginRoot} is not an Agento plugin clone (no .github/agents)`);
     const loaded = loadProfiles();
+    const loadedRoles = loadRoles();
 
     if (verb === "init") {
       let created = false;
@@ -4859,7 +4916,7 @@ switch (command) {
         agents: Object.keys(AGENT_ALIASES),
         prompts: state.layout.prompts.filter((p) => isPinnablePrompt(p, new Set(state.layout.agents.map((a) => a.name).filter(Boolean)))).map((p) => p.name).sort(),
       };
-      emit({ status: "ok", verb, profiles, pinnable, copilotModels: loaded.copilotModels, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
+      emit({ status: "ok", verb, profiles, pinnable, copilotModels: loaded.copilotModels, errors: fileErrors, roles: { primary: state.active, secondary: loadedRoles.secondary }, rolesFile: loadedRoles.rolesFile, rolesErrors: loadedRoles.errors, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     if (verb === "show") {
