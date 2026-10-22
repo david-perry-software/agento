@@ -3,12 +3,14 @@ import test from "node:test";
 
 import {
   createModelProfilesModel,
+  effectiveProfile,
   modelProfilesChildren,
   modelProfilesItemSpec,
   profileItemSpec,
   suggestCopyName,
   summarizePins,
   validateProfileName,
+  windowProfileRole,
 } from "../../src/modelProfilesTree.js";
 
 const TARGETS = (overrides: Record<string, string | string[] | null> = {}) => [
@@ -104,9 +106,15 @@ test("createModelProfilesModel parses ready profiles, active, and drops malforme
 });
 
 test("modelProfilesChildren returns [] for no-plugin-root and no-file, message rows for error", () => {
-  assert.deepEqual(modelProfilesChildren({ state: "no-plugin-root", profiles: [], messages: [], active: null, profilesFile: null }), []);
-  assert.deepEqual(modelProfilesChildren({ state: "no-file", profiles: [], messages: [], active: null, profilesFile: null }), []);
-  const error = modelProfilesChildren({ state: "error", profiles: [], messages: ["bad"], active: null, profilesFile: null });
+  assert.deepEqual(
+    modelProfilesChildren({ state: "no-plugin-root", profiles: [], messages: [], active: null, profilesFile: null, windowRole: "primary", roles: null }),
+    [],
+  );
+  assert.deepEqual(
+    modelProfilesChildren({ state: "no-file", profiles: [], messages: [], active: null, profilesFile: null, windowRole: "primary", roles: null }),
+    [],
+  );
+  const error = modelProfilesChildren({ state: "error", profiles: [], messages: ["bad"], active: null, profilesFile: null, windowRole: "primary", roles: null });
   assert.deepEqual(error, [{ kind: "message", label: "bad" }]);
 });
 
@@ -185,4 +193,88 @@ test("suggestCopyName appends -copy, then -copy-2, …", () => {
   assert.equal(suggestCopyName("mixed", []), "mixed-copy");
   assert.equal(suggestCopyName("mixed", ["mixed-copy"]), "mixed-copy-2");
   assert.equal(suggestCopyName("mixed", new Set(["mixed-copy", "mixed-copy-2"])), "mixed-copy-3");
+});
+
+test("windowProfileRole buckets plan, build, and freehand to secondary and everything else to primary", () => {
+  for (const role of ["plan", "build", "freehand"]) {
+    assert.equal(windowProfileRole(role), "secondary");
+  }
+  for (const role of ["primary", "unmanaged", "observer", "copilot", "", null]) {
+    assert.equal(windowProfileRole(role), "primary");
+  }
+});
+
+test("createModelProfilesModel parses roles, rolesFile, and every secondaryState", () => {
+  const withRoles = (roles: unknown, rolesErrors: unknown = []) =>
+    createModelProfilesModel({
+      pluginRoot: "/p",
+      windowRole: "secondary",
+      listResult: LIST({ roles, rolesFile: { path: "/home/u/.config/agento/model-roles.json", exists: true, hash: "b".repeat(64) }, rolesErrors }),
+    });
+
+  const on = withRoles({ primary: "mixed", secondary: "mixed" });
+  assert.equal(on.windowRole, "secondary");
+  assert.deepEqual(on.roles, {
+    primary: "mixed",
+    secondary: "mixed",
+    secondaryState: "on",
+    rolesFile: { path: "/home/u/.config/agento/model-roles.json", exists: true, hash: "b".repeat(64) },
+    rolesErrors: [],
+  });
+
+  const off = withRoles({ primary: "mixed", secondary: null });
+  assert.equal(off.roles?.secondaryState, "off");
+
+  const dangling = withRoles({ primary: null, secondary: "ghost" });
+  assert.equal(dangling.roles?.secondaryState, "dangling");
+
+  const invalid = withRoles({ primary: null, secondary: null }, ["invalid JSON: nope"]);
+  assert.equal(invalid.roles?.secondaryState, "invalid");
+  assert.deepEqual(invalid.roles?.rolesErrors, ["invalid JSON: nope"]);
+
+  const primary = createModelProfilesModel({
+    pluginRoot: "/p",
+    listResult: LIST({ roles: { primary: "custom", secondary: "ghost" } }),
+  });
+  assert.equal(primary.windowRole, "primary");
+  assert.equal(primary.roles?.primary, "custom");
+  assert.equal(primary.roles?.secondary, "ghost");
+  assert.equal(primary.roles?.secondaryState, "dangling");
+});
+
+test("createModelProfilesModel leaves roles null outside the ready state", () => {
+  assert.equal(createModelProfilesModel({ pluginRoot: null }).roles, null);
+  assert.equal(createModelProfilesModel({ pluginRoot: "/p", listError: "boom" }).roles, null);
+  assert.equal(
+    createModelProfilesModel({ pluginRoot: "/p", listResult: LIST({ profiles: [], profilesFile: { path: "/f", exists: false, hash: null } }) }).roles,
+    null,
+  );
+});
+
+test("effectiveProfile resolves the secondary profile only when the window is secondary and the role is on", () => {
+  const model = (overrides: Record<string, unknown> = {}, windowRole: "primary" | "secondary" = "primary") =>
+    createModelProfilesModel({
+      pluginRoot: "/p",
+      windowRole,
+      listResult: LIST({ roles: { primary: "mixed", secondary: "mixed" }, ...overrides }),
+    });
+
+  assert.deepEqual(effectiveProfile(model()), { role: "primary", name: "mixed", source: "file-pins", label: "mixed" });
+  assert.deepEqual(effectiveProfile(model({}, "secondary")), { role: "secondary", name: "mixed", source: "role-profile", label: "mixed" });
+
+  const off = effectiveProfile(model({ roles: { primary: "mixed", secondary: null } }, "secondary"));
+  assert.deepEqual(off, { role: "primary", name: "mixed", source: "file-pins", label: "mixed" });
+
+  assert.deepEqual(effectiveProfile(model({ roles: { primary: "custom", secondary: null } })), {
+    role: "primary",
+    name: null,
+    source: "file-pins",
+    label: "custom pins",
+  });
+  assert.deepEqual(effectiveProfile(model({ roles: { primary: null, secondary: null } })), {
+    role: "primary",
+    name: null,
+    source: "file-pins",
+    label: "picker default",
+  });
 });
