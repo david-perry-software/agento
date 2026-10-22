@@ -79,6 +79,7 @@ export interface ModelProfileItemSpec {
 }
 
 export type ModelProfilesElement =
+  | { kind: "role"; role: ProfileRole }
   | { kind: "profile"; profile: ModelProfileEntry }
   | { kind: "message"; label: string }
   | { kind: "info"; label: string; tooltip: string };
@@ -196,13 +197,14 @@ export function effectiveProfile(model: ModelProfilesModel): EffectiveProfile | 
   return { role: "primary", name: primary, source: "file-pins", label: primary };
 }
 
-// The root rows: message rows in the error state; otherwise the `custom` info row
-// (when the clone's pins match no profile) followed by one row per profile. Empty
-// in the two states the viewsWelcome content covers.
+// The root rows: message rows in the error state; in the ready state the two
+// pinned role rows, then the `custom` info row (when the clone's pins match no
+// profile), then one row per profile. Empty in the two states the viewsWelcome
+// content covers.
 export function modelProfilesChildren(model: ModelProfilesModel): ModelProfilesElement[] {
   if (model.state === "no-plugin-root" || model.state === "no-file") return [];
   if (model.state === "error") return model.messages.map((label) => ({ kind: "message", label }));
-  const children: ModelProfilesElement[] = [];
+  const children: ModelProfilesElement[] = [{ kind: "role", role: "primary" }, { kind: "role", role: "secondary" }];
   if (model.active === "custom") {
     children.push({
       kind: "info",
@@ -249,34 +251,95 @@ export function summarizePins(targets: ModelProfileTarget[]): string[] {
   return lines;
 }
 
-// The tooltip: the description, every error, every warning, and the pins summary.
-function profileTooltip(profile: ModelProfileEntry): string | undefined {
+// The tooltip: the description, every error, every warning, the pins summary,
+// and the role assignment of this profile.
+function profileTooltip(profile: ModelProfileEntry, model: ModelProfilesModel): string | undefined {
   const sections: string[] = [];
   if (profile.description) sections.push(profile.description);
   if (profile.errors.length) sections.push(`**Errors**\n${profile.errors.map((error) => `- ${error}`).join("\n")}`);
   if (profile.warnings.length) sections.push(`**Warnings**\n${profile.warnings.map((warning) => `- ${warning}`).join("\n")}`);
   const pins = summarizePins(profile.targets);
   if (pins.length) sections.push(`**Pins**\n${pins.map((pin) => `- ${pin}`).join("\n")}`);
+  const roles = model.roles;
+  const roleLines: string[] = [];
+  if (roles?.primary === profile.name) roleLines.push("- Used by primary windows");
+  if (roles?.secondary === profile.name && roles.secondaryState === "on") roleLines.push("- Used by secondary windows");
+  if (effectiveProfile(model)?.name === profile.name) roleLines.push("- In effect in this window");
+  if (roleLines.length) sections.push(`**Roles**\n${roleLines.join("\n")}`);
   return sections.length ? sections.join("\n\n") : undefined;
 }
 
-export function profileItemSpec(profile: ModelProfileEntry, active: string | null): ModelProfileItemSpec {
-  const applied = active === profile.name;
+// The role-label prefix of a profile row: `primary` / `secondary` when the role
+// uses this profile, joined with ` · `.
+function roleLabels(profile: ModelProfileEntry, model: ModelProfilesModel): string[] {
+  const labels: string[] = [];
+  if (model.roles?.primary === profile.name) labels.push("primary");
+  if (model.roles?.secondary === profile.name && model.roles.secondaryState === "on") labels.push("secondary");
+  return labels;
+}
+
+export function profileItemSpec(profile: ModelProfileEntry, model: ModelProfilesModel): ModelProfileItemSpec {
+  const here = effectiveProfile(model)?.name === profile.name;
   const invalid = profile.errors.length > 0;
   const hasWarnings = !invalid && profile.warnings.length > 0;
-  const icon = applied ? "pass-filled" : invalid ? "error" : hasWarnings ? "warning" : "symbol-misc";
-  const contextValue = `agento.modelProfile${applied ? ".applied" : ""}${invalid ? ".invalid" : ""}`;
-  const description = applied
+  const icon = here ? "pass-filled" : invalid ? "error" : hasWarnings ? "warning" : "symbol-misc";
+  const labels = roleLabels(profile, model);
+  const contextValue = `agento.modelProfile${labels.includes("primary") ? ".primary" : ""}${labels.includes("secondary") ? ".secondary" : ""}${here ? ".here" : ""}${invalid ? ".invalid" : ""}`;
+  const labelPrefix = labels.join(" · ");
+  const description = labelPrefix
     ? profile.description
-      ? `applied · ${profile.description}`
-      : "applied"
+      ? `${labelPrefix} · ${profile.description}`
+      : labelPrefix
     : (profile.description ?? undefined);
-  const tooltip = profileTooltip(profile);
+  const tooltip = profileTooltip(profile, model);
   return { label: profile.name, description, icon, contextValue, ...(tooltip ? { tooltip } : {}) };
 }
 
-export function modelProfilesItemSpec(element: ModelProfilesElement, active: string | null): ModelProfileItemSpec {
-  if (element.kind === "profile") return profileItemSpec(element.profile, active);
+// One pinned role row (`Primary windows` / `Secondary windows`): the assignment,
+// the current-window suffix, the state icon, and the on/off contextValue token.
+export function roleItemSpec(role: ProfileRole, model: ModelProfilesModel): ModelProfileItemSpec {
+  const roles = model.roles;
+  const label = role === "primary" ? "Primary windows" : "Secondary windows";
+  const thisWindow = model.windowRole === role;
+  let assignment: string;
+  let icon: string;
+  let on: boolean;
+  let tooltip: string;
+  if (role === "primary") {
+    const primary = roles?.primary ?? null;
+    assignment = primary === "custom" ? "custom pins" : primary ?? "off";
+    on = primary !== null && primary !== "custom";
+    icon = on ? "pass-filled" : "circle-slash";
+    tooltip = `**Primary windows**\nThe clone's file pins, used by primary windows and directly selected agents.\n\nCurrently: ${assignment}.`;
+  } else {
+    const state = roles?.secondaryState ?? "off";
+    on = state === "on";
+    if (state === "dangling") {
+      assignment = `${roles?.secondary ?? "unknown"} (missing) → primary pins`;
+      icon = "warning";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nThe secondary role names ${JSON.stringify(roles?.secondary)} which is not a profile; secondary windows use the primary pins. Create it or run \`models use none --role secondary\` to turn the role off.`;
+    } else if (state === "invalid") {
+      assignment = "invalid roles file → primary pins";
+      icon = "warning";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nThe roles file is invalid${roles?.rolesErrors[0] ? ` (${roles.rolesErrors[0]})` : ""}; secondary windows use the primary pins. Fix or delete it, or run \`models use none --role secondary\` to turn the role off.`;
+    } else if (state === "on") {
+      assignment = roles?.secondary ?? "";
+      icon = "pass-filled";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nCurrently: ${assignment}.`;
+    } else {
+      assignment = "off";
+      icon = "circle-slash";
+      tooltip = `**Secondary windows**\nPlan, build, and freehand windows.\n\nSecondary windows use the primary pins.`;
+    }
+  }
+  const description = thisWindow ? `${assignment} · this window` : assignment;
+  const contextValue = `agento.modelRole.${role}.${on ? "on" : "off"}`;
+  return { label, description, icon, contextValue, tooltip };
+}
+
+export function modelProfilesItemSpec(element: ModelProfilesElement, model: ModelProfilesModel): ModelProfileItemSpec {
+  if (element.kind === "role") return roleItemSpec(element.role, model);
+  if (element.kind === "profile") return profileItemSpec(element.profile, model);
   if (element.kind === "info") {
     return { label: element.label, icon: "info", contextValue: "agento.modelProfileInfo", tooltip: element.tooltip };
   }

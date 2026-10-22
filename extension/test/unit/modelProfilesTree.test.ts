@@ -7,6 +7,7 @@ import {
   modelProfilesChildren,
   modelProfilesItemSpec,
   profileItemSpec,
+  roleItemSpec,
   suggestCopyName,
   summarizePins,
   validateProfileName,
@@ -118,55 +119,123 @@ test("modelProfilesChildren returns [] for no-plugin-root and no-file, message r
   assert.deepEqual(error, [{ kind: "message", label: "bad" }]);
 });
 
-test("modelProfilesChildren adds the custom info row and then one row per profile", () => {
+test("modelProfilesChildren puts the two role rows first, then the custom info row, then profiles", () => {
   const ready = createModelProfilesModel({ pluginRoot: "/p", listResult: LIST({ active: "custom" }) });
   const children = modelProfilesChildren(ready);
-  assert.equal(children[0]?.kind, "info");
-  assert.equal(children[0]?.label, "Custom pins — no profile matches");
+  assert.deepEqual(children.slice(0, 2).map((child) => (child.kind === "role" ? child.role : child.kind)), ["primary", "secondary"]);
+  assert.equal(children[2]?.kind, "info");
+  assert.equal(children[2]?.label, "Custom pins — no profile matches");
   const profiles = children.filter((child) => child.kind === "profile");
   assert.equal(profiles.length, 3);
 
   const named = modelProfilesChildren(createModelProfilesModel({ pluginRoot: "/p", listResult: LIST() }));
-  assert.equal(named[0]?.kind, "profile");
+  assert.deepEqual(named.slice(0, 2).map((child) => (child.kind === "role" ? child.role : child.kind)), ["primary", "secondary"]);
 });
 
-test("profileItemSpec renders applied, invalid, warning, and default rows", () => {
-  const mixed = createModelProfilesModel({ pluginRoot: "/p", listResult: LIST() }).profiles.find((p) => p.name === "mixed")!;
-  const applied = profileItemSpec(mixed, "mixed");
+test("roleItemSpec renders the primary and secondary pinned rows", () => {
+  const model = (roles: unknown, windowRole: "primary" | "secondary" = "primary", rolesErrors: unknown = []) =>
+    createModelProfilesModel({ pluginRoot: "/p", windowRole, listResult: LIST({ roles, rolesErrors }) });
+
+  const primaryOn = roleItemSpec("primary", model({ primary: "mixed", secondary: null }));
+  assert.equal(primaryOn.label, "Primary windows");
+  assert.equal(primaryOn.description, "mixed · this window");
+  assert.equal(primaryOn.icon, "pass-filled");
+  assert.equal(primaryOn.contextValue, "agento.modelRole.primary.on");
+
+  const primaryCustom = roleItemSpec("primary", model({ primary: "custom", secondary: null }));
+  assert.equal(primaryCustom.description, "custom pins · this window");
+  assert.equal(primaryCustom.icon, "circle-slash");
+  assert.equal(primaryCustom.contextValue, "agento.modelRole.primary.off");
+
+  const primaryOff = roleItemSpec("primary", model({ primary: null, secondary: null }));
+  assert.equal(primaryOff.description, "off · this window");
+  assert.equal(primaryOff.contextValue, "agento.modelRole.primary.off");
+
+  const secondaryOff = roleItemSpec("secondary", model({ primary: "mixed", secondary: null }, "secondary"));
+  assert.equal(secondaryOff.label, "Secondary windows");
+  assert.equal(secondaryOff.description, "off · this window");
+  assert.equal(secondaryOff.icon, "circle-slash");
+  assert.equal(secondaryOff.contextValue, "agento.modelRole.secondary.off");
+
+  const secondaryOn = roleItemSpec("secondary", model({ primary: "mixed", secondary: "mixed" }, "secondary"));
+  assert.equal(secondaryOn.description, "mixed · this window");
+  assert.equal(secondaryOn.icon, "pass-filled");
+  assert.equal(secondaryOn.contextValue, "agento.modelRole.secondary.on");
+
+  const secondaryDangling = roleItemSpec("secondary", model({ primary: "mixed", secondary: "ghost" }, "secondary"));
+  assert.equal(secondaryDangling.description, "ghost (missing) → primary pins · this window");
+  assert.equal(secondaryDangling.icon, "warning");
+  assert.equal(secondaryDangling.contextValue, "agento.modelRole.secondary.off");
+  assert.match(secondaryDangling.tooltip!, /ghost/);
+
+  const secondaryInvalid = roleItemSpec("secondary", model({ primary: "mixed", secondary: null }, "secondary", ["invalid JSON: nope"]));
+  assert.equal(secondaryInvalid.description, "invalid roles file → primary pins · this window");
+  assert.equal(secondaryInvalid.icon, "warning");
+  assert.equal(secondaryInvalid.contextValue, "agento.modelRole.secondary.off");
+  assert.match(secondaryInvalid.tooltip!, /invalid/);
+});
+
+test("profileItemSpec renders role labels, the here icon, and every contextValue token", () => {
+  const model = createModelProfilesModel({ pluginRoot: "/p", listResult: LIST() });
+  const mixed = model.profiles.find((p) => p.name === "mixed")!;
+  const applied = profileItemSpec(mixed, model);
   assert.equal(applied.label, "mixed");
-  assert.equal(applied.description, "applied · strong planning");
+  assert.equal(applied.description, "primary · strong planning");
   assert.equal(applied.icon, "pass-filled");
-  assert.equal(applied.contextValue, "agento.modelProfile.applied");
+  assert.equal(applied.contextValue, "agento.modelProfile.primary.here");
   assert.match(applied.tooltip!, /strong planning/);
   assert.match(applied.tooltip!, /delivery-planner: Planner \(copilot\)/);
   assert.match(applied.tooltip!, /Planner \(copilot\) — 1 command/);
   assert.match(applied.tooltip!, /Cheap \(copilot\) — 2 commands/);
   assert.match(applied.tooltip!, /delivery-reviewer: A \(copilot\) → B \(copilot\)/);
+  assert.match(applied.tooltip!, /- Used by primary windows/);
+  assert.match(applied.tooltip!, /- In effect in this window/);
 
-  const broken = createModelProfilesModel({ pluginRoot: "/p", listResult: LIST() }).profiles.find((p) => p.name === "broken")!;
-  const invalid = profileItemSpec(broken, "mixed");
+  const broken = model.profiles.find((p) => p.name === "broken")!;
+  const invalid = profileItemSpec(broken, model);
   assert.equal(invalid.icon, "error");
   assert.equal(invalid.contextValue, "agento.modelProfile.invalid");
   assert.match(invalid.tooltip!, /profiles\.broken\.default: placeholder/);
 
-  const warny = createModelProfilesModel({ pluginRoot: "/p", listResult: LIST() }).profiles.find((p) => p.name === "warny")!;
-  const warning = profileItemSpec(warny, null);
+  const warny = model.profiles.find((p) => p.name === "warny")!;
+  const warning = profileItemSpec(warny, model);
   assert.equal(warning.icon, "warning");
   assert.equal(warning.contextValue, "agento.modelProfile");
   assert.match(warning.tooltip!, /model values without a \(vendor\) suffix/);
 
-  const defaultSpec = profileItemSpec({ name: "plain", description: null, errors: [], warnings: [], targets: [] }, null);
+  const defaultSpec = profileItemSpec({ name: "plain", description: null, errors: [], warnings: [], targets: [] }, model);
   assert.equal(defaultSpec.icon, "symbol-misc");
   assert.equal(defaultSpec.contextValue, "agento.modelProfile");
   assert.equal(defaultSpec.description, undefined);
   assert.equal(defaultSpec.tooltip, undefined);
 });
 
-test("modelProfilesItemSpec renders info and message elements", () => {
-  const info = modelProfilesItemSpec({ kind: "info", label: "Custom pins — no profile matches", tooltip: "t" }, null);
+test("profileItemSpec marks the secondary profile in a secondary window", () => {
+  const model = createModelProfilesModel({
+    pluginRoot: "/p",
+    windowRole: "secondary",
+    listResult: LIST({ roles: { primary: "mixed", secondary: "mixed" } }),
+  });
+  const mixed = model.profiles.find((p) => p.name === "mixed")!;
+  const spec = profileItemSpec(mixed, model);
+  assert.equal(spec.description, "primary · secondary · strong planning");
+  assert.equal(spec.icon, "pass-filled");
+  assert.equal(spec.contextValue, "agento.modelProfile.primary.secondary.here");
+  assert.match(spec.tooltip!, /- Used by primary windows/);
+  assert.match(spec.tooltip!, /- Used by secondary windows/);
+  assert.match(spec.tooltip!, /- In effect in this window/);
+});
+
+test("modelProfilesItemSpec renders role, info, and message elements", () => {
+  const model = createModelProfilesModel({ pluginRoot: "/p", listResult: LIST() });
+  const role = modelProfilesItemSpec({ kind: "role", role: "primary" }, model);
+  assert.equal(role.label, "Primary windows");
+  assert.equal(role.contextValue, "agento.modelRole.primary.on");
+
+  const info = modelProfilesItemSpec({ kind: "info", label: "Custom pins — no profile matches", tooltip: "t" }, model);
   assert.equal(info.icon, "info");
   assert.equal(info.contextValue, "agento.modelProfileInfo");
-  const message = modelProfilesItemSpec({ kind: "message", label: "boom" }, null);
+  const message = modelProfilesItemSpec({ kind: "message", label: "boom" }, model);
   assert.equal(message.icon, "error");
   assert.equal(message.contextValue, "agento.modelProfileMessage");
 });
