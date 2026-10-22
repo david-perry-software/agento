@@ -684,7 +684,7 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
     enterName: async () => "unused",
     chooseNewKind: async () => ({ kind: "empty" }),
     confirmDelete: async () => true,
-    pickProfile: async () => ({ kind: "apply", profile: "mixed" }),
+    pickProfile: async () => ({ kind: "use", role: "primary", profile: "mixed" }),
   };
 
   const configuration = vscode.workspace.getConfiguration("agento");
@@ -870,7 +870,7 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
     );
 
     // 9. The quick pick still applies through runModelsSelection.
-    api.setModelProfilePrompts({ ...noOpPrompts, pickProfile: async () => ({ kind: "apply", profile: "review" }) });
+    api.setModelProfilePrompts({ ...noOpPrompts, pickProfile: async () => ({ kind: "use", role: "primary", profile: "review" }) });
     await waitForModelProfiles(
       api,
       () => api.modelProfiles.current.active === "review",
@@ -1098,7 +1098,7 @@ async function assertModelProfileEditor(
     enterName: async () => "unused",
     chooseNewKind: async () => ({ kind: "empty" }),
     confirmDelete: async () => true,
-    pickProfile: async () => ({ kind: "apply", profile: "editor-renamed" }),
+    pickProfile: async () => ({ kind: "use", role: "primary", profile: "editor-renamed" }),
   };
   api.setModelProfilePrompts({ ...editorPrompts, enterName: async () => "from-editor" });
   await waitForModelProfiles(

@@ -9,6 +9,7 @@ import {
   expandHome,
   initProfilesArgs,
   missingPluginRootMessage,
+  needsPrimaryConfirm,
   renameProfileArgs,
   resolvePluginRoot,
   selectionToArgs,
@@ -71,26 +72,47 @@ test("missingPluginRootMessage names a set but invalid agento.pluginRoot", () =>
   }
 });
 
-test("toQuickPickItems lists profiles, marks the applied one, and ends with Clear", () => {
-  const items = toQuickPickItems({
-    active: "mixed",
-    profiles: [
-      { name: "mixed", description: "strong planning", errors: [] },
-      { name: "draft", description: null, errors: ["profiles.draft.default: placeholder"] },
-      { name: 7 },
-    ],
-  });
+test("toQuickPickItems marks role labels and ends with a role-aware Turn off", () => {
+  const items = toQuickPickItems(
+    {
+      roles: { primary: "mixed", secondary: "mixed" },
+      profiles: [
+        { name: "mixed", description: "strong planning", errors: [] },
+        { name: "draft", description: null, errors: ["profiles.draft.default: placeholder"] },
+        { name: 7 },
+      ],
+    },
+    "secondary",
+  );
   assert.deepEqual(items, [
-    { label: "mixed", description: "applied · strong planning", selection: { kind: "apply", profile: "mixed" } },
-    { label: "draft", description: "", detail: "1 error(s): profiles.draft.default: placeholder", selection: { kind: "apply", profile: "draft" } },
-    { label: "Clear", description: "use the picker's model", selection: { kind: "clear" } },
+    { label: "mixed", description: "primary · secondary · strong planning", selection: { kind: "use", role: "secondary", profile: "mixed" } },
+    { label: "draft", description: "", detail: "1 error(s): profiles.draft.default: placeholder", selection: { kind: "use", role: "secondary", profile: "draft" } },
+    { label: "Turn off", description: "use the primary windows' pins", selection: { kind: "off", role: "secondary" } },
   ]);
-  assert.deepEqual(toQuickPickItems(undefined).map((i) => i.label), ["Clear"]);
+  assert.deepEqual(toQuickPickItems(undefined, "primary").map((i) => i.label), ["Turn off"]);
+  assert.equal(toQuickPickItems(undefined, "primary")[0]?.description, "use the picker's model");
 });
 
-test("selectionToArgs always passes --plugin-root", () => {
-  assert.deepEqual(selectionToArgs({ kind: "apply", profile: "mixed" }, "/p"), ["models", "apply", "mixed", "--plugin-root", "/p"]);
-  assert.deepEqual(selectionToArgs({ kind: "clear" }, "/p"), ["models", "clear", "--plugin-root", "/p"]);
+test("selectionToArgs maps use/off for each role and passes --expect on secondary writes", () => {
+  const hash = "c".repeat(64);
+  assert.deepEqual(selectionToArgs({ kind: "use", role: "primary", profile: "mixed" }, "/p"), ["models", "apply", "mixed", "--plugin-root", "/p"]);
+  assert.deepEqual(selectionToArgs({ kind: "off", role: "primary" }, "/p"), ["models", "clear", "--plugin-root", "/p"]);
+  assert.deepEqual(selectionToArgs({ kind: "use", role: "secondary", profile: "mixed" }, "/p", { rolesHash: hash }), [
+    "models", "use", "mixed", "--role", "secondary", "--expect", hash, "--plugin-root", "/p",
+  ]);
+  assert.deepEqual(selectionToArgs({ kind: "use", role: "secondary", profile: "mixed" }, "/p"), [
+    "models", "use", "mixed", "--role", "secondary", "--plugin-root", "/p",
+  ]);
+  assert.deepEqual(selectionToArgs({ kind: "off", role: "secondary" }, "/p", { rolesHash: hash }), [
+    "models", "use", "none", "--role", "secondary", "--expect", hash, "--plugin-root", "/p",
+  ]);
+});
+
+test("needsPrimaryConfirm is true only for a primary target in a secondary window", () => {
+  assert.equal(needsPrimaryConfirm("primary", "secondary"), true);
+  assert.equal(needsPrimaryConfirm("primary", "primary"), false);
+  assert.equal(needsPrimaryConfirm("secondary", "secondary"), false);
+  assert.equal(needsPrimaryConfirm("secondary", "primary"), false);
 });
 
 test("write arg builders pass --expect from the snapshot hash and --force on applied delete", () => {
@@ -194,6 +216,21 @@ test("summarizeModelsResult reports update (with reapply) and alias set successe
   });
 });
 
+test("summarizeModelsResult reports the secondary use verb distinctly", () => {
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "use", role: "secondary", profile: "review" }), {
+    ok: true,
+    message: "Secondary windows now use review.",
+    dirty: [],
+    conflict: false,
+  });
+  assert.deepEqual(summarizeModelsResult({ status: "ok", verb: "use", role: "secondary", profile: null }), {
+    ok: true,
+    message: "Turned off the secondary profile; secondary windows use the primary pins.",
+    dirty: [],
+    conflict: false,
+  });
+});
+
 test("summarizeModelsResult exposes dirty files and the conflict flag, with clear messages", () => {
   const conflict = summarizeModelsResult({ status: "conflict", message: "stale", expected: "a", actual: "b" });
   assert.equal(conflict.ok, false);
@@ -213,5 +250,6 @@ test("summarizeModelsResult exposes dirty files and the conflict flag, with clea
   assert.match(summarizeModelsResult({ status: "exists" }).message, /already exists/);
   assert.match(summarizeModelsResult({ status: "not-found" }).message, /No profile with that name/);
   assert.match(summarizeModelsResult({ status: "active" }).message, /applied in this clone/);
+  assert.match(summarizeModelsResult({ status: "assigned" }).message, /assigned to the secondary role/);
   assert.match(summarizeModelsResult({ status: "invalid" }).message, /The profile is invalid/);
 });

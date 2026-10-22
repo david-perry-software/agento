@@ -37,8 +37,10 @@ import {
   createModelProfilesModel,
   suggestCopyName,
   validateProfileName,
+  windowProfileRole,
   type ModelProfileEntry,
   type ModelProfilesElement,
+  type ProfileRole,
 } from "./modelProfilesTree.js";
 import { openArtifactPreview } from "./openArtifact.js";
 import {
@@ -673,12 +675,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     await handleModelsSummary(summarizeModelsResult(result.json));
     return result.json;
   };
+  const currentWindowRole = (): ProfileRole =>
+    sessionDoctor.current.kind === "ready" ? windowProfileRole(sessionDoctor.current.session.role) : "primary";
   const runModelsSelection = async (selection: ModelsSelection): Promise<unknown> => {
     const root = resolveModelsRoot();
     if (!root) return undefined;
-    return runModelsAction(selectionToArgs(selection, root), root);
+    return runModelsAction(selectionToArgs(selection, root, { rolesHash: modelProfilesRolesHash() }), root);
   };
   const modelProfilesHash = (): string | null => modelProfiles.current.profilesFile?.hash ?? null;
+  const modelProfilesRolesHash = (): string | null => modelProfiles.current.roles?.rolesFile?.hash ?? null;
   const modelProfileNames = (): string[] => modelProfiles.current.profiles.map((profile) => profile.name);
   const profileOf = (element?: ModelProfilesElement): ModelProfileEntry | undefined =>
     element?.kind === "profile" ? element.profile : undefined;
@@ -709,7 +714,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     reload: async () => {
       await reloadModelProfiles();
     },
-    apply: (profile) => runModelsSelection({ kind: "apply", profile }),
+    apply: (profile) => runModelsSelection({ kind: "use", role: currentWindowRole(), profile }),
     openFile: async () => {
       await openProfilesFile();
     },
@@ -742,7 +747,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       return choice === "Delete";
     },
     pickProfile: async (listJson, placeHolder) => {
-      const picked = await vscode.window.showQuickPick(toQuickPickItems(listJson), {
+      const picked = await vscode.window.showQuickPick(toQuickPickItems(listJson, currentWindowRole()), {
         title: "Agento: Select Model Profile",
         placeHolder,
       });
@@ -782,9 +787,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       await vscode.window.showErrorMessage("No model profile selected.");
       return;
     }
-    return runModelsSelection({ kind: "apply", profile: profile.name });
+    return runModelsSelection({ kind: "use", role: currentWindowRole(), profile: profile.name });
   });
-  const modelProfilesClearCommand = vscode.commands.registerCommand("agento.modelProfiles.clear", () => runModelsSelection({ kind: "clear" }));
+  const modelProfilesClearCommand = vscode.commands.registerCommand("agento.modelProfiles.clear", () => runModelsSelection({ kind: "off", role: currentWindowRole() }));
   const modelProfilesNewCommand = vscode.commands.registerCommand("agento.modelProfiles.new", async () => {
     const root = resolveModelsRoot();
     if (!root) return;
@@ -853,9 +858,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     const root = resolveModelsRoot();
     if (!root) return;
     const applied = modelProfiles.current.active === profile.name;
-    const confirmed = await modelProfilePrompts.confirmDelete({ name: profile.name, applied });
+    const assignedSecondary =
+      modelProfiles.current.roles?.secondary === profile.name && modelProfiles.current.roles.secondaryState === "on";
+    const confirmed = await modelProfilePrompts.confirmDelete({ name: profile.name, applied: applied || assignedSecondary });
     if (!confirmed) return;
-    return runModelsAction(deleteProfileArgs(profile.name, root, { force: applied, hash: modelProfilesHash() }), root);
+    return runModelsAction(deleteProfileArgs(profile.name, root, { force: applied || assignedSecondary, hash: modelProfilesHash() }), root);
   });
   const modelProfilesEditCommand = vscode.commands.registerCommand("agento.modelProfiles.edit", async (element?: ModelProfilesElement) => {
     const profile = profileOf(element);
