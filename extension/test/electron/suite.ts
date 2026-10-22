@@ -913,9 +913,14 @@ async function waitForEditorPosted(
 
 interface EditorPostedState {
   type?: string;
+  name?: string;
   hash?: string | null;
+  keepDraft?: boolean;
+  form?: unknown;
   pinnable?: { agents?: string[]; prompts?: string[] };
   choices?: Array<{ label: string }>;
+  copilotModels?: Record<string, string>;
+  unknownKeys?: string[];
   errors?: string[];
   changed?: string[];
 }
@@ -960,22 +965,52 @@ async function assertModelProfileEditor(
   assert.equal(validation?.type, "validateResult");
   assert.ok(validation?.errors?.some((error) => error.includes("inherits its model")), `validation surfaces the custom-agent error: ${JSON.stringify(validation?.errors)}`);
 
-  // 4. Save writes the body, matching `models show` `body`.
+  const waitForStateHash = async (name: string, expectedHash: string | undefined, description: string): Promise<EditorPostedState> => {
+    const message = await waitForEditorPosted(api, name, (m) => m?.type === "state" && m?.hash === expectedHash, description);
+    return message ?? { type: "state", hash: expectedHash };
+  };
+
+  // 4. Save writes the body, matching `models show` `body`. A real webview posts
+  //    `change { dirty: true }` on every keystroke first, so drive that flow: the
+  //    post-save state must refresh the hash and clear the dirty marker so a
+  //    second Save is not a false conflict (Finding 1).
+  await api.profileEditor.handleMessage("review", {
+    type: "change",
+    form: { name: "review", description: "Edited in the panel", default: ["Claude Opus 5.5 (copilot)"], agents: { reviewer: ["Grok 4 (grok)"] }, prompts: {} },
+    dirty: true,
+  });
   await api.profileEditor.handleMessage("review", {
     type: "save",
     form: { name: "review", description: "Edited in the panel", default: ["Claude Opus 5.5 (copilot)"], agents: { reviewer: ["Grok 4 (grok)"] }, prompts: {} },
   });
-  const shown = runCli(["models", "show", "review"]) as { body?: unknown };
+  const shown = runCli(["models", "show", "review"]) as { body?: unknown; profilesFile?: { hash?: string } };
   assert.deepEqual(shown.body, { description: "Edited in the panel", default: "Claude Opus 5.5 (copilot)", agents: { reviewer: "Grok 4 (grok)" } });
+  const savedState = await waitForStateHash("review", shown.profilesFile?.hash, "the post-save state with the new hash");
+  assert.equal(savedState?.type, "state");
+  assert.equal(savedState?.hash, shown.profilesFile?.hash, "a dirty save posts the new file hash");
 
   // 5. A rename plus Save re-keys the panel.
+  await api.profileEditor.handleMessage("review", {
+    type: "change",
+    form: { name: "editor-renamed", description: "Edited in the panel", default: ["Claude Opus 5.5 (copilot)"], agents: {}, prompts: {} },
+    dirty: true,
+  });
   await api.profileEditor.handleMessage("review", {
     type: "save",
     form: { name: "editor-renamed", description: "Edited in the panel", default: ["Claude Opus 5.5 (copilot)"], agents: {}, prompts: {} },
   });
   await waitForEditorPanels(api, (names) => names.includes("editor-renamed") && !names.includes("review"), "the rename to re-key the panel");
+  const renamed = runCli(["models", "show", "editor-renamed"]) as { profilesFile?: { hash?: string } };
+  const renamedState = await waitForStateHash("editor-renamed", renamed.profilesFile?.hash, "the post-rename state with the new hash");
+  assert.equal(renamedState?.type, "state");
+  assert.equal(renamedState?.hash, renamed.profilesFile?.hash, "a dirty rename+save posts the new file hash");
 
   // 6. Save & Apply changes the clone's model: lines.
+  await api.profileEditor.handleMessage("editor-renamed", {
+    type: "change",
+    form: { name: "editor-renamed", description: "Edited in the panel", default: ["Grok 4 (grok)"], agents: {}, prompts: {} },
+    dirty: true,
+  });
   await api.profileEditor.handleMessage("editor-renamed", {
     type: "saveAndApply",
     form: { name: "editor-renamed", description: "Edited in the panel", default: ["Grok 4 (grok)"], agents: {}, prompts: {} },
@@ -990,6 +1025,25 @@ async function assertModelProfileEditor(
     return false;
   })();
   assert.equal(plannerPinned, true, "Save & Apply writes the clone's model: lines");
+  const applied = runCli(["models", "show", "editor-renamed"]) as { profilesFile?: { hash?: string } };
+  const appliedState = await waitForStateHash("editor-renamed", applied.profilesFile?.hash, "the post-apply state with the new hash");
+  assert.equal(appliedState?.type, "state");
+  assert.equal(appliedState?.hash, applied.profilesFile?.hash, "a dirty saveAndApply posts the new file hash");
+
+  // A following edit + save must succeed without a spurious conflict.
+  await api.profileEditor.handleMessage("editor-renamed", {
+    type: "change",
+    form: { name: "editor-renamed", description: "Edited again", default: ["Grok 4 (grok)"], agents: {}, prompts: {} },
+    dirty: true,
+  });
+  await api.profileEditor.handleMessage("editor-renamed", {
+    type: "save",
+    form: { name: "editor-renamed", description: "Edited again", default: ["Grok 4 (grok)"], agents: {}, prompts: {} },
+  });
+  const againShown = runCli(["models", "show", "editor-renamed"]) as { profilesFile?: { hash?: string } };
+  const againState = await waitForStateHash("editor-renamed", againShown.profilesFile?.hash, "the second post-save state with the new hash");
+  assert.equal(againState?.type, "state", "a second save after a dirty save is not a conflict");
+  assert.equal(againState?.hash, againShown.profilesFile?.hash, "the second save posts the new file hash");
 
   // 7. A stale hash posts `conflict` with the changed fields and leaves the file untouched.
   await vscode.commands.executeCommand("agento.modelProfiles.edit", modelProfileElement(api, "copied"));
@@ -1012,12 +1066,32 @@ async function assertModelProfileEditor(
   assert.ok(conflicted?.changed?.includes("description"), `conflict names the changed field: ${JSON.stringify(conflicted?.changed)}`);
   assert.deepEqual((runCli(["models", "show", "copied"]) as { body?: unknown }).body, { description: "Changed through a direct CLI call" }, "the conflicted save left the file untouched");
 
-  // 8. Add alias writes `copilotModels`. Open a fresh panel so its hash is the
-  //    current file hash (the panel load is awaited by the Edit command).
+  // 8. Add alias writes `copilotModels` and leaves the panel usable: the posted
+  //    refresh must carry the full state `receiveState`/`renderForm` reads
+  //    (Finding 2). Open a fresh panel so its hash is the current file hash (the
+  //    panel load is awaited by the Edit command).
   await vscode.commands.executeCommand("agento.modelProfiles.edit", modelProfileElement(api, "watched"));
   await api.profileEditor.handleMessage("watched", { type: "addAlias", value: "Grok 4 (grok)", id: "grok/grok-4" });
   const list = runCli(["models", "list"]) as { copilotModels?: Record<string, string> };
   assert.deepEqual(list.copilotModels?.["Grok 4 (grok)"], "grok/grok-4");
+  const watched = runCli(["models", "show", "watched"]) as { profilesFile?: { hash?: string } };
+  const aliasState = await waitForEditorPosted(
+    api,
+    "watched",
+    (message) =>
+      message?.type === "state" &&
+      message?.hash === watched.profilesFile?.hash &&
+      message?.copilotModels?.["Grok 4 (grok)"] === "grok/grok-4" &&
+      Array.isArray(message?.unknownKeys),
+    "the full post-alias refresh state",
+  );
+  assert.equal(aliasState?.type, "state");
+  assert.ok(aliasState?.form, "the alias refresh carries the form");
+  assert.deepEqual(aliasState?.pinnable?.agents, ["planner", "builder", "reviewer", "autopilot", "mechanic", "architect"], "the alias refresh carries pinnable");
+  assert.ok(Array.isArray(aliasState?.unknownKeys), "the alias refresh carries unknownKeys");
+  assert.ok(Array.isArray(aliasState?.choices), "the alias refresh carries choices");
+  assert.deepEqual(aliasState?.copilotModels?.["Grok 4 (grok)"], "grok/grok-4", "the alias refresh carries the new copilotModels");
+  assert.equal(aliasState?.hash, watched.profilesFile?.hash, "the alias refresh carries the new hash");
 
   // 9. New and Duplicate open the editor on the created profile.
   const editorPrompts: ModelProfilePrompts = {
