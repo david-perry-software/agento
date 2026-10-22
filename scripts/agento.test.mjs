@@ -1461,6 +1461,33 @@ test("doctor reports ten checks and includes session-workspace, model-profile, h
   assert.equal(checks["session-workspace"].detail, "not a managed pair");
 });
 
+test("doctor model-profile names both roles and warns on a dangling or invalid secondary", () => {
+  const { plugin, home, writeProfiles } = modelsFixture();
+  const { env } = restrictedPath(okStubs);
+  env.AGENTO_CONFIG_HOME = home;
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+
+  // Healthy: a valid secondary assignment is ok and the detail names both roles.
+  writeProfiles({ b: { default: "B (copilot)" } });
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "b" }));
+  const healthy = check();
+  assert.equal(healthy.status, "ok", JSON.stringify(healthy));
+  assert.match(healthy.detail, /primary: none; secondary: b/);
+
+  // Dangling: the secondary role names a profile that does not exist.
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "gone" }));
+  const dangling = check();
+  assert.equal(dangling.status, "warn", JSON.stringify(dangling));
+  assert.match(dangling.fallback, /models use none --role secondary/);
+
+  // Invalid roles file.
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "Bad_Name" }));
+  const invalid = check();
+  assert.equal(invalid.status, "warn", JSON.stringify(invalid));
+  assert.match(invalid.fallback, /models use none --role secondary/);
+});
+
 test("doctor session-workspace is ok for non-pairs, warn for stale/missing, and ok after workspace --write", () => {
   const { repo, docs, wt, docsWt } = makePairRepo();
   const { env } = restrictedPath(okStubs);
@@ -4482,11 +4509,11 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
   assert.equal(bundle.status, "ok");
   assert.match(bundle.detail, /^no Agento plugin clone at /);
 
-  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}`, fallback: null });
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}; primary: none; secondary: off`, fallback: null });
 
   writeProfiles({ mixed: { default: "Cheap (copilot)", agents: { planner: "Strong (copilot)" } } });
   assert.equal(models("apply", "mixed").code, 0);
-  assert.equal(check().detail, `mixed applied to ${plugin}`);
+  assert.equal(check().detail, `mixed applied to ${plugin}; primary: mixed; secondary: off`);
 
   const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
   fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap (copilot)"', 'model: "Edited"'));
@@ -4514,7 +4541,7 @@ test("doctor model-profile warns on legacy skip-worktree pins, an unhealthy or s
   assert.match(legacy.fallback, /models adopt --plugin-root .* keeps the current pins.*models apply <name>/);
 
   assert.equal(models("apply", "tiny").code, 0);
-  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `tiny applied to ${plugin}`, fallback: null });
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `tiny applied to ${plugin}; primary: tiny; secondary: off`, fallback: null });
 
   const copy = path.join(commonDirOf(plugin), "agento", "model-filter.mjs");
   fs.appendFileSync(copy, "// stale\n");
@@ -4583,7 +4610,7 @@ test("doctor model-profile warns on an applied profile with unqualified pins and
   assert.equal(bare.fallback, `qualify each named value as "<picker name> (<vendor>)" in ${path.join(home, "model-profiles.json")}, then \`agento.mjs models apply bare --plugin-root ${plugin}\``);
 
   assert.equal(models("apply", "qualified").code, 0);
-  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `qualified applied to ${plugin}`, fallback: null });
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `qualified applied to ${plugin}; primary: qualified; secondary: off`, fallback: null });
 });
 
 test("doctor --for models needs only the terminal checks", () => {

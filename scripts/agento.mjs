@@ -964,11 +964,13 @@ const DOCTOR_CHECKS = {
     const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
     if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) return { status: "ok", detail: `no Agento plugin clone at ${pluginRoot}`, fallback: null };
     const loaded = loadProfiles();
+    const loadedRoles = loadRoles();
     const cli = `agento.mjs models --plugin-root ${pluginRoot}`;
     if (loaded.errors.length) {
       return { status: "warn", detail: `${loaded.profilesFile.path} has ${loaded.errors.length} error(s), first: ${loaded.errors[0]}`, fallback: `fix the file (\`${cli}\` lists every error) or delete it; Agento runs fine without profiles` };
     }
-    const { active, filter, legacySkipWorktree } = modelsState(pluginRoot, loaded);
+    const state = modelsState(pluginRoot, loaded);
+    const { active, filter, legacySkipWorktree } = state;
     const apply = `\`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``;
     const adopt = `\`agento.mjs models adopt --plugin-root ${pluginRoot}\``;
     const filterIssues = [];
@@ -983,8 +985,26 @@ const DOCTOR_CHECKS = {
     if (filter?.unrecorded.length) {
       filterIssues.push([`${filter.unrecorded.length} agent/prompt file(s) added since the last apply carry no pin: ${filter.unrecorded.join(", ")}`, `re-run ${apply}`]);
     }
-    if (filterIssues.length) return { status: "warn", detail: filterIssues.map(([d]) => d).join("; "), fallback: filterIssues.map(([, f]) => f).join("; ") };
-    if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}`, fallback: null };
+    const rolesDetail = `primary: ${active === null ? "none" : active}; secondary: ${loadedRoles.secondary ?? "off"}`;
+    const rolesIssue = (() => {
+      if (loadedRoles.errors.length) {
+        return { detail: `${loadedRoles.rolesFile.path} has ${loadedRoles.errors.length} error(s), first: ${loadedRoles.errors[0]}`, fallback: `fix or delete ${loadedRoles.rolesFile.path}, or run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn the secondary role off` };
+      }
+      if (loadedRoles.secondary !== null) {
+        const assigned = loadedRoles.secondary;
+        if (!Object.hasOwn(loaded.profiles, assigned)) {
+          return { detail: `the secondary role names ${JSON.stringify(assigned)}, which is not a profile in ${loaded.profilesFile.path}`, fallback: `run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn it off, or create ${assigned} and assign it with \`agento.mjs models use ${assigned} --role secondary --plugin-root ${pluginRoot}\`` };
+        }
+        const resolved = resolveProfile(loaded, assigned, state.layout);
+        if (resolved.errors.length) {
+          return { detail: `the secondary profile ${assigned} has errors: ${resolved.errors[0]}`, fallback: `fix ${assigned} (\`agento.mjs models show ${assigned} --plugin-root ${pluginRoot}\` lists every error), or run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn it off` };
+        }
+      }
+      return null;
+    })();
+    if (filterIssues.length) return { status: "warn", detail: `${filterIssues.map(([d]) => d).join("; ")}; ${rolesDetail}`, fallback: filterIssues.map(([, f]) => f).join("; ") };
+    if (rolesIssue) return { status: "warn", detail: `${rolesIssue.detail}; ${rolesDetail}`, fallback: rolesIssue.fallback };
+    if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}; ${rolesDetail}`, fallback: null };
     if (active !== "custom") {
       const pins = modelsPins(pluginRoot, loaded.copilotModels);
       const warns = pinWarnings(pins, loaded.copilotModels);
@@ -994,13 +1014,13 @@ const DOCTOR_CHECKS = {
           warns.unqualified && `qualify each named value as "<picker name> (<vendor>)" in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
           warns.missingAlias && `add each missing picker name to the top-level copilotModels map in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
         ];
-        return { status: "warn", detail: [warns.byok, warns.unqualified, warns.missingAlias].filter(Boolean).join("; "), fallback: fallbacks.filter(Boolean).join("; ") };
+        return { status: "warn", detail: `${[warns.byok, warns.unqualified, warns.missingAlias].filter(Boolean).join("; ")}; ${rolesDetail}`, fallback: fallbacks.filter(Boolean).join("; ") };
       }
-      return { status: "ok", detail: `${active} applied to ${pluginRoot}`, fallback: null };
+      return { status: "ok", detail: `${active} applied to ${pluginRoot}; ${rolesDetail}`, fallback: null };
     }
     return {
       status: "warn",
-      detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied)`,
+      detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied); ${rolesDetail}`,
       fallback: `re-pin with ${apply}, record the current pins with ${adopt}, or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\``,
     };
   },
