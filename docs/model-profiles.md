@@ -261,7 +261,11 @@ one exits 3 and writes nothing) and then writes `{ "secondary": "<name>" }`
 atomically, honouring the same `--expect` compare-and-swap as the profiles file (a
 stale hash is a `conflict` and leaves the file byte-identical). `models use none
 --role secondary` turns the role off (`{ "secondary": null }`); an absent roles
-file also means off, so users who never set one are unaffected. The name `none` is
+file also means off, so users who never set one are unaffected. The roles file is
+CLI-owned (only `use --role secondary`, `rename`, and `delete --force` write it),
+so a validated `use` replaces it wholesale and thereby repairs an invalid
+`model-roles.json`; the user-authored profiles file is different — a write leaves
+it untouched when it has errors. The name `none` is
 reserved — `models create none` and `models rename <x> none` are usage errors — and
 an existing profile literally named `none` can still be applied with
 `models apply none`.

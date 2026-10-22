@@ -74,7 +74,10 @@ plugin clone, never the current checkout's delivery state).
    - `use` — `secondaryBefore` and `roles` (`{ secondary }`), plus `written` and
      `rolesFile`. `--role secondary <name>` writes `model-roles.json` after
      validating the profile; `use none --role secondary` turns the role off;
-     `--role primary` reports like `apply`/`clear` (see that bullet).
+     `--role primary` reports like `apply`/`clear` (see that bullet). The roles
+     file is CLI-owned, so a validated `use --role secondary` replaces it wholesale
+     and repairs an invalid `model-roles.json`; the user-authored profiles file is
+     instead left untouched when it has errors.
    - `rename` — `written` and `activeBefore`/`active` (the applied profile follows
      by content, so it stays `active` under the new name); when the renamed profile
      was the secondary role, also `secondaryBefore` and `roles` (the assignment

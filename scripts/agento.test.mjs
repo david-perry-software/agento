@@ -3778,6 +3778,25 @@ test("models use --role secondary leaves no temp files and keeps the mode", () =
   assert.deepEqual(fs.readdirSync(home).filter((f) => f.startsWith(".model-roles.json.") && f.endsWith(".tmp")), []);
 });
 
+test("models use --role secondary replaces an invalid roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "a", extra: 1 }));
+
+  const off = models("use", "none", "--role", "secondary");
+  assert.equal(off.code, 0, JSON.stringify(off.json));
+  assert.equal(off.json.status, "ok");
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: null, extra: 1 }));
+  const set = models("use", "a", "--role", "secondary");
+  assert.equal(set.code, 0, JSON.stringify(set.json));
+  assert.equal(set.json.status, "ok");
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "a" });
+});
+
 test("models use --role primary changes the same files as apply and clear", () => {
   const { plugin, models, writeProfiles } = modelsFixture();
   writeProfiles({ a: { default: "A (copilot)" } });
@@ -3935,6 +3954,28 @@ test("models rename of a non-assigned profile leaves the roles file byte-identic
   const renamed = models("rename", "a", "b");
   assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
   assert.equal(fs.readFileSync(rolesPath, "utf8"), before);
+});
+
+test("models rename and delete --force repair an invalid roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "a", extra: 1 }));
+
+  const renamed = models("rename", "a", "b");
+  assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
+  assert.equal(renamed.json.status, "ok");
+  assert.equal(renamed.json.secondaryBefore, "a");
+  assert.deepEqual(renamed.json.roles, { secondary: "b" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "b" });
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "b", extra: 1 }));
+  const deleted = models("delete", "b", "--force");
+  assert.equal(deleted.code, 0, JSON.stringify(deleted.json));
+  assert.equal(deleted.json.secondaryBefore, "b");
+  assert.deepEqual(deleted.json.roles, { secondary: null });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
 });
 
 test("models delete refuses the assigned secondary profile and --force turns the role off", () => {

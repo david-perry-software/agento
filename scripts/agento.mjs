@@ -3729,8 +3729,12 @@ function writeRoles(loaded, next, { expect } = {}) {
   //    absent file never matches an --expect value.
   if (currentRaw !== loaded.raw) return conflict("the roles file changed since it was read; re-read it and re-run", loaded.rolesFile.hash);
   if (expect !== undefined && expect !== null && (currentRaw === null || actual !== expect)) return conflict("the roles file does not match --expect; re-read rolesFile.hash and re-run", expect);
-  // 2. Refuse a current file with errors.
-  if (loaded.errors.length) return { code: 3, result: { status: "invalid", errors: loaded.errors, message: "the roles file has errors and was left untouched" } };
+  // 2. The roles file is CLI-owned (only `models use --role secondary`, `rename`,
+  //    and `delete --force` write it) and this write is a full-file replacement, so
+  //    a current file with errors is repaired here rather than refused — unlike the
+  //    user-authored profiles file, which writeProfiles leaves untouched. Step 1 has
+  //    already pinned the current bytes (no concurrent change) and honoured --expect,
+  //    so the replacement is safe.
   // 3. Serialize and re-parse: no new errors.
   const reparsed = parseRoles(serializeRoles(next));
   if (reparsed.errors.length) return { code: 3, result: { status: "invalid", errors: reparsed.errors, message: "the new roles file would be invalid and was not written" } };
@@ -5141,7 +5145,7 @@ switch (command) {
       if (code !== 0) emit({ verb, profile: old, ...result }, code);
       if (loadedRoles.secondary === old) {
         const rolesWrite = writeRoles(loadedRoles, { secondary: next }, {});
-        if (rolesWrite.code !== 0) emit({ verb, profile: old, ...result, secondaryBefore: loadedRoles.secondary, rolesWrite: rolesWrite.result }, rolesWrite.code);
+        if (rolesWrite.code !== 0) emit({ verb, profile: old, ...result, status: "roles-failed", message: `profile ${old} was renamed to ${next}, but writing the roles file failed: ${rolesWrite.result.message}`, secondaryBefore: loadedRoles.secondary, rolesWrite: rolesWrite.result }, rolesWrite.code);
         emit({ verb, profile: old, ...result, secondaryBefore: loadedRoles.secondary, roles: rolesWrite.result.roles, rolesFile: rolesWrite.result.rolesFile, rolesErrors: rolesWrite.result.rolesErrors }, 0);
       }
       emit({ verb, profile: old, ...result }, 0);
@@ -5157,7 +5161,7 @@ switch (command) {
       if (code !== 0) emit({ verb, profile: name, ...result }, code);
       if (loadedRoles.secondary === name) {
         const rolesWrite = writeRoles(loadedRoles, { secondary: null }, {});
-        if (rolesWrite.code !== 0) emit({ verb, profile: name, ...result, secondaryBefore: loadedRoles.secondary, rolesWrite: rolesWrite.result }, rolesWrite.code);
+        if (rolesWrite.code !== 0) emit({ verb, profile: name, ...result, status: "roles-failed", message: `profile ${name} was deleted, but writing the roles file failed: ${rolesWrite.result.message}`, secondaryBefore: loadedRoles.secondary, rolesWrite: rolesWrite.result }, rolesWrite.code);
         emit({ verb, profile: name, ...result, secondaryBefore: loadedRoles.secondary, roles: rolesWrite.result.roles, rolesFile: rolesWrite.result.rolesFile, rolesErrors: rolesWrite.result.rolesErrors }, 0);
       }
       emit({ verb, profile: name, ...result }, 0);
