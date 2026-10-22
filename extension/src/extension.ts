@@ -67,7 +67,7 @@ import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createTreeIdScope } from "./treeItemIds.js";
 import { createWatchers } from "./watchers.js";
-import { createWindowBannerModel } from "./windowBanner.js";
+import { createWindowBannerModel, modelsBannerLine } from "./windowBanner.js";
 import { WindowBannerProvider } from "./windowBannerProvider.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -138,9 +138,9 @@ function applyStatusBar(statusBar: vscode.StatusBarItem, model: SessionDoctorMod
   statusBar.backgroundColor = background ? new vscode.ThemeColor(`statusBarItem.${background}Background`) : undefined;
 }
 
-function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel): void {
+function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel, modelsLine?: string): void {
   applyStatusBar(statusBar, model);
-  windowBanner.update(createWindowBannerModel(model));
+  windowBanner.update(createWindowBannerModel(model, modelsLine));
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
@@ -194,9 +194,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   // with the new window role without an extra CLI call.
   let lastModelProfilesInput: ModelProfilesModelInput | null = null;
   const applyModelProfilesModel = (input: ModelProfilesModelInput): void => {
-    modelProfiles.update(createModelProfilesModel(input));
+    const model = createModelProfilesModel(input);
+    modelProfiles.update(model);
     rebuildModelProfileWatchers();
     void profileEditor.notifyProfilesChanged();
+    applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(model) ?? undefined);
   };
   const reloadModelProfiles = async (): Promise<void> => {
     const root = pluginRoot();
@@ -388,7 +390,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
         rebuildModelProfilesForWindowRole();
-        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor);
+        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor, modelsBannerLine(modelProfiles.current) ?? undefined);
         initiatives.update(snapshot.initiatives);
         if (snapshot.timings) {
           output.appendLine(snapshot.timings);

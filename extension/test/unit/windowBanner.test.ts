@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createSessionDoctorError, createSessionDoctorModel } from "../../src/sessionDoctorModel.js";
-import { createWindowBannerModel, escapeHtml, renderWindowBannerHtml } from "../../src/windowBanner.js";
+import { createModelProfilesModel } from "../../src/modelProfilesTree.js";
+import { createWindowBannerModel, escapeHtml, modelsBannerLine, renderWindowBannerHtml } from "../../src/windowBanner.js";
 
 const doctor = { status: "ok", checks: [] };
 const status = { status: "ok", resumable: [] };
@@ -153,4 +154,64 @@ test("hostile branch names and error messages are HTML-escaped", () => {
   assert.match(branchHtml, /title="\/repo\/&lt;script&gt;/);
   assert.match(errorHtml, /<span class="title">AGENTO UNAVAILABLE<\/span>/);
   assert.ok(errorHtml.includes("var(--vscode-agento-role-unavailable, var(--vscode-agento-role\\.unavailable))"));
+});
+
+const MODEL_LIST = (roles: unknown, windowRole: "primary" | "secondary" = "primary") => ({
+  status: "ok",
+  profiles: [{ name: "mixed", description: null, errors: [], warnings: [], targets: [] }],
+  errors: [],
+  profilesFile: { path: "/home/u/.config/agento/model-profiles.json", exists: true, hash: "a".repeat(64) },
+  active: "mixed",
+  roles,
+  rolesFile: { path: "/home/u/.config/agento/model-roles.json", exists: true, hash: "b".repeat(64) },
+  rolesErrors: [],
+});
+
+function modelsModel(roles: unknown, windowRole: "primary" | "secondary" = "primary") {
+  return createModelProfilesModel({ pluginRoot: "/p", windowRole, listResult: MODEL_LIST(roles, windowRole) });
+}
+
+test("modelsBannerLine renders every documented case and null when not ready", () => {
+  assert.equal(modelsBannerLine(modelsModel({ primary: "mixed", secondary: null })), "Models: mixed (primary)");
+  assert.equal(modelsBannerLine(modelsModel({ primary: "custom", secondary: null })), "Models: custom pins (primary)");
+  assert.equal(modelsBannerLine(modelsModel({ primary: null, secondary: null })), "Models: picker default (primary off)");
+  assert.equal(modelsBannerLine(modelsModel({ primary: "mixed", secondary: "mixed" }, "secondary")), "Models: mixed (secondary)");
+  assert.equal(modelsBannerLine(modelsModel({ primary: "mixed", secondary: null }, "secondary")), "Models: secondary off → primary pins: mixed");
+  assert.equal(modelsBannerLine(modelsModel({ primary: "mixed", secondary: "ghost" }, "secondary")), "Models: secondary ghost missing → primary pins: mixed");
+  assert.equal(modelsBannerLine(modelsModel({ primary: "mixed", secondary: null }, "secondary")), "Models: secondary off → primary pins: mixed");
+  assert.equal(
+    modelsBannerLine(createModelProfilesModel({ pluginRoot: "/p", windowRole: "secondary", listResult: MODEL_LIST({ primary: "mixed", secondary: null }, "secondary") })),
+    "Models: secondary off → primary pins: mixed",
+  );
+  assert.equal(modelsBannerLine(createModelProfilesModel({ pluginRoot: null })), null);
+});
+
+test("modelsBannerLine marks an invalid roles file", () => {
+  const model = createModelProfilesModel({
+    pluginRoot: "/p",
+    windowRole: "secondary",
+    listResult: { ...MODEL_LIST({ primary: "mixed", secondary: null }, "secondary"), rolesErrors: ["invalid JSON: nope"] },
+  });
+  assert.equal(modelsBannerLine(model), "Models: secondary invalid → primary pins: mixed");
+});
+
+test("createWindowBannerModel appends the models line to the tooltip and model", () => {
+  const banner = createWindowBannerModel(sessionModel(), "Models: mixed (primary)");
+  assert.equal(banner.models, "Models: mixed (primary)");
+  assert.equal(banner.tooltip, "/repo/worktrees/plan-1\nModels: mixed (primary)\nClick to open Session & Doctor");
+  assert.equal(createWindowBannerModel(sessionModel()).models, undefined);
+});
+
+test("banner HTML renders the models line escaped and keeps the CSP and single command link", () => {
+  const hostile = `<img src=x onerror=alert(1)>`;
+  const html = renderWindowBannerHtml(createWindowBannerModel(sessionModel(), `Models: ${hostile} (primary)`), "abc");
+  assert.doesNotMatch(html, /<script/i);
+  assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"));
+  assert.ok(!html.includes(hostile));
+  assert.match(html, /<span class="models">Models: &lt;img src=x onerror=alert\(1\)&gt; \(primary\)<\/span>/);
+  assert.match(
+    html,
+    /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-abc';">/,
+  );
+  assert.equal(html.match(/href=/g)?.length, 1);
 });
