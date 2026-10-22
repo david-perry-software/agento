@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 (unreleased)
+
+- **Added.** Model profile editor. The Model Profiles view's **Edit** action now
+  opens a webview form editor — and the palette command *Agento: Edit Model
+  Profile* opens it for any profile — that edits the name, description, default
+  model, the six agent pins, and per-command overrides, with model choices from
+  VS Code and free text always allowed. Save dry-runs first and shows errors and
+  warnings inline, Save & Apply saves then applies, and Add alias writes
+  `copilotModels` through `models alias set`; every write passes `--expect`, so a
+  concurrent change shows a conflict banner with only Reload. The CLI also
+  reports `pinnable` on `models list` (the agent aliases and the commands a
+  profile may pin) and `body` on `models show` (the stored profile as written).
+
 ## 0.10.0 (2026-10-21)
 
 - **Added.** Model Profiles sidebar view. The Agento container gains a **Model
