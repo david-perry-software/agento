@@ -240,7 +240,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   rebuildModelProfileWatchers = (): void => {
     const root = pluginRoot();
     const profilesFilePath = modelProfiles.current.profilesFile?.path ?? null;
-    const key = `${root ?? ""}\u0000${profilesFilePath ?? ""}`;
+    const rolesFilePath = modelProfiles.current.roles?.rolesFile?.path ?? null;
+    const key = `${root ?? ""}\u0000${profilesFilePath ?? ""}\u0000${rolesFilePath ?? ""}`;
     if (key === modelProfileWatcherKey) return;
     modelProfileWatcherKey = key;
     for (const disposable of modelProfileWatcherDisposables) disposable.dispose();
@@ -269,6 +270,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         modelProfileWatcherDisposables.push(watcher);
       } catch (error) {
         output.appendLine(`model profiles watcher (profiles file): ${String(error)}`);
+      }
+    }
+    if (rolesFilePath) {
+      try {
+        const watcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(path.dirname(rolesFilePath)), "model-roles.json"),
+        );
+        watcher.onDidCreate((uri) => scheduleModelProfilesReload(`roles file created ${uri.fsPath}`));
+        watcher.onDidChange((uri) => scheduleModelProfilesReload(`roles file changed ${uri.fsPath}`));
+        watcher.onDidDelete((uri) => scheduleModelProfilesReload(`roles file deleted ${uri.fsPath}`));
+        modelProfileWatcherDisposables.push(watcher);
+      } catch (error) {
+        output.appendLine(`model profiles watcher (roles file): ${String(error)}`);
       }
     }
   };
