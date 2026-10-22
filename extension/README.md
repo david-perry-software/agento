@@ -68,33 +68,44 @@ written to the Agento output channel.
 ## Model Profiles
 
 The Model Profiles view reads `agento.mjs models list --plugin-root <clone>` and
-shows one row per profile: the name, the description (prefixed with `applied ·` on
-the applied profile), and an icon — `pass-filled` for the applied profile, `error`
-for a profile with errors, `warning` for one with warnings, and a plain glyph
-otherwise. The tooltip lists the description, every error, every warning, and the
-resolved pins: each `.github/agents/<name>.agent.md` value by agent name, and command
-files collapsed to one line per model value. When the clone's pins match no profile,
-a leading info row says so.
+shows two pinned role rows — **Primary windows** and **Secondary windows**, each with
+its assignment and an inline turn-off when on — followed by one row per profile: the
+name, `primary` and/or `secondary` labels before the description when a role uses
+the profile, and an icon — `pass-filled` for the profile in effect in this window,
+`error` for a profile with errors, `warning` for one with warnings, and a plain glyph
+otherwise. The tooltip lists the description, every error, every warning, the
+resolved pins, and the profile's role assignments. When the clone's pins match no
+profile, a leading info row says so.
 
-An inline Apply button applies the profile; the context menu offers Edit, Duplicate,
-Rename, and Delete; the title bar offers New Profile, Clear (when the view is ready),
-Refresh, and the overflow Open Profiles File. Two empty states invite you to create
-the profiles file, or to set `agento.pluginRoot` / `chat.pluginLocations` when no
-Agento plugin clone is found.
+The inline **Use Here** uses the profile for the current window's role (primary
+windows run `models apply <name>`; plan/build/freehand windows run
+`models use <name> --role secondary`). The context menu offers **Use in Primary
+Windows**, **Use in Secondary Windows**, **Turn Off for Primary Windows**, **Turn Off
+for Secondary Windows**, Edit, Duplicate, Rename, and Delete; the title bar offers
+New Profile, **Turn Off for This Window's Role**, Refresh, and the overflow Open
+Profiles File. Switching the primary profile from a secondary window asks a
+confirmation first, and Delete names the roles that use the profile and passes
+`--force` when one does. Two empty states invite you to create the profiles file, or
+to set `agento.pluginRoot` / `chat.pluginLocations` when no Agento plugin clone is
+found.
 
 The view refreshes on activation, on every `agento.refresh`, when it becomes visible,
-on window focus, and from watchers on the profiles file and the clone's
-`.github/agents/*.agent.md` files, so an apply from a terminal or another window shows
-up without a manual refresh. Writes pass the profiles-file hash as `--expect`, so a
-stale view shows a retry message and reloads instead of clobbering a concurrent edit.
+on window focus, and from watchers on the profiles file, the roles file
+(`model-roles.json`), and the clone's `.github/agents/*.agent.md` files, so a role or
+profile change from a terminal or another window shows up without a manual refresh.
+Writes pass the right hash as `--expect` (the profiles-file hash for primary writes,
+the roles-file hash for secondary writes), so a stale view shows a retry message and
+reloads instead of clobbering a concurrent edit. The window banner shows a `Models:`
+line naming the profile in effect in this window.
 
 **Edit** opens a webview form editor for the profile — name, description, default
 model, the six agent pins, and per-command overrides — instead of the raw JSON. Each
 value is a single model or an ordered fallback list; the datalist offers the models
 VS Code reports and free text always works. **Save** dry-runs first and shows errors
-and warnings inline; **Save & Apply** saves then applies the profile. **Add alias**
-next to a chosen model runs `models alias set`, and a concurrent write shows a
-conflict banner with only **Reload**. Closing the panel discards unsaved edits.
+and warnings inline; **Save & Use Here** saves then uses the profile in this window's
+role. **Add alias** next to a chosen model runs `models alias set`, and a concurrent
+write shows a conflict banner with only **Reload**. Closing the panel discards
+unsaved edits.
 
 ## Commands
 
@@ -117,18 +128,22 @@ Agento does neither. Expired, malformed, mismatched, rejected, or failed handoff
 discarded without submission and reported in the UI and Agento output channel.
 
 **Agento: Select Model Profile** lists the profiles in
-`~/.config/agento/model-profiles.json`, marks the applied one, and applies the chosen
-profile — or *Clear* — to the Agento plugin clone through the bundled CLI
-(`agento.mjs models apply|clear --plugin-root <clone>`). The clone is the
-`agento.pluginRoot` setting, else the first enabled `chat.pluginLocations` entry whose
-`.claude-plugin/plugin.json` is named `agento`. Run *Developer: Reload Window* if the
-model picker does not update; failures go to the Agento output channel.
+`~/.config/agento/model-profiles.json`, marks each profile's `primary` / `secondary`
+labels, and uses the chosen profile for the current window's role — or *Turn off* —
+through the bundled CLI (`agento.mjs models apply|clear --plugin-root <clone>` for
+primary windows, `agento.mjs models use <name|none> --role secondary` for
+plan/build/freehand windows). The clone is the `agento.pluginRoot` setting, else the
+first enabled `chat.pluginLocations` entry whose `.claude-plugin/plugin.json` is named
+`agento`. Run *Developer: Reload Window* if the model picker does not update;
+failures go to the Agento output channel.
 
-The Model Profiles view is driven by the `agento.modelProfiles.*` commands — Apply,
-New Profile, Clear, Open Profiles File, Edit, Duplicate, Rename, Delete, and Create
-Profiles File — which run the bundled CLI (`agento.mjs models …`) and share the quick
-pick's apply/clear path. **Agento: Edit Model Profile** (Command Palette) picks a
-profile and opens the same editor.
+The Model Profiles view is driven by the `agento.modelProfiles.*` commands — Use
+Here, Use in Primary Windows, Use in Secondary Windows, Turn Off for Primary Windows,
+Turn Off for Secondary Windows, New Profile, Turn Off for This Window's Role, Open
+Profiles File, Edit, Duplicate, Rename, Delete, and Create Profiles File — which run
+the bundled CLI (`agento.mjs models …`) and share the role-aware use/off path.
+**Agento: Edit Model Profile** (Command Palette) picks a profile and opens the same
+editor.
 
 ## Settings
 

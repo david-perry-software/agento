@@ -301,17 +301,38 @@ from the CLI.
 
 ## Model profiles
 
-The **Model Profiles** view in the Agento container shows one row per profile from
-`agento.mjs models list --plugin-root <clone>`: the name, the description (prefixed
-with `applied ·` on the applied profile), and an icon for applied, error, warning, or
-plain. The tooltip lists the description, every error and warning, and the profile's
-resolved pins. An inline Apply button applies the profile; the context menu offers
-Edit, Duplicate, Rename, and Delete; the title bar offers New Profile, Clear (when
-the view is ready), Refresh, and Open Profiles File. Empty states invite you to
-create the profiles file or to set `agento.pluginRoot` / `chat.pluginLocations`. The
-view refreshes when the profiles file or the clone's agent files change, when it
-becomes visible, on window focus, and on Refresh, and writes pass `--expect` so a
-stale view reloads instead of clobbering a concurrent edit.
+The **Model Profiles** view in the Agento container shows two pinned role rows
+(**Primary windows** and **Secondary windows**) followed by one row per profile from
+`agento.mjs models list --plugin-root <clone>`. Each role row shows its assignment
+(a profile name, `custom pins`, `off`, `<name> (missing) → primary pins`, or
+`invalid roles file → primary pins`), marks the current window's role with
+`· this window`, and clicks through to a picker for that role. Profile rows show
+`primary` and/or `secondary` labels before the description when a role uses the
+profile, and `pass-filled` marks the profile in effect in this window; `error`
+marks invalid profiles and `warning` ones with warnings. The tooltip lists the
+description, every error and warning, the resolved pins, and the profile's role
+assignments.
+
+The inline **Use Here** uses the profile for the current window's role (in a primary
+window this is `models apply <name>`; in a plan, build, or freehand window it is
+`models use <name> --role secondary`). The context menu's **Use in Primary
+Windows** / **Use in Secondary Windows** and **Turn Off for Primary Windows** /
+**Turn Off for Secondary Windows** target either role, the role rows carry an inline
+turn-off when the role is on, and the title-bar **Turn Off for This Window's Role**
+(formerly Clear) turns off the current role. Switching the primary profile from a
+secondary window first asks a confirmation, because it changes the clone's file pins
+used by every primary window. The context menu also offers Edit, Duplicate, Rename,
+and Delete, and the title bar offers New Profile, Refresh, and Open Profiles File;
+Delete names the roles that use the profile and passes `--force` when it is applied
+or assigned to the secondary role. Empty states invite you to create the profiles
+file or to set `agento.pluginRoot` / `chat.pluginLocations`.
+
+The view refreshes when the profiles file, the roles file (`model-roles.json`), or
+the clone's agent files change, when it becomes visible, on window focus, and on
+Refresh; writes pass `--expect` (the profiles-file hash for primary writes, the
+roles-file hash for secondary writes) so a stale view reloads instead of clobbering
+a concurrent edit. The window banner gains a `Models:` line naming the profile in
+effect in this window.
 
 **Edit** — and the **Agento: Edit Model Profile** palette command — opens the profile
 in a webview form editor instead of the raw JSON. The form edits the name,
@@ -320,8 +341,8 @@ is a single model or an ordered fallback list; the inputs are backed by a datali
 the models VS Code reports (`vscode.lm.selectChatModels()`), free text always works,
 and an empty model list shows a hint. **Save** runs `models update --dry-run` first
 and shows the CLI's errors and warnings inline, then writes through `models update`
-(renaming through `models rename` first when the name changed); **Save & Apply**
-follows the save with `models apply <name>`. Next to each chosen model, the current
+(renaming through `models rename` first when the name changed); **Save & Use Here**
+follows the save with the role-aware Use Here. Next to each chosen model, the current
 alias — or the alias suggested from the model's vendor and id — appears with **Add
 alias**, which runs `models alias set`. Every write passes `--expect`, so a concurrent
 change shows a conflict banner naming the changed fields with only **Reload**
