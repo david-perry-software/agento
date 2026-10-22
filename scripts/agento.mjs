@@ -5118,16 +5118,29 @@ switch (command) {
       const renamed = renameProfile(loaded, old, next);
       const nextData = nextProfilesObject(loaded, renamed.profiles, loaded.copilotModels);
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [next] });
-      emit({ verb, profile: old, ...result }, code);
+      if (code !== 0) emit({ verb, profile: old, ...result }, code);
+      if (loadedRoles.secondary === old) {
+        const rolesWrite = writeRoles(loadedRoles, { secondary: next }, {});
+        if (rolesWrite.code !== 0) emit({ verb, profile: old, ...result, secondaryBefore: loadedRoles.secondary, rolesWrite: rolesWrite.result }, rolesWrite.code);
+        emit({ verb, profile: old, ...result, secondaryBefore: loadedRoles.secondary, roles: rolesWrite.result.roles, rolesFile: rolesWrite.result.rolesFile, rolesErrors: rolesWrite.result.rolesErrors }, 0);
+      }
+      emit({ verb, profile: old, ...result }, 0);
     }
 
     if (verb === "delete") {
       if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       if (state.active === name && !options.force) emit({ status: "active", verb, profile: name, message: `profile ${name} is applied in ${pluginRoot}; run agento.mjs models clear or pass --force to delete it`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+      if (loadedRoles.secondary === name && !options.force) emit({ status: "assigned", verb, profile: name, message: `profile ${name} is assigned to the secondary role; run models use none --role secondary to turn the role off, or pass --force to delete it and turn the role off`, ...modelsReport(pluginRoot, loaded, state) }, 3);
       const deleted = deleteProfile(loaded, name);
       const nextData = nextProfilesObject(loaded, deleted.profiles, loaded.copilotModels);
       const { code, result } = writeProfiles(pluginRoot, loaded, nextData, { expect: options.expect, names: [name] });
-      emit({ verb, profile: name, ...result }, code);
+      if (code !== 0) emit({ verb, profile: name, ...result }, code);
+      if (loadedRoles.secondary === name) {
+        const rolesWrite = writeRoles(loadedRoles, { secondary: null }, {});
+        if (rolesWrite.code !== 0) emit({ verb, profile: name, ...result, secondaryBefore: loadedRoles.secondary, rolesWrite: rolesWrite.result }, rolesWrite.code);
+        emit({ verb, profile: name, ...result, secondaryBefore: loadedRoles.secondary, roles: rolesWrite.result.roles, rolesFile: rolesWrite.result.rolesFile, rolesErrors: rolesWrite.result.rolesErrors }, 0);
+      }
+      emit({ verb, profile: name, ...result }, 0);
     }
 
     if (verb === "alias set") {

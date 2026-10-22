@@ -3884,6 +3884,78 @@ test("models pins outside any repository reports windowRole unmanaged and role p
   assert.equal(outside.json.roleSource, "window");
 });
 
+test("models rename moves the secondary assignment and reports secondaryBefore", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+
+  const renamed = models("rename", "a", "b");
+  assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
+  assert.equal(renamed.json.secondaryBefore, "a");
+  assert.deepEqual(renamed.json.roles, { secondary: "b" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8")).profiles, { b: { default: "A (copilot)" } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "b" });
+});
+
+test("models rename of a non-assigned profile leaves the roles file byte-identical", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" }, c: { default: "C (copilot)" } });
+  assert.equal(models("use", "c", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+  const before = fs.readFileSync(rolesPath, "utf8");
+
+  const renamed = models("rename", "a", "b");
+  assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), before);
+});
+
+test("models delete refuses the assigned secondary profile and --force turns the role off", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+  const profilesPath = path.join(home, "model-profiles.json");
+  const profilesBefore = fs.readFileSync(profilesPath, "utf8");
+  const rolesBefore = fs.readFileSync(rolesPath, "utf8");
+
+  const refused = models("delete", "a");
+  assert.equal(refused.code, 3, JSON.stringify(refused.json));
+  assert.equal(refused.json.status, "assigned");
+  assert.match(refused.json.message, /models use none --role secondary/);
+  assert.equal(fs.readFileSync(profilesPath, "utf8"), profilesBefore);
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), rolesBefore);
+
+  const forced = models("delete", "a", "--force");
+  assert.equal(forced.code, 0, JSON.stringify(forced.json));
+  assert.equal(forced.json.secondaryBefore, "a");
+  assert.deepEqual(forced.json.roles, { secondary: null });
+  assert.deepEqual(JSON.parse(fs.readFileSync(profilesPath, "utf8")).profiles, {});
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+});
+
+test("models delete reports active first when a profile is both applied and secondary", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("apply", "a").code, 0);
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const refused = models("delete", "a");
+  assert.equal(refused.code, 3, JSON.stringify(refused.json));
+  assert.equal(refused.json.status, "active");
+});
+
+test("models delete of a non-assigned profile leaves the roles file untouched", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" }, c: { default: "C (copilot)" } });
+  assert.equal(models("use", "c", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+  const before = fs.readFileSync(rolesPath, "utf8");
+
+  const deleted = models("delete", "a");
+  assert.equal(deleted.code, 0, JSON.stringify(deleted.json));
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), before);
+});
+
 test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {
   const { models } = modelsFixture();
   // Wrong arity for each new verb.
