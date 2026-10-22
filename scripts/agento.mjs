@@ -53,7 +53,7 @@ import {
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
-import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, isPinnablePrompt, missingAliasWarning, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
@@ -4855,7 +4855,11 @@ switch (command) {
           targets,
         };
       });
-      emit({ status: "ok", verb, profiles, copilotModels: loaded.copilotModels, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
+      const pinnable = {
+        agents: Object.keys(AGENT_ALIASES),
+        prompts: state.layout.prompts.filter((p) => isPinnablePrompt(p, new Set(state.layout.agents.map((a) => a.name).filter(Boolean)))).map((p) => p.name).sort(),
+      };
+      emit({ status: "ok", verb, profiles, pinnable, copilotModels: loaded.copilotModels, errors: fileErrors, ...modelsReport(pluginRoot, loaded, state) });
     }
 
     if (verb === "show") {
@@ -4863,7 +4867,7 @@ switch (command) {
       const { targets, errors } = resolveProfile(loaded, name, state.layout);
       const description = typeof loaded.profiles[name]?.description === "string" ? loaded.profiles[name].description : null;
       const warnings = tierWarnings(targets, loaded.profiles[name], loaded.copilotModels);
-      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
+      emit({ status: errors.length ? "invalid" : "ok", verb, profile: name, description, body: loaded.profiles[name], targets, errors, warnings, ...modelsReport(pluginRoot, loaded, state) }, errors.length ? 3 : 0);
     }
 
     if (verb === "pins") {

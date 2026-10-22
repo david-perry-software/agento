@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, isPinnablePrompt, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -157,6 +157,14 @@ test("resolveTargets: prompts.<name> on a custom-agent prompt and unknown prompt
     'prompts.nope: no prompt named "nope" in .github/prompts',
     "prompts.build-feature: runs on Agento builder and inherits its model; set the agent's model instead",
   ]);
+});
+
+test("isPinnablePrompt: absent agent, built-in agent, known custom agent, unknown agent name", () => {
+  const agentNames = new Set(AGENTS.map((a) => a.name));
+  assert.equal(isPinnablePrompt({ name: "doctor", agent: null }, agentNames), true);
+  assert.equal(isPinnablePrompt({ name: "doctor", agent: "agent" }, agentNames), true);
+  assert.equal(isPinnablePrompt({ name: "build-feature", agent: "Agento builder" }, agentNames), false);
+  assert.equal(isPinnablePrompt({ name: "ghost", agent: "Agento ghost" }, agentNames), true);
 });
 
 const AGENT_DOC = '---\nname: "X"\ndescription: "d"\nargument-hint: "h"\ntools: [read]\n---\n\nBody model: no\n';

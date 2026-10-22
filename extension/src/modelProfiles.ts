@@ -129,6 +129,23 @@ export function deleteProfileArgs(name: string, pluginRoot: string, options: { f
   ];
 }
 
+export function updateProfileArgs(name: string, pluginRoot: string, options: { dryRun?: boolean; expect?: string | null } = {}): string[] {
+  return [
+    "models", "update", name,
+    ...(options.dryRun ? ["--dry-run"] : []),
+    ...(options.expect ? ["--expect", options.expect] : []),
+    "--plugin-root", pluginRoot,
+  ];
+}
+
+export function aliasSetArgs(picker: string, id: string, pluginRoot: string, options: { expect?: string | null } = {}): string[] {
+  return [
+    "models", "alias", "set", picker, id,
+    ...(options.expect ? ["--expect", options.expect] : []),
+    "--plugin-root", pluginRoot,
+  ];
+}
+
 export function initProfilesArgs(pluginRoot: string): string[] {
   return ["models", "init", "--plugin-root", pluginRoot];
 }
@@ -149,6 +166,8 @@ export function summarizeModelsResult(json: unknown): ModelsSummary {
     profile?: unknown;
     changed?: unknown;
     created?: unknown;
+    reapply?: unknown;
+    picker?: unknown;
     errors?: unknown;
     dirty?: unknown;
     message?: unknown;
@@ -159,6 +178,14 @@ export function summarizeModelsResult(json: unknown): ModelsSummary {
     if (verb === "create") return { ok: true, message: `Created model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
     if (verb === "rename") return { ok: true, message: "Renamed the model profile.", dirty: [], conflict: false };
     if (verb === "delete") return { ok: true, message: `Deleted model profile ${profile ?? "unknown"}.`, dirty: [], conflict: false };
+    if (verb === "update") {
+      const reapply = typeof result.reapply === "string" && result.reapply ? ` Run ${result.reapply} to update the active models.` : "";
+      return { ok: true, message: `Saved model profile ${profile ?? "unknown"}.${reapply}`, dirty: [], conflict: false };
+    }
+    if (verb === "alias set") {
+      const picker = typeof result.picker === "string" ? result.picker : "unknown";
+      return { ok: true, message: `Saved the Copilot model alias for ${picker}.`, dirty: [], conflict: false };
+    }
     if (verb === "init") return { ok: true, message: result.created === true ? "Created the model profiles file." : "The model profiles file already exists.", dirty: [], conflict: false };
     const changed = Array.isArray(result.changed) ? result.changed.length : 0;
     const what = profile ? `Applied model profile ${profile}` : "Cleared the model profile";

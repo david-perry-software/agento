@@ -88,6 +88,14 @@ on window focus, and from watchers on the profiles file and the clone's
 up without a manual refresh. Writes pass the profiles-file hash as `--expect`, so a
 stale view shows a retry message and reloads instead of clobbering a concurrent edit.
 
+**Edit** opens a webview form editor for the profile — name, description, default
+model, the six agent pins, and per-command overrides — instead of the raw JSON. Each
+value is a single model or an ordered fallback list; the datalist offers the models
+VS Code reports and free text always works. **Save** dry-runs first and shows errors
+and warnings inline; **Save & Apply** saves then applies the profile. **Add alias**
+next to a chosen model runs `models alias set`, and a concurrent write shows a
+conflict banner with only **Reload**. Closing the panel discards unsaved edits.
+
 ## Commands
 
 The play action in a delivery row, an in-flight initiative member, or the Session &
@@ -119,7 +127,8 @@ model picker does not update; failures go to the Agento output channel.
 The Model Profiles view is driven by the `agento.modelProfiles.*` commands — Apply,
 New Profile, Clear, Open Profiles File, Edit, Duplicate, Rename, Delete, and Create
 Profiles File — which run the bundled CLI (`agento.mjs models …`) and share the quick
-pick's apply/clear path.
+pick's apply/clear path. **Agento: Edit Model Profile** (Command Palette) picks a
+profile and opens the same editor.
 
 ## Settings
 

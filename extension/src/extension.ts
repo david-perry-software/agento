@@ -32,6 +32,7 @@ import {
   type ModelsSummary,
 } from "./modelProfiles.js";
 import { ModelProfilesProvider } from "./modelProfilesProvider.js";
+import { ProfileEditorPanels, type ModelSource } from "./profileEditorPanel.js";
 import {
   createModelProfilesModel,
   suggestCopyName,
@@ -88,6 +89,8 @@ export interface ExtensionApi {
   setNewInitiativeRunner: (runner?: (input: NewInitiativeInput) => Promise<NewInitiativeFlowResult>) => void;
   setNewInitiativePrompts: (prompts?: NewInitiativePrompts) => void;
   setModelProfilePrompts: (prompts?: ModelProfilePrompts) => void;
+  profileEditor: ProfileEditorPanels;
+  setProfileEditorModelSource: (source: ModelSource) => void;
   windowGate: () => WindowGate;
 }
 
@@ -193,6 +196,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       (snapshot) => {
         modelProfiles.update(snapshot);
         rebuildModelProfileWatchers();
+        void profileEditor.notifyProfilesChanged();
       },
       (error) => {
         modelProfiles.update(createModelProfilesModel({ pluginRoot: root, listError: String(error) }));
@@ -700,6 +704,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     await vscode.window.showTextDocument(document, { selection: new vscode.Selection(start, end) });
   };
 
+  const profileEditor = new ProfileEditorPanels(context.extensionUri, client, output, {
+    pluginRoot,
+    reload: async () => {
+      await reloadModelProfiles();
+    },
+    apply: (profile) => runModelsSelection({ kind: "apply", profile }),
+    openFile: async () => {
+      await openProfilesFile();
+    },
+  });
+
   const defaultModelProfilePrompts: ModelProfilePrompts = {
     enterName: async (options) => vscode.window.showInputBox({
       title: options.title,
@@ -783,10 +798,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (!name) return;
     const kind = await modelProfilePrompts.chooseNewKind(existing);
     if (!kind) return;
-    return runModelsAction(
+    await runModelsAction(
       createProfileArgs(name, root, { ...(kind.kind === "copy" ? { from: kind.from } : {}), hash: modelProfilesHash() }),
       root,
     );
+    await profileEditor.open(name);
   });
   const modelProfilesDuplicateCommand = vscode.commands.registerCommand("agento.modelProfiles.duplicate", async (element?: ModelProfilesElement) => {
     const profile = profileOf(element);
@@ -806,7 +822,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       validate: (value) => validateProfileName(value, existing) ?? undefined,
     });
     if (!name) return;
-    return runModelsAction(createProfileArgs(name, root, { from: profile.name, hash: modelProfilesHash() }), root);
+    await runModelsAction(createProfileArgs(name, root, { from: profile.name, hash: modelProfilesHash() }), root);
+    await profileEditor.open(name);
   });
   const modelProfilesRenameCommand = vscode.commands.registerCommand("agento.modelProfiles.rename", async (element?: ModelProfilesElement) => {
     const profile = profileOf(element);
@@ -847,7 +864,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       return;
     }
     if (!resolveModelsRoot()) return;
-    await openProfilesFile(profile.name);
+    await profileEditor.open(profile.name);
+  });
+  const editModelProfileCommand = vscode.commands.registerCommand("agento.editModelProfile", async () => {
+    const root = resolveModelsRoot();
+    if (!root) return;
+    if (modelProfiles.current.state === "no-file") {
+      const choice = await vscode.window.showInformationMessage("The model profiles file does not exist yet.", "Create Profiles File");
+      if (choice === "Create Profiles File") return runModelsAction(initProfilesArgs(root), root);
+      return;
+    }
+    const profiles = modelProfiles.current.profiles;
+    if (profiles.length === 0) {
+      await vscode.window.showInformationMessage("There are no model profiles to edit; create one first.");
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      profiles.map((profile) => ({ label: profile.name, description: profile.description ?? undefined })),
+      { title: "Agento: Edit Model Profile", placeHolder: "Pick a profile to edit" },
+    );
+    if (!picked) return;
+    await profileEditor.open(picked.label);
   });
   const modelProfilesOpenFileCommand = vscode.commands.registerCommand("agento.modelProfiles.openFile", async () => {
     if (!resolveModelsRoot()) return;
@@ -934,6 +971,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     initiatives,
     sessionDoctor,
     modelProfiles,
+    profileEditor,
     statusBar,
     refreshSubscription,
     refreshCommand,
@@ -952,6 +990,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     modelProfilesRenameCommand,
     modelProfilesDeleteCommand,
     modelProfilesEditCommand,
+    editModelProfileCommand,
     modelProfilesOpenFileCommand,
     modelProfilesInitCommand,
     showActionsCommand,
@@ -972,10 +1011,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   await consumePending();
   scheduler.refreshNow("activate");
   return {
-    client, scheduler, deliveries, initiatives, sessionDoctor, modelProfiles, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
+    client, scheduler, deliveries, initiatives, sessionDoctor, modelProfiles, profileEditor, sessionDoctorView, statusBar, windowBanner, output, dispatchAction,
     startNewPlan, setNewPlanRunner, setNewPlanPrompts,
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
     setModelProfilePrompts,
+    setProfileEditorModelSource: (source) => profileEditor.setModelSource(source),
     windowGate: () => gate,
   };
 }

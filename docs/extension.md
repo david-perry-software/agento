@@ -313,6 +313,21 @@ view refreshes when the profiles file or the clone's agent files change, when it
 becomes visible, on window focus, and on Refresh, and writes pass `--expect` so a
 stale view reloads instead of clobbering a concurrent edit.
 
+**Edit** — and the **Agento: Edit Model Profile** palette command — opens the profile
+in a webview form editor instead of the raw JSON. The form edits the name,
+description, default model, the six agent pins, and per-command overrides. Each value
+is a single model or an ordered fallback list; the inputs are backed by a datalist of
+the models VS Code reports (`vscode.lm.selectChatModels()`), free text always works,
+and an empty model list shows a hint. **Save** runs `models update --dry-run` first
+and shows the CLI's errors and warnings inline, then writes through `models update`
+(renaming through `models rename` first when the name changed); **Save & Apply**
+follows the save with `models apply <name>`. Next to each chosen model, the current
+alias — or the alias suggested from the model's vendor and id — appears with **Add
+alias**, which runs `models alias set`. Every write passes `--expect`, so a concurrent
+change shows a conflict banner naming the changed fields with only **Reload**
+(discard the draft and load the latest); the draft is never overwritten, but closing
+the panel discards unsaved edits.
+
 The plugin clone is the `agento.pluginRoot` setting, else the first enabled
 `chat.pluginLocations` entry whose `.claude-plugin/plugin.json` is named `agento`.
 The bundled CLI's own plugin root is `extension/`, so the extension always passes

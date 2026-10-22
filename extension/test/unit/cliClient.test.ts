@@ -55,6 +55,25 @@ test("CliClient names agento.nodePath when spawning fails", async () => {
   await assert.rejects(client.run(["session"], extensionRoot), (error) => error instanceof CliError && error.message.includes("agento.nodePath"));
 });
 
+test("CliClient.run delivers stdin input and closes stdin when none is given", async (context) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "agento-cli-stdin-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const script = path.join(root, "echo.mjs");
+  await writeFile(
+    script,
+    'let data = ""; process.stdin.setEncoding("utf8"); process.stdin.on("data", (chunk) => { data += chunk; }); process.stdin.on("end", () => process.stdout.write(JSON.stringify({ echoed: data })));',
+  );
+  const client = new CliClient({ nodePath: process.execPath, cliPath: script, output });
+
+  const delivered = await client.run([], root, { input: "hello stdin" });
+  assert.deepEqual(delivered.json, { echoed: "hello stdin" });
+
+  // No input: stdin is closed immediately, so the echo script ends and resolves
+  // promptly instead of hanging until the timeout.
+  const prompt = await client.run([], root);
+  assert.deepEqual(prompt.json, { echoed: "" });
+});
+
 test("CliClient.run accepts a per-call timeout that overrides the client default", async (context) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "agento-cli-timeout-"));
   context.after(() => rm(root, { recursive: true, force: true }));
