@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, isPinnablePrompt, parseModelValue, parseProfiles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, serializeProfiles, setAlias, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, isPinnablePrompt, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -11,6 +11,45 @@ test("profilesFile: AGENTO_CONFIG_HOME, then XDG_CONFIG_HOME/agento, then ~/.con
   assert.equal(profilesFile({ XDG_CONFIG_HOME: "/x" }, "/home/u"), path.join("/x", "agento", "model-profiles.json"));
   assert.equal(profilesFile({}, "/home/u"), path.join("/home/u", ".config", "agento", "model-profiles.json"));
   assert.equal(profilesFile({ XDG_CONFIG_HOME: "" }, "/home/u"), path.join("/home/u", ".config", "agento", "model-profiles.json"));
+});
+
+test("rolesFile resolves model-roles.json beside profilesFile under the same env/home", () => {
+  assert.equal(rolesFile({ AGENTO_CONFIG_HOME: "/t", XDG_CONFIG_HOME: "/x" }, "/home/u"), path.join("/t", "model-roles.json"));
+  assert.equal(rolesFile({ XDG_CONFIG_HOME: "/x" }, "/home/u"), path.join("/x", "agento", "model-roles.json"));
+  assert.equal(rolesFile({}, "/home/u"), path.join("/home/u", ".config", "agento", "model-roles.json"));
+});
+
+test("parseRoles accepts { secondary: name }, { secondary: null }, and an empty object", () => {
+  assert.deepEqual(parseRoles(JSON.stringify({ secondary: "x" })), { secondary: "x", errors: [] });
+  assert.deepEqual(parseRoles(JSON.stringify({ secondary: null })), { secondary: null, errors: [] });
+  assert.deepEqual(parseRoles(JSON.stringify({})), { secondary: null, errors: [] });
+});
+
+test("parseRoles rejects unknown keys and bad secondary values", () => {
+  assert.deepEqual(parseRoles(JSON.stringify({ secondary: "x", extra: 1 })).errors, ['unknown top-level key "extra"']);
+  assert.deepEqual(parseRoles(JSON.stringify({ secondary: 7 })).errors, ["`secondary` must be a profile name matching [a-z0-9-]+ or null"]);
+  assert.deepEqual(parseRoles(JSON.stringify({ secondary: "Bad_Name" })).errors, ["`secondary` must be a profile name matching [a-z0-9-]+ or null"]);
+  assert.deepEqual(parseRoles(JSON.stringify({ secondary: [] })).errors, ["`secondary` must be a profile name matching [a-z0-9-]+ or null"]);
+  assert.match(parseRoles("{").errors[0], /^invalid JSON/);
+  assert.match(parseRoles("[]").errors[0], /top level must be an object/);
+});
+
+test("serializeRoles round-trips with a trailing newline", () => {
+  const text = serializeRoles({ secondary: "b" });
+  assert.ok(text.endsWith("\n"));
+  assert.equal(text, '{\n  "secondary": "b"\n}\n');
+  assert.deepEqual(JSON.parse(text), { secondary: "b" });
+  assert.equal(serializeRoles({ secondary: null }), '{\n  "secondary": null\n}\n');
+});
+
+test("roleBucket maps every window role to its bucket, defaulting to primary", () => {
+  assert.equal(roleBucket("plan"), "secondary");
+  assert.equal(roleBucket("build"), "secondary");
+  assert.equal(roleBucket("freehand"), "secondary");
+  assert.equal(roleBucket("primary"), "primary");
+  assert.equal(roleBucket("unmanaged"), "primary");
+  assert.equal(roleBucket("weird"), "primary");
+  assert.equal(roleBucket(undefined), "primary");
 });
 
 test("parseProfiles accepts the documented schema", () => {

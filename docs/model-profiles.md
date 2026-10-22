@@ -243,6 +243,49 @@ applies too, the detail joins them with `; `.
 
 Run *Developer: Reload Window* if the model picker does not reflect a change.
 
+## Window roles
+
+Primary and secondary windows use separate active profiles:
+
+- **Primary windows** (role `primary`, and `unmanaged` outside any managed
+  worktree) keep the clone's file pins: `models use <name> --role primary` is
+  `models apply <name>`, and `models use none --role primary` is `models clear`,
+  including the `worktree`, `dirty`, and `git-too-old` findings.
+- **Secondary windows** (roles `plan`, `build`, and `freehand`) get their own
+  profile, stored in `model-roles.json` next to `model-profiles.json` — it resolves
+  through the same `AGENTO_CONFIG_HOME` / `XDG_CONFIG_HOME` / `~/.config/agento`
+  path as `profilesFile`, so the two files live side by side.
+
+`models use <name> --role secondary` validates the profile (a missing or invalid
+one exits 3 and writes nothing) and then writes `{ "secondary": "<name>" }`
+atomically, honouring the same `--expect` compare-and-swap as the profiles file (a
+stale hash is a `conflict` and leaves the file byte-identical). `models use none
+--role secondary` turns the role off (`{ "secondary": null }`); an absent roles
+file also means off, so users who never set one are unaffected. The roles file is
+CLI-owned (only `use --role secondary`, `rename`, and `delete --force` write it),
+so a validated `use` replaces it wholesale and thereby repairs an invalid
+`model-roles.json`; the user-authored profiles file is different — a write leaves
+it untouched when it has errors. The name `none` is
+reserved — `models create none` and `models rename <x> none` are usage errors — and
+an existing profile literally named `none` can still be applied with
+`models apply none`.
+
+`models pins` resolves for the current window's role: in a plan, build, or freehand
+window with a secondary profile assigned it reports that profile's pins
+(`source: "role-profile"`); otherwise it reports the clone's file pins
+(`source: "file-pins"`), exactly as before. `--role primary|secondary` overrides the
+window (`roleSource: "flag"`). A dangling assignment (the profile was deleted out
+of band) or an invalid roles file falls back to file pins with a warning naming the
+fix.
+
+Rename and delete keep the assignment consistent: `models rename <old> <new>` moves
+the secondary assignment to the new name; `models delete <name>` of the secondary
+profile refuses (`status: "assigned"`, exit 3, both files untouched) without
+`--force`, and with `--force` deletes the profile and turns the role off. `agento.mjs
+doctor`'s `model-profile` check reports `primary: <active|none>; secondary:
+<name|off|invalid>` (`invalid` when the roles file has errors) and warns on a
+dangling assignment, a secondary profile with errors, or an invalid roles file.
+
 ## The pin filter
 
 `apply` and `adopt` install a git clean/smudge filter named `agento-models` in the
@@ -336,10 +379,16 @@ Local harness, in a non-Agento workspace: after a 📋 Agento Planner reply,
 and the model picker on the builder pin, `DeepSeek V4 Pro (deepseek)`, not the
 Planner's `Claude Opus 5.5 (copilot)`.
 
+In a secondary window (plan, build, or freehand), an agent selected directly still
+reads the clone's file pins — the primary's models. Only router and Autopilot
+subagents, and later `chat-model-preselect`, use the secondary profile (see
+[Window roles](#window-roles)).
+
 ## Limits
 
-- One profile is active per clone (machine-wide, last apply wins); there are no
-  per-project profiles.
+- One file-pin profile is active per clone and one secondary profile per user —
+  primary and secondary windows resolve their own bucket (see
+  [Window roles](#window-roles)); there are no per-project profiles.
 - From-source and Copilot CLI installs (install options B and C) are replaced on
   update; apply the profile again afterwards.
 - A profile name may be purely numeric (for example `42`), but JSON object keys

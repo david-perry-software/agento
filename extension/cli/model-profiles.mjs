@@ -16,6 +16,12 @@ export function profilesFile(env = process.env, home = os.homedir()) {
   return path.join(base, "agento", "model-profiles.json");
 }
 
+// The per-window-role assignment file lives beside the profiles file, so the same
+// AGENTO_CONFIG_HOME / XDG / home resolution applies; only the name differs.
+export function rolesFile(env = process.env, home = os.homedir()) {
+  return path.join(path.dirname(profilesFile(env, home)), "model-roles.json");
+}
+
 export const AGENT_ALIASES = {
   planner: "delivery-planner.agent.md",
   builder: "delivery-builder.agent.md",
@@ -29,6 +35,22 @@ export const AGENT_ALIASES = {
 // newline. Key order is insertion order, so it is preserved across a rewrite.
 export function serializeProfiles(data) {
   return JSON.stringify(data, null, 2) + "\n";
+}
+
+// The roles file on disk: the same stable serializer as the profiles file. Hashing
+// reuses `profilesHash`.
+export function serializeRoles(data) {
+  return JSON.stringify(data, null, 2) + "\n";
+}
+
+// The two window buckets: primary (the clone's file pins) and secondary (the
+// per-window-role profile for plan, build, and freehand windows).
+export const ROLE_BUCKETS = ["primary", "secondary"];
+
+// Maps a window role to the profile bucket it reads. plan, build, and freehand are
+// secondary windows; primary, unmanaged, and anything else are primary (Q5).
+export function roleBucket(windowRole) {
+  return windowRole === "plan" || windowRole === "build" || windowRole === "freehand" ? "secondary" : "primary";
 }
 
 // The sha256 hex digest of a file's bytes, used for `--expect` compare-and-swap.
@@ -172,6 +194,30 @@ export function parseProfiles(text) {
     }
   }
   return { profiles: data.profiles, copilotModels, errors };
+}
+
+// The roles file is `{ "secondary": <profile-name|null> }`. The only allowed key is
+// `secondary`; its value is a profile name ([a-z0-9-]+) or null (role off). Any
+// other key or bad value is an error; an absent key means the secondary role is off.
+export function parseRoles(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    return { secondary: null, errors: [`invalid JSON: ${error.message}`] };
+  }
+  if (!isObject(data)) return { secondary: null, errors: ["top level must be an object with a `secondary` key"] };
+  const errors = [];
+  for (const key of Object.keys(data)) if (key !== "secondary") errors.push(`unknown top-level key ${JSON.stringify(key)}`);
+  let secondary = null;
+  if (data.secondary !== undefined && data.secondary !== null) {
+    if (typeof data.secondary !== "string" || !PROFILE_NAME.test(data.secondary)) {
+      errors.push("`secondary` must be a profile name matching [a-z0-9-]+ or null");
+    } else {
+      secondary = data.secondary;
+    }
+  }
+  return { secondary, errors };
 }
 
 export function errorsFor(errors, name) {

@@ -1461,6 +1461,47 @@ test("doctor reports ten checks and includes session-workspace, model-profile, h
   assert.equal(checks["session-workspace"].detail, "not a managed pair");
 });
 
+test("doctor model-profile names both roles and warns on a dangling or invalid secondary", () => {
+  const { plugin, home, writeProfiles } = modelsFixture();
+  const { env } = restrictedPath(okStubs);
+  env.AGENTO_CONFIG_HOME = home;
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+
+  // Healthy: a valid secondary assignment is ok and the detail names both roles.
+  writeProfiles({ b: { default: "B (copilot)" } });
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "b" }));
+  const healthy = check();
+  assert.equal(healthy.status, "ok", JSON.stringify(healthy));
+  assert.match(healthy.detail, /primary: none; secondary: b/);
+
+  // Dangling: the secondary role names a profile that does not exist.
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "gone" }));
+  const dangling = check();
+  assert.equal(dangling.status, "warn", JSON.stringify(dangling));
+  assert.match(dangling.fallback, /models use none --role secondary/);
+
+  // Invalid roles file.
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "Bad_Name" }));
+  const invalid = check();
+  assert.equal(invalid.status, "warn", JSON.stringify(invalid));
+  assert.match(invalid.fallback, /models use none --role secondary/);
+});
+
+test("doctor model-profile reports secondary invalid when the roles file has errors", () => {
+  const { plugin, home, writeProfiles } = modelsFixture();
+  const { env } = restrictedPath(okStubs);
+  env.AGENTO_CONFIG_HOME = home;
+  const check = () => byId(runWith({ cwd: plugin, env }, "doctor", "--plugin-root", plugin).json)["model-profile"];
+
+  writeProfiles({ a: { default: "A (copilot)" } });
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "a", extra: 1 }));
+  const invalid = check();
+  assert.equal(invalid.status, "warn", JSON.stringify(invalid));
+  assert.match(invalid.detail, /secondary: invalid/);
+});
+
 test("doctor session-workspace is ok for non-pairs, warn for stale/missing, and ok after workspace --write", () => {
   const { repo, docs, wt, docsWt } = makePairRepo();
   const { env } = restrictedPath(okStubs);
@@ -3091,6 +3132,24 @@ function modelsFixture({ gitInit = true } = {}) {
   return { plugin, home, env, models, modelsInput, writeProfiles };
 }
 
+// A primary plugin clone plus managed worktrees: `plan-1` on feature/x (role build)
+// and `freehand-1` on changes/fh (role freehand), for role-resolved pins tests.
+function rolePinsFixture() {
+  const { plugin, home, env, models, writeProfiles } = modelsFixture();
+  const config = { worktrees: { dir: "../wt" }, branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
+  fs.mkdirSync(path.join(plugin, ".github"), { recursive: true });
+  fs.writeFileSync(path.join(plugin, ".github", "agento.json"), JSON.stringify(config));
+  git(plugin, "add", "-A");
+  git(plugin, "commit", "-q", "-m", "config");
+  const wtDir = path.resolve(plugin, "../wt");
+  const buildWt = path.join(wtDir, "plan-1");
+  git(plugin, "worktree", "add", "-q", "-b", "feature/x", buildWt);
+  const freeWt = path.join(wtDir, "freehand-1");
+  git(plugin, "worktree", "add", "-q", "-b", "changes/fh", freeWt);
+  const pinsFrom = (cwd, ...args) => runWith({ cwd, env }, "models", ...args, "--plugin-root", plugin);
+  return { plugin, home, env, models, writeProfiles, buildWt, freeWt, pinsFrom };
+}
+
 test("models list without a profiles file reports nothing applied", () => {
   const { plugin, home, models } = modelsFixture();
   const { code, json } = models();
@@ -3107,6 +3166,34 @@ test("models list without a profiles file reports nothing applied", () => {
   assert.deepEqual(json.filter.unrecorded, []);
   assert.deepEqual(json.dirty, []);
   assert.match(json.hint, /git filter.*survive pull, merge, switch, and stash/);
+});
+
+test("models list reports roles: the derived active profile and the roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  const bare = models("list");
+  assert.equal(bare.code, 0, JSON.stringify(bare.json));
+  assert.equal(bare.json.roles.primary, null);
+  assert.equal(bare.json.roles.secondary, null);
+  assert.deepEqual(bare.json.rolesFile, { path: path.join(home, "model-roles.json"), exists: false, hash: null });
+  assert.deepEqual(bare.json.rolesErrors, []);
+
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("apply", "a").code, 0);
+  const applied = models("list");
+  assert.equal(applied.code, 0, JSON.stringify(applied.json));
+  assert.equal(applied.json.roles.primary, "a");
+  assert.equal(applied.json.roles.secondary, null);
+});
+
+test("models list reports rolesErrors for an invalid roles file but still exits 0", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "Bad_Name" }));
+  const { code, json } = models("list");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.ok(json.rolesErrors.length > 0, JSON.stringify(json.rolesErrors));
+  assert.equal(json.rolesFile.exists, true);
+  assert.equal(json.roles.secondary, null);
 });
 
 test("models reports profilesFile.hash and list reports copilotModels", () => {
@@ -3625,6 +3712,330 @@ test("models usage errors: options a verb does not accept", () => {
   assert.equal(models("apply", "a", "--expect", hash).code, 1);
   assert.equal(models("pins", "--dry-run").code, 1);
   assert.equal(models("init", "--from", "a").code, 1);
+});
+
+test("models --role usage errors: bad value, missing value, and verbs that do not accept it", () => {
+  const { models } = modelsFixture();
+  assert.equal(models("list", "--role", "bogus").code, 1);
+  assert.equal(models("list", "--role").code, 1);
+  assert.equal(models("list", "--role", "primary").code, 1);
+  assert.equal(models("apply", "a", "--role", "primary").code, 1);
+});
+
+test("models use --role secondary writes and clears the roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+
+  const set = models("use", "a", "--role", "secondary");
+  assert.equal(set.code, 0, JSON.stringify(set.json));
+  assert.equal(set.json.status, "ok");
+  assert.equal(set.json.verb, "use");
+  assert.equal(set.json.secondaryBefore, null);
+  assert.equal(set.json.written, true);
+  assert.deepEqual(set.json.roles, { secondary: "a" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "a" });
+
+  const off = models("use", "none", "--role", "secondary");
+  assert.equal(off.code, 0, JSON.stringify(off.json));
+  assert.equal(off.json.secondaryBefore, "a");
+  assert.equal(off.json.written, true);
+  assert.deepEqual(off.json.roles, { secondary: null });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+});
+
+test("models use --role secondary rejects a missing or invalid profile without writing", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  const rolesPath = path.join(home, "model-roles.json");
+
+  const missing = models("use", "missing", "--role", "secondary");
+  assert.equal(missing.code, 3, JSON.stringify(missing.json));
+  assert.equal(missing.json.status, "not-found");
+  assert.equal(fs.existsSync(rolesPath), false);
+
+  writeProfiles({ bad: { default: "<placeholder>" } });
+  const invalid = models("use", "bad", "--role", "secondary");
+  assert.equal(invalid.code, 3, JSON.stringify(invalid.json));
+  assert.equal(invalid.json.status, "invalid");
+  assert.equal(fs.existsSync(rolesPath), false);
+});
+
+test("models use --role secondary honors --expect", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "b" }));
+  const current = profilesHash(fs.readFileSync(rolesPath, "utf8"));
+
+  const stale = models("use", "a", "--role", "secondary", "--expect", "f".repeat(64));
+  assert.equal(stale.code, 3, JSON.stringify(stale.json));
+  assert.equal(stale.json.status, "conflict");
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), JSON.stringify({ secondary: "b" }));
+
+  const matching = models("use", "a", "--role", "secondary", "--expect", current);
+  assert.equal(matching.code, 0, JSON.stringify(matching.json));
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "a" });
+});
+
+test("models use --role secondary leaves no temp files and keeps the mode", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: null }), { mode: 0o600 });
+  const before = fs.statSync(rolesPath).mode;
+
+  const { code, json } = models("use", "a", "--role", "secondary");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(fs.statSync(rolesPath).mode & 0o777, before & 0o777);
+  assert.deepEqual(fs.readdirSync(home).filter((f) => f.startsWith(".model-roles.json.") && f.endsWith(".tmp")), []);
+});
+
+test("models use --role secondary replaces an invalid roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "a", extra: 1 }));
+
+  const off = models("use", "none", "--role", "secondary");
+  assert.equal(off.code, 0, JSON.stringify(off.json));
+  assert.equal(off.json.status, "ok");
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: null, extra: 1 }));
+  const set = models("use", "a", "--role", "secondary");
+  assert.equal(set.code, 0, JSON.stringify(set.json));
+  assert.equal(set.json.status, "ok");
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "a" });
+});
+
+test("models use --role primary changes the same files as apply and clear", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+
+  const apply = models("apply", "a");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  const afterApply = new Map(apply.json.changed.map((f) => [f, fs.readFileSync(path.join(plugin, f), "utf8")]));
+  const clear = models("clear");
+  assert.equal(clear.code, 0, JSON.stringify(clear.json));
+  const afterClear = new Map(clear.json.changed.map((f) => [f, fs.readFileSync(path.join(plugin, f), "utf8")]));
+
+  const usePrimary = models("use", "a", "--role", "primary");
+  assert.equal(usePrimary.code, 0, JSON.stringify(usePrimary.json));
+  assert.equal(usePrimary.json.verb, "use");
+  assert.deepEqual(usePrimary.json.changed, apply.json.changed);
+  for (const f of usePrimary.json.changed) assert.equal(fs.readFileSync(path.join(plugin, f), "utf8"), afterApply.get(f));
+
+  const useNonePrimary = models("use", "none", "--role", "primary");
+  assert.equal(useNonePrimary.code, 0, JSON.stringify(useNonePrimary.json));
+  assert.deepEqual(useNonePrimary.json.changed, clear.json.changed);
+  for (const f of useNonePrimary.json.changed) assert.equal(fs.readFileSync(path.join(plugin, f), "utf8"), afterClear.get(f));
+});
+
+test("models use --role primary from a linked worktree reports worktree", () => {
+  const { plugin, env, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-models-wtbase-")), "wt");
+  git(plugin, "worktree", "add", "-q", "--detach", wt, "HEAD");
+  const useWt = runWith({ cwd: wt, env }, "models", "use", "a", "--role", "primary", "--plugin-root", wt);
+  assert.equal(useWt.code, 3, JSON.stringify(useWt.json));
+  assert.equal(useWt.json.status, "worktree");
+  assert.match(useWt.json.message, /linked worktree/);
+});
+
+test("models use usage errors: missing --role and --expect with --role primary", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  assert.equal(models("use", "a").code, 1);
+  assert.equal(models("use", "a", "--role", "primary", "--expect", "a".repeat(64)).code, 1);
+});
+
+test("models create none and rename to none are usage errors", () => {
+  const { models, writeProfiles } = modelsFixture();
+  assert.equal(models("create", "none").code, 1);
+  writeProfiles({ a: {} });
+  assert.equal(models("rename", "a", "none").code, 1);
+});
+
+test("models pins resolves the window role in managed worktrees and the primary", () => {
+  const { home, models, buildWt, freeWt, pinsFrom } = rolePinsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({
+      copilotModels: { "Builder Model (copilot)": "builder-copilot-id", "Reviewer Model (copilot)": "reviewer-copilot-id" },
+      profiles: { b: { agents: { builder: ["Builder Model (copilot)", "Builder Fallback (copilot)"], reviewer: "Reviewer Model (copilot)" } } },
+    }),
+  );
+  assert.equal(models("use", "b", "--role", "secondary").code, 0);
+
+  const build = pinsFrom(buildWt, "pins");
+  assert.equal(build.code, 0, JSON.stringify(build.json));
+  assert.equal(build.json.windowRole, "build");
+  assert.equal(build.json.role, "secondary");
+  assert.equal(build.json.roleSource, "window");
+  assert.equal(build.json.source, "role-profile");
+  assert.equal(build.json.profile, "b");
+  assert.equal(build.json.pins.builder.subagentModel, "Builder Model (copilot)");
+  assert.equal(build.json.pins.builder.copilotModel, "builder-copilot-id");
+  assert.equal(build.json.pins.reviewer.subagentModel, "Reviewer Model (copilot)");
+  assert.equal(build.json.pins.reviewer.copilotModel, "reviewer-copilot-id");
+
+  const freehand = pinsFrom(freeWt, "pins");
+  assert.equal(freehand.json.windowRole, "freehand");
+  assert.equal(freehand.json.role, "secondary");
+  assert.equal(freehand.json.source, "role-profile");
+
+  const primary = models("pins");
+  assert.equal(primary.json.windowRole, "primary");
+  assert.equal(primary.json.role, "primary");
+  assert.equal(primary.json.source, "file-pins");
+
+  const flagPrimary = pinsFrom(buildWt, "pins", "--role", "primary");
+  assert.equal(flagPrimary.json.roleSource, "flag");
+  assert.equal(flagPrimary.json.role, "primary");
+  assert.equal(flagPrimary.json.source, "file-pins");
+
+  const flagSecondary = models("pins", "--role", "secondary");
+  assert.equal(flagSecondary.json.role, "secondary");
+  assert.equal(flagSecondary.json.roleSource, "flag");
+  assert.equal(flagSecondary.json.source, "role-profile");
+});
+
+test("models pins falls back to file pins when the secondary role is off", () => {
+  const { models, buildWt, pinsFrom } = rolePinsFixture();
+  const primary = models("pins");
+  const build = pinsFrom(buildWt, "pins");
+  assert.equal(build.code, 0, JSON.stringify(build.json));
+  assert.equal(build.json.windowRole, "build");
+  assert.equal(build.json.role, "secondary");
+  assert.equal(build.json.source, "file-pins");
+  assert.deepEqual(build.json.pins, primary.json.pins);
+  assert.deepEqual(build.json.warnings, primary.json.warnings);
+});
+
+test("models pins warns and falls back to file pins for a dangling or invalid secondary", () => {
+  const { home, buildWt, pinsFrom } = rolePinsFixture();
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "gone" }));
+  const dangling = pinsFrom(buildWt, "pins");
+  assert.equal(dangling.code, 0, JSON.stringify(dangling.json));
+  assert.equal(dangling.json.source, "file-pins");
+  assert.ok(dangling.json.warnings.some((w) => /models use none --role secondary/.test(w)), JSON.stringify(dangling.json.warnings));
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "Bad_Name" }));
+  const invalid = pinsFrom(buildWt, "pins");
+  assert.equal(invalid.code, 0, JSON.stringify(invalid.json));
+  assert.equal(invalid.json.source, "file-pins");
+  assert.ok(invalid.json.warnings.some((w) => /models use none --role secondary/.test(w)), JSON.stringify(invalid.json.warnings));
+});
+
+test("models pins outside any repository reports windowRole unmanaged and role primary", () => {
+  const { env, plugin } = rolePinsFixture();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "agento-outside-"));
+  const outside = runWith({ cwd: tmp, env }, "models", "pins", "--plugin-root", plugin);
+  assert.equal(outside.code, 0, JSON.stringify(outside.json));
+  assert.equal(outside.json.windowRole, "unmanaged");
+  assert.equal(outside.json.role, "primary");
+  assert.equal(outside.json.roleSource, "window");
+});
+
+test("models rename moves the secondary assignment and reports secondaryBefore", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+
+  const renamed = models("rename", "a", "b");
+  assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
+  assert.equal(renamed.json.secondaryBefore, "a");
+  assert.deepEqual(renamed.json.roles, { secondary: "b" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, "model-profiles.json"), "utf8")).profiles, { b: { default: "A (copilot)" } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "b" });
+});
+
+test("models rename of a non-assigned profile leaves the roles file byte-identical", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" }, c: { default: "C (copilot)" } });
+  assert.equal(models("use", "c", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+  const before = fs.readFileSync(rolesPath, "utf8");
+
+  const renamed = models("rename", "a", "b");
+  assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), before);
+});
+
+test("models rename and delete --force repair an invalid roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "a", extra: 1 }));
+
+  const renamed = models("rename", "a", "b");
+  assert.equal(renamed.code, 0, JSON.stringify(renamed.json));
+  assert.equal(renamed.json.status, "ok");
+  assert.equal(renamed.json.secondaryBefore, "a");
+  assert.deepEqual(renamed.json.roles, { secondary: "b" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "b" });
+
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "b", extra: 1 }));
+  const deleted = models("delete", "b", "--force");
+  assert.equal(deleted.code, 0, JSON.stringify(deleted.json));
+  assert.equal(deleted.json.secondaryBefore, "b");
+  assert.deepEqual(deleted.json.roles, { secondary: null });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+});
+
+test("models delete refuses the assigned secondary profile and --force turns the role off", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+  const profilesPath = path.join(home, "model-profiles.json");
+  const profilesBefore = fs.readFileSync(profilesPath, "utf8");
+  const rolesBefore = fs.readFileSync(rolesPath, "utf8");
+
+  const refused = models("delete", "a");
+  assert.equal(refused.code, 3, JSON.stringify(refused.json));
+  assert.equal(refused.json.status, "assigned");
+  assert.match(refused.json.message, /models use none --role secondary/);
+  assert.equal(fs.readFileSync(profilesPath, "utf8"), profilesBefore);
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), rolesBefore);
+
+  const forced = models("delete", "a", "--force");
+  assert.equal(forced.code, 0, JSON.stringify(forced.json));
+  assert.equal(forced.json.secondaryBefore, "a");
+  assert.deepEqual(forced.json.roles, { secondary: null });
+  assert.deepEqual(JSON.parse(fs.readFileSync(profilesPath, "utf8")).profiles, {});
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+});
+
+test("models delete reports active first when a profile is both applied and secondary", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  assert.equal(models("apply", "a").code, 0);
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const refused = models("delete", "a");
+  assert.equal(refused.code, 3, JSON.stringify(refused.json));
+  assert.equal(refused.json.status, "active");
+});
+
+test("models delete of a non-assigned profile leaves the roles file untouched", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" }, c: { default: "C (copilot)" } });
+  assert.equal(models("use", "c", "--role", "secondary").code, 0);
+  const rolesPath = path.join(home, "model-roles.json");
+  const before = fs.readFileSync(rolesPath, "utf8");
+
+  const deleted = models("delete", "a");
+  assert.equal(deleted.code, 0, JSON.stringify(deleted.json));
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), before);
 });
 
 test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {
@@ -4153,11 +4564,11 @@ test("doctor model-profile: ok without a clone, none, or a matching profile; war
   assert.equal(bundle.status, "ok");
   assert.match(bundle.detail, /^no Agento plugin clone at /);
 
-  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}`, fallback: null });
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `no profile applied to ${plugin}; primary: none; secondary: off`, fallback: null });
 
   writeProfiles({ mixed: { default: "Cheap (copilot)", agents: { planner: "Strong (copilot)" } } });
   assert.equal(models("apply", "mixed").code, 0);
-  assert.equal(check().detail, `mixed applied to ${plugin}`);
+  assert.equal(check().detail, `mixed applied to ${plugin}; primary: mixed; secondary: off`);
 
   const file = path.join(plugin, ".github", "agents", "delivery-builder.agent.md");
   fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('model: "Cheap (copilot)"', 'model: "Edited"'));
@@ -4185,7 +4596,7 @@ test("doctor model-profile warns on legacy skip-worktree pins, an unhealthy or s
   assert.match(legacy.fallback, /models adopt --plugin-root .* keeps the current pins.*models apply <name>/);
 
   assert.equal(models("apply", "tiny").code, 0);
-  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `tiny applied to ${plugin}`, fallback: null });
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `tiny applied to ${plugin}; primary: tiny; secondary: off`, fallback: null });
 
   const copy = path.join(commonDirOf(plugin), "agento", "model-filter.mjs");
   fs.appendFileSync(copy, "// stale\n");
@@ -4254,7 +4665,7 @@ test("doctor model-profile warns on an applied profile with unqualified pins and
   assert.equal(bare.fallback, `qualify each named value as "<picker name> (<vendor>)" in ${path.join(home, "model-profiles.json")}, then \`agento.mjs models apply bare --plugin-root ${plugin}\``);
 
   assert.equal(models("apply", "qualified").code, 0);
-  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `qualified applied to ${plugin}`, fallback: null });
+  assert.deepEqual(check(), { id: "model-profile", status: "ok", detail: `qualified applied to ${plugin}; primary: qualified; secondary: off`, fallback: null });
 });
 
 test("doctor --for models needs only the terminal checks", () => {
