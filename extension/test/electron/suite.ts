@@ -726,6 +726,11 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
     );
     let children = api.modelProfiles.getChildren();
     assert.deepEqual(
+      children.slice(0, 2).map((child) => (child.kind === "role" ? child.role : child.kind)),
+      ["primary", "secondary"],
+      "the two role rows appear first",
+    );
+    assert.deepEqual(
       children.filter((child) => child.kind === "profile").map((child) => (child.kind === "profile" ? child.profile.name : "")),
       ["mixed", "review"],
     );
@@ -778,8 +783,8 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
       () => vscode.commands.executeCommand("agento.modelProfiles.apply", modelProfileElement(api, "mixed")),
     );
     const appliedItem = api.modelProfiles.getTreeItem(modelProfileElement(api, "mixed"));
-    assert.equal(appliedItem.description, "applied · Everyday models");
-    assert.equal(appliedItem.contextValue, "agento.modelProfile.applied");
+    assert.equal(appliedItem.description, "primary · Everyday models");
+    assert.equal(appliedItem.contextValue, "agento.modelProfile.primary.here");
     assert.match(fs.readFileSync(reviewerFile, "utf8"), /model: "Claude Opus 5\.5 \(copilot\)"/);
 
     // 5. Clear.
@@ -814,7 +819,7 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
       () => vscode.commands.executeCommand("agento.modelProfiles.delete", modelProfileElement(api, "mixed")),
     );
     children = api.modelProfiles.getChildren();
-    assert.equal(children[0]?.kind, "info", "deleting the applied profile leaves custom pins");
+    assert.equal(children[0]?.kind, "role", "the role rows stay pinned above the custom info row");
 
     // 7. A stale --expect conflict that reloads.
     const reviewElement = modelProfileElement(api, "review");
@@ -878,10 +883,81 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
       "the quick pick to apply",
       () => vscode.commands.executeCommand("agento.selectModelProfile"),
     );
-    assert.equal(api.modelProfiles.getTreeItem(modelProfileElement(api, "review")).description, "applied · Review pass");
+    assert.equal(api.modelProfiles.getTreeItem(modelProfileElement(api, "review")).description, "primary · Review pass");
 
     // 10. The model-profile editor: panel lifecycle, CLI-backed writes, conflicts.
     await assertModelProfileEditor(api, pluginRoot, runCli);
+
+    // 11. Role rows and secondary-role writes (temp AGENTO_CONFIG_HOME).
+    const rolesFilePath = path.join(configHome, "model-roles.json");
+    const primaryChangeConfirms: string[] = [];
+    api.setModelProfilePrompts({
+      ...noOpPrompts,
+      confirmPrimaryChange: async () => {
+        primaryChangeConfirms.push("called");
+        return true;
+      },
+    });
+    const secondaryElement = modelProfileElement(api, "editor-renamed");
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.roles?.secondary === "editor-renamed" && api.modelProfiles.current.roles.secondaryState === "on",
+      "useSecondary to assign editor-renamed",
+      () => vscode.commands.executeCommand("agento.modelProfiles.useSecondary", secondaryElement),
+    );
+    assert.match(fs.readFileSync(rolesFilePath, "utf8"), /"secondary": "editor-renamed"/, "model-roles.json names editor-renamed");
+    assert.match(
+      String(api.modelProfiles.getTreeItem(modelProfileElement(api, "editor-renamed")).description),
+      /secondary/,
+      "the editor-renamed row shows the secondary label",
+    );
+    assert.match(
+      String(api.modelProfiles.getTreeItem(modelProfileElement(api, "editor-renamed")).contextValue),
+      /\.secondary/,
+      "the editor-renamed row carries the secondary token",
+    );
+
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.roles?.secondary === null && api.modelProfiles.current.roles.secondaryState === "off",
+      "offSecondary to read off",
+      () => vscode.commands.executeCommand("agento.modelProfiles.offSecondary"),
+    );
+    assert.doesNotMatch(fs.readFileSync(rolesFilePath, "utf8"), /"secondary": "editor-renamed"/, "model-roles.json no longer names editor-renamed");
+
+    // The roles watcher refreshes the view on an external CLI write, with no view command.
+    runCli(["models", "use", "editor-renamed", "--role", "secondary"]);
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.roles?.secondary === "editor-renamed" && api.modelProfiles.current.roles.secondaryState === "on",
+      "the roles watcher to refresh a CLI secondary write",
+    );
+
+    // Deleting the secondary-assigned profile confirms, passes --force, and leaves the role off.
+    await waitForModelProfiles(
+      api,
+      () => api.modelProfiles.current.roles?.secondary === "watched",
+      "useSecondary to assign watched",
+      () => vscode.commands.executeCommand("agento.modelProfiles.useSecondary", modelProfileElement(api, "watched")),
+    );
+    api.setModelProfilePrompts({
+      ...noOpPrompts,
+      confirmDelete: async (profile) => {
+        assert.equal(profile.name, "watched");
+        assert.equal(profile.assignedSecondary, true);
+        return true;
+      },
+    });
+    await waitForModelProfiles(
+      api,
+      () => !api.modelProfiles.current.profiles.some((profile) => profile.name === "watched")
+        && api.modelProfiles.current.roles?.secondary === null,
+      "delete of the secondary-assigned profile turns the role off",
+      () => vscode.commands.executeCommand("agento.modelProfiles.delete", modelProfileElement(api, "watched")),
+    );
+
+    assert.deepEqual(primaryChangeConfirms, [], "confirmPrimaryChange is not asked in this primary window");
+    assert.ok(api.windowBanner.html?.includes("Models:"), "the window banner HTML contains the Models line");
   } finally {
     api.setModelProfilePrompts();
     await configuration.update("pluginRoot", previous?.workspaceValue ?? previous?.globalValue, vscode.ConfigurationTarget.Workspace);
@@ -1151,7 +1227,7 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.planInitiativeMember"));
   assert.ok(commands.includes("agento.selectModelProfile"));
   assert.ok(commands.includes("agento.editModelProfile"), "agento.editModelProfile is registered");
-  for (const command of ["apply", "new", "clear", "openFile", "edit", "duplicate", "rename", "delete", "init"]) {
+  for (const command of ["apply", "usePrimary", "useSecondary", "offPrimary", "offSecondary", "pickForRole", "new", "clear", "openFile", "edit", "duplicate", "rename", "delete", "init"]) {
     assert.ok(commands.includes(`agento.modelProfiles.${command}`), `agento.modelProfiles.${command} is registered`);
   }
 
@@ -1785,6 +1861,6 @@ export async function run(): Promise<void> {
     await assertModelProfilesView(api, extension.extensionPath);
   }
 
-  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles, model-profile editor" : "";
+  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles (role rows, secondary writes, roles watcher), model-profile editor" : "";
   console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, window banner, roadmap refresh, diagnostics, stale/error handling${modelProfiles}`);
 }
