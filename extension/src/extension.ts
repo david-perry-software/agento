@@ -23,7 +23,7 @@ import {
   deleteProfileArgs,
   initProfilesArgs,
   missingPluginRootMessage,
-  needsPrimaryConfirm,
+  gateRoleSelection,
   renameProfileArgs,
   resolvePluginRoot,
   selectionToArgs,
@@ -718,10 +718,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     return runModelsAction(selectionToArgs(selection, root, { rolesHash: modelProfilesRolesHash() }), root);
   };
   const runRoleSelection = async (role: ProfileRole, profile: string | null): Promise<unknown> => {
-    if (needsPrimaryConfirm(role, currentWindowRole())) {
-      const proceed = await modelProfilePrompts.confirmPrimaryChange();
-      if (!proceed) return undefined;
-    }
+    const proceed = await gateRoleSelection(role, currentWindowRole(), () => modelProfilePrompts.confirmPrimaryChange());
+    if (!proceed) return undefined;
     return runModelsSelection(profile === null ? { kind: "off", role } : { kind: "use", role, profile });
   };
   const modelProfilesHash = (): string | null => modelProfiles.current.profilesFile?.hash ?? null;

@@ -132,6 +132,18 @@ export function needsPrimaryConfirm(targetRole: ProfileRole, windowRole: Profile
   return targetRole === "primary" && windowRole === "secondary";
 }
 
+// The role-selection gate: asks for the primary confirm exactly when the change
+// targets the primary role from a secondary window, and returns false (so the
+// caller writes nothing) when the user declines.
+export async function gateRoleSelection(
+  targetRole: ProfileRole,
+  windowRole: ProfileRole,
+  confirmPrimaryChange: () => Promise<boolean>,
+): Promise<boolean> {
+  if (!needsPrimaryConfirm(targetRole, windowRole)) return true;
+  return confirmPrimaryChange();
+}
+
 // Arg builders for the write verbs. Every write passes `--expect <hash>` from the
 // snapshot the action was taken on, when a hash exists, so a file changed by
 // another window is a `conflict` instead of a silent clobber.

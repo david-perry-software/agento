@@ -7,6 +7,7 @@ import {
   createProfileArgs,
   deleteProfileArgs,
   expandHome,
+  gateRoleSelection,
   initProfilesArgs,
   missingPluginRootMessage,
   needsPrimaryConfirm,
@@ -113,6 +114,28 @@ test("needsPrimaryConfirm is true only for a primary target in a secondary windo
   assert.equal(needsPrimaryConfirm("primary", "primary"), false);
   assert.equal(needsPrimaryConfirm("secondary", "secondary"), false);
   assert.equal(needsPrimaryConfirm("secondary", "primary"), false);
+});
+
+test("Use Here in a secondary window issues models use <name> --role secondary", () => {
+  const args = selectionToArgs({ kind: "use", role: "secondary", profile: "review" }, "/p", { rolesHash: "d".repeat(64) });
+  assert.deepEqual(args, ["models", "use", "review", "--role", "secondary", "--expect", "d".repeat(64), "--plugin-root", "/p"]);
+});
+
+test("gateRoleSelection asks for the primary confirm only from a secondary window and a declined confirm writes nothing", async () => {
+  const calls: string[] = [];
+  const confirm = async () => {
+    calls.push("confirm");
+    return false;
+  };
+  // A primary-role change in a secondary window asks, and a decline returns false (no write).
+  assert.equal(await gateRoleSelection("primary", "secondary", confirm), false);
+  assert.deepEqual(calls, ["confirm"]);
+
+  // A primary-role change in a primary window, and a secondary change anywhere, never ask.
+  assert.equal(await gateRoleSelection("primary", "primary", confirm), true);
+  assert.equal(await gateRoleSelection("secondary", "secondary", confirm), true);
+  assert.equal(await gateRoleSelection("secondary", "primary", confirm), true);
+  assert.deepEqual(calls, ["confirm"]);
 });
 
 test("write arg builders pass --expect from the snapshot hash and --force on applied delete", () => {
