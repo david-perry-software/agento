@@ -108,9 +108,39 @@
       },
       {
         "command": "agento.modelProfiles.apply",
-        "title": "Apply",
+        "title": "Use Here",
         "category": "Agento",
         "icon": "$(check)"
+      },
+      {
+        "command": "agento.modelProfiles.usePrimary",
+        "title": "Use in Primary Windows",
+        "category": "Agento",
+        "icon": "$(check)"
+      },
+      {
+        "command": "agento.modelProfiles.useSecondary",
+        "title": "Use in Secondary Windows",
+        "category": "Agento",
+        "icon": "$(check)"
+      },
+      {
+        "command": "agento.modelProfiles.offPrimary",
+        "title": "Turn Off for Primary Windows",
+        "category": "Agento",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "agento.modelProfiles.offSecondary",
+        "title": "Turn Off for Secondary Windows",
+        "category": "Agento",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "agento.modelProfiles.pickForRole",
+        "title": "Pick for Role",
+        "category": "Agento",
+        "icon": "$(list-selection)"
       },
       {
         "command": "agento.modelProfiles.new",
@@ -120,7 +150,7 @@
       },
       {
         "command": "agento.modelProfiles.clear",
-        "title": "Clear",
+        "title": "Turn Off for This Window's Role",
         "category": "Agento",
         "icon": "$(clear-all)"
       },
@@ -241,7 +271,37 @@
         },
         {
           "command": "agento.modelProfiles.apply",
-          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.invalid)?$/",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.(primary|secondary|invalid))*$/",
+          "group": "inline"
+        },
+        {
+          "command": "agento.modelProfiles.usePrimary",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.(secondary|here|invalid))*$/",
+          "group": "0_roles@1"
+        },
+        {
+          "command": "agento.modelProfiles.useSecondary",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.(primary|here|invalid))*$/",
+          "group": "0_roles@2"
+        },
+        {
+          "command": "agento.modelProfiles.offPrimary",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile\\.primary/",
+          "group": "0_roles@3"
+        },
+        {
+          "command": "agento.modelProfiles.offSecondary",
+          "when": "view == agento.modelProfiles && viewItem =~ /^agento\\.modelProfile(\\.primary)?\\.secondary/",
+          "group": "0_roles@4"
+        },
+        {
+          "command": "agento.modelProfiles.offPrimary",
+          "when": "view == agento.modelProfiles && viewItem == agento.modelRole.primary.on",
+          "group": "inline"
+        },
+        {
+          "command": "agento.modelProfiles.offSecondary",
+          "when": "view == agento.modelProfiles && viewItem == agento.modelRole.secondary.on",
           "group": "inline"
         },
         {
@@ -280,6 +340,26 @@
         },
         {
           "command": "agento.modelProfiles.apply",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.usePrimary",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.useSecondary",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.offPrimary",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.offSecondary",
+          "when": "false"
+        },
+        {
+          "command": "agento.modelProfiles.pickForRole",
           "when": "false"
         },
         {
