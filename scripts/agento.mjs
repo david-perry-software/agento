@@ -3912,6 +3912,81 @@ function pinWarnings(pins, copilotModels = null) {
   };
 }
 
+// apply | adopt | clear — and `use --role primary` — share this tail: resolve the
+// targets, gate on worktree/git/dirty, write each file's model line(s), update the
+// filter, and report. `mode` drives the behavior (apply, adopt, or clear); `verb`
+// is the reported verb.
+function pinModels({ mode, verb, name, pluginRoot, loaded, state }) {
+  const primaryCheckout = state.isGit ? primaryCheckoutOf(pluginRoot) : null;
+  let targets = state.layout.files.map((file) => ({ file, value: null }));
+  let handoffs = null;
+  if (mode === "apply" || mode === "adopt") {
+    let resolved = null;
+    if (mode === "apply") {
+      if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+      resolved = resolveProfile(loaded, name, state.layout);
+      if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+    }
+    if (primaryCheckout) {
+      emit({ status: "worktree", verb, profile: name ?? null, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; linked worktrees inherit the clone's pins through its git filter — ${mode} on the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+    }
+    const tooOld = state.isGit ? gitTooOld() : null;
+    if (tooOld) emit({ status: "git-too-old", verb, profile: name ?? null, message: `${tooOld}; upgrade git to pin models`, ...modelsReport(pluginRoot, loaded, state) }, 3);
+    const dirty = mode === "apply" ? state.dirty : state.dirtyBeyondModel;
+    if (dirty.length) {
+      emit({ status: "dirty", verb, profile: name ?? null, message: "these files carry changes git would see beyond their recorded model pins (a body edit, or a model: line other than the recorded pin) — commit, stash, or restore them first (git restore re-applies the recorded pin)", ...modelsReport(pluginRoot, loaded, state), dirty }, 3);
+    }
+    if (resolved) {
+      targets = resolved.targets;
+      handoffs = resolved.handoffs;
+    } else {
+      // adopt: the pins the files carry now become the recorded state.
+      targets = state.layout.files.map((file) => ({ file, value: parseModelValue(state.texts[file]) }));
+      handoffs = Object.fromEntries(state.layout.files.map((file) => [file, handoffModelLines(state.texts[file]).filter((h) => h.line !== null).map((h) => ({ target: h.target, value: parsePinLine(h.line) }))]));
+    }
+  }
+  const writes = [];
+  for (const { file, value } of targets) {
+    const abs = path.join(pluginRoot, file);
+    const before = state.texts[file] ?? fs.readFileSync(abs, "utf8");
+    let after;
+    try {
+      after = setModel(before, value);
+      after = setHandoffModels(after, handoffs === null ? null : handoffs[file]);
+    } catch (error) {
+      emit({ status: "invalid", verb, profile: name ?? null, errors: [`${file}: ${error.message}`], ...modelsReport(pluginRoot, loaded, state) }, 3);
+    }
+    if (after !== before) writes.push({ file, abs, after });
+  }
+  const records = Object.fromEntries(targets.map((t) => [t.file, { model: t.value, handoffs: handoffs?.[t.file] ?? [] }]));
+  const fail = (message) => emit({ status: "failed", verb, profile: name ?? null, changed: [], message: `${message}; re-run the same command` }, 3);
+  if (state.isGit) {
+    const legacy = state.legacySkipWorktree.filter((f) => state.tracked.has(f));
+    if (legacy.length) {
+      const unset = gitRun(pluginRoot, ["update-index", "--no-skip-worktree", "--", ...legacy]);
+      if (!unset.ok) fail(`git update-index --no-skip-worktree failed: ${unset.stderr}`);
+    }
+    try {
+      if (mode !== "clear" && Object.values(records).some(hasPin)) installModelFilter(pluginRoot, records);
+      else if (!primaryCheckout) removeModelFilter(pluginRoot);
+    } catch (error) {
+      fail(`installing the model filter failed: ${error.message}`);
+    }
+  }
+  for (const w of writes) fs.writeFileSync(w.abs, w.after);
+  if (state.isGit) {
+    // Git trusts a size change as a modification, so re-record the stat of each file
+    // whose cleaned content is exactly HEAD; anything else would be staged.
+    const staged = new Set(git(pluginRoot, "diff", "--cached", "--name-only", "--", ...state.layout.files).split("\n").filter(Boolean));
+    const finalText = (f) => writes.find((w) => w.file === f)?.after ?? state.texts[f];
+    const cleaned = (f) => (mode === "clear" ? finalText(f) : cleanText(finalText(f), records[f]));
+    const restat = state.layout.files.filter((f) => state.heads[f] != null && !staged.has(f) && cleaned(f) === state.heads[f]);
+    const updated = restat.length ? gitRun(pluginRoot, ["update-index", "--", ...restat], 120000) : { ok: true };
+    if (!updated.ok) fail(`git update-index failed: ${updated.stderr}`);
+  }
+  emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, mode === "apply" ? loaded.profiles[name] : null, loaded.copilotModels), ...(mode === "clear" && primaryCheckout ? { primaryCheckout } : {}), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+}
+
 // --- release ---------------------------------------------------------------
 
 const RELEASE_EXIT = { success: 0, "superseded-success": 0, "not-triggered": 0, "not-configured": 0, pending: 2, "dispatch-required": 2, failed: 4, "no-run": 4 };
@@ -4855,6 +4930,7 @@ switch (command) {
       apply: { argc: 1, names: [0], accepts: [], writes: true },
       adopt: { argc: 0, names: [], accepts: [], writes: true },
       clear: { argc: 0, names: [], accepts: [], writes: true },
+      use: { argc: 1, names: [0], accepts: ["role", "expect"], writes: true },
       init: { argc: 0, names: [], accepts: [], writes: true },
       create: { argc: 1, names: [0], accepts: ["from", "description", "expect"], writes: true },
       update: { argc: 1, names: [0], accepts: ["dryRun", "expect"], writes: true },
@@ -4935,6 +5011,7 @@ switch (command) {
     }
 
     if (verb === "create") {
+      if (name === "none") usage("models create: the name none is reserved (models use none turns a role off); pick another name");
       if (Object.hasOwn(loaded.profiles, name)) emit({ status: "exists", verb, profile: name, message: `profile ${name} already exists in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       if (options.from !== undefined && !Object.hasOwn(loaded.profiles, options.from)) emit({ status: "not-found", verb, profile: name, from: options.from, message: `no profile ${options.from} to copy from`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const created = createProfile(loaded, name, { from: options.from, description: options.description });
@@ -4972,6 +5049,7 @@ switch (command) {
 
     if (verb === "rename") {
       const [old, next] = args;
+      if (next === "none") usage("models rename: the name none is reserved (models use none turns a role off); pick another name");
       if (!Object.hasOwn(loaded.profiles, old)) emit({ status: "not-found", verb, profile: old, message: `no profile ${old} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       if (Object.hasOwn(loaded.profiles, next)) emit({ status: "exists", verb, profile: next, message: `profile ${next} already exists in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
       const renamed = renameProfile(loaded, old, next);
@@ -5008,75 +5086,27 @@ switch (command) {
       emit({ verb, picker, copilotModels: removed.copilotModels, ...result }, code);
     }
 
-    // apply | adopt | clear
-    const primaryCheckout = state.isGit ? primaryCheckoutOf(pluginRoot) : null;
-    let targets = state.layout.files.map((file) => ({ file, value: null }));
-    let handoffs = null;
-    if (verb === "apply" || verb === "adopt") {
-      let resolved = null;
-      if (verb === "apply") {
-        if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
-        resolved = resolveProfile(loaded, name, state.layout);
-        if (resolved.errors.length) emit({ status: "invalid", verb, profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
-      }
-      if (primaryCheckout) {
-        emit({ status: "worktree", verb, profile: name ?? null, primaryCheckout, message: `${pluginRoot} is a linked worktree of ${primaryCheckout}, not the registered plugin clone; linked worktrees inherit the clone's pins through its git filter — ${verb} on the clone with --plugin-root ${primaryCheckout}`, ...modelsReport(pluginRoot, loaded, state) }, 3);
-      }
-      const tooOld = state.isGit ? gitTooOld() : null;
-      if (tooOld) emit({ status: "git-too-old", verb, profile: name ?? null, message: `${tooOld}; upgrade git to pin models`, ...modelsReport(pluginRoot, loaded, state) }, 3);
-      const dirty = verb === "apply" ? state.dirty : state.dirtyBeyondModel;
-      if (dirty.length) {
-        emit({ status: "dirty", verb, profile: name ?? null, message: "these files carry changes git would see beyond their recorded model pins (a body edit, or a model: line other than the recorded pin) — commit, stash, or restore them first (git restore re-applies the recorded pin)", ...modelsReport(pluginRoot, loaded, state), dirty }, 3);
-      }
-      if (resolved) {
-        targets = resolved.targets;
-        handoffs = resolved.handoffs;
+    if (verb === "use") {
+      if (options.role === undefined) usage("models use requires --role primary or secondary");
+      if (options.role === "primary") {
+        if (options.expect !== undefined) usage("models use --role primary does not accept --expect (nothing in the profiles file is written)");
+        pinModels({ mode: name === "none" ? "clear" : "apply", verb, name: name === "none" ? null : name, pluginRoot, loaded, state });
       } else {
-        // adopt: the pins the files carry now become the recorded state.
-        targets = state.layout.files.map((file) => ({ file, value: parseModelValue(state.texts[file]) }));
-        handoffs = Object.fromEntries(state.layout.files.map((file) => [file, handoffModelLines(state.texts[file]).filter((h) => h.line !== null).map((h) => ({ target: h.target, value: parsePinLine(h.line) }))]));
+        if (name === "none") {
+          const { code, result } = writeRoles(loadedRoles, { secondary: null }, { expect: options.expect });
+          emit({ verb, role: "secondary", profile: null, secondaryBefore: loadedRoles.secondary, ...result }, code);
+        } else {
+          if (!Object.hasOwn(loaded.profiles, name)) emit({ status: "not-found", verb, role: "secondary", profile: name, message: `no profile ${name} in ${loaded.profilesFile.path}`, known: Object.keys(loaded.profiles), ...modelsReport(pluginRoot, loaded, state) }, 3);
+          const resolved = resolveProfile(loaded, name, state.layout);
+          if (resolved.errors.length) emit({ status: "invalid", verb, role: "secondary", profile: name, errors: resolved.errors, ...modelsReport(pluginRoot, loaded, state) }, 3);
+          const { code, result } = writeRoles(loadedRoles, { secondary: name }, { expect: options.expect });
+          emit({ verb, role: "secondary", profile: name, secondaryBefore: loadedRoles.secondary, ...result }, code);
+        }
       }
     }
-    const writes = [];
-    for (const { file, value } of targets) {
-      const abs = path.join(pluginRoot, file);
-      const before = state.texts[file] ?? fs.readFileSync(abs, "utf8");
-      let after;
-      try {
-        after = setModel(before, value);
-        after = setHandoffModels(after, handoffs === null ? null : handoffs[file]);
-      } catch (error) {
-        emit({ status: "invalid", verb, profile: name ?? null, errors: [`${file}: ${error.message}`], ...modelsReport(pluginRoot, loaded, state) }, 3);
-      }
-      if (after !== before) writes.push({ file, abs, after });
-    }
-    const records = Object.fromEntries(targets.map((t) => [t.file, { model: t.value, handoffs: handoffs?.[t.file] ?? [] }]));
-    const fail = (message) => emit({ status: "failed", verb, profile: name ?? null, changed: [], message: `${message}; re-run the same command` }, 3);
-    if (state.isGit) {
-      const legacy = state.legacySkipWorktree.filter((f) => state.tracked.has(f));
-      if (legacy.length) {
-        const unset = gitRun(pluginRoot, ["update-index", "--no-skip-worktree", "--", ...legacy]);
-        if (!unset.ok) fail(`git update-index --no-skip-worktree failed: ${unset.stderr}`);
-      }
-      try {
-        if (verb !== "clear" && Object.values(records).some(hasPin)) installModelFilter(pluginRoot, records);
-        else if (!primaryCheckout) removeModelFilter(pluginRoot);
-      } catch (error) {
-        fail(`installing the model filter failed: ${error.message}`);
-      }
-    }
-    for (const w of writes) fs.writeFileSync(w.abs, w.after);
-    if (state.isGit) {
-      // Git trusts a size change as a modification, so re-record the stat of each file
-      // whose cleaned content is exactly HEAD; anything else would be staged.
-      const staged = new Set(git(pluginRoot, "diff", "--cached", "--name-only", "--", ...state.layout.files).split("\n").filter(Boolean));
-      const finalText = (f) => writes.find((w) => w.file === f)?.after ?? state.texts[f];
-      const cleaned = (f) => (verb === "clear" ? finalText(f) : cleanText(finalText(f), records[f]));
-      const restat = state.layout.files.filter((f) => state.heads[f] != null && !staged.has(f) && cleaned(f) === state.heads[f]);
-      const updated = restat.length ? gitRun(pluginRoot, ["update-index", "--", ...restat], 120000) : { ok: true };
-      if (!updated.ok) fail(`git update-index failed: ${updated.stderr}`);
-    }
-    emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, verb === "apply" ? loaded.profiles[name] : null, loaded.copilotModels), ...(verb === "clear" && primaryCheckout ? { primaryCheckout } : {}), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
+
+    // apply | adopt | clear
+    pinModels({ mode: verb, verb, name, pluginRoot, loaded, state });
     break;
   }
 

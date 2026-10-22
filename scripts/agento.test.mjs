@@ -3663,6 +3663,124 @@ test("models --role usage errors: bad value, missing value, and verbs that do no
   assert.equal(models("apply", "a", "--role", "primary").code, 1);
 });
 
+test("models use --role secondary writes and clears the roles file", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+
+  const set = models("use", "a", "--role", "secondary");
+  assert.equal(set.code, 0, JSON.stringify(set.json));
+  assert.equal(set.json.status, "ok");
+  assert.equal(set.json.verb, "use");
+  assert.equal(set.json.secondaryBefore, null);
+  assert.equal(set.json.written, true);
+  assert.deepEqual(set.json.roles, { secondary: "a" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "a" });
+
+  const off = models("use", "none", "--role", "secondary");
+  assert.equal(off.code, 0, JSON.stringify(off.json));
+  assert.equal(off.json.secondaryBefore, "a");
+  assert.equal(off.json.written, true);
+  assert.deepEqual(off.json.roles, { secondary: null });
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: null });
+});
+
+test("models use --role secondary rejects a missing or invalid profile without writing", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  const rolesPath = path.join(home, "model-roles.json");
+
+  const missing = models("use", "missing", "--role", "secondary");
+  assert.equal(missing.code, 3, JSON.stringify(missing.json));
+  assert.equal(missing.json.status, "not-found");
+  assert.equal(fs.existsSync(rolesPath), false);
+
+  writeProfiles({ bad: { default: "<placeholder>" } });
+  const invalid = models("use", "bad", "--role", "secondary");
+  assert.equal(invalid.code, 3, JSON.stringify(invalid.json));
+  assert.equal(invalid.json.status, "invalid");
+  assert.equal(fs.existsSync(rolesPath), false);
+});
+
+test("models use --role secondary honors --expect", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: "b" }));
+  const current = profilesHash(fs.readFileSync(rolesPath, "utf8"));
+
+  const stale = models("use", "a", "--role", "secondary", "--expect", "f".repeat(64));
+  assert.equal(stale.code, 3, JSON.stringify(stale.json));
+  assert.equal(stale.json.status, "conflict");
+  assert.equal(fs.readFileSync(rolesPath, "utf8"), JSON.stringify({ secondary: "b" }));
+
+  const matching = models("use", "a", "--role", "secondary", "--expect", current);
+  assert.equal(matching.code, 0, JSON.stringify(matching.json));
+  assert.deepEqual(JSON.parse(fs.readFileSync(rolesPath, "utf8")), { secondary: "a" });
+});
+
+test("models use --role secondary leaves no temp files and keeps the mode", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const rolesPath = path.join(home, "model-roles.json");
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(rolesPath, JSON.stringify({ secondary: null }), { mode: 0o600 });
+  const before = fs.statSync(rolesPath).mode;
+
+  const { code, json } = models("use", "a", "--role", "secondary");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(fs.statSync(rolesPath).mode & 0o777, before & 0o777);
+  assert.deepEqual(fs.readdirSync(home).filter((f) => f.startsWith(".model-roles.json.") && f.endsWith(".tmp")), []);
+});
+
+test("models use --role primary changes the same files as apply and clear", () => {
+  const { plugin, models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+
+  const apply = models("apply", "a");
+  assert.equal(apply.code, 0, JSON.stringify(apply.json));
+  const afterApply = new Map(apply.json.changed.map((f) => [f, fs.readFileSync(path.join(plugin, f), "utf8")]));
+  const clear = models("clear");
+  assert.equal(clear.code, 0, JSON.stringify(clear.json));
+  const afterClear = new Map(clear.json.changed.map((f) => [f, fs.readFileSync(path.join(plugin, f), "utf8")]));
+
+  const usePrimary = models("use", "a", "--role", "primary");
+  assert.equal(usePrimary.code, 0, JSON.stringify(usePrimary.json));
+  assert.equal(usePrimary.json.verb, "use");
+  assert.deepEqual(usePrimary.json.changed, apply.json.changed);
+  for (const f of usePrimary.json.changed) assert.equal(fs.readFileSync(path.join(plugin, f), "utf8"), afterApply.get(f));
+
+  const useNonePrimary = models("use", "none", "--role", "primary");
+  assert.equal(useNonePrimary.code, 0, JSON.stringify(useNonePrimary.json));
+  assert.deepEqual(useNonePrimary.json.changed, clear.json.changed);
+  for (const f of useNonePrimary.json.changed) assert.equal(fs.readFileSync(path.join(plugin, f), "utf8"), afterClear.get(f));
+});
+
+test("models use --role primary from a linked worktree reports worktree", () => {
+  const { plugin, env, writeProfiles } = modelsFixture();
+  writeProfiles({ a: { default: "A (copilot)" } });
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "agento-models-wtbase-")), "wt");
+  git(plugin, "worktree", "add", "-q", "--detach", wt, "HEAD");
+  const useWt = runWith({ cwd: wt, env }, "models", "use", "a", "--role", "primary", "--plugin-root", wt);
+  assert.equal(useWt.code, 3, JSON.stringify(useWt.json));
+  assert.equal(useWt.json.status, "worktree");
+  assert.match(useWt.json.message, /linked worktree/);
+});
+
+test("models use usage errors: missing --role and --expect with --role primary", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ a: {} });
+  assert.equal(models("use", "a").code, 1);
+  assert.equal(models("use", "a", "--role", "primary", "--expect", "a".repeat(64)).code, 1);
+});
+
+test("models create none and rename to none are usage errors", () => {
+  const { models, writeProfiles } = modelsFixture();
+  assert.equal(models("create", "none").code, 1);
+  writeProfiles({ a: {} });
+  assert.equal(models("rename", "a", "none").code, 1);
+});
+
 test("models usage errors: new verb arity, malformed options, and alias sub-verbs", () => {
   const { models } = modelsFixture();
   // Wrong arity for each new verb.
