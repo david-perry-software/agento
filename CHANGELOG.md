@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.0 (unreleased)
+
+- **Added.** Role-aware Model Profiles sidebar and window banner. The view pins
+  Primary and Secondary role rows, labels each profile row with the roles that use
+  it, and marks the profile in effect in this window; **Use Here** switches the
+  current window's role, the context menu offers Use/Turn Off for either role, and
+  the title-bar Clear becomes **Turn Off for This Window's Role**. Switching the
+  primary profile from a secondary window asks a confirmation, Delete names the
+  roles and passes `--force` when assigned, the `model-roles.json` watcher refreshes
+  every window, and the window banner shows a `Models:` line for the profile in
+  effect.
+
 ## 0.12.0 (2026-10-22)
 
 - **Added.** Role-active model profiles. `models use <name|none> --role
