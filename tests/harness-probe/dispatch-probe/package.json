@@ -14,6 +14,10 @@
       {
         "command": "agentoDispatchProbe.runVariant",
         "title": "Agento Probe: Dispatch variant"
+      },
+      {
+        "command": "agentoDispatchProbe.runModelVariant",
+        "title": "Agento Probe: Dispatch with model"
       }
     ]
   }
