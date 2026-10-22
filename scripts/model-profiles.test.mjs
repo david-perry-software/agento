@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, isPinnablePrompt, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
+import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffTargets, isPinnablePrompt, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, renderFileModel, renderModel, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, splitQualified, unqualifiedWarning, vendorOf } from "./model-profiles.mjs";
 
 const parse = (data) => parseProfiles(JSON.stringify(data));
 
@@ -361,6 +361,15 @@ test("vendorOf and byokTierWarning classify the BYOK tier conflict", () => {
   assert.equal(byokTierWarning({ autopilot: "A (copilot)", builder: "B (copilot)", reviewer: "R (copilot)" }), null);
   assert.equal(byokTierWarning({ autopilot: "DeepSeek (deepseek)", builder: null, reviewer: null }), null);
   assert.equal(byokTierWarning({ autopilot: "Unqualified", builder: "B (copilot)", reviewer: null }), null);
+});
+
+test("splitQualified: qualified, unqualified, inner-parentheses, and non-string values", () => {
+  assert.deepEqual(splitQualified("Claude Opus 5.5 (copilot)"), { name: "Claude Opus 5.5", vendor: "copilot" });
+  assert.deepEqual(splitQualified("DeepSeek V4 Pro (deepseek)"), { name: "DeepSeek V4 Pro", vendor: "deepseek" });
+  assert.deepEqual(splitQualified("Unqualified Name"), { name: "Unqualified Name", vendor: null });
+  assert.deepEqual(splitQualified("GPT-5 (something) (copilot)"), { name: "GPT-5 (something)", vendor: "copilot" });
+  assert.deepEqual(splitQualified(null), { name: null, vendor: null });
+  assert.deepEqual(splitQualified(["Claude (copilot)"]), { name: null, vendor: null });
 });
 
 test("unqualifiedWarning: all qualified values give null", () => {
