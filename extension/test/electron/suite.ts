@@ -422,6 +422,7 @@ async function assertNewInitiativeCommand(
         openTarget: async () => undefined,
         chatMode: () => ({ mode: null, reason: "unused" }),
         commandFile: () => ({ file: null, reason: "unused" }),
+        chatModel: async () => ({ selector: null, reason: "unused" }),
         output: { appendLine() {} },
       }, true);
     },
@@ -1383,6 +1384,7 @@ export async function run(): Promise<void> {
       openTarget: async (opened) => { routedTargets.push(`${opened.kind}:${opened.path}`); },
       chatMode: () => ({ mode: null, reason: "unused" }),
       commandFile: () => ({ file: null, reason: "unused" }),
+      chatModel: async () => ({ selector: null, reason: "unused" }),
       startSession: async () => assert.fail("cross-window routes never run start-session"),
       offerOpenInChat: async () => undefined,
     },
@@ -1688,6 +1690,7 @@ export async function run(): Promise<void> {
         openTarget: async (target) => { openedTargets.push(target.path); },
         chatMode: () => ({ mode: null, reason: "unused" }),
         commandFile: () => ({ file: null, reason: "unused" }),
+        chatModel: async () => ({ selector: null, reason: "unused" }),
         startSession: async () => assert.fail("cross-window routes never run start-session"),
         offerOpenInChat: async () => undefined,
       },

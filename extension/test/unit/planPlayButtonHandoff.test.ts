@@ -101,6 +101,7 @@ test("(b) chat.open options attach the command file, and the no-file fallback lo
     chatMode: () => ({ mode: "agent" }),
     output: { appendLine() {} },
     commandFile: () => ({ file: sentinel }),
+    chatModel: async () => ({ selector: null, reason: "unused" }),
   };
   const target = { kind: "folder" as const, path: "/repo" };
 
@@ -126,7 +127,10 @@ test("(b) chat.open options attach the command file, and the no-file fallback lo
   await dispatchCommandToTarget("/agento start-session", target, "continue there", fallbackDeps, true);
 
   assert.deepEqual(fallbackCalls, [["workbench.action.chat.open", { query: "/agento start-session", mode: "agent" }]]);
-  assert.deepEqual(fallbackLogs, ["dispatch: no command file for start-session: no plugin root"]);
+  assert.deepEqual(fallbackLogs, [
+    "dispatch: no command file for start-session: no plugin root",
+    "dispatch: no model for /agento start-session: unused",
+  ]);
 });
 
 test("(c) a start-session finishing at 20:37:16.546Z after a 20:35:14.000Z start is handed off directly, with no poll to time out", async () => {

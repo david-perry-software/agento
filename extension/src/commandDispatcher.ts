@@ -1,5 +1,6 @@
 import type * as vscode from "vscode";
 
+import type { ChatModelPreselect, ChatModelResolver } from "./chatModel.js";
 import { commandName } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { routeCommandAction, type CurrentWindow, type DispatchRoute } from "./dispatchRouting.js";
@@ -30,22 +31,24 @@ export interface CommandDispatcherDependencies {
   openTarget: (target: Extract<DispatchRoute, { kind: "open" }>["target"]) => Thenable<unknown>;
   chatMode: ChatModeResolver;
   commandFile: CommandFileResolver;
+  chatModel: ChatModelResolver;
   // `agento.mjs start-session <args> --no-open` in this (primary) window's checkout.
   startSession: (args: string[]) => PromiseLike<unknown>;
   offerOpenInChat: (message: string) => Thenable<string | undefined>;
 }
 
-function chatOpenOptions(
+async function chatOpenOptions(
   command: string,
   dependencies: {
     executeCommand: CommandExecutor;
     chatMode: ChatModeResolver;
     commandFile: CommandFileResolver;
+    chatModel: ChatModelResolver;
     output: Pick<vscode.OutputChannel, "appendLine">;
   },
-): Thenable<unknown> {
+): Promise<unknown> {
   const resolution = dependencies.chatMode(command);
-  const options: { query: string; mode?: string; attachFiles?: unknown[] } = { query: command };
+  const options: { query: string; mode?: string; attachFiles?: unknown[]; modelSelector?: unknown } = { query: command };
   if (resolution.mode === null) {
     dependencies.output.appendLine(`dispatch: no mode for ${command}: ${resolution.reason}`);
   } else {
@@ -57,14 +60,39 @@ function chatOpenOptions(
   } else {
     options.attachFiles = [file.file];
   }
-  return dependencies.executeCommand("workbench.action.chat.open", options);
+
+  let model: ChatModelPreselect;
+  try {
+    model = await dependencies.chatModel(command);
+  } catch (error) {
+    model = { selector: null, reason: error instanceof Error ? error.message : String(error) };
+  }
+  if (model.selector !== null) {
+    options.modelSelector = model.selector;
+  } else if ("off" in model) {
+    dependencies.output.appendLine(`dispatch: model for ${command}: ${model.off.qualified} (Copilot id ${model.off.copilotModel ?? "none"}) — preselection off; set it in the model picker`);
+  } else {
+    dependencies.output.appendLine(`dispatch: no model for ${command}: ${model.reason}`);
+  }
+
+  try {
+    return await dependencies.executeCommand("workbench.action.chat.open", options);
+  } catch (error) {
+    if (options.modelSelector !== undefined) {
+      dependencies.output.appendLine(`dispatch: no model for ${command}: ${error instanceof Error ? error.message : String(error)}`);
+      const retryOptions = { ...options };
+      delete retryOptions.modelSelector;
+      return await dependencies.executeCommand("workbench.action.chat.open", retryOptions);
+    }
+    throw error;
+  }
 }
 
 export async function dispatchCommandToTarget(
   command: string,
   target: Extract<DispatchRoute, { kind: "open" }>["target"],
   reason: string,
-  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget" | "chatMode" | "commandFile" | "output">,
+  dependencies: Pick<CommandDispatcherDependencies, "executeCommand" | "reportInfo" | "pendingStore" | "openTarget" | "chatMode" | "commandFile" | "chatModel" | "output">,
   isCurrentTarget: boolean,
 ): Promise<void> {
   if (isCurrentTarget) {
@@ -106,7 +134,7 @@ export async function dispatchCommandAction(
         const message = `Unable to start the session: ${started.reason}`;
         dependencies.output.appendLine(message);
         if ((await dependencies.offerOpenInChat(message)) === OPEN_IN_CHAT) {
-          await chatOpenOptions(route.command, { executeCommand, chatMode: dependencies.chatMode, commandFile: dependencies.commandFile, output: dependencies.output });
+          await chatOpenOptions(route.command, { executeCommand, chatMode: dependencies.chatMode, commandFile: dependencies.commandFile, chatModel: dependencies.chatModel, output: dependencies.output });
         }
         return { kind: "reject", reason: message };
       }
@@ -118,7 +146,7 @@ export async function dispatchCommandAction(
       return route;
     }
 
-    await chatOpenOptions(route.command, { executeCommand, chatMode: dependencies.chatMode, commandFile: dependencies.commandFile, output: dependencies.output });
+    await chatOpenOptions(route.command, { executeCommand, chatMode: dependencies.chatMode, commandFile: dependencies.commandFile, chatModel: dependencies.chatModel, output: dependencies.output });
     return route;
   } catch (error) {
     const message = `Unable to dispatch Agento command: ${error instanceof Error ? error.message : String(error)}`;
@@ -130,7 +158,7 @@ export async function dispatchCommandAction(
 
 export async function consumePendingCommands(
   targets: string[],
-  dependencies: Pick<CommandDispatcherDependencies, "pendingStore" | "executeCommand" | "reportError" | "output" | "chatMode" | "commandFile">,
+  dependencies: Pick<CommandDispatcherDependencies, "pendingStore" | "executeCommand" | "reportError" | "output" | "chatMode" | "commandFile" | "chatModel">,
 ): Promise<void> {
   const results = await Promise.all([...new Set(targets)].map(async (target) => ({
     target,

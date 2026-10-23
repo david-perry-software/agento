@@ -35,6 +35,7 @@ function dependencies(overrides: Partial<CommandDispatcherDependencies> = {}): C
     openTarget: async () => undefined,
     chatMode: () => ({ mode: null, reason: "unused" }),
     commandFile: () => ({ file: null, reason: "unused" }),
+    chatModel: async () => ({ selector: null, reason: "unused" }),
     startSession: async () => { throw new Error("start-session must not run"); },
     offerOpenInChat: async () => undefined,
     ...overrides,
@@ -132,6 +133,7 @@ test("submits in-window commands without a mode when none resolves, logging the 
   assert.deepEqual(logs, [
     "dispatch: no mode for /agento delivery-status: no plugin root",
     "dispatch: no command file for delivery-status: unused",
+    "dispatch: no model for /agento delivery-status: unused",
   ]);
 });
 
@@ -153,6 +155,7 @@ test("dashboard dispatch submits the command's agent as chat.open mode (issue #7
     openTarget: async () => undefined,
     chatMode,
     commandFile: () => ({ file: null, reason: "unused" }),
+    chatModel: async () => ({ selector: null, reason: "unused" }),
     output: { appendLine() {} },
   }, true);
 
@@ -165,6 +168,7 @@ test("dashboard dispatch submits the command's agent as chat.open mode (issue #7
     output: { appendLine() {} },
     chatMode,
     commandFile: () => ({ file: null, reason: "unused" }),
+    chatModel: async () => ({ selector: null, reason: "unused" }),
   });
 
   assert.deepEqual(calls, [
@@ -206,6 +210,7 @@ test("completes cross-window dispatch while the focus notification remains pendi
     openTarget: async () => undefined,
     chatMode: () => ({ mode: null, reason: "unused" }),
     commandFile: () => ({ file: null, reason: "unused" }),
+    chatModel: async () => ({ selector: null, reason: "unused" }),
     output: { appendLine() {} },
   }, false);
   const resolvedBeforeNotification = await Promise.race([
@@ -233,6 +238,7 @@ test("consumes one pending command before submission and surfaces discarded reco
     output: { appendLine: (line) => { logs.push(line); } },
     chatMode: () => ({ mode: null, reason: "no plugin root" }),
     commandFile: () => ({ file: null, reason: "no plugin root" }),
+    chatModel: async () => ({ selector: null, reason: "no plugin root" }),
   });
   assert.equal(store.values.size, 0);
   assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento continue widget" }]]);
@@ -240,6 +246,7 @@ test("consumes one pending command before submission and surfaces discarded reco
     "Discarded pending Agento command for /repo/stale: expired.",
     "dispatch: no mode for /agento continue widget: no plugin root",
     "dispatch: no command file for continue: no plugin root",
+    "dispatch: no model for /agento continue widget: no plugin root",
   ]);
   assert.match(errors[0]!, /expired/);
 });
@@ -283,7 +290,103 @@ test("deletes pending state before surfacing a Chat submission failure", async (
     output: { appendLine() {} },
     chatMode: () => ({ mode: null, reason: "unused" }),
     commandFile: () => ({ file: null, reason: "unused" }),
+    chatModel: async () => ({ selector: null, reason: "unused" }),
   });
   assert.equal(store.values.size, 0);
   assert.match(messages[0]!, /chat failed/);
+});
+
+test("passes the resolver's selector through to chat.open as modelSelector", async () => {
+  const calls: unknown[][] = [];
+  const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
+  const route = await dispatchCommandAction(action, undefined, dependencies({
+    executeCommand: async (...args) => { calls.push(args); },
+    chatModel: async () => ({ selector: { vendor: "copilot", id: "gpt-5.6-luna" } }),
+  }));
+  assert.deepEqual(route, { kind: "submit", command: action.command });
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command, modelSelector: { vendor: "copilot", id: "gpt-5.6-luna" } }]]);
+});
+
+test("logs the reason and dispatches without a selector when the resolver returns none", async () => {
+  const calls: unknown[][] = [];
+  const logs: string[] = [];
+  const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
+  await dispatchCommandAction(action, undefined, dependencies({
+    executeCommand: async (...args) => { calls.push(args); },
+    chatModel: async () => ({ selector: null, reason: "no pin for delivery-status in the secondary role" }),
+    output: { appendLine: (line) => { logs.push(line); } },
+  }));
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command }]]);
+  assert.ok(logs.includes("dispatch: no model for /agento delivery-status: no pin for delivery-status in the secondary role"));
+});
+
+test("retries once without the selector and logs when chat.open throws with one set", async () => {
+  const calls: unknown[][] = [];
+  const logs: string[] = [];
+  const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
+  let attempts = 0;
+  await dispatchCommandAction(action, undefined, dependencies({
+    executeCommand: async (...args) => {
+      attempts += 1;
+      calls.push(args);
+      if (attempts === 1) throw new Error("Language model not loaded: gpt-5.6-luna");
+    },
+    chatModel: async () => ({ selector: { id: "gpt-5.6-luna" } }),
+    output: { appendLine: (line) => { logs.push(line); } },
+  }));
+  assert.deepEqual(calls, [
+    ["workbench.action.chat.open", { query: action.command, modelSelector: { id: "gpt-5.6-luna" } }],
+    ["workbench.action.chat.open", { query: action.command }],
+  ]);
+  assert.ok(logs.includes("dispatch: no model for /agento delivery-status: Language model not loaded: gpt-5.6-luna"));
+});
+
+test("propagates a chat.open throw when no selector was set", async () => {
+  const target = { kind: "folder" as const, path: "/repo" };
+  let attempts = 0;
+  await assert.rejects(
+    dispatchCommandToTarget("/agento delivery-status", target, "review there", {
+      executeCommand: async () => { attempts += 1; throw new Error("chat failed"); },
+      reportInfo: async () => undefined,
+      pendingStore: new MemoryStore(),
+      openTarget: async () => undefined,
+      chatMode: () => ({ mode: "agent" }),
+      commandFile: () => ({ file: null, reason: "unused" }),
+      chatModel: async () => ({ selector: null, reason: "no pin for delivery-status in the secondary role" }),
+      output: { appendLine() {} },
+    }, true),
+    /chat failed/,
+  );
+  assert.equal(attempts, 1, "no retry without a selector");
+});
+
+test("treats a rejecting resolver as a reason and still submits", async () => {
+  const calls: unknown[][] = [];
+  const logs: string[] = [];
+  const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
+  const route = await dispatchCommandAction(action, undefined, dependencies({
+    executeCommand: async (...args) => { calls.push(args); },
+    chatModel: async () => { throw new Error("models resolve timed out"); },
+    output: { appendLine: (line) => { logs.push(line); } },
+  }));
+  assert.deepEqual(route, { kind: "submit", command: action.command });
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command }]]);
+  assert.ok(logs.includes("dispatch: no model for /agento delivery-status: models resolve timed out"));
+});
+
+test("a pending dispatch carries the selector through consumePendingCommands", async () => {
+  const store = new MemoryStore();
+  const target = "/repo/worktree";
+  store.values.set(pendingDispatchKey(target), { target, command: "/agento continue widget", createdAt: Date.now() });
+  const calls: unknown[][] = [];
+  await consumePendingCommands([target], {
+    pendingStore: store,
+    executeCommand: async (...args) => { calls.push(args); },
+    reportError: async () => undefined,
+    output: { appendLine() {} },
+    chatMode: () => ({ mode: "agent" }),
+    commandFile: () => ({ file: null, reason: "unused" }),
+    chatModel: async () => ({ selector: { vendor: "copilot", id: "gpt-5.6-luna" } }),
+  });
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: "/agento continue widget", mode: "agent", modelSelector: { vendor: "copilot", id: "gpt-5.6-luna" } }]]);
 });

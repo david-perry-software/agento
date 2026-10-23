@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
 import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor, type CommandFileResolver } from "./commandDispatcher.js";
+import type { ChatModelResolver } from "./chatModel.js";
 import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { formatDashboardTimings, splitDashboardDocument } from "./dashboardDocument.js";
@@ -300,6 +301,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (resolution.path === null) return { file: null, reason: resolution.reason };
     return { file: vscode.Uri.file(resolution.path) };
   };
+  // Placeholder until step 3.8 wires the real resolver (`models resolve` + the
+  // `vscode.lm` / setting routing). It never selects a model, so every dispatch
+  // keeps today's payload and logs one `dispatch: no model for` line.
+  const chatModel: ChatModelResolver = async () => ({ selector: null, reason: "chat model preselection not wired" });
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {
@@ -471,6 +476,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       openTarget,
       chatMode,
       commandFile,
+      chatModel,
       startSession: async (args) => {
         const folder = vscode.workspace.workspaceFolders?.[0];
         if (!folder) throw new Error("No workspace folder is open.");
@@ -508,6 +514,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         openTarget,
         chatMode,
         commandFile,
+        chatModel,
         output,
       },
       currentTargetPaths().has(target.path),
@@ -589,6 +596,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         openTarget,
         chatMode,
         commandFile,
+        chatModel,
         output,
       },
       currentTargetPaths().has(target.path),
@@ -1030,6 +1038,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       output,
       chatMode,
       commandFile,
+      chatModel,
     },
   );
   const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {
