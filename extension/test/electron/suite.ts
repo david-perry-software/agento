@@ -965,6 +965,75 @@ async function assertModelProfilesView(api: ExtensionApi, extensionPath: string)
   }
 }
 
+// Drives a current-window dashboard dispatch under each `agento.chatModelPreselect`
+// value. The temp plugin clone is pinned (via the real CLI) so `models resolve`
+// answers, the Copilot alias is set so `copilot` resolves an id, and the vscode.lm
+// list is injected through `setChatModelSource` for `local`. The assertions cover
+// `{ vendor, id }` for `local`, `{ id }` for `copilot`, and no `modelSelector` for
+// `off` (its `dispatch: model for … — preselection off` log line is unit-tested).
+async function assertChatModelPreselect(api: ExtensionApi, extensionPath: string): Promise<void> {
+  const pluginRoot = process.env.AGENTO_E2E_PLUGIN_ROOT;
+  const configHome = process.env.AGENTO_CONFIG_HOME;
+  assert.ok(pluginRoot, "AGENTO_E2E_PLUGIN_ROOT is set");
+  assert.ok(configHome, "AGENTO_CONFIG_HOME is set");
+  const cliPath = path.join(extensionPath, "cli", "agento.mjs");
+  const runCli = (args: string[], input?: string): unknown => {
+    const stdout = execFileSync("node", [cliPath, ...args, "--plugin-root", pluginRoot], { encoding: "utf8", input });
+    return JSON.parse(stdout);
+  };
+
+  const configuration = vscode.workspace.getConfiguration("agento");
+  const previousPluginRoot = configuration.inspect<string>("pluginRoot");
+  const previousPreselect = configuration.inspect<string>("chatModelPreselect");
+
+  // Pin the delivery-status prompt and give the picker a Copilot alias so both
+  // `local` and `copilot` have a resolved target to select.
+  runCli(["models", "create", "preselect", "--description", "Preselect probe"]);
+  runCli(["models", "update", "preselect"], JSON.stringify({ description: "Preselect probe", default: "GPT 5.6 Luna (copilot)" }));
+  runCli(["models", "apply", "preselect"]);
+  runCli(["models", "alias", "set", "GPT 5.6 Luna (copilot)", "gpt-5.6-luna"]);
+  const resolveResult = runCli(["models", "resolve", "delivery-status", "--role", "primary"]) as { qualified?: unknown; copilotModel?: unknown; role?: unknown };
+  assert.equal(resolveResult.qualified, "GPT 5.6 Luna (copilot)", "models resolve returns the pinned model");
+  assert.equal(resolveResult.copilotModel, "gpt-5.6-luna", "models resolve returns the Copilot alias");
+
+  await configuration.update("pluginRoot", pluginRoot, vscode.ConfigurationTarget.Workspace);
+  api.setChatModelSource(async () => [
+    { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", vendor: "copilot", family: "gpt-5.6-luna" },
+    { id: "grok-4", name: "Grok 4", vendor: "grok", family: "grok-4" },
+  ]);
+  try {
+    const submitted: Array<{ command: string; options: Record<string, unknown> }> = [];
+    const executeCommand = async (command: string, options: Record<string, unknown>) => {
+      submitted.push({ command, options });
+    };
+    const action = { command: "/agento delivery-status", window: "here", reason: null };
+
+    await configuration.update("chatModelPreselect", "local", vscode.ConfigurationTarget.Workspace);
+    await vscode.commands.executeCommand("agento.dispatchAction", action, undefined, executeCommand);
+    const local = submitted.pop()!;
+    assert.equal(local.command, "workbench.action.chat.open");
+    assert.deepEqual(local.options.modelSelector, { vendor: "copilot", id: "gpt-5.6-luna" }, "local sends { vendor, id }");
+    assert.equal(local.options.query, "/agento delivery-status");
+
+    await configuration.update("chatModelPreselect", "copilot", vscode.ConfigurationTarget.Workspace);
+    await vscode.commands.executeCommand("agento.dispatchAction", action, undefined, executeCommand);
+    const copilot = submitted.pop()!;
+    assert.equal(copilot.command, "workbench.action.chat.open");
+    assert.deepEqual(copilot.options.modelSelector, { id: "gpt-5.6-luna" }, "copilot sends { id }");
+
+    await configuration.update("chatModelPreselect", "off", vscode.ConfigurationTarget.Workspace);
+    await vscode.commands.executeCommand("agento.dispatchAction", action, undefined, executeCommand);
+    const off = submitted.pop()!;
+    assert.equal(off.command, "workbench.action.chat.open");
+    assert.equal(off.options.modelSelector, undefined, "off sends no modelSelector");
+  } finally {
+    api.setChatModelSource(null);
+    runCli(["models", "clear"]);
+    await configuration.update("chatModelPreselect", previousPreselect?.workspaceValue ?? previousPreselect?.globalValue, vscode.ConfigurationTarget.Workspace);
+    await configuration.update("pluginRoot", previousPluginRoot?.workspaceValue ?? previousPluginRoot?.globalValue, vscode.ConfigurationTarget.Workspace);
+  }
+}
+
 async function waitForEditorPanels(api: ExtensionApi, predicate: (names: string[]) => boolean, description: string): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
@@ -1654,7 +1723,7 @@ export async function run(): Promise<void> {
       tone: "build",
       title: "BUILD WINDOW",
       detail: "session-doctor-panel · feature/session-doctor-panel · building",
-      tooltip: "/fixture/product\nClick to open Session & Doctor",
+      tooltip: "/fixture/product\nModel preselection is off — set the model picker by hand (agento.mjs models resolve <command> names it; set agento.chatModelPreselect to local or copilot to automate)\nClick to open Session & Doctor",
       colorId: "agento.role.build",
     });
     assert.deepEqual(api.windowGate(), CLOSED_GATE, "a build window closes the gate");
@@ -1862,8 +1931,9 @@ export async function run(): Promise<void> {
 
   if (process.env.AGENTO_ELECTRON_SCENARIO === "in-repo") {
     await assertModelProfilesView(api, extension.extensionPath);
+    await assertChatModelPreselect(api, extension.extensionPath);
   }
 
-  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles (role rows, secondary writes, roles watcher), model-profile editor" : "";
+  const modelProfiles = process.env.AGENTO_ELECTRON_SCENARIO === "in-repo" ? ", model profiles (role rows, secondary writes, roles watcher), model-profile editor, chat model preselection (local/copilot/off)" : "";
   console.log(`Electron ${process.env.AGENTO_ELECTRON_SCENARIO} scenario passed: initiatives, deliveries, session doctor, window banner, roadmap refresh, diagnostics, stale/error handling${modelProfiles}`);
 }

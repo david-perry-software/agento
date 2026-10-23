@@ -206,3 +206,42 @@ test("the resolver surfaces an unpinned resolve as a reason and a listModels fai
 function runOptionsOf(run: { args: string[]; root: string; runOptions?: { timeoutMs?: number } }): number | undefined {
   return run.runOptions?.timeoutMs;
 }
+
+test("the resolver reads a setting getter on every dispatch", async () => {
+  let current: "off" | "local" | "copilot" = "off";
+  const resolve = createChatModelResolver({
+    pluginRoot: "/repo",
+    sessionRole: "plan",
+    setting: () => current,
+    runCli: async () => ({ code: 0, json: { status: "ok", command: "delivery-status", role: "secondary", qualified: "GPT 5.6 Luna (copilot)", name: "GPT 5.6 Luna", vendor: "copilot", copilotModel: "gpt-5.6-luna" }, stderr: "" }),
+    listModels: async () => [{ id: "gpt-5.6-luna", name: "GPT 5.6 Luna", vendor: "copilot" }],
+    commandName: (command) => command.split(/\s+/)[1] ?? null,
+  });
+  assert.ok("off" in await resolve("/agento delivery-status"));
+  current = "copilot";
+  assert.deepEqual(await resolve("/agento delivery-status"), { selector: { id: "gpt-5.6-luna" } });
+  current = "local";
+  assert.deepEqual(await resolve("/agento delivery-status"), { selector: { vendor: "copilot", id: "gpt-5.6-luna" } });
+});
+
+test("the resolver reads pluginRoot and sessionRole getters on every dispatch", async () => {
+  let pluginRoot: string | null = null;
+  let sessionRole: string | null = "primary";
+  const runs: string[][] = [];
+  const resolve = createChatModelResolver({
+    pluginRoot: () => pluginRoot,
+    sessionRole: () => sessionRole,
+    setting: "local",
+    runCli: async (args) => { runs.push(args); return { code: 0, json: { status: "ok", command: "delivery-status", role: "primary", qualified: "GPT 5.6 Luna (copilot)", name: "GPT 5.6 Luna", vendor: "copilot", copilotModel: "gpt-5.6-luna" }, stderr: "" }; },
+    listModels: async () => [{ id: "gpt-5.6-luna", name: "GPT 5.6 Luna", vendor: "copilot" }],
+    commandName: (command) => command.split(/\s+/)[1] ?? null,
+  });
+  assert.deepEqual(await resolve("/agento delivery-status"), { selector: null, reason: "no plugin root" });
+  pluginRoot = "/repo";
+  assert.deepEqual(await resolve("/agento delivery-status"), { selector: { vendor: "copilot", id: "gpt-5.6-luna" } });
+  assert.equal(runs[0]![3], "--role");
+  assert.equal(runs[0]![4], "primary");
+  sessionRole = "build";
+  await resolve("/agento delivery-status");
+  assert.equal(runs[1]![4], "secondary", "the role getter is read per dispatch");
+});

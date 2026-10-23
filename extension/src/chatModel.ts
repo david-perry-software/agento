@@ -148,11 +148,12 @@ export function resolveChatModelRole(sessionRole: string | null): "primary" | "s
 }
 
 export interface ChatModelResolverDeps {
-  /** The window's plugin root, or null (a missing root is a reason). */
-  pluginRoot: string | null;
-  /** The window's session role (`plan`/`build`/`freehand` → secondary). */
-  sessionRole: string | null;
-  setting: ChatModelSetting;
+  /** The window's plugin root (or a getter), null is a reason. */
+  pluginRoot: string | null | (() => string | null);
+  /** The window's session role (`plan`/`build`/`freehand` → secondary), or a getter. */
+  sessionRole: string | null | (() => string | null);
+  /** The opt-in setting, or a getter reading it live (per dispatch). */
+  setting: ChatModelSetting | (() => ChatModelSetting);
   /** Runs the bundled CLI (CliClient.run) and resolves `{ code, json, stderr }`. */
   runCli: (args: string[], root: string, runOptions?: { timeoutMs?: number }) => Promise<{ code: number; json: unknown; stderr: string }>;
   /** Lists installed models (`vscode.lm.selectChatModels`), optionally filtered by vendor. */
@@ -169,17 +170,20 @@ export interface ChatModelResolverDeps {
 export function createChatModelResolver(deps: ChatModelResolverDeps): ChatModelResolver {
   const { pluginRoot, sessionRole, setting, runCli, listModels, commandName, timeoutMs = 5000 } = deps;
   return async (command: string): Promise<ChatModelPreselect> => {
+    const currentSetting = typeof setting === "function" ? setting() : setting;
+    const currentPluginRoot = typeof pluginRoot === "function" ? pluginRoot() : pluginRoot;
+    const currentSessionRole = typeof sessionRole === "function" ? sessionRole() : sessionRole;
     const name = commandName(command);
     if (name === null) {
       return { selector: null, reason: `not a canonical /agento command: ${command}` };
     }
-    if (pluginRoot === null) {
+    if (currentPluginRoot === null) {
       return { selector: null, reason: "no plugin root" };
     }
-    const role = resolveChatModelRole(sessionRole);
+    const role = resolveChatModelRole(currentSessionRole);
     let result: { code: number; json: unknown; stderr: string };
     try {
-      result = await runCli(["models", "resolve", name, "--role", role, "--plugin-root", pluginRoot], pluginRoot, { timeoutMs });
+      result = await runCli(["models", "resolve", name, "--role", role, "--plugin-root", currentPluginRoot], currentPluginRoot, { timeoutMs });
     } catch (error) {
       return { selector: null, reason: error instanceof Error ? error.message : String(error) };
     }
@@ -187,7 +191,7 @@ export function createChatModelResolver(deps: ChatModelResolverDeps): ChatModelR
     if (parsed.kind === "reason") {
       return { selector: null, reason: parsed.reason };
     }
-    if (setting === "local") {
+    if (currentSetting === "local") {
       try {
         const listed = await listModels(parsed.model.vendor ?? undefined);
         return preselectFor("local", parsed, chatModelEntries(listed));
@@ -195,7 +199,7 @@ export function createChatModelResolver(deps: ChatModelResolverDeps): ChatModelR
         return { selector: null, reason: error instanceof Error ? error.message : String(error) };
       }
     }
-    return preselectFor(setting, parsed, []);
+    return preselectFor(currentSetting, parsed, []);
   };
 }
 
