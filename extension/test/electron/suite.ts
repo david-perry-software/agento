@@ -1026,6 +1026,23 @@ async function assertChatModelPreselect(api: ExtensionApi, extensionPath: string
     const off = submitted.pop()!;
     assert.equal(off.command, "workbench.action.chat.open");
     assert.equal(off.options.modelSelector, undefined, "off sends no modelSelector");
+
+    // The banner tooltip hint tracks the setting immediately (no reload).
+    const waitForBannerHint = async (needle: string): Promise<void> => {
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        if (String(api.windowBanner.current.tooltip).includes(needle)) return;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.fail(`banner tooltip should include ${JSON.stringify(needle)}; got ${JSON.stringify(api.windowBanner.current.tooltip)}`);
+    };
+
+    await configuration.update("chatModelPreselect", "off", vscode.ConfigurationTarget.Workspace);
+    await waitForBannerHint("Model preselection is off");
+    await configuration.update("chatModelPreselect", "local", vscode.ConfigurationTarget.Workspace);
+    await waitForBannerHint("Model preselection targets Local sessions only");
+    await configuration.update("chatModelPreselect", "copilot", vscode.ConfigurationTarget.Workspace);
+    await waitForBannerHint("Model preselection targets Copilot sessions only");
   } finally {
     api.setChatModelSource(null);
     runCli(["models", "clear"]);

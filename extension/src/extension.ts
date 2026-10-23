@@ -68,7 +68,7 @@ import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createTreeIdScope } from "./treeItemIds.js";
 import { createWatchers } from "./watchers.js";
-import { createWindowBannerModel, modelPreselectHint, modelsBannerLine } from "./windowBanner.js";
+import { affectsPreselectHint, createWindowBannerModel, modelPreselectHint, modelsBannerLine } from "./windowBanner.js";
 import { WindowBannerProvider } from "./windowBannerProvider.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -1070,6 +1070,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (event.affectsConfiguration("agento.pluginRoot") || event.affectsConfiguration("chat.pluginLocations")) {
       rebuildModelProfileWatchers();
       scheduleModelProfilesReload("plugin root changed");
+    }
+    if (affectsPreselectHint(event)) {
+      // The dispatch resolver reads the setting live, but the banner tooltip hint
+      // is computed on update, so rebuild it immediately on a setting change.
+      applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(modelProfiles.current) ?? undefined, modelPreselectHint(chatModelPreselect()));
     }
   });
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };

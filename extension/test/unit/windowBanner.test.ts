@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createSessionDoctorError, createSessionDoctorModel } from "../../src/sessionDoctorModel.js";
 import { createModelProfilesModel } from "../../src/modelProfilesTree.js";
-import { createWindowBannerModel, escapeHtml, modelPreselectHint, modelsBannerLine, renderWindowBannerHtml } from "../../src/windowBanner.js";
+import { affectsPreselectHint, createWindowBannerModel, escapeHtml, modelPreselectHint, modelsBannerLine, renderWindowBannerHtml } from "../../src/windowBanner.js";
 
 const doctor = { status: "ok", checks: [] };
 const status = { status: "ok", resumable: [] };
@@ -229,6 +229,12 @@ test("modelPreselectHint names the setting and the pick-by-hand command for each
   const copilot = modelPreselectHint("copilot");
   assert.match(copilot, /targets Copilot sessions only/);
   assert.match(copilot, /Local sessions still need the model picker/);
+});
+
+test("affectsPreselectHint reacts only to the chatModelPreselect section", () => {
+  assert.equal(affectsPreselectHint({ affectsConfiguration: (section) => section === "agento.chatModelPreselect" }), true);
+  assert.equal(affectsPreselectHint({ affectsConfiguration: (section) => section === "agento.pluginRoot" }), false);
+  assert.equal(affectsPreselectHint({ affectsConfiguration: () => false }), false);
 });
 
 test("createWindowBannerModel appends the preselection hint to the tooltip", () => {

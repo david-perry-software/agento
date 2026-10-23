@@ -15,6 +15,9 @@
   <command>: <reason>`) line, a `chat.open` throw with a selector is retried once
   without it, and the window banner tooltip names the setting and
   `agento.mjs models resolve <command>`.
+- **Fixed.** Changing `agento.chatModelPreselect` now refreshes the window banner
+  tooltip immediately instead of waiting for an unrelated refresh, so the hint
+  always names the value in effect.
 
 ## 0.13.0 (2026-10-22)
 

@@ -36,6 +36,15 @@ export function modelPreselectHint(setting: "off" | "local" | "copilot"): string
   }
 }
 
+/**
+ * True when a configuration change touches `agento.chatModelPreselect`, the one
+ * section whose banner hint must be rebuilt immediately (the dispatch resolver
+ * already reads the setting live on each call).
+ */
+export function affectsPreselectHint(event: { affectsConfiguration(section: string): boolean }): boolean {
+  return event.affectsConfiguration("agento.chatModelPreselect");
+}
+
 export function createWindowBannerModel(model: SessionDoctorModel, models?: string, hint?: string): WindowBannerModel {
   if (model.kind === "error") {
     const colorId = roleBannerColor("");
