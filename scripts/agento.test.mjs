@@ -84,6 +84,8 @@ baseEnv.AGENTO_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-confi
 baseEnv.AGENTO_VSCODE_SETTINGS = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-settings.json");
 // Never touch the real ~/.copilot/skills (harness install/status/uninstall).
 baseEnv.AGENTO_COPILOT_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
+// Never touch the real ~/.copilot/extensions (harness canvas link).
+baseEnv.AGENTO_COPILOT_EXTENSIONS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-extensions-"));
 
 function runWith({ cwd, env, input }, ...args) {
   const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv, input: input ?? undefined });
@@ -1439,7 +1441,7 @@ const okStubs = {
 
 const byId = (json) => Object.fromEntries(json.checks.map((c) => [c.id, c]));
 
-test("doctor reports ten checks and includes session-workspace, model-profile, hook-wiring, and harness", () => {
+test("doctor reports eleven checks and includes session-workspace, model-profile, hook-wiring, harness, and canvas", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   // --plugin-root: the model-profile check must not read the (possibly pinned) clone running the suite.
@@ -1447,7 +1449,7 @@ test("doctor reports ten checks and includes session-workspace, model-profile, h
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "canvas"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -1601,7 +1603,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -1614,11 +1616,15 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
 
 // --- harness install|status|uninstall and the doctor harness check ------------------
 
-function harnessFixture() {
+function harnessFixture({ canvas = true } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "agento-harness-"));
   const plugin = path.join(base, "plugin");
   fs.mkdirSync(path.join(plugin, "skills", "agento"), { recursive: true });
   fs.writeFileSync(path.join(plugin, "skills", "agento", "SKILL.md"), "---\ndescription: router\n---\n\n# agento\n");
+  if (canvas) {
+    fs.mkdirSync(path.join(plugin, "canvas", "agento-mission-control"), { recursive: true });
+    fs.writeFileSync(path.join(plugin, "canvas", "agento-mission-control", "extension.mjs"), "export default {};\n");
+  }
   fs.mkdirSync(path.join(plugin, ".github", "agents"), { recursive: true });
   fs.writeFileSync(path.join(plugin, ".github", "agents", "delivery-builder.agent.md"), "---\nname: builder\n---\n# builder\n");
   execFileSync("git", ["init", "-q", "-b", "main", plugin]);
@@ -1627,10 +1633,13 @@ function harnessFixture() {
   git(plugin, "add", "-A");
   git(plugin, "commit", "-q", "-m", "init");
   const skills = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
-  const env = { ...baseEnv, AGENTO_COPILOT_SKILLS_DIR: skills };
+  const extensions = fs.mkdtempSync(path.join(os.tmpdir(), "agento-extensions-"));
+  const env = { ...baseEnv, AGENTO_COPILOT_SKILLS_DIR: skills, AGENTO_COPILOT_EXTENSIONS_DIR: extensions };
   const runHarness = (...args) => runWith({ cwd: plugin, env }, "harness", ...args);
   const link = path.join(skills, "agento");
-  return { plugin, env, runHarness, link };
+  const canvasLink = path.join(extensions, "agento-mission-control");
+  const canvasExpected = path.join(plugin, "canvas", "agento-mission-control");
+  return { plugin, env, runHarness, link, canvasLink, canvasExpected };
 }
 
 test("harness status reports absent, installed, foreign, dangling, and not-a-link", () => {
@@ -1867,6 +1876,146 @@ test("doctor harness check is ok without a router and when installed, fails per 
   assert.equal(forCheck["harness"], undefined);
   const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature").json;
   assert.equal(byId(preflight.doctor)["harness"], undefined);
+});
+
+test("harness install links the canvas alongside the router and reports it", () => {
+  const { plugin, runHarness, link, canvasLink, canvasExpected } = harnessFixture();
+
+  const created = runHarness("install", "--plugin-root", plugin);
+  assert.equal(created.code, 0, JSON.stringify(created.json));
+  assert.equal(created.json.status, "ok");
+  assert.equal(fs.readlinkSync(link), path.join(plugin, "skills", "agento"));
+  assert.equal(fs.readlinkSync(canvasLink), canvasExpected);
+  assert.deepEqual(created.json.canvas, { link: canvasLink, expected: canvasExpected, state: "installed", target: canvasExpected, changed: true });
+
+  const again = runHarness("install", "--plugin-root", plugin);
+  assert.equal(again.code, 0);
+  assert.equal(again.json.canvas.changed, false);
+  assert.equal(again.json.canvas.state, "installed");
+
+  const status = runHarness("status", "--plugin-root", plugin);
+  assert.equal(status.code, 0);
+  assert.equal(status.json.canvas.state, "installed");
+  assert.equal(status.json.canvas.target, canvasExpected);
+});
+
+test("harness install refuses a real canvas directory and replaces foreign/dangling canvas with --force", () => {
+  const { plugin, runHarness, canvasLink, canvasExpected } = harnessFixture();
+
+  // Foreign canvas: refused without --force, replaced with --force.
+  const other = path.join(path.dirname(plugin), "other-canvas");
+  fs.mkdirSync(other, { recursive: true });
+  fs.symlinkSync(other, canvasLink, "dir");
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 3);
+  assert.equal(fs.readlinkSync(canvasLink), other);
+
+  const forced = runHarness("install", "--plugin-root", plugin, "--force");
+  assert.equal(forced.code, 0, JSON.stringify(forced.json));
+  assert.equal(forced.json.canvas.changed, true);
+  assert.equal(fs.readlinkSync(canvasLink), canvasExpected);
+
+  // Real directory at the canvas link: refused even with --force, left intact.
+  fs.unlinkSync(canvasLink);
+  fs.mkdirSync(canvasLink);
+  fs.writeFileSync(path.join(canvasLink, "keep.txt"), "mine");
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 3);
+  const dirForced = runHarness("install", "--plugin-root", plugin, "--force");
+  assert.equal(dirForced.code, 3);
+  assert.equal(dirForced.json.status, "refused");
+  assert.equal(fs.readFileSync(path.join(canvasLink, "keep.txt"), "utf8"), "mine");
+});
+
+test("harness uninstall removes the canvas link only when installed", () => {
+  const { plugin, runHarness, canvasLink, canvasExpected } = harnessFixture();
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 0);
+
+  const removed = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(removed.code, 0, JSON.stringify(removed.json));
+  assert.equal(removed.json.canvas.state, "absent");
+  assert.equal(removed.json.canvas.changed, true);
+  assert.equal(fs.existsSync(canvasLink), false);
+
+  // Absent is a no-op.
+  const absent = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(absent.code, 0);
+  assert.equal(absent.json.canvas.changed, false);
+
+  // Foreign canvas is refused and untouched.
+  const other = path.join(path.dirname(plugin), "other-canvas");
+  fs.mkdirSync(other, { recursive: true });
+  fs.symlinkSync(other, canvasLink, "dir");
+  const foreign = runHarness("uninstall", "--plugin-root", plugin);
+  assert.equal(foreign.code, 3);
+  assert.equal(foreign.json.status, "refused");
+  assert.equal(fs.readlinkSync(canvasLink), other);
+
+  // sanity: the expected canvas target was never removed
+  assert.ok(fs.existsSync(canvasExpected));
+});
+
+test("harness install leaves the canvas link absent when the clone has no canvas", () => {
+  const { plugin, runHarness, canvasLink } = harnessFixture({ canvas: false });
+  const installed = runHarness("install", "--plugin-root", plugin);
+  assert.equal(installed.code, 0, JSON.stringify(installed.json));
+  assert.equal(installed.json.canvas.state, "absent");
+  assert.equal(installed.json.canvas.changed, false);
+  assert.equal(fs.existsSync(canvasLink), false);
+});
+
+test("doctor canvas check is ok when installed, warn per state, ok without a canvas, and never runs in preflight", () => {
+  const { plugin, env, runHarness, canvasLink, canvasExpected } = harnessFixture();
+  const { bin: okBin } = restrictedPath(okStubs);
+  const doctorEnv = { ...env, PATH: okBin };
+  const check = () => byId(runWith({ cwd: plugin, env: doctorEnv }, "doctor", "--plugin-root", plugin).json)["canvas"];
+
+  // Absent (canvas present in the clone, link missing): warn with install fallback.
+  const absent = check();
+  assert.equal(absent.status, "warn");
+  assert.match(absent.detail, /is missing/);
+  assert.match(absent.fallback, new RegExp(`harness install --plugin-root ${plugin}`));
+
+  // Installed: ok.
+  assert.equal(runHarness("install", "--plugin-root", plugin).code, 0);
+  const installed = check();
+  assert.equal(installed.status, "ok", JSON.stringify(installed));
+  assert.match(installed.detail, /Mission Control canvas installed/);
+
+  // Foreign: warn.
+  const other = path.join(path.dirname(plugin), "other-canvas");
+  fs.mkdirSync(other, { recursive: true });
+  fs.unlinkSync(canvasLink);
+  fs.symlinkSync(other, canvasLink, "dir");
+  const foreign = check();
+  assert.equal(foreign.status, "warn");
+  assert.match(foreign.detail, new RegExp(other));
+  assert.match(foreign.fallback, /--force/);
+
+  // Dangling: warn.
+  fs.unlinkSync(canvasLink);
+  fs.symlinkSync(path.join(plugin, "gone"), canvasLink, "dir");
+  const dangling = check();
+  assert.equal(dangling.status, "warn");
+  assert.match(dangling.detail, /dangling/);
+  assert.match(dangling.fallback, /--force/);
+
+  // Not-a-link: warn.
+  fs.unlinkSync(canvasLink);
+  fs.mkdirSync(canvasLink);
+  const notALink = check();
+  assert.equal(notALink.status, "warn");
+  assert.match(notALink.fallback, /move it away/);
+
+  // A clone without the canvas: ok (nothing to install yet).
+  const plain = makeRepo();
+  const noCanvas = byId(runWith({ cwd: plain, env: doctorEnv }, "doctor", "--plugin-root", plain).json)["canvas"];
+  assert.equal(noCanvas.status, "ok");
+  assert.match(noCanvas.detail, /no Mission Control canvas/);
+
+  // Informational: never in doctor --for new-feature or preflight new-feature.
+  const forCheck = byId(runWith({ cwd: plugin, env: doctorEnv }, "doctor", "--for", "new-feature").json);
+  assert.equal(forCheck["canvas"], undefined);
+  const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature").json;
+  assert.equal(byId(preflight.doctor)["canvas"], undefined);
 });
 
 test("doctor warns (exit 0) when code is missing and reports its fallback; no Python check remains", () => {
