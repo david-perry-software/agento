@@ -85,6 +85,25 @@ Without the link `/agento` cannot run in any session and `agento.mjs doctor` fai
 naming the exact command. `harness uninstall --plugin-root <clone>` removes the
 link, after which `/agento` stops resolving.
 
+### Register the Mission Control canvas (optional)
+
+`harness install` also links the optional Mission Control canvas at
+`<extensionsDir>/agento-mission-control` → `<clone>/canvas/agento-mission-control`,
+where `<extensionsDir>` resolves in this order: `AGENTO_COPILOT_EXTENSIONS_DIR`
+(when set), `$COPILOT_HOME/extensions` (when `COPILOT_HOME` is non-empty, the same
+rule the Copilot runtime uses), else `~/.copilot/extensions`. The same `install`,
+`status`, and `uninstall` verbs manage both links idempotently; `--force` replaces a
+foreign or dangling canvas link, a real directory is never deleted, and `install`
+refuses a linked worktree (run it on the primary clone). The doctor `canvas` check
+reports `ok` when installed and `warn` otherwise with the `harness install`
+fallback. Re-run `harness install --plugin-root <clone>` on the registered clone
+after updating Agento so the link always points at that clone's canvas.
+
+The canvas runs only in a **local Copilot-harness chat session** with
+`chat.canvases.enabled` on in VS Code user settings; it does not run in remote or
+Copilot-app sessions. `harness uninstall` removes the canvas link together with the
+router link.
+
 Routing every `/agento` through the router skill also changes **Local** sessions:
 Builder and Reviewer keep their model pins through the subagent tool, but the
 inline agents and prompt-level model pins no longer switch — a known gap of the

@@ -403,6 +403,16 @@ without a review).
 Harvests `## Follow-ups` from shipped reviews and roadmaps, files them as GitHub
 issues, and annotates the source lines so re-runs skip them.
 
+```text
+/agento mission-control
+```
+
+Opens **Mission Control**, the read + dispatch canvas beside the chat: a delivery
+kanban, an initiative wave graph, a timeline, a worktree and window map, and a live
+activity feed. Its buttons dispatch only the commands the CLI allows in the current
+window, and the agent can drive it with `refresh`, `focus`, `get_snapshot`, and
+`post_note`.
+
 ## Lighter tiers
 
 **`/agento quick-fix <description>`** — primary window, on `main`, clean tree. Branches to
