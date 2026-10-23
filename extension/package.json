@@ -78,6 +78,12 @@
         "category": "Agento"
       },
       {
+        "command": "agento.openMissionControl",
+        "title": "Open Mission Control",
+        "category": "Agento",
+        "icon": "$(dashboard)"
+      },
+      {
         "command": "agento.newPlan",
         "title": "New Plan",
         "category": "Agento",
@@ -217,6 +223,11 @@
           "command": "agento.newPlan",
           "when": "view == agento.deliveries && agento.canPlan",
           "group": "navigation@2"
+        },
+        {
+          "command": "agento.openMissionControl",
+          "when": "view == agento.deliveries",
+          "group": "navigation@4"
         },
         {
           "command": "agento.newInitiative",
