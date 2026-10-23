@@ -1058,6 +1058,18 @@ const DOCTOR_CHECKS = {
     if (state === "dangling") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
     return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
   },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  "canvas"() {
+    const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
+    const install = `agento.mjs harness install --plugin-root ${facts.clone}`;
+    if (!facts.hasCanvas) return { status: "ok", detail: `no Mission Control canvas at ${facts.canvasExpected} (this clone predates it)`, fallback: null };
+    const { state, target } = linkState(facts.canvasLink, facts.canvasExpected);
+    if (state === "installed") return { status: "ok", detail: `${facts.canvasLink} → ${facts.clone}; Mission Control canvas installed`, fallback: null };
+    if (state === "absent") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is missing`, fallback: install };
+    if (state === "foreign") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} resolves to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone} (or keep the other clone's canvas)` };
+    if (state === "dangling") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
+    return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
+  },
 };
 
 // The router skill is the only /agento path in every session.
@@ -1069,13 +1081,24 @@ function copilotSkillsDir(env = process.env) {
   return env.AGENTO_COPILOT_SKILLS_DIR ? env.AGENTO_COPILOT_SKILLS_DIR : path.join(os.homedir(), ".copilot", "skills");
 }
 
+// The user-level canvas extensions directory, honoring COPILOT_HOME the way the
+// Copilot runtime does: AGENTO_COPILOT_EXTENSIONS_DIR (test override), then
+// $COPILOT_HOME/extensions when COPILOT_HOME is non-empty, then ~/.copilot/extensions.
+function copilotExtensionsDir(env = process.env) {
+  if (env.AGENTO_COPILOT_EXTENSIONS_DIR) return env.AGENTO_COPILOT_EXTENSIONS_DIR;
+  const home = env.COPILOT_HOME;
+  if (typeof home === "string" && home.length > 0) return path.join(home, "extensions");
+  return path.join(os.homedir(), ".copilot", "extensions");
+}
+
 // The router-skill link, the plugin clone it must point at (the primary checkout of
-// a linked worktree), and the expected target directory — shared by the subcommand
-// and the doctor check.
+// a linked worktree), the expected target directory, and the same for the Mission
+// Control canvas link — shared by the subcommand and the doctor checks.
 function harnessFacts(pluginRoot) {
   const root = path.resolve(pluginRoot);
   const clone = primaryCheckoutOf(root) ?? root;
   const skillsDir = copilotSkillsDir();
+  const extensionsDir = copilotExtensionsDir();
   return {
     pluginRoot: root,
     clone,
@@ -1083,6 +1106,10 @@ function harnessFacts(pluginRoot) {
     link: path.join(skillsDir, "agento"),
     expected: path.join(clone, "skills", "agento"),
     hasSkill: fs.existsSync(path.join(root, "skills", "agento", "SKILL.md")),
+    extensionsDir,
+    canvasLink: path.join(extensionsDir, "agento-mission-control"),
+    canvasExpected: path.join(clone, "canvas", "agento-mission-control"),
+    hasCanvas: fs.existsSync(path.join(root, "canvas", "agento-mission-control", "extension.mjs")),
   };
 }
 
@@ -4983,8 +5010,20 @@ switch (command) {
     if (extra.length) usage(`harness ${verb} takes no arguments`);
     if (options.force && verb !== "install") usage(`harness ${verb}: --force is only valid with install`);
     const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
-    const { state, target } = linkState(facts.link, facts.expected);
-    const doc = { status: "ok", verb, link: facts.link, expected: facts.expected, state, target, pluginRoot: facts.pluginRoot, changed: false, localTakeover: LOCAL_TAKEOVER };
+    const router = { ...linkState(facts.link, facts.expected), link: facts.link, expected: facts.expected, changed: false };
+    const canvas = { ...linkState(facts.canvasLink, facts.canvasExpected), link: facts.canvasLink, expected: facts.canvasExpected, changed: false };
+    const doc = {
+      status: "ok",
+      verb,
+      link: facts.link,
+      expected: facts.expected,
+      state: router.state,
+      target: router.target,
+      pluginRoot: facts.pluginRoot,
+      changed: false,
+      localTakeover: LOCAL_TAKEOVER,
+      canvas: { link: canvas.link, expected: canvas.expected, state: canvas.state, target: canvas.target, changed: false },
+    };
 
     if (verb === "status") emit(doc);
 
@@ -4992,22 +5031,62 @@ switch (command) {
       if (!facts.hasSkill) emit({ ...doc, status: "missing", changed: false, message: `no router skill at ${path.join(facts.pluginRoot, "skills", "agento", "SKILL.md")}` }, 3);
       const primary = primaryCheckoutOf(facts.pluginRoot);
       if (primary) emit({ ...doc, status: "worktree", primaryCheckout: primary, changed: false, message: `${facts.pluginRoot} is a linked worktree of ${primary}, not the registered plugin clone; linked worktrees share the clone's skill — run harness install on the primary clone with --plugin-root ${primary}` }, 3);
-      if (state === "not-a-link") emit({ ...doc, status: "refused", changed: false, message: `${facts.link} is a real directory or file, not a symlink; it is never deleted — move it away, then re-run harness install` }, 3);
-      if (state === "installed") emit({ ...doc, status: "ok", changed: false });
-      if ((state === "foreign" || state === "dangling") && !options.force) emit({ ...doc, status: "refused", changed: false, message: `${facts.link} resolves to ${target ?? "a missing target"}; re-run harness install with --force to replace it` }, 3);
-      if (state === "foreign" || state === "dangling") fs.unlinkSync(facts.link);
-      fs.mkdirSync(facts.skillsDir, { recursive: true });
-      fs.symlinkSync(facts.expected, facts.link, linkType());
-      emit({ ...doc, state: "installed", target: facts.expected, status: "ok", changed: true });
+
+      let routerWrite = false;
+      if (router.state === "not-a-link") emit({ ...doc, status: "refused", changed: false, message: `${facts.link} is a real directory or file, not a symlink; it is never deleted — move it away, then re-run harness install` }, 3);
+      if (router.state === "installed") routerWrite = false;
+      else if ((router.state === "foreign" || router.state === "dangling") && !options.force) emit({ ...doc, status: "refused", changed: false, message: `${facts.link} resolves to ${router.target ?? "a missing target"}; re-run harness install with --force to replace it` }, 3);
+      else routerWrite = true;
+
+      let canvasWrite = false;
+      if (canvas.state === "not-a-link") emit({ ...doc, status: "refused", changed: false, message: `${facts.canvasLink} is a real directory or file, not a symlink; it is never deleted — move it away, then re-run harness install` }, 3);
+      if (canvas.state === "installed") canvasWrite = false;
+      else if ((canvas.state === "foreign" || canvas.state === "dangling") && !options.force) emit({ ...doc, status: "refused", changed: false, message: `${facts.canvasLink} resolves to ${canvas.target ?? "a missing target"}; re-run harness install with --force to replace it` }, 3);
+      else if (facts.hasCanvas) canvasWrite = true; // absent with the canvas present → create the link
+
+      if (routerWrite) {
+        if (router.state === "foreign" || router.state === "dangling") fs.unlinkSync(facts.link);
+        fs.mkdirSync(facts.skillsDir, { recursive: true });
+        fs.symlinkSync(facts.expected, facts.link, linkType());
+      }
+      if (canvasWrite) {
+        if (canvas.state === "foreign" || canvas.state === "dangling") fs.unlinkSync(facts.canvasLink);
+        fs.mkdirSync(facts.extensionsDir, { recursive: true });
+        fs.symlinkSync(facts.canvasExpected, facts.canvasLink, linkType());
+      }
+
+      emit({
+        ...doc,
+        status: "ok",
+        changed: routerWrite,
+        state: "installed",
+        target: facts.expected,
+        canvas: { link: facts.canvasLink, expected: facts.canvasExpected, state: canvasWrite || canvas.state === "installed" ? "installed" : "absent", target: facts.canvasExpected, changed: canvasWrite },
+      });
     }
 
-    // uninstall
-    if (state === "installed") {
-      fs.unlinkSync(facts.link);
-      emit({ ...doc, state: "absent", target: null, status: "ok", changed: true, warning: "harness uninstall removed the router link; /agento will no longer resolve in any session" });
+    // uninstall removes each link only when it is installed; anything else is
+    // refused and left untouched (absent is a no-op).
+    const routerRemove = router.state === "installed";
+    const canvasRemove = canvas.state === "installed";
+    const refusedRouter = router.state !== "installed" && router.state !== "absent";
+    const refusedCanvas = canvas.state !== "installed" && canvas.state !== "absent";
+    if (refusedRouter || refusedCanvas) {
+      const which = refusedRouter ? facts.link : facts.canvasLink;
+      const state = refusedRouter ? router.state : canvas.state;
+      emit({ ...doc, status: "refused", changed: false, message: `only an installed link is ever removed; ${which} is ${state === "not-a-link" ? "a real directory or file" : "not the installed link (it resolves elsewhere)"}` }, 3);
     }
-    if (state === "absent") emit({ ...doc, status: "ok", changed: false });
-    emit({ ...doc, status: "refused", changed: false, message: `only the installed ${facts.link} link is ever removed; ${state === "not-a-link" ? "it is a real directory or file" : "the link resolves elsewhere"}` }, 3);
+    if (routerRemove) fs.unlinkSync(facts.link);
+    if (canvasRemove) fs.unlinkSync(facts.canvasLink);
+    emit({
+      ...doc,
+      status: "ok",
+      changed: routerRemove || canvasRemove,
+      state: "absent",
+      target: null,
+      canvas: { link: facts.canvasLink, expected: facts.canvasExpected, state: "absent", target: null, changed: canvasRemove },
+      warning: routerRemove ? "harness uninstall removed the router link; /agento will no longer resolve in any session" : undefined,
+    });
     break;
   }
 
