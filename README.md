@@ -439,6 +439,7 @@ Mechanic.
 | `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
 | `/agento delivery-status [filter]` | any | default | Read-only dashboard |
+| `/agento mission-control` | any | default | Open the Mission Control canvas (kanban, wave graph, timeline, worktree map, live feed); dispatch buttons stay limited to the window's `allowed[]` |
 | `/agento doctor [--for <command>]` | any | default | Read-only environment readiness check with fallbacks |
 | `/agento models [list \| show <name> \| pins [--role primary\|secondary] \| resolve <command> [--role primary\|secondary] \| apply <name> \| clear \| use <name\|none> --role primary\|secondary \| init \| create <name> \| update <name> \| rename <old> <new> \| delete <name> \| alias set <picker> <id> \| alias remove <picker>]` | any | default | Manage model profiles in `~/.config/agento/model-profiles.json` and per-window roles in `model-roles.json` — pin agents and commands to models, resolve the model a command opens on, and create, update, rename, delete, and alias-edit profiles ([docs/model-profiles.md](docs/model-profiles.md)) |
 | `/agento triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |

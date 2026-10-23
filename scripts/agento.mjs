@@ -1205,6 +1205,7 @@ const COMMAND_NEEDS = {
   "finish-freehand": ["terminal", "gh", "network"],
   "fix-copilot": ["terminal"],
   "install-skills": ["terminal", "ask-questions", "network"],
+  "mission-control": ["terminal"],
   models: ["terminal"],
   "new-feature": ["terminal", "ask-questions", "gh", "network"],
   "new-initiative": ["terminal", "ask-questions", "gh", "network"],

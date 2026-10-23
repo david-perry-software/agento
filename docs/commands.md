@@ -580,6 +580,7 @@ Every command has one spelling, `/agento <name> [args]`. The canonical names are
 - `/agento finish-freehand`
 - `/agento commit-current-changes`
 - `/agento delivery-status`
+- `/agento mission-control`
 - `/agento doctor`
 - `/agento models`
 - `/agento triage-followups`
