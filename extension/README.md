@@ -116,7 +116,9 @@ Delivery selections are revalidated with `agento.mjs next <slug>` immediately be
 dispatch.
 
 Actions for the current window open Copilot Chat with the exact canonical command
-as the query and agent mode selected. Cross-window actions store `/agento continue
+as the query and agent mode selected, and — when `agento.chatModelPreselect` is
+`local` or `copilot` — with a `modelSelector` for the resolved model (see
+[Settings](#settings)). Cross-window actions store `/agento continue
 <slug>` for five minutes under the CLI-selected target path, then open or focus that
 target. A companion delivery prefers its generated `.code-workspace`; other targets
 open the CLI-supplied folder. The target window removes the pending record before
@@ -150,6 +152,12 @@ editor.
 - `agento.nodePath` selects the Node.js executable used for the bundled CLI.
 - `agento.pluginRoot` names the Agento plugin clone for model profiles and the
   Session & Doctor `model-profile` check; empty uses `chat.pluginLocations`.
+- `agento.chatModelPreselect` preselects the model for extension-dispatched chat
+  commands (`off` by default): `local` sends `modelSelector: { vendor, id }` (an
+  exact `vscode.lm` match), `copilot` sends `modelSelector: { id }` (the command's
+  Copilot id), and `off` sends no selector — a log line and the window banner
+  tooltip name the model to pick by hand. A value that does not match the session
+  type has side effects documented in `docs/model-profiles.md`.
 - `agento.refreshDebounceMs` controls the watcher debounce and cannot be less than
 	3000 milliseconds.
 

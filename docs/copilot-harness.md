@@ -390,6 +390,25 @@ setup, so the cause is inferred, not demonstrated. The matrix and screenshots li
 in the companion repository under
 `features/2026/10/dispatch-copilot-harness/evidence/step-1-2-dispatch-matrix.md`.
 
+**Model preselection (`chat-model-preselect`).** The M1–M5 model probe measured
+`chat.open`'s `modelSelector` on this build: the Copilot (Agent Host) session
+honors only a bare `{ id: <Copilot id> }` selector (M3 — the agent-host entry
+`agent-host-copilotcli:<id>` sorts first); `{ vendor, id }` and
+`{ vendor, family }` fall back to Auto and persist a pending remembered model for
+later Copilot chats. Local honors `{ vendor, id }` and `{ vendor, family }` (M1/M2)
+and `{ vendor, id }` even beats a custom agent's pin (M4), but a bare
+`{ id }` **breaks** the Local request (“The selected model
+'agent-host-copilotcli:<id>' is not available”) without `chat.open` throwing. The
+extension cannot detect which harness a dispatch lands in (no extension API and no
+`chat.open` session-type option), so preselection ships as the opt-in
+`agento.chatModelPreselect` setting: `copilot` sends `{ id }`, `local` sends
+`{ vendor, id }`, `off` (the default) sends nothing and a log line plus the banner
+hint name the model to pick by hand. A value that does not match the session type
+has the side effects above, and a successful preselection is remembered by VS Code
+for later new chats of that session type. The matrix and screenshots live in the
+companion repository under
+`features/2026/10/chat-model-preselect/evidence/step-1-2-model-matrix.md`.
+
 **Existing-chat dispatch (#121).** In an existing Copilot chat the dispatch used
 to fill the input but not send it: VS Code's plugin-content expansion scans the
 default plugin directories `agents`, `skills`, `commands`, and `rules`, so the
