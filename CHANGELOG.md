@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.15.0
+
+- **Added.** Mission Control canvas (`canvas/agento-mission-control/`) — a Copilot
+  SDK canvas beside the chat with a delivery kanban, an initiative wave graph, a
+  timeline, a worktree and window map, and a live activity feed. Its buttons
+  dispatch only the commands the CLI lists as `allowed` for the current window,
+  and the agent can drive it with `refresh`, `get_snapshot`, `focus`, and
+  `post_note`.
+- **Added.** `/agento mission-control`, allowed in every window role, which opens
+  the canvas with `instanceId: mission-control` or explains the prerequisites
+  (`chat.canvases.enabled`, a local Copilot-harness session, the canvas link) when
+  the `open_canvas` tool is unavailable. The Deliveries view gains an **Open
+  Mission Control** title action (`agento.openMissionControl`, `$(dashboard)`).
+- **Added.** The harness `install`/`status`/`uninstall` verbs now also manage the
+  canvas link `<extensionsDir>/agento-mission-control` →
+  `<clone>/canvas/agento-mission-control` (honoring `AGENTO_COPILOT_EXTENSIONS_DIR`
+  and `COPILOT_HOME`), and the new informational doctor `canvas` check reports
+  `ok` when installed and `warn` otherwise with the install fallback.
+
 ## 0.14.0 (2026-10-23)
 
 - **Added.** `models resolve <command> [--role primary|secondary]` — a read-only
