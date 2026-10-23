@@ -20,7 +20,23 @@ function toneOf(colorId: string): string {
   return colorId.slice("agento.role.".length);
 }
 
-export function createWindowBannerModel(model: SessionDoctorModel, models?: string): WindowBannerModel {
+/**
+ * The banner tooltip hint for the opt-in `agento.chatModelPreselect` setting. It
+ * names the setting and `agento.mjs models resolve <command>`; for `local`/`copilot`
+ * it says preselection targets that harness only (the other still needs the picker).
+ */
+export function modelPreselectHint(setting: "off" | "local" | "copilot"): string {
+  switch (setting) {
+    case "local":
+      return "Model preselection targets Local sessions only — Copilot sessions still need the model picker (agento.mjs models resolve <command> names it)";
+    case "copilot":
+      return "Model preselection targets Copilot sessions only — Local sessions still need the model picker (agento.mjs models resolve <command> names it)";
+    default:
+      return "Model preselection is off — set the model picker by hand (agento.mjs models resolve <command> names it; set agento.chatModelPreselect to local or copilot to automate)";
+  }
+}
+
+export function createWindowBannerModel(model: SessionDoctorModel, models?: string, hint?: string): WindowBannerModel {
   if (model.kind === "error") {
     const colorId = roleBannerColor("");
     return {
@@ -43,11 +59,12 @@ export function createWindowBannerModel(model: SessionDoctorModel, models?: stri
   if (session.hosted) {
     parts.push("hosted");
   }
+  const tooltip = [session.worktreePath, models, hint, CLICK_HINT].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
   return {
     tone: toneOf(colorId),
     title: `${session.role.toUpperCase()} WINDOW`,
     detail: parts.join(" · "),
-    tooltip: models ? `${session.worktreePath}\n${models}\n${CLICK_HINT}` : `${session.worktreePath}\n${CLICK_HINT}`,
+    tooltip,
     colorId,
     ...(models ? { models } : {}),
   };

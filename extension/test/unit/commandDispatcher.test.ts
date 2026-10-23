@@ -320,6 +320,29 @@ test("logs the reason and dispatches without a selector when the resolver return
   assert.ok(logs.includes("dispatch: no model for /agento delivery-status: no pin for delivery-status in the secondary role"));
 });
 
+test("logs the off line and dispatches without a selector when preselection is off", async () => {
+  const calls: unknown[][] = [];
+  const logs: string[] = [];
+  const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
+  await dispatchCommandAction(action, undefined, dependencies({
+    executeCommand: async (...args) => { calls.push(args); },
+    chatModel: async () => ({ selector: null, off: { qualified: "GPT 5.6 Luna (copilot)", copilotModel: "gpt-5.6-luna" } }),
+    output: { appendLine: (line) => { logs.push(line); } },
+  }));
+  assert.deepEqual(calls, [["workbench.action.chat.open", { query: action.command }]]);
+  assert.ok(logs.includes("dispatch: model for /agento delivery-status: GPT 5.6 Luna (copilot) (Copilot id gpt-5.6-luna) — preselection off; set it in the model picker"));
+});
+
+test("the off line reports none when the resolve has no Copilot id", async () => {
+  const logs: string[] = [];
+  const action: CommandAction = { command: "/agento delivery-status", window: "here", reason: null };
+  await dispatchCommandAction(action, undefined, dependencies({
+    chatModel: async () => ({ selector: null, off: { qualified: "Grok 4 (grok)", copilotModel: null } }),
+    output: { appendLine: (line) => { logs.push(line); } },
+  }));
+  assert.ok(logs.includes("dispatch: model for /agento delivery-status: Grok 4 (grok) (Copilot id none) — preselection off; set it in the model picker"));
+});
+
 test("retries once without the selector and logs when chat.open throws with one set", async () => {
   const calls: unknown[][] = [];
   const logs: string[] = [];

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createSessionDoctorError, createSessionDoctorModel } from "../../src/sessionDoctorModel.js";
 import { createModelProfilesModel } from "../../src/modelProfilesTree.js";
-import { createWindowBannerModel, escapeHtml, modelsBannerLine, renderWindowBannerHtml } from "../../src/windowBanner.js";
+import { createWindowBannerModel, escapeHtml, modelPreselectHint, modelsBannerLine, renderWindowBannerHtml } from "../../src/windowBanner.js";
 
 const doctor = { status: "ok", checks: [] };
 const status = { status: "ok", resumable: [] };
@@ -214,4 +214,28 @@ test("banner HTML renders the models line escaped and keeps the CSP and single c
     /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-abc';">/,
   );
   assert.equal(html.match(/href=/g)?.length, 1);
+});
+
+test("modelPreselectHint names the setting and the pick-by-hand command for each value", () => {
+  const off = modelPreselectHint("off");
+  assert.match(off, /Model preselection is off/);
+  assert.match(off, /agento\.chatModelPreselect/);
+  assert.match(off, /agento\.mjs models resolve <command>/);
+
+  const local = modelPreselectHint("local");
+  assert.match(local, /targets Local sessions only/);
+  assert.match(local, /Copilot sessions still need the model picker/);
+
+  const copilot = modelPreselectHint("copilot");
+  assert.match(copilot, /targets Copilot sessions only/);
+  assert.match(copilot, /Local sessions still need the model picker/);
+});
+
+test("createWindowBannerModel appends the preselection hint to the tooltip", () => {
+  const banner = createWindowBannerModel(sessionModel(), undefined, modelPreselectHint("off"));
+  assert.equal(
+    banner.tooltip,
+    "/repo/worktrees/plan-1\nModel preselection is off — set the model picker by hand (agento.mjs models resolve <command> names it; set agento.chatModelPreselect to local or copilot to automate)\nClick to open Session & Doctor",
+  );
+  assert.equal(banner.models, undefined, "the hint is tooltip-only, not the third banner line");
 });

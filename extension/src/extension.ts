@@ -68,7 +68,7 @@ import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createTreeIdScope } from "./treeItemIds.js";
 import { createWatchers } from "./watchers.js";
-import { createWindowBannerModel, modelsBannerLine } from "./windowBanner.js";
+import { createWindowBannerModel, modelPreselectHint, modelsBannerLine } from "./windowBanner.js";
 import { WindowBannerProvider } from "./windowBannerProvider.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -140,14 +140,18 @@ function applyStatusBar(statusBar: vscode.StatusBarItem, model: SessionDoctorMod
   statusBar.backgroundColor = background ? new vscode.ThemeColor(`statusBarItem.${background}Background`) : undefined;
 }
 
-function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel, modelsLine?: string): void {
+function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel, modelsLine?: string, hint?: string): void {
   applyStatusBar(statusBar, model);
-  windowBanner.update(createWindowBannerModel(model, modelsLine));
+  windowBanner.update(createWindowBannerModel(model, modelsLine, hint));
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
   const output = vscode.window.createOutputChannel("Agento");
   const configuration = vscode.workspace.getConfiguration("agento");
+  // The opt-in `agento.chatModelPreselect` setting, read once at activation (a
+  // change needs a window reload). Both the dispatch resolver and the banner hint
+  // use this same value.
+  const chatModelPreselectSetting = chatModelSetting(configuration.get<string>("chatModelPreselect", "off"));
   const client = new CliClient({
     nodePath: configuration.get<string>("nodePath", "node"),
     cliPath: path.join(context.extensionPath, "cli", "agento.mjs"),
@@ -166,7 +170,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.tooltip = "Open Session & Doctor";
   statusBar.command = "agento.sessionDoctor.focus";
   statusBar.show();
-  const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current));
+  const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current, undefined, modelPreselectHint(chatModelPreselectSetting)));
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
   const latestModelProfilesRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
@@ -200,7 +204,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     modelProfiles.update(model);
     rebuildModelProfileWatchers();
     void profileEditor.notifyProfilesChanged();
-    applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(model) ?? undefined);
+    applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(model) ?? undefined, modelPreselectHint(chatModelPreselectSetting));
   };
   const reloadModelProfiles = async (): Promise<void> => {
     const root = pluginRoot();
@@ -308,7 +312,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const chatModel: ChatModelResolver = createChatModelResolver({
     pluginRoot: pluginRoot(),
     sessionRole: sessionDoctor.current.kind === "ready" ? sessionDoctor.current.session.role : null,
-    setting: chatModelSetting(vscode.workspace.getConfiguration("agento").get<string>("chatModelPreselect", "off")),
+    setting: chatModelPreselectSetting,
     runCli: (args, root, runOptions) => client.run(args, root, runOptions),
     listModels: async (vendor) => {
       if (chatModelSource) return chatModelSource();
@@ -369,7 +373,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       initiatives.update({ model: createInitiativeTreeError(message), artifactRoot: context.extensionPath });
       const model = createSessionDoctorError(message);
       sessionDoctor.update(model);
-      applySessionIndicators(statusBar, windowBanner, model);
+      applySessionIndicators(statusBar, windowBanner, model, undefined, modelPreselectHint(chatModelPreselectSetting));
       output.appendLine(message);
       return;
     }
@@ -408,7 +412,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
         rebuildModelProfilesForWindowRole();
-        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor, modelsBannerLine(modelProfiles.current) ?? undefined);
+        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor, modelsBannerLine(modelProfiles.current) ?? undefined, modelPreselectHint(chatModelPreselectSetting));
         initiatives.update(snapshot.initiatives);
         if (snapshot.timings) {
           output.appendLine(snapshot.timings);
@@ -443,7 +447,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         const model = createSessionDoctorError(error);
         sessionDoctor.update(model);
         rebuildModelProfilesForWindowRole();
-        applySessionIndicators(statusBar, windowBanner, model);
+        applySessionIndicators(statusBar, windowBanner, model, undefined, modelPreselectHint(chatModelPreselectSetting));
         initiatives.update({ model: createInitiativeTreeError(error), artifactRoot });
         output.appendLine(String(error));
       },
