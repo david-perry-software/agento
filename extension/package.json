@@ -2,7 +2,7 @@
   "name": "agento-dashboard",
   "displayName": "Agento",
   "description": "Dashboard and command launcher for Agento delivery workflows.",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "type": "module",
   "publisher": "david-perry-software",
   "license": "MIT",
@@ -410,6 +410,16 @@
           "type": "string",
           "default": "",
           "description": "Agento plugin clone that model profiles are applied to and the doctor's model-profile check reads. Empty: the first enabled chat.pluginLocations entry whose .claude-plugin/plugin.json is named agento."
+        },
+        "agento.chatModelPreselect": {
+          "type": "string",
+          "enum": [
+            "off",
+            "local",
+            "copilot"
+          ],
+          "default": "off",
+          "description": "Preselect the model for Agento-dispatched chat commands. off: no modelSelector (a banner hint and a log line name the model to pick by hand). local: send { vendor, id } for Local chat sessions. copilot: send { id: <Copilot id> } for Copilot chat sessions. A value that does not match the session type has side effects documented in the Agento docs."
         }
       }
     },

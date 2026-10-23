@@ -3944,6 +3944,135 @@ test("models pins outside any repository reports windowRole unmanaged and role p
   assert.equal(outside.json.roleSource, "window");
 });
 
+test("models resolve returns file pins for a built-in and a custom-agent command", () => {
+  const { plugin, models } = modelsFixture();
+  const promptFile = (name) => path.join(plugin, ".github", "prompts", `${name}.prompt.md`);
+  fs.writeFileSync(promptFile("delivery-status"), setModel(fs.readFileSync(promptFile("delivery-status"), "utf8"), "Status Model (copilot)"));
+  fs.writeFileSync(promptFile("new-feature"), setModel(fs.readFileSync(promptFile("new-feature"), "utf8"), ["Planner Model (copilot)", "planner-copilot-id"]));
+
+  const built = models("resolve", "delivery-status");
+  assert.equal(built.code, 0, JSON.stringify(built.json));
+  assert.equal(built.json.status, "ok");
+  assert.equal(built.json.verb, "resolve");
+  assert.equal(built.json.command, "delivery-status");
+  assert.equal(built.json.agent, "agent");
+  assert.equal(built.json.role, "primary");
+  assert.equal(built.json.roleSource, "window");
+  assert.equal(built.json.source, "file-pins");
+  assert.equal(built.json.model, "Status Model (copilot)");
+  assert.equal(built.json.qualified, "Status Model (copilot)");
+  assert.equal(built.json.name, "Status Model");
+  assert.equal(built.json.vendor, "copilot");
+
+  const custom = models("resolve", "new-feature");
+  assert.equal(custom.code, 0, JSON.stringify(custom.json));
+  assert.equal(custom.json.agent, "📋 Agento Planner");
+  assert.equal(custom.json.source, "file-pins");
+  assert.deepEqual(custom.json.model, ["Planner Model (copilot)", "planner-copilot-id"]);
+  assert.equal(custom.json.qualified, "Planner Model (copilot)");
+  assert.equal(custom.json.name, "Planner Model");
+  assert.equal(custom.json.vendor, "copilot");
+});
+
+test("models resolve --role secondary resolves prompts.<name> and the default fallback", () => {
+  const { models, writeProfiles } = modelsFixture();
+  writeProfiles({ b: { default: "Fallback (copilot)", prompts: { doctor: "Doctor (deepseek)" } } });
+  assert.equal(models("use", "b", "--role", "secondary").code, 0);
+
+  const named = models("resolve", "doctor", "--role", "secondary");
+  assert.equal(named.code, 0, JSON.stringify(named.json));
+  assert.equal(named.json.role, "secondary");
+  assert.equal(named.json.roleSource, "flag");
+  assert.equal(named.json.source, "role-profile");
+  assert.equal(named.json.profile, "b");
+  assert.equal(named.json.model, "Doctor (deepseek)");
+  assert.equal(named.json.qualified, "Doctor (deepseek)");
+  assert.equal(named.json.name, "Doctor");
+  assert.equal(named.json.vendor, "deepseek");
+
+  const fallback = models("resolve", "delivery-status", "--role", "secondary");
+  assert.equal(fallback.code, 0, JSON.stringify(fallback.json));
+  assert.equal(fallback.json.source, "role-profile");
+  assert.equal(fallback.json.model, "Fallback (copilot)");
+  assert.equal(fallback.json.qualified, "Fallback (copilot)");
+  assert.equal(fallback.json.vendor, "copilot");
+});
+
+test("models resolve falls back to file pins when the secondary role is off", () => {
+  const { plugin, models } = modelsFixture();
+  const promptFile = path.join(plugin, ".github", "prompts", "doctor.prompt.md");
+  fs.writeFileSync(promptFile, setModel(fs.readFileSync(promptFile, "utf8"), "File Doctor (copilot)"));
+
+  const { code, json } = models("resolve", "doctor", "--role", "secondary");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.role, "secondary");
+  assert.equal(json.source, "file-pins");
+  assert.equal(json.model, "File Doctor (copilot)");
+  assert.deepEqual(json.warnings, []);
+});
+
+test("models resolve warns and falls back to file pins for a dangling or invalid secondary", () => {
+  const { home, models } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "gone" }));
+  const dangling = models("resolve", "doctor", "--role", "secondary");
+  assert.equal(dangling.code, 0, JSON.stringify(dangling.json));
+  assert.equal(dangling.json.source, "file-pins");
+  assert.ok(dangling.json.warnings.some((w) => /models use none --role secondary/.test(w)), JSON.stringify(dangling.json.warnings));
+
+  fs.writeFileSync(path.join(home, "model-roles.json"), JSON.stringify({ secondary: "Bad_Name" }));
+  const invalid = models("resolve", "doctor", "--role", "secondary");
+  assert.equal(invalid.code, 0, JSON.stringify(invalid.json));
+  assert.equal(invalid.json.source, "file-pins");
+  assert.ok(invalid.json.warnings.some((w) => /models use none --role secondary/.test(w)), JSON.stringify(invalid.json.warnings));
+});
+
+test("models resolve reports null model fields for an unpinned command", () => {
+  const { models } = modelsFixture();
+  const { code, json } = models("resolve", "doctor");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.source, "file-pins");
+  assert.equal(json.model, null);
+  assert.equal(json.qualified, null);
+  assert.equal(json.name, null);
+  assert.equal(json.vendor, null);
+  assert.equal(json.copilotModel, null);
+});
+
+test("models resolve reports not-found with known and exit 3 for an unknown command", () => {
+  const { models } = modelsFixture();
+  const { code, json } = models("resolve", "no-such-command");
+  assert.equal(code, 3);
+  assert.equal(json.status, "not-found");
+  assert.equal(json.command, "no-such-command");
+  assert.ok(Array.isArray(json.known) && json.known.includes("doctor"), JSON.stringify(json.known));
+});
+
+test("models resolve derives copilotModel from copilotModels", () => {
+  const { home, models, writeProfiles } = modelsFixture();
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, "model-profiles.json"),
+    JSON.stringify({ copilotModels: { "Aliased (copilot)": "aliased-id" }, profiles: { a: { prompts: { doctor: "Aliased (copilot)" } } } }),
+  );
+  assert.equal(models("use", "a", "--role", "secondary").code, 0);
+  const { code, json } = models("resolve", "doctor", "--role", "secondary");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.qualified, "Aliased (copilot)");
+  assert.equal(json.copilotModel, "aliased-id");
+});
+
+test("models resolve writes nothing", () => {
+  const { plugin, models } = modelsFixture();
+  const promptFile = path.join(plugin, ".github", "prompts", "doctor.prompt.md");
+  fs.writeFileSync(promptFile, setModel(fs.readFileSync(promptFile, "utf8"), "Doctor (copilot)"));
+  const before = git(plugin, "status", "--porcelain");
+  assert.equal(models("resolve", "doctor").code, 0);
+  assert.equal(models("resolve", "doctor", "--role", "secondary").code, 0);
+  assert.equal(git(plugin, "status", "--porcelain"), before);
+});
+
 test("models rename moves the secondary assignment and reports secondaryBefore", () => {
   const { home, models, writeProfiles } = modelsFixture();
   writeProfiles({ a: { default: "A (copilot)" } });

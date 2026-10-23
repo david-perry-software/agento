@@ -168,7 +168,7 @@ unchanged.
 ## Applying and clearing
 
 ```text
-node <agento-root>/scripts/agento.mjs models [list | pins | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]
+node <agento-root>/scripts/agento.mjs models [list | pins | resolve <command> [--role primary|secondary] | show <name> | apply <name> | adopt | clear | init] [--plugin-root <dir>]
 ```
 
 `/agento models …` runs the same verbs from chat, the extension's *Agento: Select
@@ -216,6 +216,17 @@ the value is `null`. Two harness caveats: an agent selected directly in a Copilo
 session ignores its `model:` pin and runs on the session's model, and the router
 takeover — the required `harness install` link — drops the prompt-level and
 inline-agent model pins (Builder and Reviewer pins survive through `runSubagent`).
+
+`models resolve <command> [--role primary|secondary]` (read-only, writes nothing)
+is the same resolution rule applied to one command instead of the agents: the
+`<command>` is a `.github/prompts/<command>.prompt.md` name. It reports
+`{ qualified, name, vendor, copilotModel }` — the profile's or file pin's
+`qualified` picker value split into `name` and `vendor`, and its `copilotModels`
+alias — for the current window's role (`--role` overrides, `roleSource: "flag"`).
+An unpinned command reports all model fields `null`; an unknown command returns
+`not-found` with exit 3. The extension calls it on every dashboard dispatch to
+resolve the model the command should open on (see
+[extension.md](extension.md#command-routing)).
 
 The BYOK tier warning: when `autopilot` is pinned to a non-`copilot` (bring-your-own
 key) model while `builder` or `reviewer` pins a `copilot` model, `models
@@ -270,13 +281,13 @@ reserved — `models create none` and `models rename <x> none` are usage errors 
 an existing profile literally named `none` can still be applied with
 `models apply none`.
 
-`models pins` resolves for the current window's role: in a plan, build, or freehand
-window with a secondary profile assigned it reports that profile's pins
-(`source: "role-profile"`); otherwise it reports the clone's file pins
-(`source: "file-pins"`), exactly as before. `--role primary|secondary` overrides the
-window (`roleSource: "flag"`). A dangling assignment (the profile was deleted out
-of band) or an invalid roles file falls back to file pins with a warning naming the
-fix.
+`models pins` and `models resolve <command>` resolve for the current window's role:
+in a plan, build, or freehand window with a secondary profile assigned they report
+that profile's pins (`source: "role-profile"`); otherwise they report the clone's
+file pins (`source: "file-pins"`), exactly as before. `--role primary|secondary`
+overrides the window (`roleSource: "flag"`). A dangling assignment (the profile was
+deleted out of band) or an invalid roles file falls back to file pins with a
+warning naming the fix.
 
 Rename and delete keep the assignment consistent: `models rename <old> <new>` moves
 the secondary assignment to the new name; `models delete <name>` of the secondary
@@ -386,9 +397,39 @@ and the model picker on the builder pin, `DeepSeek V4 Pro (deepseek)`, not the
 Planner's `Claude Opus 5.5 (copilot)`.
 
 In a secondary window (plan, build, or freehand), an agent selected directly still
-reads the clone's file pins — the primary's models. Only router and Autopilot
-subagents, and later `chat-model-preselect`, use the secondary profile (see
-[Window roles](#window-roles)).
+reads the clone's file pins — the primary's models. Router and Autopilot subagents
+use the secondary profile (see [Window roles](#window-roles)).
+
+**Chat model preselection (`chat-model-preselect`).** Every extension dispatch
+first runs `models resolve <command>` for the window's role, then opens chat on
+that model. Because the extension cannot detect which harness (Copilot vs Local) a
+dispatch lands in — no extension API and no `chat.open` option names the session
+type — the mechanism is the opt-in setting `agento.chatModelPreselect`
+(`off` by default):
+
+- `local` sends `modelSelector: { vendor, id }`, resolved by an exact
+  `vendor` + `name` match (or a unique unqualified `name`) against
+  `vscode.lm.selectChatModels()`. This is the selector Local honors (probe M1/M2).
+- `copilot` sends `modelSelector: { id: <copilotModel> }` straight from
+  `models resolve`'s `copilotModel` with no `vscode.lm` lookup. This is the only
+  selector the Copilot (Agent Host) session honors (probe M3); a null
+  `copilotModel` logs a reason naming `models alias set <picker> <id>`.
+- `off` sends no `modelSelector` and logs
+  `dispatch: model for <command>: <qualified> (Copilot id <id|none>) —
+  preselection off; set it in the model picker`; the window banner tooltip names
+  the setting and `models resolve <command>`.
+
+A value that does not match the session has side effects: `local` in a Copilot
+session falls back to Auto and the agent-host session remembers a pending model
+for later Copilot chats; `copilot` in a Local session fails the request with
+“The selected model 'agent-host-copilotcli:<id>' is not available” and
+`chat.open` does not throw, so the throw-based retry cannot catch it. A successful
+preselection is remembered by VS Code for later new chats of that session type.
+When no selector can be built (no pin, no `vscode.lm` match, a CLI error, a
+timeout), the command still submits and one `dispatch: no model for <command>:
+<reason>` line is logged; a `chat.open` that throws with a selector is retried
+once without it. See the probe matrix at
+`features/2026/10/chat-model-preselect/evidence/step-1-2-model-matrix.md`.
 
 ## Limits
 
@@ -402,3 +443,8 @@ subagents, and later `chat-model-preselect`, use the secondary profile (see
   insertion order. A purely numeric profile name is therefore hoisted to the front
   of `profiles` and its position is not preserved across writes; use a name with at
   least one letter to keep the file order predictable.
+- Chat model preselection cannot be automatic per harness: the extension cannot
+  tell which harness a dispatch lands in, so `agento.chatModelPreselect` is opt-in
+  and a value that does not match the session has the side effects described in
+  [Subagents and handoffs](#subagents-and-handoffs). The setting is read live on
+  each dispatch, so changing it takes effect without a reload.

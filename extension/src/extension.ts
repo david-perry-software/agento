@@ -6,7 +6,8 @@ import * as vscode from "vscode";
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
 import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor, type CommandFileResolver } from "./commandDispatcher.js";
-import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
+import { chatModelSetting, createChatModelResolver, type ChatModelResolver, type ChatModelSetting } from "./chatModel.js";
+import { commandName, resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { formatDashboardTimings, splitDashboardDocument } from "./dashboardDocument.js";
 import { createTimelineRows } from "./deliveryTimeline.js";
@@ -67,7 +68,7 @@ import { SessionDoctorProvider } from "./sessionDoctorProvider.js";
 import { cliStartSession, OPEN_IN_CHAT } from "./startSessionCli.js";
 import { createTreeIdScope } from "./treeItemIds.js";
 import { createWatchers } from "./watchers.js";
-import { createWindowBannerModel, modelsBannerLine } from "./windowBanner.js";
+import { affectsPreselectHint, createWindowBannerModel, modelPreselectHint, modelsBannerLine } from "./windowBanner.js";
 import { WindowBannerProvider } from "./windowBannerProvider.js";
 import { CLOSED_GATE, gateRejection, windowGate, type WindowGate } from "./windowGate.js";
 
@@ -95,6 +96,7 @@ export interface ExtensionApi {
   setModelProfilePrompts: (prompts?: ModelProfilePrompts) => void;
   profileEditor: ProfileEditorPanels;
   setProfileEditorModelSource: (source: ModelSource) => void;
+  setChatModelSource: (source: ModelSource | null) => void;
   windowGate: () => WindowGate;
 }
 
@@ -138,14 +140,19 @@ function applyStatusBar(statusBar: vscode.StatusBarItem, model: SessionDoctorMod
   statusBar.backgroundColor = background ? new vscode.ThemeColor(`statusBarItem.${background}Background`) : undefined;
 }
 
-function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel, modelsLine?: string): void {
+function applySessionIndicators(statusBar: vscode.StatusBarItem, windowBanner: WindowBannerProvider, model: SessionDoctorModel, modelsLine?: string, hint?: string): void {
   applyStatusBar(statusBar, model);
-  windowBanner.update(createWindowBannerModel(model, modelsLine));
+  windowBanner.update(createWindowBannerModel(model, modelsLine, hint));
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ExtensionApi> {
   const output = vscode.window.createOutputChannel("Agento");
   const configuration = vscode.workspace.getConfiguration("agento");
+  // The opt-in `agento.chatModelPreselect` setting, read live (a fresh
+  // Configuration read each call) so the dispatch resolver and the banner hint
+  // track changes without a reload.
+  const chatModelPreselect = (): ChatModelSetting =>
+    chatModelSetting(vscode.workspace.getConfiguration("agento").get<string>("chatModelPreselect", "off"));
   const client = new CliClient({
     nodePath: configuration.get<string>("nodePath", "node"),
     cliPath: path.join(context.extensionPath, "cli", "agento.mjs"),
@@ -164,7 +171,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   statusBar.tooltip = "Open Session & Doctor";
   statusBar.command = "agento.sessionDoctor.focus";
   statusBar.show();
-  const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current));
+  const windowBanner = new WindowBannerProvider(createWindowBannerModel(sessionDoctor.current, undefined, modelPreselectHint(chatModelPreselect())));
   const latestDeliveryRefresh = new LatestDeliveryRefresh();
   const latestModelProfilesRefresh = new LatestDeliveryRefresh();
   const roadmapRoots = new Map<string, string>();
@@ -198,7 +205,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     modelProfiles.update(model);
     rebuildModelProfileWatchers();
     void profileEditor.notifyProfilesChanged();
-    applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(model) ?? undefined);
+    applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(model) ?? undefined, modelPreselectHint(chatModelPreselect()));
   };
   const reloadModelProfiles = async (): Promise<void> => {
     const root = pluginRoot();
@@ -300,6 +307,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (resolution.path === null) return { file: null, reason: resolution.reason };
     return { file: vscode.Uri.file(resolution.path) };
   };
+  // The electron test hook replaces the `vscode.lm` read (mirrors
+  // `setProfileEditorModelSource`).
+  let chatModelSource: ModelSource | null = null;
+  const chatModel: ChatModelResolver = createChatModelResolver({
+    pluginRoot,
+    sessionRole: () => (sessionDoctor.current.kind === "ready" ? sessionDoctor.current.session.role : null),
+    setting: chatModelPreselect,
+    runCli: (args, root, runOptions) => client.run(args, root, runOptions),
+    listModels: async (vendor) => {
+      if (chatModelSource) return chatModelSource();
+      const models = await vscode.lm.selectChatModels(vendor ? { vendor } : undefined);
+      return models as unknown[];
+    },
+    commandName,
+    timeoutMs: 5000,
+  });
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {
@@ -351,7 +374,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       initiatives.update({ model: createInitiativeTreeError(message), artifactRoot: context.extensionPath });
       const model = createSessionDoctorError(message);
       sessionDoctor.update(model);
-      applySessionIndicators(statusBar, windowBanner, model);
+      applySessionIndicators(statusBar, windowBanner, model, undefined, modelPreselectHint(chatModelPreselect()));
       output.appendLine(message);
       return;
     }
@@ -390,7 +413,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         deliveries.update(snapshot.deliveries);
         sessionDoctor.update(snapshot.sessionDoctor);
         rebuildModelProfilesForWindowRole();
-        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor, modelsBannerLine(modelProfiles.current) ?? undefined);
+        applySessionIndicators(statusBar, windowBanner, snapshot.sessionDoctor, modelsBannerLine(modelProfiles.current) ?? undefined, modelPreselectHint(chatModelPreselect()));
         initiatives.update(snapshot.initiatives);
         if (snapshot.timings) {
           output.appendLine(snapshot.timings);
@@ -425,7 +448,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         const model = createSessionDoctorError(error);
         sessionDoctor.update(model);
         rebuildModelProfilesForWindowRole();
-        applySessionIndicators(statusBar, windowBanner, model);
+        applySessionIndicators(statusBar, windowBanner, model, undefined, modelPreselectHint(chatModelPreselect()));
         initiatives.update({ model: createInitiativeTreeError(error), artifactRoot });
         output.appendLine(String(error));
       },
@@ -471,6 +494,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       openTarget,
       chatMode,
       commandFile,
+      chatModel,
       startSession: async (args) => {
         const folder = vscode.workspace.workspaceFolders?.[0];
         if (!folder) throw new Error("No workspace folder is open.");
@@ -508,6 +532,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         openTarget,
         chatMode,
         commandFile,
+        chatModel,
         output,
       },
       currentTargetPaths().has(target.path),
@@ -589,6 +614,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
         openTarget,
         chatMode,
         commandFile,
+        chatModel,
         output,
       },
       currentTargetPaths().has(target.path),
@@ -1030,6 +1056,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       output,
       chatMode,
       commandFile,
+      chatModel,
     },
   );
   const windowFocusSubscription = vscode.window.onDidChangeWindowState(({ focused }) => {
@@ -1043,6 +1070,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (event.affectsConfiguration("agento.pluginRoot") || event.affectsConfiguration("chat.pluginLocations")) {
       rebuildModelProfileWatchers();
       scheduleModelProfilesReload("plugin root changed");
+    }
+    if (affectsPreselectHint(event)) {
+      // The dispatch resolver reads the setting live, but the banner tooltip hint
+      // is computed on update, so rebuild it immediately on a setting change.
+      applySessionIndicators(statusBar, windowBanner, sessionDoctor.current, modelsBannerLine(modelProfiles.current) ?? undefined, modelPreselectHint(chatModelPreselect()));
     }
   });
   const watcherManager = { dispose: () => watcherDisposables.splice(0).forEach((disposable) => disposable.dispose()) };
@@ -1113,6 +1145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
     setModelProfilePrompts,
     setProfileEditorModelSource: (source) => profileEditor.setModelSource(source),
+    setChatModelSource: (source) => { chatModelSource = source; },
     windowGate: () => gate,
   };
 }

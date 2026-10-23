@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.14.0 (2026-10-23)
+
+- **Added.** `models resolve <command> [--role primary|secondary]` — a read-only
+  verb that reports the Resolution-table model for one command (`qualified`,
+  `name`, `vendor`, and the `copilotModels` alias), so the extension can resolve
+  the model a dispatch opens on without pinning files.
+- **Added.** Chat model preselection. Extension-dispatched chat commands now
+  resolve their model and, when the opt-in `agento.chatModelPreselect` setting is
+  `local` or `copilot`, pass `workbench.action.chat.open` a `modelSelector`
+  (`{ vendor, id }` for Local, `{ id }` for Copilot). With the setting `off` (the
+  default) — or when no selector can be built — the dispatch logs one
+  `dispatch: model for <command> … — preselection off` (or `dispatch: no model for
+  <command>: <reason>`) line, a `chat.open` throw with a selector is retried once
+  without it, and the window banner tooltip names the setting and
+  `agento.mjs models resolve <command>`.
+- **Fixed.** Changing `agento.chatModelPreselect` now refreshes the window banner
+  tooltip immediately instead of waiting for an unrelated refresh, so the hint
+  always names the value in effect.
+
 ## 0.13.0 (2026-10-22)
 
 - **Added.** Role-aware Model Profiles sidebar and window banner. The view pins

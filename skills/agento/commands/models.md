@@ -1,6 +1,6 @@
 ---
-description: "Manage model profiles in ~/.config/agento/model-profiles.json and the per-window-role model-roles.json: create, update, rename, delete, alias set, alias remove, list, show, pins, apply, adopt, clear, use, init — writes are validated, atomic, and support an optional --expect hash"
-argument-hint: "[list | show <name> | pins [--role primary|secondary] | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init | create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker>]"
+description: "Manage model profiles in ~/.config/agento/model-profiles.json and the per-window-role model-roles.json: create, update, rename, delete, alias set, alias remove, list, show, pins, resolve, apply, adopt, clear, use, init — writes are validated, atomic, and support an optional --expect hash"
+argument-hint: "[list | show <name> | pins [--role primary|secondary] | resolve <command> [--role primary|secondary] | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init | create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker>]"
 agent: "agent"
 tools: [read, execute]
 ---
@@ -30,7 +30,9 @@ plugin clone, never the current checkout's delivery state).
    sub-verb (`set <picker> <id>` or `remove <picker>`, the picker quoted as one
    argument); `rename` takes two profile names; `create`, `update`, and `use` take
    one name (`use` also takes the reserved `none`); `pins` takes no name and an
-   optional `--role primary|secondary`; `use` requires `--role primary|secondary`.
+   optional `--role primary|secondary`; `resolve` takes one command name (a
+   `.github/prompts/<command>.prompt.md` basename) and an optional
+   `--role primary|secondary`; `use` requires `--role primary|secondary`.
    Any other shape: print the argument hint and stop.
 2. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs models <verb> [<args>…]`
    (the CLI path is announced in the session context as `Agento CLI:`). Its default
@@ -45,8 +47,8 @@ plugin clone, never the current checkout's delivery state).
    takes `--dry-run`, and `delete` also takes `--force`. `use` requires
    `--role primary|secondary` and accepts `--expect <hash>` only with
    `--role secondary` (`--role primary` behaves exactly like `apply <name>` or
-   `clear` and writes no profile file); `pins` accepts `--role primary|secondary`
-   to override the window's bucket.
+   `clear` and writes no profile file); `pins` and `resolve` accept
+   `--role primary|secondary` to override the window's bucket.
 3. Report from the JSON, quoting values verbatim:
    - `list` — each profile's `name`, `description`, and `errors`; `profilesFile.path`
      and `exists`; `copilotModels`; `active` (`null` = nothing pinned, a profile
@@ -61,6 +63,12 @@ plugin clone, never the current checkout's delivery state).
      `profile`, and `source` (`file-pins` or `role-profile`). In plan, build, and
      freehand windows `pins` resolves the secondary profile when one is assigned;
      otherwise it is the clone's file pins.
+   - `resolve` — the model one command opens on: `command`, `agent`, `role`,
+     `roleSource`, `windowRole`, `profile`, `source` (`file-pins` or
+     `role-profile`), `model`, `qualified`, `name`, `vendor`, and `copilotModel`
+     (plus `warnings` for a dangling or invalid secondary assignment). Report
+     `qualified` and `source`; an unpinned command has null model fields, and it
+     writes nothing.
    - `show` — the resolved `targets` (agents first, then prompts; `commands/` mirrors
      carry the same value as their prompt), `profilesFile.hash` (keep it to pass as
      `--expect`), and any `errors`.
@@ -119,5 +127,5 @@ The result line's `next:` is `/agento models apply <name>` after a write that se
 `/agento doctor` after `apply`, `adopt`, `clear`, or `use … --role primary` (its
 `model-profile` check confirms the pinned state and the filter's health),
 `/agento models` after `use … --role secondary` (or a successful `list`, `show`,
-`pins`, `create`, `update`, `rename`, `delete`, or `alias` write); it is
+`pins`, `resolve`, `create`, `update`, `rename`, `delete`, or `alias` write); it is
 repeated as its own block directly above the result line per policy §12.

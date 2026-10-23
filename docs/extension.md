@@ -233,6 +233,22 @@ dispatch keeps the currently selected agent and writes one
 `dispatch: no mode for <command>: <reason>` line to the Agento output channel; a
 missing or unreadable command file likewise omits the attachment and writes
 `dispatch: no command file for <name>: <reason>`.
+
+The dispatch payload is `{ query, mode, attachFiles, modelSelector? }`. Before
+opening chat, the extension resolves the command's model with
+`agento.mjs models resolve <name> --role <primary|secondary>` — the role comes
+from the window's session record (`plan`/`build`/`freehand` → `secondary`,
+everything else → `primary`), bounded at 5 s. When the opt-in
+`agento.chatModelPreselect` setting (see [Settings](#settings)) produces a
+selector, it is set as `modelSelector`; `local` sends `{ vendor, id }` from an
+exact `vscode.lm` vendor+name match, `copilot` sends `{ id }` from the resolved
+`copilotModel` with no `vscode.lm` lookup, and `off` sends no selector and logs
+`dispatch: model for <command>: <qualified> (Copilot id <id|none>) — preselection
+off; set it in the model picker`. When no selector is built — no pin, no match, a
+CLI error, a timeout, or a missing plugin root — the command still submits and one
+`dispatch: no model for <command>: <reason>` line is logged. A `chat.open` that
+throws while a selector is set is logged and retried once without it; a throw
+without a selector propagates as before.
 The same `{ query, mode, attachFiles }` dispatch submits in **both** harnesses
 through the router skill (`harness install`, see [install.md](install.md)): in
 both a **Copilot** and a **Local** session the router skill resolves the
@@ -366,6 +382,16 @@ the view's Apply and Clear. See [model-profiles.md](model-profiles.md).
   `node`.
 - `agento.pluginRoot`: the Agento plugin clone model profiles are applied to. Empty
   (the default) uses `chat.pluginLocations`.
+- `agento.chatModelPreselect`: `off` (the default), `local`, or `copilot`. It
+  preselects the model for extension-dispatched chat commands in the harness you
+  name: `local` sends `modelSelector: { vendor, id }` (an exact `vscode.lm`
+  vendor+name match), `copilot` sends `modelSelector: { id }` from the command's
+  resolved Copilot id. `off` sends no selector — a log line and the window banner
+  tooltip name the model to pick by hand. A value that does not match the session
+  type has side effects: `local` in a Copilot session falls back to Auto and the
+  agent-host session remembers a pending model for later chats; `copilot` in a
+  Local session fails the request with “model not available”. See
+  [model-profiles.md](model-profiles.md#subagents-and-handoffs).
 - `agento.refreshDebounceMs`: delay for watcher-driven refreshes, with a minimum of
   3000 milliseconds.
 

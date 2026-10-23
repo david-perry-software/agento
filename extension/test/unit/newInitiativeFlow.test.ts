@@ -142,6 +142,7 @@ test("submits the exact initiative command when the primary target is current", 
       openTarget: async () => undefined,
       chatMode: () => ({ mode: null, reason: "unused" }),
       commandFile: () => ({ file: null, reason: "unused" }),
+      chatModel: async () => ({ selector: null, reason: "unused" }),
       output: { appendLine() {} },
     }, true),
   });
@@ -164,6 +165,7 @@ test("persists the exact initiative command before opening a cross-window primar
       openTarget: async (openedTarget) => { opened.push(openedTarget); },
       chatMode: () => ({ mode: null, reason: "unused" }),
       commandFile: () => ({ file: null, reason: "unused" }),
+      chatModel: async () => ({ selector: null, reason: "unused" }),
       output: { appendLine() {} },
     }, false),
   });

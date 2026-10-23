@@ -518,6 +518,19 @@ export function vendorOf(value) {
   return match ? match[1] : null;
 }
 
+// Splits a model value into its name and vendor parts. A qualified
+// `<name> (<vendor>)` value yields that vendor and the name before the trailing
+// suffix; an unqualified string yields `{ name, vendor: null }`; a non-string
+// yields `{ name: null, vendor: null }`. Parentheses inside the name (before the
+// suffix) are preserved.
+export function splitQualified(value) {
+  if (typeof value !== "string") return { name: null, vendor: null };
+  const vendor = vendorOf(value);
+  if (vendor === null) return { name: value, vendor: null };
+  const name = value.slice(0, value.match(/\(([^()]+)\)\s*$/).index).trim();
+  return { name, vendor };
+}
+
 // Decision 2 tier warning: when autopilot is pinned to a non-copilot (bring-your-
 // own-key) vendor while builder or reviewer pins a copilot model, VS Code may
 // refuse the higher-tier Copilot model. Returns the warning string, or null.
