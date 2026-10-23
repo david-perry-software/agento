@@ -6,8 +6,8 @@ import * as vscode from "vscode";
 import { deliveryActionSource, pickCommandAction } from "./actionPicker.js";
 import { CliClient } from "./cliClient.js";
 import { consumePendingCommands, dispatchCommandAction, dispatchCommandToTarget, type ChatModeResolver, type CommandExecutor, type CommandFileResolver } from "./commandDispatcher.js";
-import type { ChatModelResolver } from "./chatModel.js";
-import { resolveChatMode, resolveCommandFile } from "./commandAgent.js";
+import { chatModelSetting, createChatModelResolver, type ChatModelResolver } from "./chatModel.js";
+import { commandName, resolveChatMode, resolveCommandFile } from "./commandAgent.js";
 import type { CommandAction } from "./commandActions.js";
 import { formatDashboardTimings, splitDashboardDocument } from "./dashboardDocument.js";
 import { createTimelineRows } from "./deliveryTimeline.js";
@@ -96,6 +96,7 @@ export interface ExtensionApi {
   setModelProfilePrompts: (prompts?: ModelProfilePrompts) => void;
   profileEditor: ProfileEditorPanels;
   setProfileEditorModelSource: (source: ModelSource) => void;
+  setChatModelSource: (source: ModelSource | null) => void;
   windowGate: () => WindowGate;
 }
 
@@ -301,10 +302,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     if (resolution.path === null) return { file: null, reason: resolution.reason };
     return { file: vscode.Uri.file(resolution.path) };
   };
-  // Placeholder until step 3.8 wires the real resolver (`models resolve` + the
-  // `vscode.lm` / setting routing). It never selects a model, so every dispatch
-  // keeps today's payload and logs one `dispatch: no model for` line.
-  const chatModel: ChatModelResolver = async () => ({ selector: null, reason: "chat model preselection not wired" });
+  // The electron test hook replaces the `vscode.lm` read (mirrors
+  // `setProfileEditorModelSource`).
+  let chatModelSource: ModelSource | null = null;
+  const chatModel: ChatModelResolver = createChatModelResolver({
+    pluginRoot: pluginRoot(),
+    sessionRole: sessionDoctor.current.kind === "ready" ? sessionDoctor.current.session.role : null,
+    setting: chatModelSetting(vscode.workspace.getConfiguration("agento").get<string>("chatModelPreselect", "off")),
+    runCli: (args, root, runOptions) => client.run(args, root, runOptions),
+    listModels: async (vendor) => {
+      if (chatModelSource) return chatModelSource();
+      const models = await vscode.lm.selectChatModels(vendor ? { vendor } : undefined);
+      return models as unknown[];
+    },
+    commandName,
+    timeoutMs: 5000,
+  });
 
   const rebuildWatchers = async (): Promise<void> => {
     for (const disposable of watcherDisposables) {
@@ -1122,6 +1135,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     startNewInitiative, setNewInitiativeRunner, setNewInitiativePrompts,
     setModelProfilePrompts,
     setProfileEditorModelSource: (source) => profileEditor.setModelSource(source),
+    setChatModelSource: (source) => { chatModelSource = source; },
     windowGate: () => gate,
   };
 }

@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   chatModelSetting,
+  createChatModelResolver,
   parseResolveResult,
   preselectFor,
+  resolveChatModelRole,
   selectorFor,
   selectorForCopilot,
   type ChatModelEntry,
@@ -105,3 +107,102 @@ test("chatModelSetting normalizes unknown values to off", () => {
   assert.equal(chatModelSetting("garbage"), "off");
   assert.equal(chatModelSetting(3), "off");
 });
+
+test("resolveChatModelRole buckets plan/build/freehand as secondary and everything else as primary", () => {
+  for (const role of ["plan", "build", "freehand"]) {
+    assert.equal(resolveChatModelRole(role), "secondary", `${role} is secondary`);
+  }
+  for (const role of ["primary", "unmanaged", null, "unknown"]) {
+    assert.equal(resolveChatModelRole(role), "primary", `${String(role)} is primary`);
+  }
+});
+
+function resolverHarness(setting: "off" | "local" | "copilot", overrides: Partial<Parameters<typeof createChatModelResolver>[0]> = {}) {
+  const runs: { args: string[]; root: string; runOptions?: { timeoutMs?: number } }[] = [];
+  const listedVendors: (string | undefined)[] = [];
+  const runCli = async (args: string[], root: string, runOptions?: { timeoutMs?: number }) => {
+    runs.push({ args, root, runOptions });
+    return { code: 0, json: { status: "ok", command: "delivery-status", role: "secondary", qualified: "GPT 5.6 Luna (copilot)", name: "GPT 5.6 Luna", vendor: "copilot", copilotModel: "gpt-5.6-luna" }, stderr: "" };
+  };
+  const listModels = async (vendor?: string) => {
+    listedVendors.push(vendor);
+    return [{ id: "gpt-5.6-luna", name: "GPT 5.6 Luna", vendor: "copilot" }];
+  };
+  const resolve = createChatModelResolver({
+    pluginRoot: "/repo",
+    sessionRole: "plan",
+    setting,
+    runCli,
+    listModels,
+    commandName: (command) => (command.startsWith("/agento ") ? command.split(/\s+/)[1] : null),
+    timeoutMs: 5000,
+    ...overrides,
+  });
+  return { resolve, runs, listedVendors };
+}
+
+test("the resolver passes --role secondary for plan/build/freehand and primary otherwise", async () => {
+  for (const sessionRole of ["plan", "build", "freehand"] as const) {
+    const { resolve, runs } = resolverHarness("off", { sessionRole });
+    const result = await resolve("/agento delivery-status");
+    assert.deepEqual(runs[0]!.args, ["models", "resolve", "delivery-status", "--role", "secondary", "--plugin-root", "/repo"], `${sessionRole} → secondary`);
+    assert.equal(result.selector, null);
+    assert.ok("off" in result);
+  }
+  for (const sessionRole of ["primary", "unmanaged", null] as const) {
+    const { resolve, runs } = resolverHarness("off", { sessionRole });
+    await resolve("/agento delivery-status");
+    assert.deepEqual(runs[0]!.args, ["models", "resolve", "delivery-status", "--role", "primary", "--plugin-root", "/repo"], `${String(sessionRole)} → primary`);
+  }
+});
+
+test("the resolver sends { vendor, id } for local and lists models filtered by vendor", async () => {
+  const { resolve, runs, listedVendors } = resolverHarness("local");
+  const result = await resolve("/agento delivery-status");
+  assert.deepEqual(result, { selector: { vendor: "copilot", id: "gpt-5.6-luna" } });
+  assert.equal(runs.length, 1);
+  assert.equal(runOptionsOf(runs[0]), 5000);
+  assert.deepEqual(listedVendors, ["copilot"]);
+});
+
+test("the resolver sends { id } for copilot without a vscode.lm lookup", async () => {
+  const { resolve, listedVendors } = resolverHarness("copilot");
+  const result = await resolve("/agento delivery-status");
+  assert.deepEqual(result, { selector: { id: "gpt-5.6-luna" } });
+  assert.deepEqual(listedVendors, [], "copilot performs no vscode.lm lookup");
+});
+
+test("the resolver returns the off shape without a vscode.lm lookup", async () => {
+  const { resolve, listedVendors } = resolverHarness("off");
+  const result = await resolve("/agento delivery-status");
+  assert.deepEqual(result, { selector: null, off: { qualified: "GPT 5.6 Luna (copilot)", copilotModel: "gpt-5.6-luna" } });
+  assert.deepEqual(listedVendors, [], "off performs no vscode.lm lookup");
+});
+
+test("the resolver falls back on a missing root, a CLI error, a timeout, and a non-canonical command", async () => {
+  const noRoot = resolverHarness("local", { pluginRoot: null });
+  assert.deepEqual(await noRoot.resolve("/agento delivery-status"), { selector: null, reason: "no plugin root" });
+
+  const cliError = resolverHarness("local", { runCli: async () => { throw new Error("CLI exploded"); } });
+  assert.deepEqual(await cliError.resolve("/agento delivery-status"), { selector: null, reason: "CLI exploded" });
+
+  const timedOut = resolverHarness("local", { runCli: async () => { throw new Error("Agento CLI timed out after 5000 ms"); } });
+  assert.deepEqual(await timedOut.resolve("/agento delivery-status"), { selector: null, reason: "Agento CLI timed out after 5000 ms" });
+
+  const nonCanonical = resolverHarness("local");
+  assert.deepEqual(await nonCanonical.resolve("hello there"), { selector: null, reason: "not a canonical /agento command: hello there" });
+});
+
+test("the resolver surfaces an unpinned resolve as a reason and a listModels failure as a reason", async () => {
+  const unpinned = resolverHarness("local", {
+    runCli: async () => ({ code: 0, json: { status: "ok", command: "delivery-status", role: "secondary", qualified: null, name: null, vendor: null, copilotModel: null }, stderr: "" }),
+  });
+  assert.deepEqual(await unpinned.resolve("/agento delivery-status"), { selector: null, reason: "no pin for delivery-status in the secondary role" });
+
+  const listFailure = resolverHarness("local", { listModels: async () => { throw new Error("vscode.lm unavailable"); } });
+  assert.deepEqual(await listFailure.resolve("/agento delivery-status"), { selector: null, reason: "vscode.lm unavailable" });
+});
+
+function runOptionsOf(run: { args: string[]; root: string; runOptions?: { timeoutMs?: number } }): number | undefined {
+  return run.runOptions?.timeoutMs;
+}

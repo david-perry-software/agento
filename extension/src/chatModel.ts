@@ -122,6 +122,83 @@ export function chatModelSetting(value: unknown): ChatModelSetting {
   return value === "local" || value === "copilot" ? value : "off";
 }
 
+/** Narrows raw `vscode.lm.selectChatModels()` entries to what selection needs. */
+export function chatModelEntries(models: unknown[]): ChatModelEntry[] {
+  return models
+    .map((raw) => {
+      const entry = (raw ?? {}) as Record<string, unknown>;
+      return {
+        id: typeof entry.id === "string" && entry.id.length > 0 ? entry.id : null,
+        name: typeof entry.name === "string" ? entry.name.trim() : "",
+        vendor: typeof entry.vendor === "string" ? entry.vendor.trim() : "",
+        family: typeof entry.family === "string" ? entry.family : undefined,
+        version: typeof entry.version === "string" ? entry.version : undefined,
+      };
+    })
+    .filter((entry) => entry.name.length > 0 && entry.vendor.length > 0);
+}
+
+/**
+ * The `--role` a dispatch passes to `models resolve`: `plan`/`build`/`freehand`
+ * are secondary windows, everything else is primary (matches
+ * `modelProfilesTree.windowProfileRole` and the CLI's `roleBucket`).
+ */
+export function resolveChatModelRole(sessionRole: string | null): "primary" | "secondary" {
+  return sessionRole === "plan" || sessionRole === "build" || sessionRole === "freehand" ? "secondary" : "primary";
+}
+
+export interface ChatModelResolverDeps {
+  /** The window's plugin root, or null (a missing root is a reason). */
+  pluginRoot: string | null;
+  /** The window's session role (`plan`/`build`/`freehand` → secondary). */
+  sessionRole: string | null;
+  setting: ChatModelSetting;
+  /** Runs the bundled CLI (CliClient.run) and resolves `{ code, json, stderr }`. */
+  runCli: (args: string[], root: string, runOptions?: { timeoutMs?: number }) => Promise<{ code: number; json: unknown; stderr: string }>;
+  /** Lists installed models (`vscode.lm.selectChatModels`), optionally filtered by vendor. */
+  listModels: (vendor?: string) => Promise<unknown[]>;
+  commandName: (command: string) => string | null;
+  timeoutMs?: number;
+}
+
+/**
+ * Composes the real resolver: `models resolve` (bounded) → `parseResolveResult` →
+ * per-value selection. `local` performs the `vscode.lm` lookup; `copilot` and
+ * `off` do not. A missing root, a CLI error, or a timeout is a reason.
+ */
+export function createChatModelResolver(deps: ChatModelResolverDeps): ChatModelResolver {
+  const { pluginRoot, sessionRole, setting, runCli, listModels, commandName, timeoutMs = 5000 } = deps;
+  return async (command: string): Promise<ChatModelPreselect> => {
+    const name = commandName(command);
+    if (name === null) {
+      return { selector: null, reason: `not a canonical /agento command: ${command}` };
+    }
+    if (pluginRoot === null) {
+      return { selector: null, reason: "no plugin root" };
+    }
+    const role = resolveChatModelRole(sessionRole);
+    let result: { code: number; json: unknown; stderr: string };
+    try {
+      result = await runCli(["models", "resolve", name, "--role", role, "--plugin-root", pluginRoot], pluginRoot, { timeoutMs });
+    } catch (error) {
+      return { selector: null, reason: error instanceof Error ? error.message : String(error) };
+    }
+    const parsed = parseResolveResult(result.json);
+    if (parsed.kind === "reason") {
+      return { selector: null, reason: parsed.reason };
+    }
+    if (setting === "local") {
+      try {
+        const listed = await listModels(parsed.model.vendor ?? undefined);
+        return preselectFor("local", parsed, chatModelEntries(listed));
+      } catch (error) {
+        return { selector: null, reason: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    return preselectFor(setting, parsed, []);
+  };
+}
+
 /**
  * The per-value preselection rule. A resolve that produced no model (unpinned,
  * not-found, unparseable) always falls through to the Q3 `no model` reason; a
