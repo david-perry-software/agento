@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.14.0 (unreleased)
+## 0.14.0 (2026-10-23)
 
 - **Added.** `models resolve <command> [--role primary|secondary]` — a read-only
   verb that reports the Resolution-table model for one command (`qualified`,
