@@ -41,7 +41,7 @@ delivery system. Layout:
 
 ## Commands
 
-- Test: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs'` (Node ≥ 20, no
+- Test: `node --test 'scripts/**/*.test.mjs' 'tests/**/*.test.mjs' 'canvas/**/*.test.mjs'` (Node ≥ 20, no
   dependencies)
 - Guard smoke: `./scripts/hooks/replay-guard.sh < tests/guard-fixtures.txt`
 - Guard smoke (companion mode): `REPLAY_COMPANION=1 ./scripts/hooks/replay-guard.sh <
