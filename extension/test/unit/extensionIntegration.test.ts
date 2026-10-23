@@ -11,6 +11,9 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
         "view/title": Array<{ command: string; when: string; group: string }>;
         "view/item/context": Array<{ command: string; when: string; group: string }>;
       };
+      configuration: {
+        properties: Record<string, { type?: string; enum?: string[]; default?: unknown; description?: string }>;
+      };
     };
   };
 
@@ -35,6 +38,13 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
     );
   }
   assert.ok(!manifest.contributes.commands.some((command) => /\.(?:build|review|ship|ap)$/.test(command.command)));
+  const chatModelPreselect = manifest.contributes.configuration.properties["agento.chatModelPreselect"];
+  assert.deepEqual(
+    { type: chatModelPreselect?.type, enum: chatModelPreselect?.enum, default: chatModelPreselect?.default },
+    { type: "string", enum: ["off", "local", "copilot"], default: "off" },
+    "agento.chatModelPreselect is contributed with the three opt-in values and off as the default",
+  );
+  assert.ok(typeof chatModelPreselect?.description === "string" && chatModelPreselect.description.length > 0, "the setting has a description");
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.refresh"),
     [
