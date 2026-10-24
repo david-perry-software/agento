@@ -314,3 +314,91 @@ a {
   font-size: 8px;
   fill: var(--mc-text);
 }
+
+/* Initiative wave graph (panel: graph) */
+
+.mc-graphs {
+  display: grid;
+  gap: 1rem;
+}
+
+.mc-graph {
+  border: 1px solid var(--mc-border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: var(--mc-bg);
+}
+
+.mc-graph-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+}
+
+.mc-graph-svg {
+  width: 100%;
+  height: auto;
+}
+
+.mc-edge {
+  stroke: var(--mc-muted);
+  stroke-width: 1.5;
+}
+
+.mc-edge-recommended {
+  stroke: var(--mc-muted);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 4;
+}
+
+.mc-edge-blocking {
+  stroke: #d1242f;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(209, 36, 47, 0.9));
+  animation: mc-edge-glow 1.6s ease-in-out infinite;
+}
+
+@keyframes mc-edge-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.mc-node-rect {
+  fill: var(--mc-surface-2);
+  stroke: var(--mc-border);
+  stroke-width: 1;
+}
+
+.mc-node-text {
+  font-size: 10px;
+  fill: var(--mc-text);
+  font-family: inherit;
+}
+
+.mc-node-next .mc-node-rect {
+  stroke: var(--mc-accent);
+  stroke-width: 2;
+  animation: mc-node-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes mc-node-pulse {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.4; }
+}
+
+.mc-plan {
+  cursor: pointer;
+}
+
+.mc-plan rect {
+  fill: var(--mc-accent);
+}
+
+.mc-plan text {
+  font-size: 9px;
+  fill: var(--mc-accent-text);
+  font-family: inherit;
+}
+
+.mc-plan-busy {
+  opacity: 0.6;
+}
