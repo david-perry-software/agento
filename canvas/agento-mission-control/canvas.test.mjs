@@ -245,3 +245,44 @@ test("open maps a corrupt store to a storage CanvasError", async () => {
     (err) => err instanceof FakeCanvasError && err.code === "storage"
   );
 });
+
+test("a failed background refresh is logged and the instance keeps working", async () => {
+  const { normalize, diff } = await import("./snapshot.mjs");
+  const { startWatcher: realStartWatcher } = await import("./watch.mjs");
+  const logs = [];
+  let runCalls = 0;
+  let watcher = null;
+  const createCanvas = (decl) => ({ declaration: decl, open: decl.open, onClose: decl.onClose });
+  const canvas = defineMissionControl({
+    createCanvas,
+    CanvasError: FakeCanvasError,
+    deps: {
+      normalize,
+      diff,
+      runDashboard: async () => {
+        runCalls += 1;
+        if (runCalls === 2) throw Object.assign(new Error("dashboard exited 1"), { code: "exit" });
+        return DASHBOARD;
+      },
+      startServer: async () => ({ url: "http://127.0.0.1:1/", setState() {}, broadcast() {}, close: async () => {} }),
+      startWatcher: (opts) => {
+        watcher = realStartWatcher(opts);
+        return watcher;
+      },
+      send: async () => {},
+      log: async (line) => logs.push(String(line)),
+      copilotHome: () => fs.mkdtempSync(path.join(os.tmpdir(), "agento-canvas-")),
+      cloneRoot: () => "/primary",
+    },
+  });
+
+  await canvas.open({ instanceId: "bg", session: { workingDirectory: "/cwd" } });
+  try {
+    await watcher.refresh({ pr: false }); // runCalls 2 → throws, caught by the watcher
+    assert.ok(logs.some((line) => /background refresh failed/.test(line)), "failure is routed to log");
+    await watcher.refresh({ pr: false }); // runCalls 3 → succeeds
+    assert.equal(runCalls, 3, "a later refresh still runs after the failure");
+  } finally {
+    await canvas.onClose({ instanceId: "bg" });
+  }
+});

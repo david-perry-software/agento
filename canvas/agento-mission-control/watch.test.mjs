@@ -86,6 +86,34 @@ test("stop releases watchers and timers", async () => {
   assert.equal(calls.length, before, "onChange fired after stop()");
 });
 
+test("a throwing onChange is reported and later refreshes still run", async () => {
+  const dir = tmpdir();
+  const watched = path.join(dir, "features");
+  fs.mkdirSync(watched);
+  const errors = [];
+  let calls = 0;
+  const watcher = startWatcher({
+    watchPaths: [watched],
+    onChange: async () => {
+      calls += 1;
+      throw new Error("boom");
+    },
+    onError: (err) => errors.push(err),
+    debounceMs: 30,
+  });
+  try {
+    fs.writeFileSync(path.join(watched, "a.md"), "a");
+    await sleep(120); // first refresh fires and throws
+    fs.writeFileSync(path.join(watched, "b.md"), "b");
+    await sleep(120); // second refresh fires, proving the watcher stayed alive
+    assert.equal(calls, 2, "later refreshes still run after a throwing onChange");
+    assert.equal(errors.length, 2, "each failure is reported");
+    assert.match(errors[0].message, /boom/);
+  } finally {
+    watcher.stop();
+  }
+});
+
 test("an in-flight refresh coalesces later triggers into one follow-up", async () => {
   const dir = tmpdir();
   const watched = path.join(dir, "features");

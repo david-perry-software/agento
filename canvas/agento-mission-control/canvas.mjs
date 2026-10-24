@@ -259,6 +259,9 @@ export function defineMissionControl({ createCanvas, CanvasError, deps = {} }) {
           onChange: async ({ pr }) => {
             await refresh(instance, { pr: Boolean(pr) });
           },
+          onError: (err) => {
+            D.log(`Mission Control background refresh failed: ${err?.message ?? err}`);
+          },
           pr: true,
         });
 
