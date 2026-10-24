@@ -1,0 +1,143 @@
+/* Agento Mission Control page shell. The spike (step 1.2) showed the canvas page
+   receives no VS Code theme variables (both `--vscode-editor-background` and
+   `--vscode-foreground` computed to ""), so the canvas carries its own theme:
+   light and dark via `prefers-color-scheme`. Reduced motion disables every
+   animation. Focus is always visible. */
+
+:root {
+  color-scheme: light dark;
+
+  --mc-bg: #ffffff;
+  --mc-surface: #f6f8fa;
+  --mc-surface-2: #eef1f4;
+  --mc-border: #d0d7de;
+  --mc-text: #1f2328;
+  --mc-muted: #656d76;
+  --mc-accent: #0969da;
+  --mc-accent-text: #ffffff;
+  --mc-focus: #0969da;
+  --mc-shadow: 0 1px 3px rgba(31, 35, 40, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mc-bg: #1c2128;
+    --mc-surface: #22272e;
+    --mc-surface-2: #2d333b;
+    --mc-border: #444c56;
+    --mc-text: #adbac7;
+    --mc-muted: #768390;
+    --mc-accent: #316dca;
+    --mc-accent-text: #ffffff;
+    --mc-focus: #539bf5;
+    --mc-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+    "Helvetica Neue", Arial, sans-serif;
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  line-height: 1.5;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 10;
+  padding: 0.5rem 1rem;
+  background: var(--mc-accent);
+  color: var(--mc-accent-text);
+}
+
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+}
+
+.mc-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--mc-border);
+  background: var(--mc-surface);
+}
+
+.mc-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.mc-status {
+  margin: 0.25rem 0 0;
+  color: var(--mc-muted);
+  font-size: 0.875rem;
+}
+
+.mc-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  list-style: none;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.mc-nav a {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--mc-border);
+  border-radius: 999px;
+  color: var(--mc-text);
+  text-decoration: none;
+  background: var(--mc-surface);
+}
+
+.mc-nav a:hover {
+  background: var(--mc-surface-2);
+}
+
+main {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+}
+
+.mc-panel {
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  background: var(--mc-surface);
+  box-shadow: var(--mc-shadow);
+  padding: 1rem;
+}
+
+.mc-panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+button,
+a {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--mc-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

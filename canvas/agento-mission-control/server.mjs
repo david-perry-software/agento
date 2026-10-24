@@ -87,7 +87,7 @@ function serveStatic(publicDir, reqUrl, res) {
   respond(res, 200, fs.readFileSync(target), { "content-type": type, "cache-control": "no-cache" });
 }
 
-export function startServer({ publicDir = defaultPublicDir(), send = null, onRefresh = null, log = () => {} } = {}) {
+export function startServer({ publicDir = defaultPublicDir(), send = null, onRefresh = null, log = () => {}, port: requestedPort = 0 } = {}) {
   let state = { allowed: [] };
   let port = 0;
   const clients = new Set();
@@ -207,7 +207,7 @@ export function startServer({ publicDir = defaultPublicDir(), send = null, onRef
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(requestedPort, "127.0.0.1", () => {
       port = server.address().port;
       resolve({
         server,
