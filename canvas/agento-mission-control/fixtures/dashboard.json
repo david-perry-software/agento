@@ -1,0 +1,2890 @@
+{
+  "status": "ok",
+  "session": {
+    "status": "ok",
+    "role": "build",
+    "hosted": false,
+    "worktree": {
+      "path": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+      "branch": "feature/mission-control-canvas",
+      "detached": false,
+      "isPrimary": false,
+      "isManaged": true,
+      "dirPrefix": "plan",
+      "id": "20261023-204459"
+    },
+    "worktrees": [
+      {
+        "path": "/home/user/DP/agento",
+        "branch": "main",
+        "detached": false,
+        "role": "primary",
+        "dirPrefix": null,
+        "id": null,
+        "isPrimary": true,
+        "isManaged": false,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-20261011-143125",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261011-143125",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-20261011-143418",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261011-143418",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-20261012-031857",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261012-031857",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-20261012-050810",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261012-050810",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-20261017-035122",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261017-035122",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "branch": "feature/mission-control-canvas",
+        "detached": false,
+        "role": "build",
+        "dirPrefix": "plan",
+        "id": "20261023-204459",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-worktrees/plan-agento-router-skill",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "agento-router-skill",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "product"
+      },
+      {
+        "path": "/home/user/DP/agento-docs",
+        "branch": "main",
+        "detached": false,
+        "role": "unmanaged",
+        "dirPrefix": null,
+        "id": null,
+        "isPrimary": false,
+        "isManaged": false,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-20261011-143125",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261011-143125",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-20261011-143418",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261011-143418",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-20261012-031857",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261012-031857",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-20261012-050810",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261012-050810",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-20261017-035122",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "20261017-035122",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-20261023-204459",
+        "branch": "feature/mission-control-canvas",
+        "detached": false,
+        "role": "build",
+        "dirPrefix": "plan",
+        "id": "20261023-204459",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      },
+      {
+        "path": "/home/user/DP/agento-docs-worktrees/plan-agento-router-skill",
+        "branch": null,
+        "detached": true,
+        "role": "plan",
+        "dirPrefix": "plan",
+        "id": "agento-router-skill",
+        "isPrimary": false,
+        "isManaged": true,
+        "repo": "companion"
+      }
+    ],
+    "companion": {
+      "path": "/home/user/DP/agento-docs-worktrees/plan-20261023-204459",
+      "branch": "feature/mission-control-canvas",
+      "detached": false,
+      "dirty": false,
+      "ahead": 0,
+      "behind": 0,
+      "registered": true
+    },
+    "workspace": {
+      "path": "/home/user/DP/agento-worktrees/plan-20261023-204459.code-workspace",
+      "exists": true,
+      "current": true
+    },
+    "delivery": {
+      "type": "feature",
+      "slug": "mission-control-canvas",
+      "branch": "feature/mission-control-canvas",
+      "dir": "features/2026/10/mission-control-canvas",
+      "roadmap": "features/2026/10/mission-control-canvas/roadmap.md",
+      "plan": "features/2026/10/mission-control-canvas/plan.md",
+      "review": null,
+      "reviewVerdict": null,
+      "status": "in-progress",
+      "lastUpdated": "2026-10-23",
+      "nextStep": "2.1 Record the sanitized dashboard fixture and fixture-shape test",
+      "githubIssue": null,
+      "artifactPr": "#67",
+      "initiative": null,
+      "steps": {
+        "ticked": 1,
+        "total": 26
+      },
+      "postShipPending": 0
+    },
+    "pr": null,
+    "companionPr": null,
+    "lifecycle": "building",
+    "allowed": [
+      "/agento continue",
+      "/agento build-feature mission-control-canvas",
+      "/agento ap mission-control-canvas",
+      "/agento delivery-status"
+    ],
+    "elsewhere": [
+      {
+        "command": "/agento ship mission-control-canvas",
+        "window": "primary",
+        "reason": "after Verdict: approve, ship from the primary window — ship audits here first and tears this worktree down after the merge"
+      }
+    ],
+    "warnings": [],
+    "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+    "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+  },
+  "doctor": {
+    "status": "fail",
+    "for": null,
+    "checks": [
+      {
+        "id": "node",
+        "status": "ok",
+        "detail": "node v22.23.2",
+        "fallback": null
+      },
+      {
+        "id": "git-remote",
+        "status": "ok",
+        "detail": "origin https://github.com/david-perry-software/agento.git, main reachable",
+        "fallback": null
+      },
+      {
+        "id": "gh",
+        "status": "ok",
+        "detail": "gh version 2.45.0 (2025-07-18 Ubuntu 2.45.0-1ubuntu0.3); authenticated",
+        "fallback": null
+      },
+      {
+        "id": "code",
+        "status": "ok",
+        "detail": "code 1.142.0",
+        "fallback": null
+      },
+      {
+        "id": "worktrees-dir",
+        "status": "ok",
+        "detail": "/home/user/DP/agento-worktrees writable",
+        "fallback": null
+      },
+      {
+        "id": "session-workspace",
+        "status": "ok",
+        "detail": "/home/user/DP/agento-worktrees/plan-20261023-204459.code-workspace carries the session auto-approve settings",
+        "fallback": null
+      },
+      {
+        "id": "artifact-repo",
+        "status": "ok",
+        "detail": "/home/user/DP/agento-docs (agento-docs), origin https://github.com/david-perry-software/agento-docs.git, main present",
+        "fallback": null
+      },
+      {
+        "id": "model-profile",
+        "status": "warn",
+        "detail": "the git filter's copied script in /home/user/DP/agento/.git/agento is missing or older than this CLI; primary: custom; secondary: mixed",
+        "fallback": "`agento.mjs models apply <name> --plugin-root /home/user/DP/agento-worktrees/plan-20261023-204459` or `agento.mjs models adopt --plugin-root /home/user/DP/agento-worktrees/plan-20261023-204459` refreshes it"
+      },
+      {
+        "id": "hook-wiring",
+        "status": "ok",
+        "detail": "workspace-mode hook wiring present; this repository is not registered in chat.pluginLocations (/home/user/.config/Code/User/settings.json)",
+        "fallback": null
+      },
+      {
+        "id": "harness",
+        "status": "fail",
+        "detail": "cannot run /agento in any session — /home/user/.copilot/skills/agento resolves to /home/user/DP/agento-plugin/skills/agento",
+        "fallback": "agento.mjs harness install --force --plugin-root /home/user/DP/agento (or keep the other clone's link)"
+      }
+    ],
+    "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+    "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+  },
+  "deliveries": {
+    "status": "ok",
+    "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+    "currentBranch": "feature/mission-control-canvas",
+    "defaultBranch": "main",
+    "items": [
+      {
+        "type": "feature",
+        "slug": "mission-control-canvas",
+        "dir": "features/2026/10/mission-control-canvas",
+        "roadmap": "features/2026/10/mission-control-canvas/roadmap.md",
+        "plan": "features/2026/10/mission-control-canvas/plan.md",
+        "review": null,
+        "reviewVerdict": null,
+        "status": "in-progress",
+        "branch": "feature/mission-control-canvas",
+        "lastUpdated": "2026-10-23",
+        "nextStep": "2.1 Record the sanitized dashboard fixture and fixture-shape test",
+        "githubIssue": null,
+        "artifactPr": "#67",
+        "initiative": null,
+        "steps": {
+          "ticked": 1,
+          "total": 26
+        },
+        "postShipPending": 0,
+        "lifecycle": "building",
+        "owner": {
+          "path": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+          "role": "build",
+          "dirPrefix": "plan",
+          "id": "20261023-204459"
+        },
+        "workspace": {
+          "path": "/home/user/DP/agento-worktrees/plan-20261023-204459.code-workspace",
+          "exists": true,
+          "current": false
+        },
+        "companion": {
+          "path": "/home/user/DP/agento-docs-worktrees/plan-20261023-204459",
+          "branch": "feature/mission-control-canvas",
+          "detached": false,
+          "dirty": false,
+          "ahead": 0,
+          "behind": 0,
+          "registered": true
+        },
+        "allowed": [
+          "/agento continue",
+          "/agento build-feature mission-control-canvas",
+          "/agento ap mission-control-canvas",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [
+          {
+            "command": "/agento ship mission-control-canvas",
+            "window": "primary",
+            "reason": "after Verdict: approve, ship from the primary window — ship audits here first and tears this worktree down after the merge"
+          }
+        ],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "canvas-planning-fixture",
+        "dir": "features/2026/11/canvas-planning-fixture",
+        "roadmap": "features/2026/11/canvas-planning-fixture/roadmap.md",
+        "plan": "features/2026/11/canvas-planning-fixture/plan.md",
+        "review": null,
+        "reviewVerdict": null,
+        "status": "planned",
+        "branch": "feature/canvas-planning-fixture",
+        "lastUpdated": "2026-10-23",
+        "nextStep": "1.1 Research the canvas API",
+        "githubIssue": null,
+        "artifactPr": null,
+        "initiative": null,
+        "steps": {
+          "ticked": 0,
+          "total": 9
+        },
+        "postShipPending": 0,
+        "lifecycle": "planned",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento build-feature canvas-planning-fixture",
+          "/agento ap canvas-planning-fixture",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "canvas-paused-fixture",
+        "dir": "features/2026/11/canvas-paused-fixture",
+        "roadmap": "features/2026/11/canvas-paused-fixture/roadmap.md",
+        "plan": "features/2026/11/canvas-paused-fixture/plan.md",
+        "review": null,
+        "reviewVerdict": null,
+        "status": "paused",
+        "branch": "feature/canvas-paused-fixture",
+        "lastUpdated": "2026-10-22",
+        "nextStep": "2.3 (manual) Attach the screenshot of the dashboard approval",
+        "githubIssue": null,
+        "artifactPr": "#70",
+        "initiative": null,
+        "steps": {
+          "ticked": 2,
+          "total": 12
+        },
+        "postShipPending": 0,
+        "lifecycle": "paused",
+        "owner": {
+          "path": "/home/user/DP/agento-worktrees/plan-20261020-120000",
+          "role": "build",
+          "dirPrefix": "plan",
+          "id": "20261020-120000"
+        },
+        "workspace": {
+          "path": "/home/user/DP/agento-worktrees/plan-20261020-120000.code-workspace",
+          "exists": true,
+          "current": false
+        },
+        "companion": {
+          "path": "/home/user/DP/agento-docs-worktrees/plan-20261020-120000",
+          "branch": "feature/canvas-paused-fixture",
+          "detached": false,
+          "dirty": false,
+          "ahead": 0,
+          "behind": 0,
+          "registered": true
+        },
+        "allowed": [
+          "/agento continue",
+          "/agento build-feature canvas-paused-fixture",
+          "/agento ap canvas-paused-fixture",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [
+          {
+            "command": "/agento ship canvas-paused-fixture",
+            "window": "primary",
+            "reason": "after Verdict: approve, ship from the primary window"
+          }
+        ],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "canvas-review-fixture",
+        "dir": "features/2026/11/canvas-review-fixture",
+        "roadmap": "features/2026/11/canvas-review-fixture/roadmap.md",
+        "plan": "features/2026/11/canvas-review-fixture/plan.md",
+        "review": "features/2026/11/canvas-review-fixture/review.md",
+        "reviewVerdict": "request-changes",
+        "status": "in-review",
+        "branch": "feature/canvas-review-fixture",
+        "lastUpdated": "2026-10-23",
+        "nextStep": "4.2 Rerun the extension electron test after the fix",
+        "githubIssue": null,
+        "artifactPr": "#71",
+        "initiative": null,
+        "steps": {
+          "ticked": 14,
+          "total": 15
+        },
+        "postShipPending": 0,
+        "lifecycle": "in-review",
+        "owner": {
+          "path": "/home/user/DP/agento-worktrees/plan-20261022-093000",
+          "role": "build",
+          "dirPrefix": "plan",
+          "id": "20261022-093000"
+        },
+        "workspace": {
+          "path": "/home/user/DP/agento-worktrees/plan-20261022-093000.code-workspace",
+          "exists": true,
+          "current": false
+        },
+        "companion": {
+          "path": "/home/user/DP/agento-docs-worktrees/plan-20261022-093000",
+          "branch": "feature/canvas-review-fixture",
+          "detached": false,
+          "dirty": false,
+          "ahead": 0,
+          "behind": 0,
+          "registered": true
+        },
+        "allowed": [
+          "/agento continue",
+          "/agento review-feature canvas-review-fixture",
+          "/agento ap canvas-review-fixture",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [
+          {
+            "command": "/agento ship canvas-review-fixture",
+            "window": "primary",
+            "reason": "after Verdict: approve, ship from the primary window"
+          }
+        ],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "agento-router-skill",
+        "dir": "features/2026/10/agento-router-skill",
+        "roadmap": "features/2026/10/agento-router-skill/roadmap.md",
+        "plan": "features/2026/10/agento-router-skill/plan.md",
+        "review": "features/2026/10/agento-router-skill/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/agento-router-skill",
+        "lastUpdated": "2026-10-17",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": "#55",
+        "initiative": "copilot-harness",
+        "steps": {
+          "ticked": 17,
+          "total": 17
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "agents-copilot-models",
+        "dir": "features/2026/10/agents-copilot-models",
+        "roadmap": "features/2026/10/agents-copilot-models/roadmap.md",
+        "plan": "features/2026/10/agents-copilot-models/plan.md",
+        "review": "features/2026/10/agents-copilot-models/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/agents-copilot-models",
+        "lastUpdated": "2026-10-16",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": "#54",
+        "initiative": "copilot-harness",
+        "steps": {
+          "ticked": 19,
+          "total": 19
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-history-migration",
+        "dir": "features/2026/09/artifact-history-migration",
+        "roadmap": "features/2026/09/artifact-history-migration/roadmap.md",
+        "plan": "features/2026/09/artifact-history-migration/plan.md",
+        "review": "features/2026/09/artifact-history-migration/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/artifact-history-migration",
+        "lastUpdated": "2026-09-18",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": "#1",
+        "initiative": "external-artifact-repo",
+        "steps": {
+          "ticked": 24,
+          "total": 24
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-preview-open",
+        "dir": "features/2026/10/artifact-preview-open",
+        "roadmap": "features/2026/10/artifact-preview-open/roadmap.md",
+        "plan": "features/2026/10/artifact-preview-open/plan.md",
+        "review": "features/2026/10/artifact-preview-open/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/artifact-preview-open",
+        "lastUpdated": "2026-10-09",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": "#36",
+        "initiative": null,
+        "steps": {
+          "ticked": 13,
+          "total": 13
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-repo-config",
+        "dir": "features/2026/09/artifact-repo-config",
+        "roadmap": "features/2026/09/artifact-repo-config/roadmap.md",
+        "plan": "features/2026/09/artifact-repo-config/plan.md",
+        "review": "features/2026/09/artifact-repo-config/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/artifact-repo-config",
+        "lastUpdated": "2026-09-16",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": null,
+        "initiative": "external-artifact-repo",
+        "steps": {
+          "ticked": 11,
+          "total": 11
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-repo-hooks",
+        "dir": "features/2026/09/artifact-repo-hooks",
+        "roadmap": "features/2026/09/artifact-repo-hooks/roadmap.md",
+        "plan": "features/2026/09/artifact-repo-hooks/plan.md",
+        "review": "features/2026/09/artifact-repo-hooks/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/artifact-repo-hooks",
+        "lastUpdated": "2026-09-16",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": null,
+        "initiative": "external-artifact-repo",
+        "steps": {
+          "ticked": 12,
+          "total": 12
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-repo-init",
+        "dir": "features/2026/09/artifact-repo-init",
+        "roadmap": "features/2026/09/artifact-repo-init/roadmap.md",
+        "plan": "features/2026/09/artifact-repo-init/plan.md",
+        "review": "features/2026/09/artifact-repo-init/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "feature/artifact-repo-init",
+        "lastUpdated": "2026-09-16",
+        "nextStep": "",
+        "githubIssue": null,
+        "artifactPr": null,
+        "initiative": "external-artifact-repo",
+        "steps": {
+          "ticked": 9,
+          "total": 9
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      },
+      {
+        "type": "issue",
+        "slug": "autopilot-in-review-handoff",
+        "dir": "issues/2026/09/autopilot-in-review-handoff",
+        "roadmap": "issues/2026/09/autopilot-in-review-handoff/roadmap.md",
+        "plan": "issues/2026/09/autopilot-in-review-handoff/plan.md",
+        "review": "issues/2026/09/autopilot-in-review-handoff/review.md",
+        "reviewVerdict": "approve",
+        "status": "complete",
+        "branch": "issue/autopilot-in-review-handoff",
+        "lastUpdated": "2026-09-20",
+        "nextStep": "none — shipped",
+        "githubIssue": "#60",
+        "artifactPr": "#16",
+        "initiative": null,
+        "steps": {
+          "ticked": 8,
+          "total": 8
+        },
+        "postShipPending": 0,
+        "lifecycle": "shipped",
+        "owner": null,
+        "workspace": null,
+        "companion": null,
+        "allowed": [
+          "/agento continue",
+          "/agento start-session",
+          "/agento new-feature",
+          "/agento new-issue",
+          "/agento new-initiative",
+          "/agento delivery-status"
+        ],
+        "elsewhere": [],
+        "pr": null,
+        "companionPr": null
+      }
+    ],
+    "duplicates": [],
+    "resumable": [
+      "mission-control-canvas"
+    ],
+    "lifecycles": [
+      "no-delivery",
+      "planned",
+      "building",
+      "paused",
+      "in-review",
+      "approved",
+      "shipped",
+      "post-ship-pending"
+    ],
+    "warnings": []
+  },
+  "initiatives": {
+    "list": {
+      "status": "ok",
+      "initiativesRoot": "initiatives",
+      "items": [
+        {
+          "slug": "agento-extension",
+          "dir": "initiatives/2026/09/agento-extension",
+          "created": "2026-09-18",
+          "lastUpdated": "2026-09-18",
+          "total": 8,
+          "complete": 8,
+          "inFlight": 0,
+          "ready": 0,
+          "done": true,
+          "valid": true
+        },
+        {
+          "slug": "external-artifact-repo",
+          "dir": "initiatives/2026/09/external-artifact-repo",
+          "created": "2026-09-15",
+          "lastUpdated": "2026-09-15",
+          "total": 7,
+          "complete": 7,
+          "inFlight": 0,
+          "ready": 0,
+          "done": true,
+          "valid": true
+        },
+        {
+          "slug": "workflow-orchestration",
+          "dir": "initiatives/2026/09/workflow-orchestration",
+          "created": "2026-09-14",
+          "lastUpdated": "2026-09-14",
+          "total": 7,
+          "complete": 7,
+          "inFlight": 0,
+          "ready": 0,
+          "done": true,
+          "valid": true
+        },
+        {
+          "slug": "agento-hardening",
+          "dir": "initiatives/2026/10/agento-hardening",
+          "created": "2026-10-09",
+          "lastUpdated": "2026-10-09",
+          "total": 6,
+          "complete": 4,
+          "inFlight": 0,
+          "ready": 1,
+          "done": false,
+          "valid": true
+        },
+        {
+          "slug": "copilot-harness",
+          "dir": "initiatives/2026/10/copilot-harness",
+          "created": "2026-10-13",
+          "lastUpdated": "2026-10-15",
+          "total": 7,
+          "complete": 7,
+          "inFlight": 0,
+          "ready": 0,
+          "done": true,
+          "valid": true
+        },
+        {
+          "slug": "model-profile-manager",
+          "dir": "initiatives/2026/10/model-profile-manager",
+          "created": "2026-10-21",
+          "lastUpdated": "2026-10-21",
+          "total": 6,
+          "complete": 6,
+          "inFlight": 0,
+          "ready": 0,
+          "done": true,
+          "valid": true
+        },
+        {
+          "slug": "spend-reduction",
+          "dir": "initiatives/2026/10/spend-reduction",
+          "created": "2026-10-11",
+          "lastUpdated": "2026-10-11",
+          "total": 4,
+          "complete": 4,
+          "inFlight": 0,
+          "ready": 0,
+          "done": true,
+          "valid": true
+        }
+      ],
+      "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+      "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+    },
+    "details": {
+      "agento-extension": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "cli-dashboard-json",
+            "state": "complete",
+            "roadmap": "features/2026/09/cli-dashboard-json/roadmap.md",
+            "branch": "feature/cli-dashboard-json",
+            "artifactPr": "#6",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "extension-scaffold",
+            "state": "complete",
+            "roadmap": "features/2026/09/extension-scaffold/roadmap.md",
+            "branch": "feature/extension-scaffold",
+            "artifactPr": "#7",
+            "requires": [],
+            "recommendedAfter": [
+              "cli-dashboard-json"
+            ],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "deliveries-tree",
+            "state": "complete",
+            "roadmap": "features/2026/09/deliveries-tree/roadmap.md",
+            "branch": "feature/deliveries-tree",
+            "artifactPr": "#8",
+            "requires": [
+              "cli-dashboard-json",
+              "extension-scaffold"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "initiatives-tree",
+            "state": "complete",
+            "roadmap": "features/2026/09/initiatives-tree/roadmap.md",
+            "branch": "feature/initiatives-tree",
+            "artifactPr": "#9",
+            "requires": [
+              "extension-scaffold"
+            ],
+            "recommendedAfter": [
+              "deliveries-tree"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "session-doctor-panel",
+            "state": "complete",
+            "roadmap": "features/2026/09/session-doctor-panel/roadmap.md",
+            "branch": "feature/session-doctor-panel",
+            "artifactPr": "#10",
+            "requires": [
+              "extension-scaffold"
+            ],
+            "recommendedAfter": [
+              "deliveries-tree"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 4,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "command-dispatch",
+            "state": "complete",
+            "roadmap": "features/2026/09/command-dispatch/roadmap.md",
+            "branch": "feature/command-dispatch",
+            "artifactPr": "#11",
+            "requires": [
+              "cli-dashboard-json",
+              "deliveries-tree"
+            ],
+            "recommendedAfter": [
+              "session-doctor-panel"
+            ],
+            "wave": 3,
+            "computedWave": 3,
+            "order": 5,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "new-plan-flow",
+            "state": "complete",
+            "roadmap": "features/2026/09/new-plan-flow/roadmap.md",
+            "branch": "feature/new-plan-flow",
+            "artifactPr": "#12",
+            "requires": [
+              "command-dispatch",
+              "initiatives-tree"
+            ],
+            "recommendedAfter": [],
+            "wave": 4,
+            "computedWave": 4,
+            "order": 6,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "extension-acceptance",
+            "state": "complete",
+            "roadmap": "features/2026/09/extension-acceptance/roadmap.md",
+            "branch": "feature/extension-acceptance",
+            "artifactPr": "#13",
+            "requires": [
+              "deliveries-tree",
+              "initiatives-tree",
+              "session-doctor-panel",
+              "command-dispatch",
+              "new-plan-flow"
+            ],
+            "recommendedAfter": [],
+            "wave": 5,
+            "computedWave": 5,
+            "order": 7,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "cli-dashboard-json",
+            "extension-scaffold"
+          ],
+          [
+            "deliveries-tree",
+            "initiatives-tree",
+            "session-doctor-panel"
+          ],
+          [
+            "command-dispatch"
+          ],
+          [
+            "new-plan-flow"
+          ],
+          [
+            "extension-acceptance"
+          ]
+        ],
+        "next": null,
+        "done": true,
+        "initiative": {
+          "slug": "agento-extension",
+          "dir": "initiatives/2026/09/agento-extension",
+          "breakdown": "initiatives/2026/09/agento-extension/breakdown.md",
+          "created": "2026-09-18",
+          "lastUpdated": "2026-09-18"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      },
+      "external-artifact-repo": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "artifact-repo-config",
+            "state": "complete",
+            "roadmap": "features/2026/09/artifact-repo-config/roadmap.md",
+            "branch": "feature/artifact-repo-config",
+            "artifactPr": null,
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "artifact-repo-init",
+            "state": "complete",
+            "roadmap": "features/2026/09/artifact-repo-init/roadmap.md",
+            "branch": "feature/artifact-repo-init",
+            "artifactPr": null,
+            "requires": [
+              "artifact-repo-config"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "artifact-repo-hooks",
+            "state": "complete",
+            "roadmap": "features/2026/09/artifact-repo-hooks/roadmap.md",
+            "branch": "feature/artifact-repo-hooks",
+            "artifactPr": null,
+            "requires": [
+              "artifact-repo-config"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "paired-artifact-worktrees",
+            "state": "complete",
+            "roadmap": "features/2026/09/paired-artifact-worktrees/roadmap.md",
+            "branch": "feature/paired-artifact-worktrees",
+            "artifactPr": null,
+            "requires": [
+              "artifact-repo-config"
+            ],
+            "recommendedAfter": [
+              "artifact-repo-hooks"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "mirrored-artifact-branches",
+            "state": "complete",
+            "roadmap": "features/2026/09/mirrored-artifact-branches/roadmap.md",
+            "branch": "feature/mirrored-artifact-branches",
+            "artifactPr": null,
+            "requires": [
+              "paired-artifact-worktrees"
+            ],
+            "recommendedAfter": [
+              "artifact-repo-hooks"
+            ],
+            "wave": 3,
+            "computedWave": 3,
+            "order": 4,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "ship-dual-merge",
+            "state": "complete",
+            "roadmap": "features/2026/09/ship-dual-merge/roadmap.md",
+            "branch": "feature/ship-dual-merge",
+            "artifactPr": null,
+            "requires": [
+              "mirrored-artifact-branches"
+            ],
+            "recommendedAfter": [],
+            "wave": 4,
+            "computedWave": 4,
+            "order": 5,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "artifact-history-migration",
+            "state": "complete",
+            "roadmap": "features/2026/09/artifact-history-migration/roadmap.md",
+            "branch": "feature/artifact-history-migration",
+            "artifactPr": "#1",
+            "requires": [
+              "artifact-repo-init",
+              "artifact-repo-hooks",
+              "ship-dual-merge"
+            ],
+            "recommendedAfter": [],
+            "wave": 5,
+            "computedWave": 5,
+            "order": 6,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "artifact-repo-config"
+          ],
+          [
+            "artifact-repo-init",
+            "artifact-repo-hooks",
+            "paired-artifact-worktrees"
+          ],
+          [
+            "mirrored-artifact-branches"
+          ],
+          [
+            "ship-dual-merge"
+          ],
+          [
+            "artifact-history-migration"
+          ]
+        ],
+        "next": null,
+        "done": true,
+        "initiative": {
+          "slug": "external-artifact-repo",
+          "dir": "initiatives/2026/09/external-artifact-repo",
+          "breakdown": "initiatives/2026/09/external-artifact-repo/breakdown.md",
+          "created": "2026-09-15",
+          "lastUpdated": "2026-09-15"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      },
+      "workflow-orchestration": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "session-state-cli",
+            "state": "complete",
+            "roadmap": "features/2026/09/session-state-cli/roadmap.md",
+            "branch": "feature/session-state-cli",
+            "artifactPr": null,
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "command-receipts",
+            "state": "complete",
+            "roadmap": "features/2026/09/command-receipts/roadmap.md",
+            "branch": "feature/command-receipts",
+            "artifactPr": null,
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "canonical-commands",
+            "state": "complete",
+            "roadmap": "features/2026/09/canonical-commands/roadmap.md",
+            "branch": "feature/canonical-commands",
+            "artifactPr": null,
+            "requires": [],
+            "recommendedAfter": [
+              "command-receipts"
+            ],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "capability-preflight",
+            "state": "complete",
+            "roadmap": "features/2026/09/capability-preflight/roadmap.md",
+            "branch": "feature/capability-preflight",
+            "artifactPr": null,
+            "requires": [
+              "command-receipts"
+            ],
+            "recommendedAfter": [
+              "session-state-cli"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "window-aware-commands",
+            "state": "complete",
+            "roadmap": "features/2026/09/window-aware-commands/roadmap.md",
+            "branch": "feature/window-aware-commands",
+            "artifactPr": null,
+            "requires": [
+              "session-state-cli",
+              "command-receipts"
+            ],
+            "recommendedAfter": [
+              "canonical-commands"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 4,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "ship-audit-first",
+            "state": "complete",
+            "roadmap": "features/2026/09/ship-audit-first/roadmap.md",
+            "branch": "feature/ship-audit-first",
+            "artifactPr": null,
+            "requires": [
+              "session-state-cli"
+            ],
+            "recommendedAfter": [
+              "window-aware-commands"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 5,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "continue-command",
+            "state": "complete",
+            "roadmap": "features/2026/09/continue-command/roadmap.md",
+            "branch": "feature/continue-command",
+            "artifactPr": null,
+            "requires": [
+              "session-state-cli",
+              "window-aware-commands",
+              "ship-audit-first"
+            ],
+            "recommendedAfter": [
+              "capability-preflight"
+            ],
+            "wave": 3,
+            "computedWave": 3,
+            "order": 6,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "session-state-cli",
+            "command-receipts",
+            "canonical-commands"
+          ],
+          [
+            "capability-preflight",
+            "window-aware-commands",
+            "ship-audit-first"
+          ],
+          [
+            "continue-command"
+          ]
+        ],
+        "next": null,
+        "done": true,
+        "initiative": {
+          "slug": "workflow-orchestration",
+          "dir": "initiatives/2026/09/workflow-orchestration",
+          "breakdown": "initiatives/2026/09/workflow-orchestration/breakdown.md",
+          "created": "2026-09-14",
+          "lastUpdated": "2026-09-14"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      },
+      "agento-hardening": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "dashboard-cli",
+            "state": "unplanned",
+            "roadmap": null,
+            "branch": "feature/dashboard-cli",
+            "artifactPr": "#38",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": true
+          },
+          {
+            "slug": "followup-debt-batch",
+            "state": "complete",
+            "roadmap": "features/2026/10/followup-debt-batch/roadmap.md",
+            "branch": "feature/followup-debt-batch",
+            "artifactPr": "#39",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "close-session-cli",
+            "state": "complete",
+            "roadmap": "features/2026/10/close-session-cli/roadmap.md",
+            "branch": "feature/close-session-cli",
+            "artifactPr": "#40",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 1,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "hooks-node-port",
+            "state": "complete",
+            "roadmap": "features/2026/10/hooks-node-port/roadmap.md",
+            "branch": "feature/hooks-node-port",
+            "artifactPr": "#41",
+            "requires": [],
+            "recommendedAfter": [
+              "close-session-cli"
+            ],
+            "wave": 2,
+            "computedWave": 1,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "delivery-metrics",
+            "state": "unplanned",
+            "roadmap": null,
+            "branch": "feature/delivery-metrics",
+            "artifactPr": "#43",
+            "requires": [
+              "dashboard-cli"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 4,
+            "blockedBy": [
+              "dashboard-cli"
+            ],
+            "ready": false
+          },
+          {
+            "slug": "ship-cli",
+            "state": "complete",
+            "roadmap": "features/2026/10/ship-cli/roadmap.md",
+            "branch": "feature/ship-cli",
+            "artifactPr": "#42",
+            "requires": [
+              "close-session-cli"
+            ],
+            "recommendedAfter": [
+              "hooks-node-port"
+            ],
+            "wave": 3,
+            "computedWave": 2,
+            "order": 5,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "dashboard-cli",
+            "followup-debt-batch",
+            "close-session-cli",
+            "hooks-node-port"
+          ],
+          [
+            "delivery-metrics",
+            "ship-cli"
+          ]
+        ],
+        "next": "dashboard-cli",
+        "done": false,
+        "initiative": {
+          "slug": "agento-hardening",
+          "dir": "initiatives/2026/10/agento-hardening",
+          "breakdown": "initiatives/2026/10/agento-hardening/breakdown.md",
+          "created": "2026-10-09",
+          "lastUpdated": "2026-10-09"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      },
+      "copilot-harness": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "harness-probe",
+            "state": "complete",
+            "roadmap": "features/2026/10/harness-probe/roadmap.md",
+            "branch": "feature/harness-probe",
+            "artifactPr": "#52",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "copilot-hook-compat",
+            "state": "complete",
+            "roadmap": "features/2026/10/copilot-hook-compat/roadmap.md",
+            "branch": "feature/copilot-hook-compat",
+            "artifactPr": "#53",
+            "requires": [
+              "harness-probe"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "agents-copilot-models",
+            "state": "complete",
+            "roadmap": "features/2026/10/agents-copilot-models/roadmap.md",
+            "branch": "feature/agents-copilot-models",
+            "artifactPr": "#54",
+            "requires": [
+              "harness-probe"
+            ],
+            "recommendedAfter": [
+              "copilot-hook-compat"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "agento-router-skill",
+            "state": "complete",
+            "roadmap": "features/2026/10/agento-router-skill/roadmap.md",
+            "branch": "feature/agento-router-skill",
+            "artifactPr": "#55",
+            "requires": [
+              "harness-probe",
+              "copilot-hook-compat"
+            ],
+            "recommendedAfter": [
+              "agents-copilot-models"
+            ],
+            "wave": 3,
+            "computedWave": 3,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "harness-install",
+            "state": "complete",
+            "roadmap": "features/2026/10/harness-install/roadmap.md",
+            "branch": "feature/harness-install",
+            "artifactPr": "#56",
+            "requires": [
+              "agento-router-skill"
+            ],
+            "recommendedAfter": [],
+            "wave": 4,
+            "computedWave": 4,
+            "order": 4,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "dispatch-copilot-harness",
+            "state": "complete",
+            "roadmap": "features/2026/10/dispatch-copilot-harness/roadmap.md",
+            "branch": "feature/dispatch-copilot-harness",
+            "artifactPr": "#57",
+            "requires": [
+              "harness-install"
+            ],
+            "recommendedAfter": [
+              "agents-copilot-models"
+            ],
+            "wave": 5,
+            "computedWave": 5,
+            "order": 5,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "harness-docs",
+            "state": "complete",
+            "roadmap": "features/2026/10/harness-docs/roadmap.md",
+            "branch": "feature/harness-docs",
+            "artifactPr": "#58",
+            "requires": [
+              "copilot-hook-compat",
+              "agents-copilot-models",
+              "harness-install",
+              "dispatch-copilot-harness"
+            ],
+            "recommendedAfter": [],
+            "wave": 6,
+            "computedWave": 6,
+            "order": 6,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "harness-probe"
+          ],
+          [
+            "copilot-hook-compat",
+            "agents-copilot-models"
+          ],
+          [
+            "agento-router-skill"
+          ],
+          [
+            "harness-install"
+          ],
+          [
+            "dispatch-copilot-harness"
+          ],
+          [
+            "harness-docs"
+          ]
+        ],
+        "next": null,
+        "done": true,
+        "initiative": {
+          "slug": "copilot-harness",
+          "dir": "initiatives/2026/10/copilot-harness",
+          "breakdown": "initiatives/2026/10/copilot-harness/breakdown.md",
+          "created": "2026-10-13",
+          "lastUpdated": "2026-10-15"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      },
+      "model-profile-manager": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "model-profile-crud-cli",
+            "state": "complete",
+            "roadmap": "features/2026/10/model-profile-crud-cli/roadmap.md",
+            "branch": "feature/model-profile-crud-cli",
+            "artifactPr": "#61",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "model-profiles-view",
+            "state": "complete",
+            "roadmap": "features/2026/10/model-profiles-view/roadmap.md",
+            "branch": "feature/model-profiles-view",
+            "artifactPr": "#62",
+            "requires": [
+              "model-profile-crud-cli"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "model-profile-editor",
+            "state": "complete",
+            "roadmap": "features/2026/10/model-profile-editor/roadmap.md",
+            "branch": "feature/model-profile-editor",
+            "artifactPr": "#63",
+            "requires": [
+              "model-profile-crud-cli"
+            ],
+            "recommendedAfter": [
+              "model-profiles-view"
+            ],
+            "wave": 3,
+            "computedWave": 2,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "role-active-profiles",
+            "state": "complete",
+            "roadmap": "features/2026/10/role-active-profiles/roadmap.md",
+            "branch": "feature/role-active-profiles",
+            "artifactPr": "#64",
+            "requires": [
+              "model-profile-crud-cli"
+            ],
+            "recommendedAfter": [
+              "model-profiles-view",
+              "model-profile-editor"
+            ],
+            "wave": 4,
+            "computedWave": 2,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "role-profile-sidebar",
+            "state": "complete",
+            "roadmap": "features/2026/10/role-profile-sidebar/roadmap.md",
+            "branch": "feature/role-profile-sidebar",
+            "artifactPr": "#65",
+            "requires": [
+              "model-profiles-view",
+              "role-active-profiles"
+            ],
+            "recommendedAfter": [],
+            "wave": 5,
+            "computedWave": 3,
+            "order": 4,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "chat-model-preselect",
+            "state": "complete",
+            "roadmap": "features/2026/10/chat-model-preselect/roadmap.md",
+            "branch": "feature/chat-model-preselect",
+            "artifactPr": "#66",
+            "requires": [
+              "role-active-profiles"
+            ],
+            "recommendedAfter": [
+              "role-profile-sidebar"
+            ],
+            "wave": 5,
+            "computedWave": 3,
+            "order": 5,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "model-profile-crud-cli"
+          ],
+          [
+            "model-profiles-view",
+            "model-profile-editor",
+            "role-active-profiles"
+          ],
+          [
+            "role-profile-sidebar",
+            "chat-model-preselect"
+          ]
+        ],
+        "next": null,
+        "done": true,
+        "initiative": {
+          "slug": "model-profile-manager",
+          "dir": "initiatives/2026/10/model-profile-manager",
+          "breakdown": "initiatives/2026/10/model-profile-manager/breakdown.md",
+          "created": "2026-10-21",
+          "lastUpdated": "2026-10-21"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      },
+      "spend-reduction": {
+        "status": "ok",
+        "errors": [],
+        "features": [
+          {
+            "slug": "policy-on-demand",
+            "state": "complete",
+            "roadmap": "features/2026/10/policy-on-demand/roadmap.md",
+            "branch": "feature/policy-on-demand",
+            "artifactPr": "#46",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 0,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "preflight-call",
+            "state": "complete",
+            "roadmap": "features/2026/10/preflight-call/roadmap.md",
+            "branch": "feature/preflight-call",
+            "artifactPr": "#47",
+            "requires": [],
+            "recommendedAfter": [],
+            "wave": 1,
+            "computedWave": 1,
+            "order": 1,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "builder-step-cli",
+            "state": "complete",
+            "roadmap": "features/2026/10/builder-step-cli/roadmap.md",
+            "branch": "feature/builder-step-cli",
+            "artifactPr": "#48",
+            "requires": [
+              "preflight-call"
+            ],
+            "recommendedAfter": [],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 2,
+            "blockedBy": [],
+            "ready": false
+          },
+          {
+            "slug": "publish-cli",
+            "state": "complete",
+            "roadmap": "features/2026/10/publish-cli/roadmap.md",
+            "branch": "feature/publish-cli",
+            "artifactPr": "#49",
+            "requires": [
+              "preflight-call"
+            ],
+            "recommendedAfter": [
+              "builder-step-cli"
+            ],
+            "wave": 2,
+            "computedWave": 2,
+            "order": 3,
+            "blockedBy": [],
+            "ready": false
+          }
+        ],
+        "waves": [
+          [
+            "policy-on-demand",
+            "preflight-call"
+          ],
+          [
+            "builder-step-cli",
+            "publish-cli"
+          ]
+        ],
+        "next": null,
+        "done": true,
+        "initiative": {
+          "slug": "spend-reduction",
+          "dir": "initiatives/2026/10/spend-reduction",
+          "breakdown": "initiatives/2026/10/spend-reduction/breakdown.md",
+          "created": "2026-10-11",
+          "lastUpdated": "2026-10-11"
+        },
+        "anomalies": [],
+        "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+        "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+      }
+    }
+  },
+  "metrics": {
+    "status": "ok",
+    "generatedAt": "2026-10-23T21:28:24.197Z",
+    "ref": {
+      "artifacts": "origin/main",
+      "product": "origin/main"
+    },
+    "items": [
+      {
+        "type": "feature",
+        "slug": "mission-control-canvas",
+        "dir": "features/2026/10/mission-control-canvas",
+        "roadmap": "features/2026/10/mission-control-canvas/roadmap.md",
+        "branch": "feature/mission-control-canvas",
+        "status": "in-progress",
+        "ref": "origin/feature/mission-control-canvas",
+        "events": [
+          {
+            "at": "2026-10-23T21:23:52Z",
+            "sha": "9310e5f62ff6892cd5281f09065d690d94b53ef7",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-10-23T21:26:44Z",
+            "sha": "9763aaf4af861a0cf53edcc28180e05a9cb73096",
+            "kind": "status",
+            "value": "in-progress"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-23T21:23:52Z",
+            "end": "2026-10-23T21:26:44Z",
+            "seconds": 172,
+            "open": false
+          },
+          "build": {
+            "start": "2026-10-23T21:26:44Z",
+            "end": null,
+            "seconds": 100,
+            "open": true
+          },
+          "review": null
+        },
+        "cycle": {
+          "start": "2026-10-23T21:23:52Z",
+          "end": null,
+          "seconds": 272,
+          "open": true
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": null,
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "agento-router-skill",
+        "dir": "features/2026/10/agento-router-skill",
+        "roadmap": "features/2026/10/agento-router-skill/roadmap.md",
+        "branch": "feature/agento-router-skill",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-10-16T19:03:42Z",
+            "sha": "9a067427a5a8953ee2410055e68499239506d932",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-10-16T19:06:52Z",
+            "sha": "3021ba8c349e4870a732586d0f2365eabf32b63b",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-17T04:09:23Z",
+            "sha": "5ffaf9206ec963b9ea1369730978b4056ab81d9a",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-17T04:54:31Z",
+            "sha": "31f620bb91f347f99d116d21a4d0eaa45c56c4fd",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-17T05:00:03Z",
+            "sha": "9e0e57e559bb5cae2a8ab7c337e47ffa4a90c433",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-17T05:15:01Z",
+            "sha": "03ef5c66a37e9e2f9725bb3abcb66d41a1d72c71",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-17T05:16:48Z",
+            "sha": "0e1fce1fa9d6574c31120a26c167310379f1b382",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-17T05:30:56Z",
+            "sha": "5699a2253d843866b598f0ea0b0d41a2d52c0ae7",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-17T05:46:20Z",
+            "sha": "faadfb55ef14119a6ce84cb1af6ed1b1f93fc7ff",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-17T05:53:16Z",
+            "sha": "b283df09089e4a41b299331229495db5e30a3040",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-17T06:00:41Z",
+            "sha": "6954342e2d8c320cef8b962cf505bef89f50471a",
+            "kind": "status",
+            "value": "in-review"
+          },
+          {
+            "at": "2026-10-17T06:12:20Z",
+            "sha": "26777b69561ab3237b920ae3b6640c48bcfb4406",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-10-17T06:18:34Z",
+            "sha": "841d2601a7a0a1e9fc90aac0817ce1090ce1c9d9",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-16T19:03:42Z",
+            "end": "2026-10-16T19:06:52Z",
+            "seconds": 190,
+            "open": false
+          },
+          "build": {
+            "start": "2026-10-16T19:06:52Z",
+            "end": "2026-10-17T06:00:41Z",
+            "seconds": 39229,
+            "open": false
+          },
+          "review": {
+            "start": "2026-10-17T06:00:41Z",
+            "end": "2026-10-17T06:18:34Z",
+            "seconds": 1073,
+            "open": false
+          }
+        },
+        "cycle": {
+          "start": "2026-10-16T19:03:42Z",
+          "end": "2026-10-17T06:18:34Z",
+          "seconds": 40492,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 4,
+          "seconds": 4870,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-10-17T06:18:40Z",
+          "sha": "1d6139db3873ee5e9f09c4226253c04a934f1f5b",
+          "pr": 117
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "agents-copilot-models",
+        "dir": "features/2026/10/agents-copilot-models",
+        "roadmap": "features/2026/10/agents-copilot-models/roadmap.md",
+        "branch": "feature/agents-copilot-models",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-10-16T15:13:20Z",
+            "sha": "ff64c759a83a24d59bfa01d4cf0e12468db75cb5",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-10-16T15:17:10Z",
+            "sha": "757b28afb3d4ac6e82a73e359c403acf9910a8a8",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-16T15:19:55Z",
+            "sha": "f5256c41ef1fb27d3b4dd0ec275147f654a38ad0",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-16T16:24:34Z",
+            "sha": "3a3e05c7e01be3bec9849dc05bb2ee7913b0480d",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-16T17:14:54Z",
+            "sha": "79a3495375cfe621466bb11780bcc473b208434c",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-16T18:12:47Z",
+            "sha": "1d364cc5ced1b3857a37c2e19fcb013a21ba85d2",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-16T18:13:53Z",
+            "sha": "26e9457d29ed7b6d1b2e4870bcea4d6aaa916756",
+            "kind": "status",
+            "value": "in-review"
+          },
+          {
+            "at": "2026-10-16T18:25:21Z",
+            "sha": "0a83aa082f36880c8e114acd9279e06f228bca4f",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-10-16T18:43:08Z",
+            "sha": "50ed608a32cd7c0c9745b382641b70beccaf8da8",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-16T15:13:20Z",
+            "end": "2026-10-16T15:17:10Z",
+            "seconds": 230,
+            "open": false
+          },
+          "build": {
+            "start": "2026-10-16T15:17:10Z",
+            "end": "2026-10-16T18:13:53Z",
+            "seconds": 10603,
+            "open": false
+          },
+          "review": {
+            "start": "2026-10-16T18:13:53Z",
+            "end": "2026-10-16T18:43:08Z",
+            "seconds": 1755,
+            "open": false
+          }
+        },
+        "cycle": {
+          "start": "2026-10-16T15:13:20Z",
+          "end": "2026-10-16T18:43:08Z",
+          "seconds": 12588,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 2,
+          "seconds": 7352,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-10-16T18:43:14Z",
+          "sha": "6ee4bdd3ea29de11e270e39008036933f208a082",
+          "pr": 116
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-history-migration",
+        "dir": "features/2026/09/artifact-history-migration",
+        "roadmap": "features/2026/09/artifact-history-migration/roadmap.md",
+        "branch": "feature/artifact-history-migration",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-09-18T19:30:32Z",
+            "sha": "6bf0f090f847be36df0f7fca95b38cb89689068a",
+            "kind": "status",
+            "value": "in-review"
+          },
+          {
+            "at": "2026-09-18T19:41:13Z",
+            "sha": "07051a353c2b3dfd39fe91208961a581193a94ce",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-09-18T20:06:07Z",
+            "sha": "386c0c2d992f33e5c7e342f6fa605d1664464d7e",
+            "kind": "status",
+            "value": "complete"
+          },
+          {
+            "at": "2026-09-18T21:19:46Z",
+            "sha": "5207b26ca1112e90ab91039275bd00e2d6833be5",
+            "kind": "post-ship-tick",
+            "value": "6.4"
+          }
+        ],
+        "phases": {
+          "planned": null,
+          "build": {
+            "start": "2026-09-18T19:06:22Z",
+            "end": "2026-09-18T19:30:32Z",
+            "seconds": 1450,
+            "open": false
+          },
+          "review": {
+            "start": "2026-09-18T19:30:32Z",
+            "end": "2026-09-18T20:06:07Z",
+            "seconds": 2135,
+            "open": false
+          }
+        },
+        "cycle": {
+          "start": "2026-09-18T19:06:22Z",
+          "end": "2026-09-18T20:06:07Z",
+          "seconds": 3585,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-09-18T20:07:21Z",
+          "sha": "1b874bd1753e73bc488e9be7edf5eaeda6dd3008",
+          "pr": 45
+        },
+        "postShip": {
+          "total": 1,
+          "ticked": 1,
+          "lastTickAt": "2026-09-18T21:19:46Z",
+          "latencySeconds": 4345,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-preview-open",
+        "dir": "features/2026/10/artifact-preview-open",
+        "roadmap": "features/2026/10/artifact-preview-open/roadmap.md",
+        "branch": "feature/artifact-preview-open",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-10-09T05:30:26Z",
+            "sha": "041a586c1cee467de3067a82ebd4de104be530e8",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-10-09T05:32:33Z",
+            "sha": "38003b25a2247393777bb0c89041466e41b765e5",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-09T05:42:38Z",
+            "sha": "64e12602e226b6c9cecdf2c540484d4ff8da92d1",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-09T05:51:15Z",
+            "sha": "03814266454be49bb0ec0a75e2a15acbb14eab4c",
+            "kind": "status",
+            "value": "in-review"
+          },
+          {
+            "at": "2026-10-09T05:58:36Z",
+            "sha": "a73f63b078f85456dc7c37eac46c7b542e058857",
+            "kind": "review",
+            "value": "request-changes"
+          },
+          {
+            "at": "2026-10-09T05:58:36Z",
+            "sha": "a73f63b078f85456dc7c37eac46c7b542e058857",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-09T06:11:03Z",
+            "sha": "a09dbf7ca4f04b559a4dcc5d69ebdada75381996",
+            "kind": "status",
+            "value": "paused"
+          },
+          {
+            "at": "2026-10-09T06:14:50Z",
+            "sha": "58bbc0d4f04bac9592e77c82ab8060acebae2543",
+            "kind": "status",
+            "value": "in-review"
+          },
+          {
+            "at": "2026-10-09T06:21:15Z",
+            "sha": "57515fe39ba73a00f62cdf1bf8dc26527917dfb0",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-10-09T06:27:35Z",
+            "sha": "82bb37a7a8c561318609c5d7760ca028c5b8f4e0",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-09T05:30:26Z",
+            "end": "2026-10-09T05:32:33Z",
+            "seconds": 127,
+            "open": false
+          },
+          "build": {
+            "start": "2026-10-09T05:32:33Z",
+            "end": "2026-10-09T05:51:15Z",
+            "seconds": 1122,
+            "open": false
+          },
+          "review": {
+            "start": "2026-10-09T05:51:15Z",
+            "end": "2026-10-09T06:27:35Z",
+            "seconds": 2180,
+            "open": false
+          }
+        },
+        "cycle": {
+          "start": "2026-10-09T05:30:26Z",
+          "end": "2026-10-09T06:27:35Z",
+          "seconds": 3429,
+          "open": false
+        },
+        "reviewRounds": 1,
+        "pauses": {
+          "count": 2,
+          "seconds": 744,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-10-09T06:28:20Z",
+          "sha": "1377a18d93f91c08e108ff2b34d4764333deef94",
+          "pr": 100
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-repo-config",
+        "dir": "features/2026/09/artifact-repo-config",
+        "roadmap": "features/2026/09/artifact-repo-config/roadmap.md",
+        "branch": "feature/artifact-repo-config",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": null,
+          "build": null,
+          "review": null
+        },
+        "cycle": {
+          "start": "2026-09-18T19:06:22Z",
+          "end": "2026-09-18T19:06:22Z",
+          "seconds": 0,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-09-16T05:21:32Z",
+          "sha": "fc380e8149ae3db068e44db5d07a5ca9584338e3",
+          "pr": 39
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": [
+          "no in-progress transition",
+          "no in-review transition"
+        ]
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-repo-hooks",
+        "dir": "features/2026/09/artifact-repo-hooks",
+        "roadmap": "features/2026/09/artifact-repo-hooks/roadmap.md",
+        "branch": "feature/artifact-repo-hooks",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": null,
+          "build": null,
+          "review": null
+        },
+        "cycle": {
+          "start": "2026-09-18T19:06:22Z",
+          "end": "2026-09-18T19:06:22Z",
+          "seconds": 0,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-09-16T22:29:17Z",
+          "sha": "a6d290375d95d6ea11530e70cc5f1b5792344838",
+          "pr": 41
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": [
+          "no in-progress transition",
+          "no in-review transition"
+        ]
+      },
+      {
+        "type": "feature",
+        "slug": "artifact-repo-init",
+        "dir": "features/2026/09/artifact-repo-init",
+        "roadmap": "features/2026/09/artifact-repo-init/roadmap.md",
+        "branch": "feature/artifact-repo-init",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-09-18T19:06:22Z",
+            "sha": "d9a0dfc1c0d6ffe6e0778e5dcf7225f5b7b58b3f",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": null,
+          "build": null,
+          "review": null
+        },
+        "cycle": {
+          "start": "2026-09-18T19:06:22Z",
+          "end": "2026-09-18T19:06:22Z",
+          "seconds": 0,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-09-16T07:27:46Z",
+          "sha": "311e8d75c67f62acf95edfdec4e16073c84b9487",
+          "pr": 40
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": [
+          "no in-progress transition",
+          "no in-review transition"
+        ]
+      },
+      {
+        "type": "issue",
+        "slug": "autopilot-in-review-handoff",
+        "dir": "issues/2026/09/autopilot-in-review-handoff",
+        "roadmap": "issues/2026/09/autopilot-in-review-handoff/roadmap.md",
+        "branch": "issue/autopilot-in-review-handoff",
+        "status": "complete",
+        "ref": "origin/main",
+        "events": [
+          {
+            "at": "2026-09-20T19:25:28Z",
+            "sha": "321e188f857c7fc1b90072b0343ddff862f89fc2",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-09-20T19:33:19Z",
+            "sha": "d4f75f6109d50cc207304d63b043e07431fb6c51",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-09-20T20:07:17Z",
+            "sha": "344fe686398f470f6d428aa2769d6b74612d0096",
+            "kind": "status",
+            "value": "in-review"
+          },
+          {
+            "at": "2026-09-20T20:10:54Z",
+            "sha": "9d01c5eb7affe232e188e4ed4aba46776b09bf62",
+            "kind": "review",
+            "value": "approve"
+          },
+          {
+            "at": "2026-09-20T20:15:42Z",
+            "sha": "899c5824234a6b096e5033c3f269654b05d6a438",
+            "kind": "status",
+            "value": "complete"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-09-20T19:25:28Z",
+            "end": "2026-09-20T19:33:19Z",
+            "seconds": 471,
+            "open": false
+          },
+          "build": {
+            "start": "2026-09-20T19:33:19Z",
+            "end": "2026-09-20T20:07:17Z",
+            "seconds": 2038,
+            "open": false
+          },
+          "review": {
+            "start": "2026-09-20T20:07:17Z",
+            "end": "2026-09-20T20:15:42Z",
+            "seconds": 505,
+            "open": false
+          }
+        },
+        "cycle": {
+          "start": "2026-09-20T19:25:28Z",
+          "end": "2026-09-20T20:15:42Z",
+          "seconds": 3014,
+          "open": false
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": {
+          "at": "2026-09-20T20:15:55Z",
+          "sha": "3e2c073ee7c81f9274f78f265e01f07db82b8111",
+          "pr": 61
+        },
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "canvas-planning-fixture",
+        "dir": "features/2026/11/canvas-planning-fixture",
+        "roadmap": "features/2026/11/canvas-planning-fixture/roadmap.md",
+        "branch": "feature/canvas-planning-fixture",
+        "status": "planned",
+        "ref": "feature/canvas-planning-fixture",
+        "events": [
+          {
+            "at": "2026-10-20T12:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "planned"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-20T12:00:00Z",
+            "end": null,
+            "seconds": 7200,
+            "open": true
+          },
+          "build": null,
+          "review": null
+        },
+        "cycle": {
+          "start": "2026-10-20T12:00:00Z",
+          "end": null,
+          "seconds": 7200,
+          "open": true
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": null,
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "canvas-paused-fixture",
+        "dir": "features/2026/11/canvas-paused-fixture",
+        "roadmap": "features/2026/11/canvas-paused-fixture/roadmap.md",
+        "branch": "feature/canvas-paused-fixture",
+        "status": "paused",
+        "ref": "feature/canvas-paused-fixture",
+        "events": [
+          {
+            "at": "2026-10-20T12:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-10-20T13:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-21T09:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "paused"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-20T12:00:00Z",
+            "end": "2026-10-20T13:00:00Z",
+            "seconds": 3600,
+            "open": false
+          },
+          "build": {
+            "start": "2026-10-20T13:00:00Z",
+            "end": null,
+            "seconds": 72000,
+            "open": true
+          },
+          "review": null
+        },
+        "cycle": {
+          "start": "2026-10-20T12:00:00Z",
+          "end": null,
+          "seconds": 7200,
+          "open": true
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 1,
+          "seconds": 72000,
+          "open": true
+        },
+        "merged": null,
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      },
+      {
+        "type": "feature",
+        "slug": "canvas-review-fixture",
+        "dir": "features/2026/11/canvas-review-fixture",
+        "roadmap": "features/2026/11/canvas-review-fixture/roadmap.md",
+        "branch": "feature/canvas-review-fixture",
+        "status": "in-review",
+        "ref": "feature/canvas-review-fixture",
+        "events": [
+          {
+            "at": "2026-10-20T12:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "planned"
+          },
+          {
+            "at": "2026-10-20T13:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "in-progress"
+          },
+          {
+            "at": "2026-10-22T09:00:00Z",
+            "sha": "fixture",
+            "kind": "status",
+            "value": "in-review"
+          }
+        ],
+        "phases": {
+          "planned": {
+            "start": "2026-10-20T12:00:00Z",
+            "end": "2026-10-20T13:00:00Z",
+            "seconds": 3600,
+            "open": false
+          },
+          "build": {
+            "start": "2026-10-20T13:00:00Z",
+            "end": "2026-10-22T09:00:00Z",
+            "seconds": 158400,
+            "open": false
+          },
+          "review": {
+            "start": "2026-10-22T09:00:00Z",
+            "end": null,
+            "seconds": 86400,
+            "open": true
+          }
+        },
+        "cycle": {
+          "start": "2026-10-20T12:00:00Z",
+          "end": null,
+          "seconds": 7200,
+          "open": true
+        },
+        "reviewRounds": 0,
+        "pauses": {
+          "count": 0,
+          "seconds": 0,
+          "open": false
+        },
+        "merged": null,
+        "postShip": {
+          "total": 0,
+          "ticked": 0,
+          "lastTickAt": null,
+          "latencySeconds": null,
+          "pending": false
+        },
+        "warnings": []
+      }
+    ],
+    "aggregate": {
+      "count": 12,
+      "complete": 8,
+      "median": {
+        "plannedSeconds": 230,
+        "buildSeconds": 6320.5,
+        "reviewSeconds": 1755,
+        "cycleSeconds": 3221.5,
+        "pauseSeconds": 4870,
+        "reviewRounds": 0,
+        "postShipLatencySeconds": 4345
+      }
+    },
+    "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+    "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+  },
+  "timings": {
+    "initiatives": 112,
+    "session": 18,
+    "doctor": 4,
+    "deliveries": 88,
+    "metrics": 16,
+    "total": 965
+  },
+  "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+  "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+}

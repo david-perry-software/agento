@@ -403,6 +403,16 @@ without a review).
 Harvests `## Follow-ups` from shipped reviews and roadmaps, files them as GitHub
 issues, and annotates the source lines so re-runs skip them.
 
+```text
+/agento mission-control
+```
+
+Opens **Mission Control**, the read + dispatch canvas beside the chat: a delivery
+kanban, an initiative wave graph, a timeline, a worktree and window map, and a live
+activity feed. Its buttons dispatch only the commands the CLI allows in the current
+window, and the agent can drive it with `refresh`, `focus`, `get_snapshot`, and
+`post_note`.
+
 ## Lighter tiers
 
 **`/agento quick-fix <description>`** — primary window, on `main`, clean tree. Branches to
@@ -439,6 +449,7 @@ Mechanic.
 | `/agento start-freehand [slug]` · `/agento finish-freehand` | primary · secondary | default | Scratch worktree without artifacts; publish it |
 | `/agento commit-current-changes` | any | default | Commit current tree via `changes/*` PR and merge |
 | `/agento delivery-status [filter]` | any | default | Read-only dashboard |
+| `/agento mission-control` | any | default | Open the Mission Control canvas (kanban, wave graph, timeline, worktree map, live feed); dispatch buttons stay limited to the window's `allowed[]` |
 | `/agento doctor [--for <command>]` | any | default | Read-only environment readiness check with fallbacks |
 | `/agento models [list \| show <name> \| pins [--role primary\|secondary] \| resolve <command> [--role primary\|secondary] \| apply <name> \| clear \| use <name\|none> --role primary\|secondary \| init \| create <name> \| update <name> \| rename <old> <new> \| delete <name> \| alias set <picker> <id> \| alias remove <picker>]` | any | default | Manage model profiles in `~/.config/agento/model-profiles.json` and per-window roles in `model-roles.json` — pin agents and commands to models, resolve the model a command opens on, and create, update, rename, delete, and alias-edit profiles ([docs/model-profiles.md](docs/model-profiles.md)) |
 | `/agento triage-followups [slug]` | primary | default | File follow-ups as issues, annotate sources |

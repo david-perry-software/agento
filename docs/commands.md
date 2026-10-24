@@ -580,6 +580,7 @@ Every command has one spelling, `/agento <name> [args]`. The canonical names are
 - `/agento finish-freehand`
 - `/agento commit-current-changes`
 - `/agento delivery-status`
+- `/agento mission-control`
 - `/agento doctor`
 - `/agento models`
 - `/agento triage-followups`
@@ -607,6 +608,17 @@ user-level router skill (`~/.copilot/skills/agento`, installed by the required
 while Builder and Reviewer run as subagents (`runSubagent` in Local, `task` in
 Copilot). See [architecture.md](architecture.md) "Two harnesses" and
 [copilot-harness.md](copilot-harness.md) "Router skill".
+
+## Mission Control
+
+`/agento mission-control` opens the Mission Control canvas in the current window.
+It is allowed in every window role (like `/agento delivery-status`): opening is
+read-only, and the canvas's dispatch buttons stay limited to that window's
+`allowed[]`. When the session has the `open_canvas` tool it opens canvas
+`agento-mission-control` with `instanceId: mission-control`; otherwise it runs
+`agento.mjs harness status` and explains the prerequisites —
+`chat.canvases.enabled`, a local Copilot-harness session, and the canvas link. Its
+result line's `next:` is `/agento delivery-status`.
 
 ## Receipts
 

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agento Mission Control</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="mc-header">
+    <h1>Agento Mission Control</h1>
+    <p id="status" class="mc-status" role="status" aria-live="polite">Loading…</p>
+  </header>
+
+  <nav class="mc-nav" aria-label="Panels">
+    <ul>
+      <li><a href="#panel-board">Deliveries</a></li>
+      <li><a href="#panel-graph">Initiatives</a></li>
+      <li><a href="#panel-timeline">Timeline</a></li>
+      <li><a href="#panel-worktrees">Worktrees &amp; windows</a></li>
+      <li><a href="#panel-feed">Activity</a></li>
+    </ul>
+  </nav>
+
+  <main id="main">
+    <section id="panel-board" class="mc-panel" role="region" aria-labelledby="board-heading">
+      <h2 id="board-heading">Deliveries</h2>
+      <div id="board"></div>
+    </section>
+    <section id="panel-graph" class="mc-panel" role="region" aria-labelledby="graph-heading">
+      <h2 id="graph-heading">Initiatives</h2>
+      <div id="graph"></div>
+    </section>
+    <section id="panel-timeline" class="mc-panel" role="region" aria-labelledby="timeline-heading">
+      <h2 id="timeline-heading">Timeline</h2>
+      <div id="timeline"></div>
+    </section>
+    <section id="panel-worktrees" class="mc-panel" role="region" aria-labelledby="worktrees-heading">
+      <h2 id="worktrees-heading">Worktrees &amp; windows</h2>
+      <div id="worktrees"></div>
+    </section>
+    <section id="panel-feed" class="mc-panel" role="region" aria-labelledby="feed-heading">
+      <h2 id="feed-heading">Activity</h2>
+      <div id="feed"></div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+  <script type="module" src="/panels/board.js"></script>
+  <script type="module" src="/panels/graph.js"></script>
+  <script type="module" src="/panels/timeline.js"></script>
+  <script type="module" src="/panels/worktrees.js"></script>
+  <script type="module" src="/panels/feed.js"></script>
+</body>
+</html>

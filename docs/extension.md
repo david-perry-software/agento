@@ -303,6 +303,32 @@ A promoted plan worktree (`role: build`) therefore no longer shows New Plan; res
 that delivery's planning through its actions or the `/agento new-feature` /
 `/agento new-issue` resume instead.
 
+## Mission Control
+
+Mission Control is a Copilot SDK **canvas** — an interactive web surface beside the
+chat in local Copilot-harness sessions — complementing the sidebar with five
+vanilla-JS panels: a **delivery kanban** (Planned / Building / In Review / Shipped
+with step-progress rings), an **initiative wave graph** (SVG DAG with `requires` /
+`recommendedAfter` edges and glowing `blockedBy` edges), a **timeline** (phase bands
+and median-cycle markers), a **worktree and window map** (product and companion
+worktrees in role colors), and a **live activity feed**. It is read-only: the canvas
+changes no files.
+
+Dispatch is allow-listed, never free-form: a panel button posts
+`POST /dispatch {command}` to the canvas's `127.0.0.1` server, which accepts it only
+when the Host is the server's own origin, the Origin matches, the body is JSON, and
+the command exactly equals an entry in the live `allowed[]` union. `elsewhere[]`
+commands render disabled with "runs in `<window>` window". The agent can drive the
+canvas with `refresh`, `get_snapshot`, `focus`, and `post_note`.
+
+The Deliveries view gains an **Open Mission Control** title action
+(`agento.openMissionControl`, `$(dashboard)`) that dispatches `/agento
+mission-control` in the current window, and `/agento mission-control` is itself the
+canonical entry point. Both open the canvas with the stable `instanceId:
+mission-control`. The canvas runs only in a local Copilot-harness session with
+`chat.canvases.enabled` on and the harness canvas link installed — see
+[install.md](install.md) and [copilot-harness.md](copilot-harness.md).
+
 ## Companion workspaces
 
 When `.github/agento.json` names `artifacts.repo`, delivery and initiative files live
