@@ -246,6 +246,52 @@ test("open maps a corrupt store to a storage CanvasError", async () => {
   );
 });
 
+test("post_note persists across a real close and a fresh open", async () => {
+  const { normalize, diff } = await import("./snapshot.mjs");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agento-canvas-"));
+  const servers = [];
+  const createCanvas = (decl) => ({ declaration: decl, open: decl.open, onClose: decl.onClose });
+  const canvas = defineMissionControl({
+    createCanvas,
+    CanvasError: FakeCanvasError,
+    deps: {
+      normalize,
+      diff,
+      runDashboard: async () => DASHBOARD,
+      startServer: async () => {
+        const states = [];
+        const srv = {
+          url: `http://127.0.0.1:${servers.length + 1}/`,
+          setState: (state) => states.push(state),
+          broadcast() {},
+          close: async () => {},
+        };
+        servers.push({ srv, states });
+        return srv;
+      },
+      startWatcher: () => ({ stop() {} }),
+      send: async () => {},
+      log: async () => {},
+      copilotHome: () => home,
+      cloneRoot: () => "/primary",
+    },
+  });
+
+  await canvas.open({ instanceId: "p", session: { workingDirectory: "/cwd" } });
+  const postNote = canvas.declaration.actions[3].handler;
+  await postNote({ instanceId: "p", input: { text: "live check" } });
+  await canvas.onClose({ instanceId: "p" });
+
+  const second = await canvas.open({ instanceId: "p", session: { workingDirectory: "/cwd" } });
+  assert.equal(second.status, "live", "a fresh open after onClose is a new live instance");
+  assert.equal(servers.length, 2, "a second server starts");
+  const firstState = servers[1].states[0];
+  const feed = Array.isArray(firstState?.feed) ? firstState.feed : [];
+  assert.ok(feed.some((entry) => entry?.text === "live check"), "the persisted note is in the first setState feed");
+
+  await canvas.onClose({ instanceId: "p" });
+});
+
 test("a failed background refresh is logged and the instance keeps working", async () => {
   const { normalize, diff } = await import("./snapshot.mjs");
   const { startWatcher: realStartWatcher } = await import("./watch.mjs");
