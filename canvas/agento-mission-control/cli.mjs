@@ -39,23 +39,33 @@ export function cloneRoot(fromUrl = import.meta.url) {
 // The in-flight coalescer, keyed by the effective invocation identity.
 const inFlight = new Map();
 
-function runOnce({ executable, script, args, cwd, timeoutMs }) {
+function runOnce({ executable, script, args, cwd, timeoutMs, jsonOnExit = false }) {
+  const label = args[0] ?? "cli";
   return new Promise((resolve, reject) => {
     execFile(executable, [script, ...args], { cwd, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) {
         if (err?.code === "ENOENT") {
-          reject(new CliError("spawn", `dashboard runner not found: ${script}`, err));
+          reject(new CliError("spawn", `${label} runner not found: ${script}`, err));
         } else if (err?.killed || err?.signal === "SIGTERM") {
-          reject(new CliError("timeout", `dashboard timed out after ${timeoutMs} ms`, err));
+          reject(new CliError("timeout", `${label} timed out after ${timeoutMs} ms`, err));
         } else {
-          reject(new CliError("exit", `dashboard exited ${err?.code ?? err?.status ?? "unknown"}: ${(stderr ?? "").trim()}`, err));
+          // Commands that report a refusal as JSON on a non-zero exit (handoff: 3).
+          if (jsonOnExit) {
+            try {
+              resolve(JSON.parse(stdout));
+              return;
+            } catch {
+              // not JSON; report the exit below
+            }
+          }
+          reject(new CliError("exit", `${label} exited ${err?.code ?? err?.status ?? "unknown"}: ${(stderr ?? "").trim()}`, err));
         }
         return;
       }
       try {
         resolve(JSON.parse(stdout));
       } catch (parseErr) {
-        reject(new CliError("parse", "dashboard returned invalid JSON", parseErr));
+        reject(new CliError("parse", `${label} returned invalid JSON`, parseErr));
       }
     });
   });
@@ -81,4 +91,34 @@ export function runDashboard(options = {}) {
   });
   inFlight.set(key, pending);
   return pending;
+}
+
+export const WINDOWS_TIMEOUT_MS = 20_000;
+export const HANDOFF_TIMEOUT_MS = 30_000;
+
+function cliScript({ script = null, clone = null }) {
+  return script ?? path.join(clone ?? cloneRoot(), "scripts", "agento.mjs");
+}
+
+// `agento.mjs windows <checkout>...`: [{ checkout, known, open, target, kind }].
+export async function runWindows(checkouts, options = {}) {
+  const { cwd = process.cwd(), executable = process.execPath, timeoutMs = WINDOWS_TIMEOUT_MS } = options;
+  const result = await runOnce({ executable, script: cliScript(options), args: ["windows", ...checkouts], cwd, timeoutMs });
+  return Array.isArray(result?.windows) ? result.windows : [];
+}
+
+// `agento.mjs handoff <checkout> "<command>"`: the CLI's JSON, including its
+// `rejected` / `failed` refusals (exit 3), which resolve rather than throw.
+export function runHandoff({ checkout, command }, options = {}) {
+  const { cwd = process.cwd(), executable = process.execPath, timeoutMs = HANDOFF_TIMEOUT_MS } = options;
+  return runOnce({ executable, script: cliScript(options), args: ["handoff", checkout, command], cwd, timeoutMs, jsonOnExit: true });
+}
+
+export const ARTIFACTS_TIMEOUT_MS = 20_000;
+
+// `agento.mjs artifacts <type> <slug>`: { status, source, files: { plan, roadmap,
+// review } }; `missing` (exit 3) resolves rather than throws.
+export function runArtifacts({ type, slug }, options = {}) {
+  const { cwd = process.cwd(), executable = process.execPath, timeoutMs = ARTIFACTS_TIMEOUT_MS } = options;
+  return runOnce({ executable, script: cliScript(options), args: ["artifacts", type, slug], cwd, timeoutMs, jsonOnExit: true });
 }

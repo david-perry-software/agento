@@ -332,3 +332,82 @@ test("a failed background refresh is logged and the instance keeps working", asy
     await canvas.onClose({ instanceId: "bg" });
   }
 });
+
+test("open wires windows (cached) and handoff (clears the cache) to the CLI in the session cwd", async () => {
+  const { normalize, diff } = await import("./snapshot.mjs");
+  let serverOptions = null;
+  const windowsCalls = [];
+  const handoffCalls = [];
+  const canvas = defineMissionControl({
+    createCanvas: (decl) => ({ declaration: decl, open: decl.open, onClose: decl.onClose }),
+    CanvasError: FakeCanvasError,
+    deps: {
+      normalize,
+      diff,
+      runDashboard: async () => DASHBOARD,
+      runWindows: async (checkouts, options) => (windowsCalls.push([checkouts, options.cwd]), checkouts.map((checkout) => ({ checkout, open: true }))),
+      runHandoff: async (args, options) => (handoffCalls.push([args, options.cwd]), { status: "ok", target: "/primary.code-workspace" }),
+      startServer: async (options) => {
+        serverOptions = options;
+        return { url: "http://127.0.0.1:1/", setState() {}, broadcast() {}, close: async () => {} };
+      },
+      startWatcher: () => ({ stop() {} }),
+      send: async () => {},
+      log: async () => {},
+      copilotHome: () => fs.mkdtempSync(path.join(os.tmpdir(), "agento-canvas-")),
+      cloneRoot: () => "/primary",
+    },
+  });
+  await canvas.open({ instanceId: "w", session: { workingDirectory: "/session-cwd" } });
+
+  await serverOptions.windows(["/a", "/b"]);
+  await serverOptions.windows(["/b", "/a"]);
+  assert.equal(windowsCalls.length, 1, "the same checkouts within the cache window reuse the answer");
+  assert.deepEqual(windowsCalls[0], [["/a", "/b"], "/session-cwd"]);
+
+  const result = await serverOptions.handoff({ checkout: "/primary", command: "/agento ship widget" });
+  assert.equal(result.status, "ok");
+  assert.deepEqual(handoffCalls, [[{ checkout: "/primary", command: "/agento ship widget" }, "/session-cwd"]]);
+  await serverOptions.windows(["/a", "/b"]);
+  assert.equal(windowsCalls.length, 2, "a handoff clears the cache: it just opened or focused a window");
+  await canvas.onClose({ instanceId: "w" });
+});
+
+test("open wires artifacts with a per-delivery cache that a refresh clears", async () => {
+  const { normalize, diff } = await import("./snapshot.mjs");
+  let serverOptions = null;
+  const calls = [];
+  let watcherOnChange = null;
+  const canvas = defineMissionControl({
+    createCanvas: (decl) => ({ declaration: decl, open: decl.open, onClose: decl.onClose }),
+    CanvasError: FakeCanvasError,
+    deps: {
+      normalize,
+      diff,
+      runDashboard: async () => DASHBOARD,
+      runArtifacts: async (args, options) => (calls.push([args, options.cwd]), { status: "ok", files: {} }),
+      startServer: async (options) => {
+        serverOptions = options;
+        return { url: "http://127.0.0.1:1/", setState() {}, broadcast() {}, close: async () => {} };
+      },
+      startWatcher: ({ onChange }) => {
+        watcherOnChange = onChange;
+        return { stop() {} };
+      },
+      send: async () => {},
+      log: async () => {},
+      copilotHome: () => fs.mkdtempSync(path.join(os.tmpdir(), "agento-canvas-")),
+      cloneRoot: () => "/primary",
+    },
+  });
+  await canvas.open({ instanceId: "a", session: { workingDirectory: "/session-cwd" } });
+  await serverOptions.artifacts({ type: "feature", slug: "widget" });
+  await serverOptions.artifacts({ type: "feature", slug: "widget" });
+  assert.deepEqual(calls, [[{ type: "feature", slug: "widget" }, "/session-cwd"]]);
+  await serverOptions.artifacts({ type: "issue", slug: "widget" });
+  assert.equal(calls.length, 2, "type and slug both key the cache");
+  await watcherOnChange({ pr: false });
+  await serverOptions.artifacts({ type: "feature", slug: "widget" });
+  assert.equal(calls.length, 3, "a refresh drops cached artifacts");
+  await canvas.onClose({ instanceId: "a" });
+});

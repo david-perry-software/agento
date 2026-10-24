@@ -614,7 +614,9 @@ Copilot). See [architecture.md](architecture.md) "Two harnesses" and
 `/agento mission-control` opens the Mission Control canvas in the current window.
 It is allowed in every window role (like `/agento delivery-status`): opening is
 read-only, and the canvas's dispatch buttons stay limited to that window's
-`allowed[]`. When the session has the `open_canvas` tool it opens canvas
+`allowed[]`; a command another window runs is shown greyed with a handoff button that
+opens or focuses that window and queues the command there (`agento.mjs handoff`).
+When the session has the `open_canvas` tool it opens canvas
 `agento-mission-control` with `instanceId: mission-control`; otherwise it runs
 `agento.mjs harness status` and explains the prerequisites —
 `chat.canvases.enabled`, a local Copilot-harness session, and the canvas link. Its

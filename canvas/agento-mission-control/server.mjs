@@ -6,6 +6,9 @@
 //   GET  /events     server-sent events (`state`, `focus`, `note`)
 //   POST /refresh    re-run the dashboard and push the new state to clients
 //   POST /dispatch   push exactly one prompt into the chat, if allowed
+//   GET  /windows    which handoff target windows are open (open vs. switch labels)
+//   POST /handoff    queue a greyed command for its window and open or focus it
+//   GET  /artifacts?slug=<slug>   that delivery's plan.md / roadmap.md / review.md text
 //
 // Dispatch safety (see plan.md "Dispatch safety"): a command is accepted only when
 // the Host is exactly `127.0.0.1:<port>` (blocks DNS rebinding), the Origin is the
@@ -13,11 +16,16 @@
 // matches an entry in the live allowed union. OPTIONS is refused, so a cross-site
 // preflight never reaches the handler. Static files are served only from `public/`
 // with no path traversal. Every rendered value is escaped by the client.
+// Handoff applies the same request checks; the command must be one of the live
+// state's handoff targets (public/actions.js `handoffTargets`), and the checkout
+// is taken from there — the request never names a path.
 
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { handoffTargets } from "./public/actions.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +49,18 @@ function originFor(port) {
 function respond(res, status, body, headers = {}) {
   res.writeHead(status, headers);
   res.end(body);
+}
+
+const JSON_TYPE = { "content-type": "application/json; charset=utf-8" };
+
+// The request checks every state-changing POST applies: exact Host (DNS
+// rebinding), same Origin (cross-site), and a JSON body (no simple-form CSRF).
+function writeRequestErrors(req, host, port) {
+  const errors = [];
+  if (host !== `127.0.0.1:${port}`) errors.push("host");
+  if ((req.headers.origin ?? "") !== originFor(port)) errors.push("origin");
+  if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) errors.push("content-type");
+  return errors;
 }
 
 function readBody(req, limit = 64 * 1024) {
@@ -87,7 +107,7 @@ function serveStatic(publicDir, reqUrl, res) {
   respond(res, 200, fs.readFileSync(target), { "content-type": type, "cache-control": "no-cache" });
 }
 
-export function startServer({ publicDir = defaultPublicDir(), send = null, onRefresh = null, log = () => {}, port: requestedPort = 0, onExtra = null } = {}) {
+export function startServer({ publicDir = defaultPublicDir(), send = null, onRefresh = null, windows = null, handoff = null, artifacts = null, log = () => {}, port: requestedPort = 0, onExtra = null } = {}) {
   let state = { allowed: [] };
   let port = 0;
   const clients = new Set();
@@ -150,12 +170,7 @@ export function startServer({ publicDir = defaultPublicDir(), send = null, onRef
     }
 
     if (req.method === "POST" && url.pathname === "/dispatch") {
-      const errors = [];
-      if (host !== `127.0.0.1:${port}`) errors.push("host");
-      const origin = req.headers.origin ?? "";
-      if (origin !== originFor(port)) errors.push("origin");
-      const contentType = (req.headers["content-type"] ?? "").toLowerCase();
-      if (!contentType.startsWith("application/json")) errors.push("content-type");
+      const errors = writeRequestErrors(req, host, port);
       if (errors.length) {
         respond(res, 403, JSON.stringify({ ok: false, errors }), { "content-type": "application/json; charset=utf-8" });
         return;
@@ -193,6 +208,104 @@ export function startServer({ publicDir = defaultPublicDir(), send = null, onRef
         respond(res, 204, "", {});
       } catch (err) {
         respond(res, 500, JSON.stringify({ ok: false, error: String(err?.message ?? err) }), { "content-type": "application/json; charset=utf-8" });
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/artifacts") {
+      if (host !== `127.0.0.1:${port}`) {
+        respond(res, 403, JSON.stringify({ ok: false, errors: ["host"] }), JSON_TYPE);
+        return;
+      }
+      // Only a delivery on the live board; its type comes from the state too.
+      const slug = url.searchParams.get("slug") ?? "";
+      const card = (state?.cards ?? []).find((c) => c?.slug === slug);
+      if (!card) {
+        respond(res, 404, JSON.stringify({ ok: false, errors: ["slug"] }), JSON_TYPE);
+        return;
+      }
+      if (typeof artifacts !== "function") {
+        respond(res, 501, JSON.stringify({ ok: false, errors: ["artifacts"] }), JSON_TYPE);
+        return;
+      }
+      try {
+        const result = await artifacts({ type: card.type === "issue" ? "issue" : "feature", slug });
+        const files = {};
+        for (const name of ["plan", "roadmap", "review"]) {
+          const file = result?.files?.[name];
+          files[name] = file?.exists && typeof file.content === "string" ? { exists: true, content: file.content } : { exists: false };
+        }
+        respond(res, 200, JSON.stringify({
+          ok: result?.status === "ok",
+          slug,
+          source: result?.source ?? null,
+          ref: result?.ref ?? null,
+          message: result?.status === "ok" ? undefined : String(result?.message ?? "artifacts unavailable"),
+          files,
+        }), { ...JSON_TYPE, "cache-control": "no-cache" });
+      } catch (err) {
+        respond(res, 500, JSON.stringify({ ok: false, error: String(err?.message ?? err) }), JSON_TYPE);
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/windows") {
+      if (host !== `127.0.0.1:${port}`) {
+        respond(res, 403, JSON.stringify({ ok: false, errors: ["host"] }), JSON_TYPE);
+        return;
+      }
+      if (typeof windows !== "function") {
+        respond(res, 501, JSON.stringify({ ok: false, errors: ["windows"] }), JSON_TYPE);
+        return;
+      }
+      const checkouts = [...new Set([...handoffTargets(state).values()].map((t) => t.checkout))];
+      try {
+        const found = checkouts.length ? await windows(checkouts) : [];
+        const byCheckout = {};
+        for (const w of found ?? []) if (w?.checkout) byCheckout[w.checkout] = { open: Boolean(w.open), target: w.target ?? null };
+        respond(res, 200, JSON.stringify({ ok: true, windows: byCheckout }), { ...JSON_TYPE, "cache-control": "no-cache" });
+      } catch (err) {
+        respond(res, 500, JSON.stringify({ ok: false, error: String(err?.message ?? err) }), JSON_TYPE);
+      }
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/handoff") {
+      const errors = writeRequestErrors(req, host, port);
+      if (errors.length) {
+        respond(res, 403, JSON.stringify({ ok: false, errors }), JSON_TYPE);
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(await readBody(req));
+      } catch {
+        respond(res, 400, JSON.stringify({ ok: false, errors: ["json"] }), JSON_TYPE);
+        return;
+      }
+      const command = parsed?.command;
+      const target = typeof command === "string" ? handoffTargets(state).get(command) : undefined;
+      if (!target) {
+        respond(res, 403, JSON.stringify({ ok: false, errors: ["command"] }), JSON_TYPE);
+        return;
+      }
+      if (typeof handoff !== "function") {
+        respond(res, 501, JSON.stringify({ ok: false, errors: ["handoff"] }), JSON_TYPE);
+        return;
+      }
+      try {
+        const result = await handoff({ checkout: target.checkout, command });
+        const ok = result?.status === "ok";
+        respond(res, ok ? 200 : 502, JSON.stringify({
+          ok,
+          command,
+          windowName: target.windowName,
+          wasOpen: Boolean(result?.wasOpen),
+          opened: Boolean(result?.opened),
+          error: ok ? undefined : String(result?.reason ?? result?.message ?? "handoff failed"),
+        }), JSON_TYPE);
+      } catch (err) {
+        respond(res, 500, JSON.stringify({ ok: false, error: String(err?.message ?? err) }), JSON_TYPE);
       }
       return;
     }

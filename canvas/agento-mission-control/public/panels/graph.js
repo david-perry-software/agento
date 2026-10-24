@@ -4,7 +4,7 @@
 // members get a "Plan" button only when `/agento new-feature` is in the live
 // allowed union; clicking it dispatches `/agento new-feature`.
 
-import { escapeHtml, registerPanel, dispatch } from "/app.js";
+import { deliveryHref, escapeHtml, registerPanel, dispatch } from "/app.js";
 
 const NODE_W = 150;
 const NODE_H = 44;
@@ -49,7 +49,7 @@ function edgeMarkup(edge, positions) {
   return `<line class="${cls}" x1="${from.x + NODE_W}" y1="${from.y + NODE_H / 2}" x2="${to.x}" y2="${to.y + NODE_H / 2}"></line>`;
 }
 
-function nodeMarkup(node, pos, { initiative, planAllowed }) {
+function nodeMarkup(node, pos, { initiative, planAllowed, deliveries }) {
   const classes = ["mc-node"];
   if (initiative.next != null && initiative.next === node.slug) classes.push("mc-node-next");
   const plan = node.ready && planAllowed
@@ -60,17 +60,19 @@ function nodeMarkup(node, pos, { initiative, planAllowed }) {
     : "";
   return `<g class="${classes.join(" ")}" data-slug="${escapeHtml(node.slug)}" transform="translate(${pos.x}, ${pos.y})">
     <rect class="mc-node-rect" width="${NODE_W}" height="${NODE_H}" rx="6"></rect>
-    <text class="mc-node-text" x="8" y="${NODE_H / 2 + 4}">${escapeHtml(node.slug)}</text>
+    ${deliveries.has(node.slug)
+      ? `<a class="mc-node-link" href="${escapeHtml(deliveryHref(node.slug))}" aria-label="Open delivery ${escapeHtml(node.slug)}"><text class="mc-node-text" x="8" y="${NODE_H / 2 + 4}">${escapeHtml(node.slug)}</text></a>`
+      : `<text class="mc-node-text" x="8" y="${NODE_H / 2 + 4}">${escapeHtml(node.slug)}</text>`}
     ${plan}
   </g>`;
 }
 
-function initiativeMarkup(initiative, planAllowed) {
+function initiativeMarkup(initiative, planAllowed, deliveries) {
   const { waves, positions, width, height } = layout(initiative.nodes);
   const edges = (initiative.edges ?? []).map((edge) => edgeMarkup(edge, positions)).join("");
   const nodes = (initiative.nodes ?? []).map((node) => {
     const pos = positions.get(node.slug);
-    return pos ? nodeMarkup(node, pos, { initiative, planAllowed }) : "";
+    return pos ? nodeMarkup(node, pos, { initiative, planAllowed, deliveries }) : "";
   }).join("");
   return `<section class="mc-graph" data-initiative="${escapeHtml(initiative.slug)}" aria-label="Initiative ${escapeHtml(initiative.slug)} wave graph">
     <h3 class="mc-graph-heading">${escapeHtml(initiative.slug)}</h3>
@@ -86,7 +88,9 @@ function render(state) {
   root.className = "mc-graphs";
   const planAllowed = Array.isArray(state.allowed) && state.allowed.includes("/agento new-feature");
   const initiatives = state.initiatives ?? [];
-  root.innerHTML = initiatives.map((initiative) => initiativeMarkup(initiative, planAllowed)).join("");
+  // Members with a delivery on the board link to its page; unplanned members do not.
+  const deliveries = new Set((state.cards ?? []).map((card) => card.slug));
+  root.innerHTML = initiatives.map((initiative) => initiativeMarkup(initiative, planAllowed, deliveries)).join("");
 
   const status = document.getElementById("status");
   root.querySelectorAll(".mc-plan").forEach((button) => {

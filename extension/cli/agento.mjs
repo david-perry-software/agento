@@ -24,6 +24,9 @@
 //   node scripts/agento.mjs initiative [<slug>]
 //   node scripts/agento.mjs metrics [<slug>]           (phase durations, review rounds, pauses, merge date, post-ship latency from git history; + aggregate medians)
 //   node scripts/agento.mjs session [--pr]             (role, worktree, worktrees, companion, workspace, delivery, lifecycle, allowed; hosted flag; --pr adds pr + companionPr)
+//   node scripts/agento.mjs windows <checkout>...      (per registered checkout: the VS Code window holding it — storage.json + code --status — open flag, and the workspace file or folder to open)
+//   node scripts/agento.mjs artifacts <feature|issue> <slug>   (plan.md, roadmap.md, review.md contents from the copy status shows — the delivery's managed half or the artifacts checkout — else origin/<branch> or the local branch; exit 3 missing)
+//   node scripts/agento.mjs handoff <checkout> "<command>" [--no-open]   (queue one /agento command in <agento-config>/pending-dispatch for that checkout's window, then code <target> to focus or open it; the extension there runs it)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
@@ -55,6 +58,8 @@ import {
 import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
 import { AGENT_ALIASES, aliasErrors, byokTierWarning, createProfile, deleteProfile, detectActive, differsBeyondModel, errorsFor, frontmatterField, handoffModelLines, handoffTargets, isPinnablePrompt, missingAliasWarning, parseModelValue, parseProfiles, parseRoles, profilesFile, profilesHash, readModel, removeAlias, renameProfile, replaceProfile, resolveTargets, roleBucket, rolesFile, serializeProfiles, serializeRoles, setAlias, setHandoffModels, setModel, splitQualified, unqualifiedWarning } from "./model-profiles.mjs";
 import { cleanText } from "./model-filter.mjs";
+import { isCanonicalAgentoCommand, pendingDispatchDir, removePendingDispatch, writePendingDispatch } from "./pending-dispatch.mjs";
+import { openWindows, readStorage, windowFor } from "./vscode-windows.mjs";
 import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
 import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
@@ -616,6 +621,10 @@ function describeFromRef(ref, roadmap, type, g = agit) {
 // `branch:` header equals its base's checked-out branch (that delivery's own half is
 // its truth); else the artifacts root's copy; else the first base listed. Null and
 // missing bases are skipped, so `[]` is today's behaviour in the in-repo layout.
+// The base directory each `allRoadmaps` record was read from (a managed half or the
+// artifacts root), kept off the record so its shape stays the status contract.
+const recordBases = new WeakMap();
+
 function allRoadmaps(typeFilter, halves = []) {
   const bases = [];
   for (const base of [...halves, artifactsRoot]) {
@@ -630,6 +639,7 @@ function allRoadmaps(typeFilter, halves = []) {
       const top = path.join(base, type === "feature" ? config.artifacts.features : config.artifacts.issues);
       for (const file of walkRoadmaps(top)) {
         const record = describe(file, type, base);
+        recordBases.set(record, base);
         baseBranch ??= git(base, "branch", "--show-current");
         const entry = { record, matched: Boolean(baseBranch) && record.branch === baseBranch, isRoot };
         const list = candidates.get(record.roadmap);
@@ -1794,6 +1804,100 @@ function startSession() {
     }
   }
   finish();
+}
+
+// --- artifacts -------------------------------------------------------------
+
+const ARTIFACT_FILES = ["plan", "roadmap", "review"];
+
+// One delivery's plan.md, roadmap.md, and review.md, read from the copy `status`
+// shows: the delivery's own managed half (its working tree is the truth) or the
+// artifacts checkout; else origin/<branch> or the local branch via git. Never fetches.
+function artifactsCommand(type, slug) {
+  const record = allRoadmaps(type, managedHalves(productWorktrees())).find((r) => r.slug === slug);
+  const out = { status: "ok", type, slug, dir: null, source: null, base: null, ref: null, files: {} };
+  if (record) {
+    const base = recordBases.get(record) ?? artifactsRoot;
+    Object.assign(out, { dir: record.dir, source: samePath(base, artifactsRoot) ? "checkout" : "worktree", base });
+    for (const name of ARTIFACT_FILES) {
+      const file = path.join(base, record.dir, `${name}.md`);
+      out.files[name] = fs.existsSync(file) ? { exists: true, path: file, content: fs.readFileSync(file, "utf8") } : { exists: false };
+    }
+    emit(out);
+  }
+  const onBranch = roadmapOnBranch(type, slug);
+  if (!onBranch) {
+    emit({ ...out, status: "missing", message: `No roadmap for ${type}/${slug} in the artifacts checkout, a managed worktree, origin/${deliveryBranch(type, slug)}, or the local branch` }, 3);
+  }
+  const ref = onBranch.source === "origin" ? `origin/${onBranch.record.branch}` : onBranch.record.branch;
+  Object.assign(out, { dir: onBranch.record.dir, source: onBranch.source, ref, base: onBranch.layout.artifactsRoot ?? artifactsRoot });
+  for (const name of ARTIFACT_FILES) {
+    const content = onBranch.layout.agit("show", `${ref}:${onBranch.record.dir}/${name}.md`);
+    out.files[name] = content ? { exists: true, path: null, content: `${content}\n` } : { exists: false };
+  }
+  emit(out);
+}
+
+// --- windows / handoff -----------------------------------------------------
+
+// The registered product checkouts a window target may name, keyed by resolved
+// path, with the target to open when no window holds one (its session workspace
+// file in companion mode, else the folder).
+function windowCheckouts() {
+  const { classified, sessionWorktreesDir } = sessionContext();
+  const checkouts = new Map();
+  for (const entry of classified) {
+    if ((entry.repo ?? "product") !== "product" || !entry.path) continue;
+    const workspace = describeWorkspace(entry, sessionWorktreesDir);
+    checkouts.set(path.resolve(entry.path), { entry, fallback: workspace?.exists ? workspace.path : entry.path });
+  }
+  return checkouts;
+}
+
+function windowsCommand(paths) {
+  if (!paths.length) usage("windows takes one or more checkout paths");
+  const checkouts = windowCheckouts();
+  const open = openWindows({ storageText: readStorage(), statusText: defaultCodeStatus() });
+  const windows = paths.map((p) => {
+    const known = checkouts.get(path.resolve(p));
+    if (!known) return { checkout: p, known: false, open: false, target: null, kind: null };
+    return { checkout: known.entry.path, known: true, role: known.entry.role ?? null, ...windowFor(known.entry.path, open, known.fallback) };
+  });
+  emit({ status: "ok", windows });
+}
+
+function handoffCommand(checkout, command) {
+  if (!checkout || !command) usage('handoff takes <checkout> "<command>"');
+  if (!isCanonicalAgentoCommand(command)) usage(`handoff command must be a canonical /agento command, got ${JSON.stringify(command)}`);
+  const known = windowCheckouts().get(path.resolve(checkout));
+  if (!known) {
+    emit({ status: "rejected", reason: "unknown-checkout", message: `${checkout} is not a registered checkout of this repository`, checkout, command }, 3);
+  }
+  const window = windowFor(known.entry.path, openWindows({ storageText: readStorage(), statusText: defaultCodeStatus() }), known.fallback);
+  const dir = pendingDispatchDir();
+  const pendingFile = writePendingDispatch(dir, { target: window.target, command });
+  const out = {
+    status: "ok",
+    checkout: known.entry.path,
+    role: known.entry.role ?? null,
+    target: window.target,
+    kind: window.kind,
+    wasOpen: window.open,
+    command,
+    pendingFile,
+    opened: false,
+    openCommand: `code ${window.target}`,
+  };
+  if (!options.noOpen) {
+    try {
+      execFileSync("code", [window.target], { cwd: root, stdio: "ignore", timeout: 15000 });
+      out.opened = true;
+    } catch (error) {
+      removePendingDispatch(dir, window.target);
+      emit({ ...out, status: "failed", pendingFile: null, reason: error?.code === "ENOENT" ? "code CLI not found on PATH" : `code failed: ${error?.message ?? error}` }, 3);
+    }
+  }
+  emit(out);
 }
 
 // --- close-session ---------------------------------------------------------
@@ -4746,6 +4850,24 @@ switch (command) {
   case "session": {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
     emit(sessionRecord({ pr: Boolean(options.pr) }));
+    break;
+  }
+
+  case "windows": {
+    windowsCommand(rest);
+    break;
+  }
+
+  case "artifacts": {
+    const [typeArg, slugArg, ...extra] = rest;
+    if (!["feature", "issue"].includes(typeArg) || !slugArg || extra.length) usage("artifacts takes <feature|issue> <slug>");
+    artifactsCommand(typeArg, requireSlug(slugArg));
+    break;
+  }
+
+  case "handoff": {
+    if (rest.length !== 2) usage(`handoff takes <checkout> "<command>" (quote the command), got ${rest.length} arguments`);
+    handoffCommand(rest[0], rest[1]);
     break;
   }
 

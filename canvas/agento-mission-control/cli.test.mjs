@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { CliError, cloneRoot, runDashboard } from "./cli.mjs";
+import { CliError, cloneRoot, runArtifacts, runDashboard, runHandoff, runWindows } from "./cli.mjs";
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agento-cli-"));
@@ -97,4 +97,32 @@ test("different --pr requests do not coalesce with each other", async () => {
   assert.deepEqual(noPr.args, ["dashboard"]);
   assert.deepEqual(withPr.args, ["dashboard", "--pr"]);
   assert.equal(fs.readFileSync(counter, "utf8").trim().split("\n").length, 2);
+});
+
+test("runWindows passes the checkouts and returns the windows list", async () => {
+  const dir = tmpdir();
+  const script = writeStub(dir, `const a = process.argv.slice(2); process.stdout.write(JSON.stringify({ status: "ok", windows: a.slice(1).map((c) => ({ checkout: c, open: a[0] === "windows" })) }));\n`);
+  assert.deepEqual(await runWindows(["/a", "/b"], { script }), [{ checkout: "/a", open: true }, { checkout: "/b", open: true }]);
+});
+
+test("runHandoff passes checkout and command as two arguments and resolves a refusal's JSON on exit 3", async () => {
+  const dir = tmpdir();
+  const ok = writeStub(dir, stubEchoArgs());
+  assert.deepEqual(await runHandoff({ checkout: "/repo", command: "/agento ship widget" }, { script: ok }), { args: ["handoff", "/repo", "/agento ship widget"] });
+
+  const refusing = path.join(dir, "refuse.mjs");
+  fs.writeFileSync(refusing, `process.stdout.write(JSON.stringify({ status: "failed", reason: "code CLI not found on PATH" })); process.exitCode = 3;\n`);
+  assert.deepEqual(await runHandoff({ checkout: "/repo", command: "/agento ship widget" }, { script: refusing }), { status: "failed", reason: "code CLI not found on PATH" });
+
+  const crashing = path.join(dir, "crash.mjs");
+  fs.writeFileSync(crashing, `process.stderr.write("boom"); process.exitCode = 1;\n`);
+  await assert.rejects(() => runHandoff({ checkout: "/repo", command: "/agento ship widget" }, { script: crashing }), (err) => err instanceof CliError && err.code === "exit" && /handoff exited 1: boom/.test(err.message));
+});
+
+test("runArtifacts passes type and slug and resolves a missing delivery's JSON on exit 3", async () => {
+  const dir = tmpdir();
+  assert.deepEqual(await runArtifacts({ type: "issue", slug: "bug" }, { script: writeStub(dir, stubEchoArgs()) }), { args: ["artifacts", "issue", "bug"] });
+  const missing = path.join(dir, "missing.mjs");
+  fs.writeFileSync(missing, `process.stdout.write(JSON.stringify({ status: "missing" })); process.exitCode = 3;\n`);
+  assert.deepEqual(await runArtifacts({ type: "feature", slug: "x" }, { script: missing }), { status: "missing" });
 });

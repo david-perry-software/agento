@@ -22,6 +22,9 @@ const DESCRIPTION =
 
 const DEFAULT_DEPS = {
   runDashboard: cli.runDashboard,
+  runWindows: cli.runWindows,
+  runHandoff: cli.runHandoff,
+  runArtifacts: cli.runArtifacts,
   normalize,
   diff,
   startServer,
@@ -75,6 +78,27 @@ function feedFor(stored) {
   return [...feed, ...notes].sort((a, b) => String(a?.at ?? "").localeCompare(String(b?.at ?? "")));
 }
 
+// `code --status` takes seconds, so open-window answers are reused briefly; a
+// handoff clears the cache because it just opened or focused a window.
+export const WINDOWS_CACHE_MS = 10_000;
+export const ARTIFACTS_CACHE_MS = 30_000;
+
+function windowsCache(run, now = () => Date.now()) {
+  let cached = null;
+  return {
+    async get(checkouts) {
+      const key = [...checkouts].sort().join("\n");
+      if (cached && cached.key === key && now() - cached.at < WINDOWS_CACHE_MS) return cached.value;
+      const value = await run(checkouts);
+      cached = { key, at: now(), value };
+      return value;
+    },
+    clear() {
+      cached = null;
+    },
+  };
+}
+
 export function defineMissionControl({ createCanvas, CanvasError, deps = {} }) {
   const D = { ...DEFAULT_DEPS, ...deps };
   const instances = new Map();
@@ -109,6 +133,7 @@ export function defineMissionControl({ createCanvas, CanvasError, deps = {} }) {
     const events = D.diff(instance.snapshot, next);
     const stored = await persistFeed(instance, events);
     instance.snapshot = next;
+    instance.artifacts?.clear();
     instance.server.setState({ ...next, feed: feedFor(stored) });
     return next;
   }
@@ -242,12 +267,31 @@ export function defineMissionControl({ createCanvas, CanvasError, deps = {} }) {
         const stored = loaded.store ?? D.emptyStore();
         instance.snapshot = D.normalize(dashboard);
 
+        const openWindows = windowsCache((checkouts) => D.runWindows(checkouts, { cwd: instance.cwd }));
+        // Artifact text per slug, reused for ARTIFACTS_CACHE_MS and dropped on every
+        // refresh (a refresh means git or the artifact roots changed).
+        instance.artifacts = new Map();
         instance.server = await D.startServer({
           send: async ({ prompt }) => {
             await D.send({ prompt });
           },
           onRefresh: async () => {
             await refresh(instance, { pr: false });
+          },
+          artifacts: async ({ type, slug }) => {
+            const key = `${type}/${slug}`;
+            const hit = instance.artifacts.get(key);
+            if (hit && Date.now() - hit.at < ARTIFACTS_CACHE_MS) return hit.value;
+            const value = await D.runArtifacts({ type, slug }, { cwd: instance.cwd });
+            instance.artifacts.set(key, { at: Date.now(), value });
+            return value;
+          },
+          windows: (checkouts) => openWindows.get(checkouts),
+          handoff: async ({ checkout, command }) => {
+            const result = await D.runHandoff({ checkout, command }, { cwd: instance.cwd });
+            openWindows.clear();
+            D.log(`Mission Control handoff ${command} → ${result?.target ?? checkout}: ${result?.status ?? "unknown"}`);
+            return result;
           },
           log: (line) => D.log(line),
         });

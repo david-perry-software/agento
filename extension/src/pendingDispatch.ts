@@ -1,6 +1,18 @@
+import os from "node:os";
+import path from "node:path";
+
 import { isCanonicalAgentoCommand } from "./commandActions.js";
 
 export const PENDING_DISPATCH_TTL_MS = 5 * 60 * 1000;
+
+// The cross-window queue is shared with the CLI (`agento.mjs handoff`, used by the
+// Mission Control canvas): `<agento-config>/pending-dispatch`, beside
+// model-profiles.json. Keep in step with scripts/pending-dispatch.mjs — the parity
+// test compares the two for every resolution.
+export function pendingDispatchDirectory(env: NodeJS.ProcessEnv = process.env, home = os.homedir()): string {
+  const configHome = env.AGENTO_CONFIG_HOME || path.join(env.XDG_CONFIG_HOME || path.join(home, ".config"), "agento");
+  return path.join(configHome, "pending-dispatch");
+}
 
 export interface PendingDispatchRecord {
   target: string;

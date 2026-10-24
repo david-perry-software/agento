@@ -638,10 +638,12 @@ test("deriveAllowed: one row per role × lifecycle, concrete commands, no placeh
 test("deriveAllowed: primary window rows", () => {
   const none = deriveAllowed({ role: "primary", lifecycle: "no-delivery", delivery: null, worktree: {} });
   assert.ok(none.allowed.includes("/agento start-session"));
+  assert.ok(none.allowed.includes("/agento start-freehand"));
   assert.ok(none.allowed.includes("/agento new-feature"));
   assert.ok(none.allowed.includes("/agento new-issue"));
   assert.ok(none.allowed.includes("/agento new-initiative"));
   assert.ok(none.allowed.includes("/agento delivery-status"));
+  assert.ok(none.allowed.includes("/agento next-feature"));
   assert.deepEqual(none.elsewhere, []);
 
   const planned = deriveAllowed({ role: "primary", lifecycle: "planned", delivery: widget });
@@ -658,16 +660,16 @@ test("deriveAllowed: primary window rows", () => {
   const approved = deriveAllowed({ role: "primary", lifecycle: "approved", delivery: widget });
   // Ship first: it audits the open worktree and tears it down after the merge (§8);
   // close-session stays allowed for abandoning the build.
-  assert.deepEqual(approved.allowed, ["/agento continue", "/agento ship widget", "/agento close-session feature/widget", "/agento delivery-status"]);
+  assert.deepEqual(approved.allowed, ["/agento continue", "/agento ship widget", "/agento close-session feature/widget", "/agento delivery-status", "/agento next-feature"]);
   assert.deepEqual(approved.elsewhere, []);
 
   assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "shipped", delivery: widget }).allowed, none.allowed);
-  assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "post-ship-pending", delivery: widget }).allowed, ["/agento continue", "/agento ship widget", "/agento delivery-status"]);
+  assert.deepEqual(deriveAllowed({ role: "primary", lifecycle: "post-ship-pending", delivery: widget }).allowed, ["/agento continue", "/agento ship widget", "/agento delivery-status", "/agento next-feature"]);
 });
 
 test("deriveAllowed: build worktree rows send ship (then close) to the primary window", () => {
   const building = deriveAllowed({ role: "build", lifecycle: "building", delivery: widget, worktree: { id: "20260914" } });
-  assert.deepEqual(building.allowed, ["/agento continue", "/agento build-feature widget", "/agento ap widget", "/agento delivery-status"]);
+  assert.deepEqual(building.allowed, ["/agento continue", "/agento build-feature widget", "/agento ap widget", "/agento delivery-status", "/agento next-feature"]);
   assert.equal(building.elsewhere[0].command, "/agento ship widget");
   assert.equal(building.elsewhere[0].window, "primary");
   assert.match(building.elsewhere[0].reason, /tears/);
@@ -680,7 +682,7 @@ test("deriveAllowed: build worktree rows send ship (then close) to the primary w
   assert.doesNotMatch(review.allowed.join(" "), /build-issue/);
 
   const approved = deriveAllowed({ role: "build", lifecycle: "approved", delivery: widget });
-  assert.deepEqual(approved.allowed, ["/agento continue", "/agento delivery-status"]);
+  assert.deepEqual(approved.allowed, ["/agento continue", "/agento delivery-status", "/agento next-feature"]);
   assert.equal(approved.elsewhere[0].command, "/agento ship widget");
   assert.equal(approved.elsewhere[0].window, "primary");
   assert.match(approved.elsewhere[0].reason, /tears/);
@@ -694,7 +696,7 @@ test("deriveAllowed: build worktree rows send ship (then close) to the primary w
   assert.deepEqual(planBuilding.allowed.slice(1, 3), ["/agento build-feature widget", "/agento ap widget"]);
 
   const none = deriveAllowed({ role: "build", lifecycle: "no-delivery", delivery: { type: "feature", slug: "fresh" } });
-  assert.deepEqual(none.allowed, ["/agento continue", "/agento delivery-status"]);
+  assert.deepEqual(none.allowed, ["/agento continue", "/agento delivery-status", "/agento next-feature"]);
   assert.equal(none.elsewhere[0].window, "primary");
 
   // Shipped with the worktree still present: re-sending ship resumes at teardown
@@ -707,12 +709,12 @@ test("deriveAllowed: build worktree rows send ship (then close) to the primary w
 
 test("deriveAllowed: plan worktree offers the planners; freehand and unmanaged are fixed", () => {
   const plan = deriveAllowed({ role: "plan", lifecycle: "no-delivery", delivery: null, worktree: { id: "20260914-015913" } });
-  assert.deepEqual(plan.allowed, ["/agento continue", "/agento new-feature", "/agento new-issue", "/agento delivery-status"]);
+  assert.deepEqual(plan.allowed, ["/agento continue", "/agento new-feature", "/agento new-issue", "/agento delivery-status", "/agento next-feature"]);
   assert.deepEqual(plan.elsewhere, []);
 
   for (const lifecycle of LIFECYCLES) {
     const freehand = deriveAllowed({ role: "freehand", lifecycle, delivery: null, worktree: { id: "tidy" } });
-    assert.deepEqual(freehand, { allowed: ["/agento finish-freehand tidy", "/agento commit-current-changes"], elsewhere: [] });
+    assert.deepEqual(freehand, { allowed: ["/agento finish-freehand tidy", "/agento commit-current-changes", "/agento delivery-status", "/agento next-feature"], elsewhere: [] });
 
     const unmanaged = deriveAllowed({ role: "unmanaged", lifecycle, delivery: widget, worktree: { id: null } });
     assert.deepEqual(unmanaged.allowed, []);

@@ -10,8 +10,10 @@ Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
 
-Open Agento Mission Control. It is read-only: the canvas changes no files, and its
-buttons dispatch only the commands the CLI lists as `allowed` for the current window.
+Open Agento Mission Control. It changes no repository files: its buttons dispatch
+only the commands the CLI lists as `allowed` for the current window, and a greyed
+command's handoff button opens or focuses the window that runs it and queues the
+command there (`agento.mjs handoff`).
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command `/agento delivery-status`

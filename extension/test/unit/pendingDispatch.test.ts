@@ -69,3 +69,34 @@ test("rejects invalid records before writing", async () => {
   await assert.rejects(savePendingDispatch(store, { target, command: "/continue widget", createdAt: now }));
   assert.equal(store.values.size, 0);
 });
+test("the queue directory, key, file name, and command rule match the CLI's pending-dispatch module", async () => {
+  const { pendingDispatchDirectory, pendingDispatchKey: extensionKey } = await import("../../src/pendingDispatch.js");
+  const { isCanonicalAgentoCommand: extensionCommand } = await import("../../src/commandActions.js");
+  const { FilePendingDispatchStore } = await import("../../src/filePendingDispatchStore.js");
+  const nodePath = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const cli = (await import(pathToFileURL(nodePath.resolve("cli/pending-dispatch.mjs")).href)) as {
+    pendingDispatchDir(env: Record<string, string>, home: string): string;
+    pendingDispatchKey(target: string): string;
+    isCanonicalAgentoCommand(value: unknown): boolean;
+    writePendingDispatch(dir: string, record: { target: string; command: string; createdAt: number }): string;
+  };
+  const envs: Record<string, string>[] = [{}, { XDG_CONFIG_HOME: "/cfg" }, { AGENTO_CONFIG_HOME: "/agento" }, { AGENTO_CONFIG_HOME: "/agento", XDG_CONFIG_HOME: "/cfg" }];
+  for (const env of envs) {
+    assert.equal(pendingDispatchDirectory(env, "/h"), cli.pendingDispatchDir(env, "/h"));
+  }
+  const target = "/home/u/DP/agento.code-workspace";
+  assert.equal(extensionKey(target), cli.pendingDispatchKey(target));
+  for (const command of ["/agento ship widget", "/agento start-session feature/x --resume", "/agento Ship x", "rm -rf /", "/agento a\nb"]) {
+    assert.equal(extensionCommand(command), cli.isCanonicalAgentoCommand(command), command);
+  }
+
+  // A record the CLI writes is the one the extension's store takes.
+  const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "agento-parity-"));
+  cli.writePendingDispatch(dir, { target, command: "/agento ship widget", createdAt: 1_000 });
+  const store = new FilePendingDispatchStore(dir);
+  assert.deepEqual(await takePendingDispatch(store, target, 2_000), { kind: "ready", command: "/agento ship widget" });
+  assert.deepEqual(fs.readdirSync(dir), []);
+});

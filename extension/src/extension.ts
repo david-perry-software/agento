@@ -14,6 +14,7 @@ import { createTimelineRows } from "./deliveryTimeline.js";
 import { createDeliveryTreeError, createDeliveryTreeModel } from "./deliveryTreeModel.js";
 import { DeliveryTreeProvider, type DeliveryTreeElement, type DeliveryTreeSnapshot } from "./deliveryTreeProvider.js";
 import { FilePendingDispatchStore } from "./filePendingDispatchStore.js";
+import { pendingDispatchDirectory } from "./pendingDispatch.js";
 import { resolveGitDir, type GitDirectories } from "./gitDir.js";
 import { initiativeMemberActionSource } from "./initiativeMemberActions.js";
 import { createInitiativeTreeError, createInitiativeTreeModel } from "./initiativeTreeModel.js";
@@ -164,7 +165,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
   const initiatives = new InitiativeTreeProvider(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? context.extensionPath, treeId);
   const sessionDoctor = new SessionDoctorProvider(treeId);
   const modelProfiles = new ModelProfilesProvider();
-  const pendingStore = new FilePendingDispatchStore(path.join(context.globalStorageUri.fsPath, "pending-dispatch"));
+  const pendingStore = new FilePendingDispatchStore(pendingDispatchDirectory());
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.name = "Agento Session & Doctor";
   statusBar.text = "Agento: unavailable";
