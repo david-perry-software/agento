@@ -141,3 +141,176 @@ a {
     scroll-behavior: auto !important;
   }
 }
+
+/* Delivery kanban board (panel: board) */
+
+.mc-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.mc-lane {
+  background: var(--mc-bg);
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.mc-lane-heading {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--mc-muted);
+}
+
+.mc-lane-count {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 0.35em;
+  border-radius: 999px;
+  background: var(--mc-surface-2);
+  color: var(--mc-text);
+  text-align: center;
+}
+
+.mc-lane-cards {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.mc-card {
+  border: 1px solid var(--mc-border);
+  border-radius: 6px;
+  background: var(--mc-surface);
+  padding: 0.5rem;
+}
+
+.mc-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mc-card-title {
+  flex: 1;
+  margin: 0;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.mc-badge {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--mc-border);
+  color: var(--mc-muted);
+}
+
+.mc-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.4rem 0;
+}
+
+.mc-chip {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  background: var(--mc-surface-2);
+  color: var(--mc-text);
+}
+
+.mc-chip-verdict {
+  background: var(--mc-accent);
+  color: var(--mc-accent-text);
+}
+
+.mc-card-owner {
+  margin: 0.25rem 0;
+}
+
+.mc-owner {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.mc-card-actions {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.mc-btn {
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--mc-border);
+  background: var(--mc-surface-2);
+  color: var(--mc-text);
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.mc-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: var(--mc-bg);
+}
+
+.mc-btn-run {
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+}
+
+.mc-verb {
+  font-weight: 600;
+}
+
+.mc-collapsed {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--mc-muted);
+}
+
+/* Animated step-progress ring */
+
+.mc-ring {
+  width: 44px;
+  height: 44px;
+  flex: none;
+}
+
+.mc-ring-track {
+  fill: none;
+  stroke: var(--mc-border);
+  stroke-width: 4;
+}
+
+.mc-ring-fill {
+  fill: none;
+  stroke: var(--mc-accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.6s ease;
+}
+
+.mc-ring-text {
+  font-size: 8px;
+  fill: var(--mc-text);
+}
