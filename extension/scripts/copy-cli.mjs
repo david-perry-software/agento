@@ -14,7 +14,9 @@ const cliFiles = [
   "delivery-metrics.mjs",
   "model-filter.mjs",
   "model-profiles.mjs",
+  "pending-dispatch.mjs",
   "release-state.mjs",
+  "vscode-windows.mjs",
   "worktree-occupants.mjs",
 ];
 

@@ -254,3 +254,132 @@ test("static files are served only from public/ with no traversal", async () => 
     await server.close();
   }
 });
+
+// A freehand window whose board shows one delivery owned by a build worktree, with
+// the primary checkout in the worktree map: its commands are handoff targets.
+const HANDOFF_STATE = {
+  allowed: [],
+  session: { role: "freehand", worktree: { path: "/wt/freehand-1" }, allowed: [], elsewhere: [] },
+  worktrees: { entries: [{ path: "/repo", isPrimary: true, repo: "product" }] },
+  cards: [{
+    slug: "widget",
+    lane: "building",
+    owner: { path: "/wt/feature-widget", role: "build" },
+    allowed: ["/agento build-feature widget"],
+    elsewhere: [{ command: "/agento ship widget", window: "primary", reason: "after approve" }],
+  }],
+  initiatives: [],
+};
+
+test("POST /handoff passes the server-derived checkout and the command to handoff()", async () => {
+  const calls = [];
+  const server = await startServer({ handoff: async (args) => (calls.push(args), { status: "ok", wasOpen: true, opened: true }) });
+  try {
+    server.setState(HANDOFF_STATE);
+    const origin = `http://127.0.0.1:${server.port}`;
+    const res = await jsonRequest(server.port, "POST", "/handoff", { origin, body: JSON.stringify({ command: "/agento ship widget", checkout: "/etc" }) });
+    assert.equal(res.status, 200, res.body);
+    assert.deepEqual(JSON.parse(res.body), { ok: true, command: "/agento ship widget", windowName: "the primary window", wasOpen: true, opened: true });
+    assert.deepEqual(calls, [{ checkout: "/repo", command: "/agento ship widget" }], "a checkout in the request body is ignored");
+
+    await jsonRequest(server.port, "POST", "/handoff", { origin, body: JSON.stringify({ command: "/agento build-feature widget" }) });
+    assert.deepEqual(calls[1], { checkout: "/wt/feature-widget", command: "/agento build-feature widget" });
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /handoff applies the dispatch request checks and refuses commands that are not handoff targets", async () => {
+  const calls = [];
+  const server = await startServer({ handoff: async (args) => (calls.push(args), { status: "ok" }) });
+  try {
+    server.setState(HANDOFF_STATE);
+    const origin = `http://127.0.0.1:${server.port}`;
+    const body = JSON.stringify({ command: "/agento ship widget" });
+    assert.equal((await jsonRequest(server.port, "POST", "/handoff", { origin: "http://evil.example", body })).status, 403);
+    assert.equal((await jsonRequest(server.port, "POST", "/handoff", { origin, host: "evil.example", body })).status, 403);
+    assert.equal((await jsonRequest(server.port, "POST", "/handoff", { origin, contentType: "text/plain", body })).status, 403);
+    assert.equal((await jsonRequest(server.port, "POST", "/handoff", { origin, body: "{" })).status, 400);
+    const foreign = await jsonRequest(server.port, "POST", "/handoff", { origin, body: JSON.stringify({ command: "/agento close-session feature/widget" }) });
+    assert.equal(foreign.status, 403);
+    assert.deepEqual(JSON.parse(foreign.body).errors, ["command"]);
+    assert.deepEqual(calls, []);
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /handoff reports a CLI refusal as 502 with its reason", async () => {
+  const server = await startServer({ handoff: async () => ({ status: "failed", reason: "code CLI not found on PATH" }) });
+  try {
+    server.setState(HANDOFF_STATE);
+    const res = await jsonRequest(server.port, "POST", "/handoff", { origin: `http://127.0.0.1:${server.port}`, body: JSON.stringify({ command: "/agento ship widget" }) });
+    assert.equal(res.status, 502);
+    assert.equal(JSON.parse(res.body).error, "code CLI not found on PATH");
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /windows asks only about handoff target checkouts and keys the answer by checkout", async () => {
+  const asked = [];
+  const server = await startServer({
+    windows: async (checkouts) => {
+      asked.push(checkouts);
+      return checkouts.map((checkout) => ({ checkout, open: checkout === "/repo", target: `${checkout}.code-workspace` }));
+    },
+  });
+  try {
+    server.setState(HANDOFF_STATE);
+    const res = await rawRequest({ port: server.port, path: "/windows" });
+    assert.equal(res.status, 200);
+    assert.deepEqual(asked, [["/wt/feature-widget", "/repo"]]);
+    assert.deepEqual(JSON.parse(res.body).windows, {
+      "/wt/feature-widget": { open: false, target: "/wt/feature-widget.code-workspace" },
+      "/repo": { open: true, target: "/repo.code-workspace" },
+    });
+    const rebound = await rawRequest({ port: server.port, path: "/windows", headers: { host: "evil.example" } });
+    assert.equal(rebound.status, 403);
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /artifacts serves only slugs on the board, with the type from state and no file paths", async () => {
+  const calls = [];
+  const server = await startServer({
+    artifacts: async (args) => {
+      calls.push(args);
+      return { status: "ok", source: "worktree", base: "/secret/base", files: { plan: { exists: true, path: "/secret/plan.md", content: "# Plan" }, roadmap: { exists: true, content: "r" }, review: { exists: false } } };
+    },
+  });
+  try {
+    server.setState({ ...HANDOFF_STATE, cards: [...HANDOFF_STATE.cards, { slug: "bug", type: "issue", lane: "shipped" }] });
+    const res = await rawRequest({ port: server.port, path: "/artifacts?slug=bug" });
+    assert.equal(res.status, 200);
+    const body = JSON.parse(res.body);
+    assert.deepEqual(calls, [{ type: "issue", slug: "bug" }]);
+    assert.deepEqual(body, { ok: true, slug: "bug", source: "worktree", ref: null, files: { plan: { exists: true, content: "# Plan" }, roadmap: { exists: true, content: "r" }, review: { exists: false } } });
+    assert.doesNotMatch(res.body, /secret/);
+
+    assert.equal((await rawRequest({ port: server.port, path: "/artifacts?slug=../../etc/passwd" })).status, 404);
+    assert.equal((await rawRequest({ port: server.port, path: "/artifacts" })).status, 404);
+    assert.equal((await rawRequest({ port: server.port, path: "/artifacts?slug=bug", headers: { host: "evil.example" } })).status, 403);
+    assert.equal(calls.length, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /artifacts reports a missing delivery's message", async () => {
+  const server = await startServer({ artifacts: async () => ({ status: "missing", message: "No roadmap for feature/widget", files: {} }) });
+  try {
+    server.setState(HANDOFF_STATE);
+    const body = JSON.parse((await rawRequest({ port: server.port, path: "/artifacts?slug=widget" })).body);
+    assert.equal(body.ok, false);
+    assert.equal(body.message, "No roadmap for feature/widget");
+    assert.deepEqual(body.files.plan, { exists: false });
+  } finally {
+    await server.close();
+  }
+});

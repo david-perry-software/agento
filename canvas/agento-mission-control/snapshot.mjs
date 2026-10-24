@@ -177,6 +177,8 @@ function allowedUnion(session, deliveries) {
 function sessionView(session) {
   return {
     role: session?.role ?? null,
+    hosted: Boolean(session?.hosted),
+    lifecycle: session?.lifecycle ?? null,
     worktree: session?.worktree ?? null,
     delivery: session?.delivery ?? null,
     allowed: Array.isArray(session?.allowed) ? session.allowed : [],

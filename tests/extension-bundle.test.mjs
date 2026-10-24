@@ -14,8 +14,10 @@ const cliFiles = [
   "harness.mjs",
   "model-filter.mjs",
   "model-profiles.mjs",
+  "pending-dispatch.mjs",
   "release-state.mjs",
   "session-state.mjs",
+  "vscode-windows.mjs",
   "worktree-occupants.mjs",
 ];
 

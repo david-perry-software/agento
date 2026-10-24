@@ -9,49 +9,119 @@
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
 
+  <div id="window-banner" class="mc-window-banner" role="note" aria-label="Current window"></div>
+
   <header class="mc-header">
-    <h1>Agento Mission Control</h1>
-    <p id="status" class="mc-status" role="status" aria-live="polite">Loading…</p>
+    <div class="mc-header-text">
+      <h1>Agento Mission Control</h1>
+      <p id="status" class="mc-status" role="status" aria-live="polite">Loading…</p>
+    </div>
+    <div class="mc-actions">
+      <button type="button" id="actions-toggle" class="mc-btn mc-actions-toggle" aria-expanded="false" aria-controls="actions-menu">Actions <span aria-hidden="true">▾</span></button>
+      <div id="actions-menu" class="mc-actions-menu" hidden></div>
+    </div>
   </header>
 
-  <nav class="mc-nav" aria-label="Panels">
+  <nav class="mc-nav" aria-label="Pages">
     <ul>
-      <li><a href="#panel-board">Deliveries</a></li>
-      <li><a href="#panel-graph">Initiatives</a></li>
-      <li><a href="#panel-timeline">Timeline</a></li>
-      <li><a href="#panel-worktrees">Worktrees &amp; windows</a></li>
-      <li><a href="#panel-feed">Activity</a></li>
+      <li><a href="#/board" data-page="board" aria-current="page">Deliveries</a></li>
+      <li><a href="#/graph" data-page="graph">Initiatives</a></li>
+      <li><a href="#/timeline" data-page="timeline">Timeline</a></li>
+      <li><a href="#/worktrees" data-page="worktrees">Worktrees &amp; windows</a></li>
+      <li><a href="#/feed" data-page="feed">Activity <span id="feed-unread" class="mc-nav-badge" hidden></span></a></li>
     </ul>
   </nav>
 
   <main id="main">
-    <section id="panel-board" class="mc-panel" role="region" aria-labelledby="board-heading">
-      <h2 id="board-heading">Deliveries</h2>
-      <div id="board"></div>
+    <section id="panel-board" class="mc-panel" role="region" aria-labelledby="board-heading" data-page="board" data-collapsible>
+      <div class="mc-panel-head">
+        <h2 id="board-heading" tabindex="-1">Deliveries</h2>
+        <button type="button" class="mc-btn mc-collapse-btn" aria-expanded="true" aria-controls="board-body" aria-label="Hide Deliveries">Hide</button>
+      </div>
+      <div id="board-body" class="mc-panel-body">
+        <div id="board"></div>
+      </div>
     </section>
-    <section id="panel-graph" class="mc-panel" role="region" aria-labelledby="graph-heading">
-      <h2 id="graph-heading">Initiatives</h2>
+    <section id="panel-shipped" class="mc-panel" role="region" aria-labelledby="shipped-heading" data-page="board" data-collapsible>
+      <div class="mc-panel-head">
+        <h2 id="shipped-heading" tabindex="-1">Shipped Deliveries</h2>
+        <button type="button" class="mc-btn mc-collapse-btn" aria-expanded="true" aria-controls="shipped-body" aria-label="Hide Shipped Deliveries">Hide</button>
+      </div>
+      <div id="shipped-body" class="mc-panel-body">
+        <form id="shipped-controls" class="mc-shipped-controls" role="search" aria-label="Search and filter shipped deliveries">
+          <label class="mc-field mc-field-search">
+            <span>Search</span>
+            <input type="search" id="shipped-query" name="query" placeholder="slug, initiative, or PR #" autocomplete="off">
+          </label>
+          <label class="mc-field">
+            <span>Type</span>
+            <select id="shipped-type" name="type">
+              <option value="all">All types</option>
+              <option value="feature">Features</option>
+              <option value="issue">Issues</option>
+            </select>
+          </label>
+          <label class="mc-field">
+            <span>Initiative</span>
+            <select id="shipped-initiative" name="initiative">
+              <option value="all">All initiatives</option>
+              <option value="none">No initiative</option>
+            </select>
+          </label>
+          <label class="mc-field">
+            <span>Shipped</span>
+            <select id="shipped-within" name="within">
+              <option value="all">Any time</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="365">Last year</option>
+            </select>
+          </label>
+          <label class="mc-field">
+            <span>Sort</span>
+            <select id="shipped-sort" name="sort">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+          <button type="reset" class="mc-btn mc-shipped-clear">Clear</button>
+        </form>
+        <p id="shipped-summary" class="mc-shipped-summary" role="status" aria-live="polite"></p>
+        <div id="shipped"></div>
+      </div>
+    </section>
+    <section id="panel-graph" class="mc-panel" role="region" aria-labelledby="graph-heading" data-page="graph" hidden>
+      <h2 id="graph-heading" tabindex="-1">Initiatives</h2>
       <div id="graph"></div>
     </section>
-    <section id="panel-timeline" class="mc-panel" role="region" aria-labelledby="timeline-heading">
-      <h2 id="timeline-heading">Timeline</h2>
+    <section id="panel-timeline" class="mc-panel" role="region" aria-labelledby="timeline-heading" data-page="timeline" hidden>
+      <h2 id="timeline-heading" tabindex="-1">Timeline</h2>
       <div id="timeline"></div>
     </section>
-    <section id="panel-worktrees" class="mc-panel" role="region" aria-labelledby="worktrees-heading">
-      <h2 id="worktrees-heading">Worktrees &amp; windows</h2>
+    <section id="panel-worktrees" class="mc-panel" role="region" aria-labelledby="worktrees-heading" data-page="worktrees" hidden>
+      <h2 id="worktrees-heading" tabindex="-1">Worktrees &amp; windows</h2>
       <div id="worktrees"></div>
     </section>
-    <section id="panel-feed" class="mc-panel" role="region" aria-labelledby="feed-heading">
-      <h2 id="feed-heading">Activity</h2>
+    <section id="panel-feed" class="mc-panel" role="region" aria-labelledby="feed-heading" data-page="feed" hidden>
+      <h2 id="feed-heading" tabindex="-1">Activity</h2>
       <div id="feed"></div>
+    </section>
+    <section id="panel-delivery" class="mc-panel" role="region" aria-labelledby="delivery-heading" data-page="delivery" hidden>
+      <div id="delivery"></div>
     </section>
   </main>
 
   <script type="module" src="/app.js"></script>
+  <script type="module" src="/panels/window.js"></script>
+  <script type="module" src="/panels/actions.js"></script>
   <script type="module" src="/panels/board.js"></script>
+  <script type="module" src="/panels/shipped.js"></script>
   <script type="module" src="/panels/graph.js"></script>
   <script type="module" src="/panels/timeline.js"></script>
   <script type="module" src="/panels/worktrees.js"></script>
   <script type="module" src="/panels/feed.js"></script>
+  <script type="module" src="/panels/delivery.js"></script>
 </body>
 </html>

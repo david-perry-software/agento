@@ -62,10 +62,80 @@ body {
   top: 8px;
 }
 
+/* Window banner: which Agento window this canvas belongs to, in its role color */
+
+.mc-window-banner-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1.25rem;
+  padding: 0.5rem 1.25rem;
+  font-size: 0.8125rem;
+}
+
+.mc-window-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  min-width: 0;
+}
+
+.mc-window-kind {
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mc-window-tag {
+  padding: 0 0.4rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+
+.mc-window-purpose {
+  opacity: 0.9;
+}
+
+.mc-window-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 1rem;
+  min-width: 0;
+}
+
+.mc-window-detail {
+  display: inline-flex;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.mc-window-detail-label {
+  opacity: 0.75;
+}
+
+.mc-window-detail-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mc-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--mc-border);
   background: var(--mc-surface);
+}
+
+.mc-header-text {
+  min-width: 0;
 }
 
 .mc-header h1 {
@@ -103,6 +173,36 @@ body {
   background: var(--mc-surface-2);
 }
 
+.mc-nav a[aria-current] {
+  border-color: var(--mc-accent);
+  background: var(--mc-accent);
+  color: var(--mc-accent-text);
+}
+
+.mc-nav-badge {
+  display: inline-block;
+  min-width: 1.25rem;
+  margin-left: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--mc-accent);
+  color: var(--mc-accent-text);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.mc-nav-badge[hidden],
+.mc-panel[hidden] {
+  display: none;
+}
+
+/* Page headings take programmatic focus (tabindex="-1") so screen readers announce
+   the new page; they are not controls, so they draw no focus ring. */
+.mc-panel h2[tabindex="-1"]:focus {
+  outline: none;
+}
+
 main {
   display: grid;
   gap: 1rem;
@@ -120,6 +220,114 @@ main {
 .mc-panel h2 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
+}
+
+/* Collapsible panels: the whole heading row toggles; the button is the
+   keyboard control. */
+
+.mc-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: -0.25rem -0.25rem 0.75rem;
+  padding: 0.25rem;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mc-panel-head:hover {
+  background: var(--mc-surface-2);
+}
+
+.mc-panel-head h2 {
+  margin: 0;
+}
+
+.mc-panel.mc-collapsed .mc-panel-head {
+  margin-bottom: -0.25rem;
+}
+
+.mc-btn.mc-collapse-btn {
+  flex: none;
+  min-width: 4rem;
+  text-align: center;
+}
+
+.mc-panel-body[hidden] {
+  display: none;
+}
+
+/* Header Actions menu (panel: actions-menu) */
+
+.mc-actions {
+  position: relative;
+  flex: none;
+}
+
+.mc-btn.mc-actions-toggle {
+  text-align: center;
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+  font-weight: 600;
+}
+
+.mc-actions-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 20;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  background: var(--mc-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.mc-actions-menu[hidden] {
+  display: none;
+}
+
+.mc-actions-group {
+  margin: 0.25rem 0.25rem 0.35rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--mc-muted);
+}
+
+.mc-actions-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.mc-actions-list .mc-handoff[data-tooltip]:hover::after,
+.mc-actions-list .mc-handoff[data-tooltip]:focus-visible::after {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+.mc-action-item {
+  width: 100%;
+}
+
+.mc-action-reason {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--mc-muted);
+}
+
+.mc-actions-empty {
+  margin: 0 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--mc-muted);
 }
 
 button,
@@ -280,10 +488,199 @@ a {
   font-weight: 600;
 }
 
-.mc-collapsed {
-  margin: 0.5rem 0 0;
+/* A delivery command this window cannot run: greyed out and inert, with a
+   tooltip naming the window it runs in (hover or keyboard focus). */
+
+.mc-btn.mc-btn-unavailable {
+  position: relative;
+  cursor: not-allowed;
+  border-style: dashed;
+  background: var(--mc-bg);
+  color: var(--mc-muted);
+}
+
+.mc-btn-unavailable .mc-verb {
+  font-weight: 500;
+}
+
+/* A greyed command with an open-window handoff button beside it */
+
+.mc-cmd-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.3rem;
+}
+
+.mc-cmd-row > .mc-btn-unavailable,
+.mc-cmd-row > .mc-action-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-btn.mc-handoff {
+  position: relative;
+  flex: none;
+  width: 2rem;
+  padding: 0;
+  text-align: center;
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.mc-btn.mc-handoff:hover {
+  background: var(--mc-accent);
+  color: var(--mc-accent-text);
+}
+
+.mc-btn.mc-handoff:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.mc-handoff[data-tooltip]:hover::after,
+.mc-handoff[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  width: max-content;
+  max-width: min(20rem, 80vw);
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  background: var(--mc-text);
+  color: var(--mc-bg);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--mc-shadow);
+  pointer-events: none;
+}
+
+.mc-btn-unavailable[data-tooltip]:hover::after,
+.mc-btn-unavailable[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  width: max-content;
+  max-width: min(20rem, 80vw);
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  background: var(--mc-text);
+  color: var(--mc-bg);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  box-shadow: var(--mc-shadow);
+  pointer-events: none;
+}
+
+/* Shipped Deliveries list (panel: shipped), below the board */
+
+.mc-shipped-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 0.75rem;
+}
+
+.mc-field {
+  display: grid;
+  gap: 0.15rem;
   font-size: 0.75rem;
   color: var(--mc-muted);
+}
+
+.mc-field-search {
+  flex: 1 1 14rem;
+}
+
+.mc-field input,
+.mc-field select {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--mc-border);
+  border-radius: 6px;
+  background: var(--mc-bg);
+  color: var(--mc-text);
+}
+
+.mc-shipped-clear {
+  text-align: center;
+}
+
+.mc-shipped-summary {
+  margin: 0.5rem 0;
+  font-size: 0.75rem;
+  color: var(--mc-muted);
+}
+
+.mc-shipped-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  background: var(--mc-bg);
+}
+
+.mc-shipped-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.mc-shipped-table th,
+.mc-shipped-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--mc-border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.mc-shipped-table thead th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--mc-muted);
+  background: var(--mc-surface-2);
+}
+
+.mc-shipped-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+.mc-shipped-table tbody tr:hover {
+  background: var(--mc-surface);
+}
+
+.mc-shipped-slug {
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.mc-muted {
+  color: var(--mc-muted);
+}
+
+.mc-shipped-empty {
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--mc-muted);
+}
+
+.mc-shipped-more {
+  margin-top: 0.5rem;
+  text-align: center;
 }
 
 /* Animated step-progress ring */
@@ -633,7 +1030,308 @@ a {
   animation: mc-focus-pulse 0.9s ease-in-out 2;
 }
 
+.mc-shipped-row.mc-focus-target > * {
+  background: color-mix(in srgb, var(--mc-accent) 18%, transparent);
+}
+
 @keyframes mc-focus-pulse {
   0%, 100% { box-shadow: inset 0 0 0 1px var(--mc-accent); }
   50% { box-shadow: inset 0 0 0 4px var(--mc-focus); }
+}
+
+/* Slug links (cards, shipped rows, graph nodes, worktree map) */
+
+.mc-slug-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--mc-border);
+  text-underline-offset: 0.2em;
+}
+
+.mc-slug-link:hover {
+  color: var(--mc-accent);
+  text-decoration-color: currentColor;
+}
+
+.mc-node-link {
+  cursor: pointer;
+}
+
+.mc-node-link:hover .mc-node-text,
+.mc-node-link:focus-visible .mc-node-text {
+  text-decoration: underline;
+  fill: var(--mc-accent);
+}
+
+.mc-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Delivery page (panel: delivery) */
+
+.mc-detail {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.mc-breadcrumb {
+  font-size: 0.8125rem;
+  color: var(--mc-muted);
+}
+
+.mc-breadcrumb a {
+  color: var(--mc-accent);
+}
+
+.mc-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.mc-detail-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.mc-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+
+.mc-facts div {
+  min-width: 0;
+}
+
+.mc-facts dt {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--mc-muted);
+}
+
+.mc-facts dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.mc-blocked {
+  color: #cf222e;
+}
+
+.mc-muted,
+.mc-muted-slug {
+  color: var(--mc-muted);
+}
+
+.mc-detail-section {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--mc-border);
+}
+
+.mc-detail-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.mc-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0.3rem;
+}
+
+.mc-detail-table {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+  border: 1px solid var(--mc-border);
+  border-radius: 8px;
+  background: var(--mc-bg);
+}
+
+.mc-detail-table table,
+.mc-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.mc-detail-table th,
+.mc-detail-table td,
+.mc-markdown th,
+.mc-markdown td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--mc-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.mc-detail-table thead th,
+.mc-markdown thead th {
+  background: var(--mc-surface-2);
+  font-size: 0.75rem;
+}
+
+.mc-current-row > * {
+  background: color-mix(in srgb, var(--mc-accent) 12%, transparent);
+}
+
+/* Document tabs */
+
+.mc-doc-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.mc-doc-tab {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--mc-muted);
+  cursor: pointer;
+}
+
+.mc-doc-tab[aria-selected="true"] {
+  border-color: var(--mc-border);
+  background: var(--mc-bg);
+  color: var(--mc-text);
+  font-weight: 600;
+  margin-bottom: -1px;
+}
+
+.mc-doc-panel {
+  padding: 0.75rem 0.25rem;
+}
+
+.mc-doc-source {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--mc-muted);
+}
+
+.mc-doc-error {
+  color: #cf222e;
+}
+
+/* Rendered Markdown (plan.md, roadmap.md, review.md) */
+
+.mc-markdown {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.mc-markdown h3,
+.mc-markdown h4,
+.mc-markdown h5,
+.mc-markdown h6 {
+  margin: 1.2em 0 0.4em;
+  line-height: 1.3;
+}
+
+.mc-markdown h3 {
+  font-size: 1.15rem;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.mc-markdown h4 {
+  font-size: 1rem;
+}
+
+.mc-markdown h5,
+.mc-markdown h6 {
+  font-size: 0.9rem;
+}
+
+.mc-markdown p,
+.mc-markdown ul,
+.mc-markdown ol,
+.mc-markdown blockquote,
+.mc-markdown pre,
+.mc-markdown .md-table {
+  margin: 0 0 0.75em;
+}
+
+.mc-markdown ul,
+.mc-markdown ol {
+  padding-left: 1.5em;
+}
+
+.mc-markdown li > ul,
+.mc-markdown li > ol {
+  margin: 0.2em 0 0;
+}
+
+.mc-markdown .md-tasks {
+  list-style: none;
+  padding-left: 0.5em;
+}
+
+.mc-markdown .md-task input {
+  margin: 0 0.4em 0 0;
+  vertical-align: -0.1em;
+}
+
+.mc-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: var(--mc-surface-2);
+}
+
+.mc-markdown pre {
+  overflow-x: auto;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  background: var(--mc-surface-2);
+}
+
+.mc-markdown pre code {
+  padding: 0;
+  background: none;
+  white-space: pre;
+}
+
+.mc-markdown blockquote {
+  padding: 0 0.9em;
+  border-left: 3px solid var(--mc-border);
+  color: var(--mc-muted);
+}
+
+.mc-markdown hr {
+  border: none;
+  border-top: 1px solid var(--mc-border);
+  margin: 1em 0;
+}
+
+.mc-markdown .md-table {
+  overflow-x: auto;
+}
+
+.mc-markdown a,
+.mc-markdown .md-ref {
+  color: var(--mc-accent);
+  cursor: pointer;
+}
+
+.mc-markdown .md-path,
+.mc-markdown .md-image {
+  border-bottom: 1px dotted var(--mc-muted);
+  cursor: help;
 }

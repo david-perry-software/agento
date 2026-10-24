@@ -1,9 +1,12 @@
 // Live activity feed panel plus focus handling. It renders the persisted feed
 // (state.feed) and appends SSE `note` events (forwarded as `mc:note`). SSE
-// `focus` events (forwarded as `mc:focus`) scroll to and highlight the target
-// node — a board card, an initiative graph node, or a worktree entry.
+// `focus` events (forwarded as `mc:focus`) switch to the page that holds the
+// target node — a board card, an initiative graph node, or a worktree entry —
+// then scroll to and highlight it.
 
-import { escapeHtml, registerPanel } from "/app.js";
+import { escapeHtml, expandFor, registerPanel, showPage } from "/app.js";
+
+const FOCUS_PAGES = { delivery: "board", initiative: "graph", worktree: "worktrees" };
 
 function noteMarkup(entry) {
   const text = entry?.text ?? "";
@@ -15,7 +18,12 @@ function noteMarkup(entry) {
 }
 
 function focusTarget(kind, id) {
-  if (kind === "delivery") return document.querySelector(`.mc-card[data-slug="${CSS.escape(id)}"]`);
+  // Let a panel that may be hiding the target (the filtered shipped list) render it first.
+  window.dispatchEvent(new CustomEvent("mc:reveal", { detail: { kind, id } }));
+  if (kind === "delivery") {
+    return document.querySelector(`.mc-card[data-slug="${CSS.escape(id)}"]`)
+      ?? document.querySelector(`.mc-shipped-row[data-slug="${CSS.escape(id)}"]`);
+  }
   if (kind === "initiative") return document.querySelector(`.mc-node[data-slug="${CSS.escape(id)}"]`);
   if (kind === "worktree") return document.querySelector(`.mc-wt-entry[data-path="${CSS.escape(id)}"]`);
   return null;
@@ -57,6 +65,8 @@ function bindEvents() {
     const detail = event.detail ?? {};
     const target = focusTarget(detail.kind, detail.id);
     if (!target) return;
+    showPage(FOCUS_PAGES[detail.kind]);
+    expandFor(target);
     target.scrollIntoView({ block: "center", behavior: "smooth" });
     target.classList.add("mc-focus-target");
     window.setTimeout(() => target.classList.remove("mc-focus-target"), 2500);

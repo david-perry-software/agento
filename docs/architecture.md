@@ -29,8 +29,9 @@ flowchart TD
 
     EXT[VS Code extension actions] -->|"allowed[] + elsewhere[]"| NEXT[agento.mjs next]
     NEXT -->|"here"| CHAT[Copilot Chat in agent mode]
-    NEXT -->|"primary / secondary"| PENDING[(target-keyed pending command)]
-    PENDING -->|"open folder / companion workspace"| CHAT
+    NEXT -->|"primary / secondary"| PENDING[(target-keyed pending command<br/>agento-config/pending-dispatch)]
+    MC[Mission Control greyed command] -->|"agento.mjs handoff"| PENDING
+    PENDING -->|"open or focus folder / workspace; extension submits on focus"| CHAT
 
     subgraph hooks [Hooks — every session]
         SC[session-context.sh<br/>SessionStart: branch + resumable work]

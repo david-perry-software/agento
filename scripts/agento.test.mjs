@@ -82,6 +82,8 @@ delete baseEnv.GITHUB_ACTIONS;
 baseEnv.AGENTO_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-config-home-"));
 // Never read the real VS Code user settings (doctor hook-wiring).
 baseEnv.AGENTO_VSCODE_SETTINGS = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-settings.json");
+// Never read the real VS Code window state (windows, handoff).
+baseEnv.AGENTO_VSCODE_USER_DIR = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-user");
 // Never touch the real ~/.copilot/skills (harness install/status/uninstall).
 baseEnv.AGENTO_COPILOT_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
 // Never touch the real ~/.copilot/extensions (harness canvas link).
@@ -1175,7 +1177,7 @@ test("status adds lifecycle, owner, workspace, companion, pr/companionPr per ite
   assert.deepEqual(json.warnings, [`bogus: unknown-roadmap-status: features/2026/09/bogus/roadmap.md has status "wat"`]);
   const widget = json.items.find((i) => i.slug === "widget");
   assert.deepEqual(widget.owner, { path: build, role: "build", dirPrefix: "feature", id: "widget" });
-  assert.deepEqual(widget.allowed, ["/agento continue", "/agento build-feature widget", "/agento ap widget", "/agento delivery-status"]);
+  assert.deepEqual(widget.allowed, ["/agento continue", "/agento build-feature widget", "/agento ap widget", "/agento delivery-status", "/agento next-feature"]);
   assert.deepEqual(widget.elsewhere.map((entry) => [entry.command, entry.window]), [["/agento ship widget", "primary"]]);
   for (const item of json.items) {
     if (item.slug !== "widget") assert.equal(item.owner, null, item.slug);
@@ -2281,9 +2283,9 @@ test("session: hosted workspaces derive the role from the branch and warn once",
   assert.equal(actions.role, "build");
   assert.equal(actions.delivery.slug, "widget");
   assert.deepEqual(actions.warnings, ["hosted-workspace: role derived from the branch (GITHUB_ACTIONS=true)"]);
-  // The build row applies: no roadmap yet, so only delivery-status here and start-session elsewhere.
+  // The build row applies: no roadmap yet, so only the window-wide reads here and start-session elsewhere.
   assert.equal(actions.lifecycle, "no-delivery");
-  assert.deepEqual(actions.allowed, ["/agento continue", "/agento delivery-status"]);
+  assert.deepEqual(actions.allowed, ["/agento continue", "/agento delivery-status", "/agento next-feature"]);
   assert.equal(actions.elsewhere[0].window, "primary");
   // worktrees[] still describes the on-disk checkouts by path.
   assert.equal(actions.worktrees.find((w) => w.path === stray).role, "unmanaged");
@@ -9062,4 +9064,142 @@ test("with pins active, the primary and a linked worktree are clean and their co
     assert.equal(git(checkout, "status", "--porcelain"), "");
     assert.match(fs.readFileSync(file, "utf8"), /^model: "/m, "the pin stays in the working file");
   }
+});
+
+// --- windows / handoff -----------------------------------------------------------
+
+// A repo with one managed worktree, a VS Code user dir whose storage.json records a
+// running workspace window holding the primary checkout, a `code` stub that prints
+// that window for `--status` and logs every other call, and a private queue dir.
+function handoffFixture({ code = true } = {}) {
+  const { repo, wt } = makeWorktreeRepo();
+  const worktree = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", worktree);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agento-handoff-"));
+  const userDir = path.join(home, "vscode-user");
+  const primaryWorkspace = path.join(home, "prim.code-workspace");
+  fs.writeFileSync(primaryWorkspace, JSON.stringify({ folders: [{ path: repo }, { path: path.join(home, "docs") }] }));
+  fs.mkdirSync(path.join(userDir, "globalStorage"), { recursive: true });
+  fs.writeFileSync(path.join(userDir, "globalStorage", "storage.json"), JSON.stringify({
+    windowsState: { openedWindows: [{ workspaceIdentifier: { id: "p", configURIPath: `file://${primaryWorkspace}` } }] },
+  }));
+  const log = path.join(home, "code.log");
+  const stubs = code
+    ? { code: `#!/bin/sh\nif [ "$1" = "--status" ]; then printf '%s\\n' '|  Window (prim (Workspace) - Visual Studio Code)'; exit 0; fi\nprintf '%s\\n' "$*" >> '${log}'\n` }
+    : {};
+  const { env } = restrictedPath(stubs);
+  const configHome = path.join(home, "config");
+  Object.assign(env, { AGENTO_VSCODE_USER_DIR: userDir, AGENTO_CONFIG_HOME: configHome });
+  const queue = path.join(configHome, "pending-dispatch");
+  const records = () => (fs.existsSync(queue) ? fs.readdirSync(queue).map((f) => JSON.parse(fs.readFileSync(path.join(queue, f), "utf8"))) : []);
+  const opened = () => (fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n").filter(Boolean) : []);
+  return { repo, worktree, primaryWorkspace, env, records, opened };
+}
+
+test("windows reports the running window holding each registered checkout and the target to open", () => {
+  const fx = handoffFixture();
+  const { code, json } = runWith({ cwd: fx.repo, env: fx.env }, "windows", fx.repo, fx.worktree, "/tmp/not-a-checkout");
+  assert.equal(code, 0);
+  assert.deepEqual(json.windows, [
+    { checkout: fx.repo, known: true, role: "primary", open: true, target: fx.primaryWorkspace, kind: "workspace" },
+    { checkout: fx.worktree, known: true, role: "build", open: false, target: fx.worktree, kind: "folder" },
+    { checkout: "/tmp/not-a-checkout", known: false, open: false, target: null, kind: null },
+  ]);
+  assert.equal(runWith({ cwd: fx.repo, env: fx.env }, "windows").code, 1);
+});
+
+test("handoff queues the command for the target window and focuses or opens it with code", () => {
+  const fx = handoffFixture();
+  const ship = runWith({ cwd: fx.worktree, env: fx.env }, "handoff", fx.repo, "/agento ship widget");
+  assert.equal(ship.code, 0, JSON.stringify(ship.json));
+  assert.equal(ship.json.target, fx.primaryWorkspace, "the open workspace window holding the primary checkout");
+  assert.equal(ship.json.wasOpen, true);
+  assert.equal(ship.json.opened, true);
+  const build = runWith({ cwd: fx.repo, env: fx.env }, "handoff", fx.worktree, "/agento build-feature widget");
+  assert.equal(build.json.target, fx.worktree);
+  assert.equal(build.json.wasOpen, false);
+  assert.deepEqual(fx.opened(), [fx.primaryWorkspace, fx.worktree], "code <target>, never --new-window, so an open window is focused");
+  const byTarget = Object.fromEntries(fx.records().map((r) => [r.target, r.command]));
+  assert.deepEqual(byTarget, { [fx.primaryWorkspace]: "/agento ship widget", [fx.worktree]: "/agento build-feature widget" });
+
+  const quiet = runWith({ cwd: fx.repo, env: fx.env }, "handoff", fx.worktree, "/agento ap widget", "--no-open");
+  assert.equal(quiet.json.opened, false);
+  assert.equal(quiet.json.openCommand, `code ${fx.worktree}`);
+  assert.equal(fx.opened().length, 2);
+  assert.equal(fx.records().find((r) => r.target === fx.worktree).command, "/agento ap widget", "a newer handoff replaces the queued one");
+});
+
+test("handoff rejects unknown checkouts and non-canonical commands, and unqueues when code is missing", () => {
+  const fx = handoffFixture();
+  const unknown = runWith({ cwd: fx.repo, env: fx.env }, "handoff", "/tmp/not-a-checkout", "/agento delivery-status");
+  assert.equal(unknown.code, 3);
+  assert.equal(unknown.json.reason, "unknown-checkout");
+  assert.equal(runWith({ cwd: fx.repo, env: fx.env }, "handoff", fx.repo, "rm -rf /").code, 1);
+  assert.equal(runWith({ cwd: fx.repo, env: fx.env }, "handoff", fx.repo).code, 1);
+  assert.deepEqual(fx.records(), []);
+
+  const bare = handoffFixture({ code: false });
+  const failed = runWith({ cwd: bare.repo, env: bare.env }, "handoff", bare.worktree, "/agento build-feature widget");
+  assert.equal(failed.code, 3);
+  assert.equal(failed.json.status, "failed");
+  assert.match(failed.json.reason, /code CLI not found/);
+  assert.deepEqual(bare.records(), [], "a window that never opens leaves nothing queued");
+});
+
+// --- artifacts -------------------------------------------------------------------
+
+test("artifacts reads plan, roadmap, and review from the artifacts checkout", () => {
+  const repo = makeRepo();
+  const dir = "features/2026/10/widget";
+  writeRoadmap(repo, dir, "status: in-review\nbranch: feature/widget");
+  fs.writeFileSync(path.join(repo, dir, "plan.md"), "# Widget plan\n");
+  fs.writeFileSync(path.join(repo, dir, "review.md"), "Verdict: approve\n");
+  const { code, json } = run(repo, "artifacts", "feature", "widget");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.source, "checkout");
+  assert.equal(json.dir, dir);
+  assert.equal(json.files.plan.content, "# Widget plan\n");
+  assert.match(json.files.roadmap.content, /branch: feature\/widget/);
+  assert.equal(json.files.review.content, "Verdict: approve\n");
+  assert.equal(json.files.plan.path, path.join(repo, dir, "plan.md"));
+});
+
+test("artifacts prefers the delivery's own managed worktree over the checkout's older copy", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  const dir = "features/2026/10/widget";
+  writeRoadmap(repo, dir, "status: planned\nbranch: feature/widget");
+  fs.writeFileSync(path.join(repo, dir, "plan.md"), "# Old plan\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "plan widget");
+  const worktree = path.join(wt, "feature-widget");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", worktree);
+  fs.writeFileSync(path.join(worktree, dir, "plan.md"), "# Revised plan\n");
+  const { json } = run(repo, "artifacts", "feature", "widget");
+  assert.equal(json.source, "worktree");
+  assert.equal(json.base, worktree);
+  assert.equal(json.files.plan.content, "# Revised plan\n");
+  assert.deepEqual(json.files.review, { exists: false });
+});
+
+test("artifacts falls back to the delivery branch, then reports missing", () => {
+  const repo = makeRepo();
+  const dir = "issues/2026/10/gadget";
+  git(repo, "switch", "-q", "-c", "issue/gadget");
+  writeRoadmap(repo, dir, "status: in-progress\nbranch: issue/gadget");
+  fs.writeFileSync(path.join(repo, dir, "plan.md"), "# Gadget\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "plan gadget");
+  git(repo, "switch", "-q", "main");
+  const { code, json } = run(repo, "artifacts", "issue", "gadget");
+  assert.equal(code, 0, JSON.stringify(json));
+  assert.equal(json.source, "local-branch");
+  assert.equal(json.ref, "issue/gadget");
+  assert.equal(json.files.plan.content, "# Gadget\n");
+  assert.equal(json.files.plan.path, null);
+
+  const missing = run(repo, "artifacts", "feature", "nothing-here");
+  assert.equal(missing.code, 3);
+  assert.equal(missing.json.status, "missing");
+  assert.equal(run(repo, "artifacts", "feature").code, 1);
+  assert.equal(run(repo, "artifacts", "bogus", "x").code, 1);
 });

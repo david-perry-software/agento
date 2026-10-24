@@ -210,7 +210,10 @@ a failed dashboard section affects only the views that read it. Run Refresh to r
 
 If a command must continue in another window, Agento records it for the exact
 CLI-selected target and opens that folder or companion workspace. The target window
-consumes the record on activation or focus. Pending commands expire after five
+consumes the record on activation or focus. Records live in the queue the CLI shares
+with the Mission Control canvas, `<agento-config>/pending-dispatch/` beside
+`model-profiles.json` (`$AGENTO_CONFIG_HOME`, else `$XDG_CONFIG_HOME/agento`, else
+`~/.config/agento`), one file per target. Pending commands expire after five
 minutes and invalid, mismatched, rejected, or failed handoffs are discarded and
 reported rather than submitted. Reopen the source window, refresh, and choose the
 action again to recover.
@@ -307,18 +310,61 @@ that delivery's planning through its actions or the `/agento new-feature` /
 
 Mission Control is a Copilot SDK **canvas** — an interactive web surface beside the
 chat in local Copilot-harness sessions — complementing the sidebar with five
-vanilla-JS panels: a **delivery kanban** (Planned / Building / In Review / Shipped
-with step-progress rings), an **initiative wave graph** (SVG DAG with `requires` /
+vanilla-JS panels: a **delivery kanban** (Planned / Building / In Review with
+step-progress rings, above a searchable **Shipped Deliveries** list filterable by
+type, initiative, and ship date), an **initiative wave graph** (SVG DAG with `requires` /
 `recommendedAfter` edges and glowing `blockedBy` edges), a **timeline** (phase bands
 and median-cycle markers), a **worktree and window map** (product and companion
-worktrees in role colors), and a **live activity feed**. It is read-only: the canvas
-changes no files.
+worktrees in role colors), and a **live activity feed**. Each panel is its own page,
+picked from the tab bar and addressable by hash (`#/board`, `#/graph`, `#/timeline`,
+`#/worktrees`, `#/feed`); a banner across the top names the current window — primary,
+plan, build, freehand, or not an Agento window — in its `agento.role.*` color with
+its branch, delivery or freehand session, and worktree path. The Deliveries page
+holds the board and the Shipped
+Deliveries list, each collapsible from its heading row or its Hide/Show button (the
+choice is remembered). Every delivery slug — on a card, in the shipped list, on an
+initiative graph node, or in the worktree map — links to its **delivery page**
+(`#/delivery/<slug>`): status chips, next step, steps, owning worktree, the same
+action buttons its card carries (with handoff), its initiative context when it
+belongs to one (wave, requires, recommended-after, blocked-by, and every member with
+its state), and its `plan.md`, `roadmap.md`, and `review.md` rendered from Markdown
+in tabs. The documents come from `GET /artifacts?slug=` — `agento.mjs artifacts`,
+which reads the copy `status` shows (the delivery's own managed worktree, else the
+artifacts checkout, else its branch) — and are re-fetched when the delivery changes.
+The renderer escapes all source text and passes no raw HTML; only http(s) links
+become real links, and links between a delivery's own artifacts switch tabs. The agent's `focus` action switches to the page holding its
+target and expands its section, and the Activity tab counts notes that arrive while
+another page is shown. It changes no repository files: its only writes are its own
+activity store and, for a handoff, one pending-dispatch record.
 
 Dispatch is allow-listed, never free-form: a panel button posts
 `POST /dispatch {command}` to the canvas's `127.0.0.1` server, which accepts it only
 when the Host is the server's own origin, the Origin matches, the body is JSON, and
-the command exactly equals an entry in the live `allowed[]` union. `elsewhere[]`
-commands render disabled with "runs in `<window>` window". The agent can drive the
+the command exactly equals an entry in the live `allowed[]` union. A card's commands
+are computed for the window that owns its delivery (its worktree, else the primary
+checkout), so they are runnable only from that window; everywhere else — and for every
+`elsewhere[]` command — the card shows the same `Run <command>` text greyed out and
+inert, with a tooltip naming the window to run it from. Cards carry only commands
+that name their delivery; window-wide commands (`continue`, `delivery-status`,
+`next-feature`, `start-session`, `start-freehand`, `new-feature`, `new-issue`,
+`new-initiative`, and a freehand window's `finish-freehand` / `commit-current-changes`)
+live in the header's **Actions** menu, enabled from this window's `session.allowed`
+and otherwise listed disabled with the reason.
+
+A greyed command whose window Mission Control can name carries a small handoff
+button: `⇥` **Switch to** when that window is already open, `↗` **Open** when it is
+not (the tooltip names the window and the command). It posts `POST /handoff
+{command}` under the same Host/Origin/JSON checks as dispatch; the server accepts only
+a command the live state shows greyed with a target, takes the checkout from that
+state (never from the request), and runs `agento.mjs handoff <checkout> "<command>"`.
+The CLI accepts only a registered checkout, finds the running VS Code window that
+holds it (`storage.json` window state confirmed by `code --status`, so a primary
+checkout opened through a `.code-workspace` resolves to that file), queues the
+command for that exact target in the shared pending-dispatch directory, and runs
+`code <target>` — which focuses the open window or opens a new one. The extension in
+that window takes the record on focus and submits the command to chat, exactly as for
+its own cross-window actions. `GET /windows` (`agento.mjs windows`, cached ten
+seconds) supplies the open/switch state. The agent can drive the
 canvas with `refresh`, `get_snapshot`, `focus`, and `post_note`.
 
 The Deliveries view gains an **Open Mission Control** title action

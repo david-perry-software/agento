@@ -26,9 +26,72 @@ const fixturePath = path.join(here, "fixtures", "dashboard.json");
 const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
 
 let snapshot = normalize(fixture);
+const primaryPath = () => snapshot.worktrees.entries.find((w) => w.isPrimary)?.path ?? null;
+
+function sampleArtifacts(slug) {
+  const plan = `# ${slug} — sample plan
+
+## Problem
+
+The dev server has no artifact checkout, so this **sample** plan stands in. It has
+*emphasis*, \`inline code\`, a [link to the roadmap](roadmap.md), an
+[external link](https://github.com), and an [evidence file](evidence/shot.png).
+
+## Acceptance
+
+| # | Criterion | Verify |
+|---|-----------|:------:|
+| 1 | Renders tables | \`node --test\` |
+| 2 | Escapes <script>alert(1)</script> | browser |
+
+## Approach
+
+1. Read the plan.
+2. Render it:
+   - headings, lists, and tables
+   - code blocks
+
+\`\`\`js
+const safe = "<b>not bold</b>";
+\`\`\`
+
+> Note: the real canvas reads these files through \`agento.mjs artifacts\`.
+
+---
+
+Skills consulted: none — no matching domain
+`;
+  const roadmap = `\`\`\`yaml
+status: in-progress
+branch: feature/${slug}
+\`\`\`
+
+# Roadmap: ${slug}
+
+## Phase 1
+
+- [x] 1.1 First step — verify: \`node --test\`
+- [ ] 1.2 Second step — verify: see the [plan](plan.md)
+`;
+  return {
+    plan: { exists: true, content: plan },
+    roadmap: { exists: true, content: roadmap },
+    review: slug === "canvas-review-fixture" ? { exists: true, content: "# Review\n\nVerdict: request-changes\n\n- Fix the thing.\n" } : { exists: false },
+  };
+}
 
 const server = await startServer({
   port,
+  // Dev-only stand-ins for `agento.mjs windows` / `handoff`: the primary checkout
+  // reads as open, every other window as closed, and a handoff is printed.
+  windows: async (checkouts) => checkouts.map((checkout) => ({ checkout, known: true, open: checkout === primaryPath(), target: checkout })),
+  handoff: async ({ checkout, command }) => {
+    process.stdout.write(`handoff: ${command} -> ${checkout}\n`);
+    return { status: "ok", wasOpen: checkout === primaryPath(), opened: true, target: checkout };
+  },
+  // Dev-only stand-in for `agento.mjs artifacts`: sample documents that exercise
+  // every Markdown feature the delivery page renders.
+  artifacts: async ({ type, slug }) => ({ status: "ok", type, slug, source: "checkout", files: sampleArtifacts(slug) }),
   send: async ({ prompt }) => {
     // A dispatched prompt in dev is printed, never sent anywhere.
     process.stdout.write(`dispatch: ${prompt}\n`);

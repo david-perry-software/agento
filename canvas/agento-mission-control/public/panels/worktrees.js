@@ -2,7 +2,7 @@
 // window role, each entry colored by its role, linked to the delivery it owns,
 // and the current window ("This window") highlighted.
 
-import { escapeHtml, roleColor, registerPanel } from "/app.js";
+import { deliveryHref, escapeHtml, roleColor, registerPanel } from "/app.js";
 
 function entryMarkup(entry) {
   const colors = roleColor(entry.role);
@@ -15,7 +15,7 @@ function entryMarkup(entry) {
     <span class="mc-wt-meta">
       <span class="mc-wt-repo mc-wt-repo-${escapeHtml(repo)}">${escapeHtml(repo)}</span>
       <span class="mc-wt-branch">${escapeHtml(branch)}</span>
-      <span class="mc-wt-delivery" title="${escapeHtml(delivery)}">→ ${escapeHtml(delivery)}</span>
+      <span class="mc-wt-delivery" title="${escapeHtml(delivery)}">→ ${entry.delivery ? `<a class="mc-slug-link" href="${escapeHtml(deliveryHref(entry.delivery))}">${escapeHtml(delivery)}</a>` : escapeHtml(delivery)}</span>
     </span>
     ${entry.current ? '<span class="mc-wt-badge">This window</span>' : ""}
   </li>`;

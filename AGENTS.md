@@ -17,9 +17,12 @@ delivery system. Layout:
 - `.github/hooks/` — workspace-mode hook wiring (relative `./scripts/hooks` paths)
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,
-  close-decision, ship-preflight, sync, step-commit, paths, ports, session, next, initiative, metrics,
-  doctor, dashboard, harness, migrate, release), `agento-config.mjs`, `session-state.mjs`,
+  close-decision, ship-preflight, sync, step-commit, paths, ports, session, windows, handoff, artifacts,
+  next, initiative, metrics, doctor, dashboard, harness, migrate, release),
+  `agento-config.mjs`, `session-state.mjs`,
   `delivery-roadmap-resolver.mjs`, `delivery-metrics.mjs`, `release-state.mjs`,
+  `pending-dispatch.mjs` (the cross-window handoff queue shared with the extension),
+  `vscode-windows.mjs` (which VS Code window holds a checkout),
   `harness.mjs`, `wait-for-checks.sh`, `hooks/{delivery-guard,session-context,replay-guard}.sh`.
 - `skills/` — the `agento` router skill and its `skills/agento/commands/` command
   mirrors, installed as the user-level link `~/.copilot/skills/agento` by

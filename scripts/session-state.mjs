@@ -359,8 +359,9 @@ export function deriveLifecycle({ delivery, pr, companionPr = null }) {
 export const ROLES = ["primary", "build", "plan", "freehand", "unmanaged"];
 
 const STATUS = "/agento delivery-status";
+const NEXT_FEATURE = "/agento next-feature";
 const START = "/agento start-session";
-const CREATE = [START, "/agento new-feature", "/agento new-issue", "/agento new-initiative", STATUS];
+const CREATE = [START, "/agento start-freehand", "/agento new-feature", "/agento new-issue", "/agento new-initiative", STATUS];
 const RESUME = `${START} <type>/<slug> --resume`;
 const BUILD = "/agento build-<type> <slug>";
 const REVIEW = "/agento review-<type> <slug>";
@@ -415,14 +416,16 @@ const TABLE = {
     "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
   },
 };
-const FREEHAND = { allowed: ["/agento finish-freehand <slug>", "/agento commit-current-changes"], elsewhere: [] };
+const FREEHAND = { allowed: ["/agento finish-freehand <slug>", "/agento commit-current-changes", STATUS], elsewhere: [] };
 const UNMANAGED = { allowed: [], elsewhere: [primary(START, "this directory is neither the primary worktree nor a managed Agento worktree")] };
 
 const CONTINUE = "/agento continue";
 // Every delivery-window row offers `/agento continue` first: it derives the same
 // transition the rest of the row spells out (deriveNext). Freehand and unmanaged
-// windows are outside the delivery lifecycle and keep their fixed rows.
-for (const rows of Object.values(TABLE)) for (const row of Object.values(rows)) row.allowed = [CONTINUE, ...row.allowed];
+// windows are outside the delivery lifecycle and keep their fixed rows. Every row
+// but unmanaged (empty by design, §11) ends with the read-only next-feature pick.
+for (const rows of Object.values(TABLE)) for (const row of Object.values(rows)) row.allowed = [CONTINUE, ...row.allowed, NEXT_FEATURE];
+FREEHAND.allowed.push(NEXT_FEATURE);
 
 export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
   const row = role === "freehand" ? FREEHAND : role === "unmanaged" ? UNMANAGED : TABLE[role]?.[lifecycle];
