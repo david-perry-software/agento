@@ -108,7 +108,7 @@ export function startServer({ publicDir = defaultPublicDir(), send = null, onRef
     broadcast("state", state);
   };
 
-  const server = http.createServer(async (req, res) => {
+  const handle = async (req, res) => {
     const url = new URL(req.url, `http://127.0.0.1:${port}`);
     const host = req.headers.host ?? "";
 
@@ -218,6 +218,27 @@ export function startServer({ publicDir = defaultPublicDir(), send = null, onRef
     }
 
     respond(res, 404, "not found", { "content-type": "text/plain; charset=utf-8" });
+  };
+
+  // Error boundary: a synchronous throw or rejected promise anywhere in the
+  // handler (today `decodeURIComponent` in `serveStatic` throws URIError on a
+  // malformed percent path like `GET /%`) must never escape as an unhandled
+  // rejection — that would exit the extension process hosting every canvas
+  // instance. Answer 400 for a malformed request, 500 otherwise, log, and keep
+  // the server alive for the next request.
+  const server = http.createServer((req, res) => {
+    handle(req, res).catch((err) => {
+      log(err);
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      if (err instanceof URIError) {
+        respond(res, 400, "bad request", { "content-type": "text/plain; charset=utf-8" });
+      } else {
+        respond(res, 500, "internal server error", { "content-type": "text/plain; charset=utf-8" });
+      }
+    });
   });
 
   return new Promise((resolve, reject) => {

@@ -190,6 +190,35 @@ test("OPTIONS is refused", async () => {
   }
 });
 
+test("a malformed percent path is answered 400 and the server stays alive", async () => {
+  const server = await startServer({ send: async () => {} });
+  try {
+    const bad = await rawRequest({ port: server.port, path: "/%" });
+    assert.equal(bad.status, 400);
+    const after = await rawRequest({ port: server.port, path: "/state" });
+    assert.equal(after.status, 200, "server must keep serving after a malformed path");
+  } finally {
+    await server.close();
+  }
+});
+
+test("a throwing handler is answered 500 and the server stays alive", async () => {
+  const server = await startServer({
+    send: async () => {},
+    onExtra: async () => {
+      throw new Error("boom");
+    },
+  });
+  try {
+    const res = await rawRequest({ port: server.port, method: "POST", path: "/boom" });
+    assert.equal(res.status, 500);
+    const after = await rawRequest({ port: server.port, path: "/state" });
+    assert.equal(after.status, 200, "server must keep serving after a handler throw");
+  } finally {
+    await server.close();
+  }
+});
+
 test("POST /refresh invokes the refresh callback", async () => {
   let refreshed = 0;
   const server = await startServer({ send: async () => {}, onRefresh: async () => { refreshed += 1; } });
