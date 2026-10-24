@@ -87,7 +87,7 @@ function serveStatic(publicDir, reqUrl, res) {
   respond(res, 200, fs.readFileSync(target), { "content-type": type, "cache-control": "no-cache" });
 }
 
-export function startServer({ publicDir = defaultPublicDir(), send = null, onRefresh = null, log = () => {}, port: requestedPort = 0 } = {}) {
+export function startServer({ publicDir = defaultPublicDir(), send = null, onRefresh = null, log = () => {}, port: requestedPort = 0, onExtra = null } = {}) {
   let state = { allowed: [] };
   let port = 0;
   const clients = new Set();
@@ -200,6 +200,21 @@ export function startServer({ publicDir = defaultPublicDir(), send = null, onRef
     if (req.method === "GET") {
       serveStatic(publicDir, req.url, res);
       return;
+    }
+
+    if (typeof onExtra === "function") {
+      const handled = await onExtra({
+        req,
+        res,
+        url,
+        port,
+        respond,
+        readBody,
+        broadcast,
+        setState,
+        getState: () => state,
+      });
+      if (handled) return;
     }
 
     respond(res, 404, "not found", { "content-type": "text/plain; charset=utf-8" });

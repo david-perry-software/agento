@@ -39,6 +39,35 @@ const server = await startServer({
     server.setState(snapshot);
   },
   log: (line) => process.stdout.write(`${line}\n`),
+  onExtra: async ({ req, res, url, respond, readBody, broadcast }) => {
+    // Dev-only simulation of the agent's `post_note` and `focus` actions so the
+    // feed panel can be exercised without the Copilot canvas runtime.
+    if (req.method === "POST" && url.pathname === "/_dev/note") {
+      let body;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch {
+        respond(res, 400, JSON.stringify({ ok: false, errors: ["json"] }), { "content-type": "application/json; charset=utf-8" });
+        return true;
+      }
+      broadcast("note", { text: String(body?.text ?? ""), at: new Date().toISOString(), level: body?.level ?? "info" });
+      respond(res, 204, "", {});
+      return true;
+    }
+    if (req.method === "POST" && url.pathname === "/_dev/focus") {
+      let body;
+      try {
+        body = JSON.parse(await readBody(req));
+      } catch {
+        respond(res, 400, JSON.stringify({ ok: false, errors: ["json"] }), { "content-type": "application/json; charset=utf-8" });
+        return true;
+      }
+      broadcast("focus", { kind: String(body?.kind ?? "delivery"), id: String(body?.id ?? "") });
+      respond(res, 204, "", {});
+      return true;
+    }
+    return false;
+  },
 });
 
 server.setState(snapshot);

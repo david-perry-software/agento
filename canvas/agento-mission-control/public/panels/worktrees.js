@@ -10,7 +10,7 @@ function entryMarkup(entry) {
   const branch = entry.detached ? "(detached)" : entry.branch ?? "";
   const delivery = entry.delivery ?? "—";
   const current = entry.current ? " mc-wt-current" : "";
-  return `<li class="mc-wt-entry${current}" style="border-left-color:${colors.background}">
+  return `<li class="mc-wt-entry${current}" data-path="${escapeHtml(entry.path ?? "")}" style="border-left-color:${colors.background}">
     <span class="mc-wt-path" title="${escapeHtml(entry.path ?? "")}">${escapeHtml(entry.path ?? "")}</span>
     <span class="mc-wt-meta">
       <span class="mc-wt-repo mc-wt-repo-${escapeHtml(repo)}">${escapeHtml(repo)}</span>
