@@ -702,6 +702,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     },
   );
   const dispatchActionCommand = vscode.commands.registerCommand("agento.dispatchAction", dispatchAction);
+  const openMissionControlCommand = vscode.commands.registerCommand("agento.openMissionControl", () =>
+    dispatchAction({ command: "/agento mission-control", window: "here", reason: null }),
+  );
   const reportModelsError = async (summary: ModelsSummary): Promise<void> => {
     output.appendLine(`models: ${summary.message}`);
     if (summary.dirty.length) {
@@ -1106,6 +1109,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
     newInitiativeCommand,
     planInitiativeMemberCommand,
     dispatchActionCommand,
+    openMissionControlCommand,
     selectModelProfileCommand,
     modelProfilesApplyCommand,
     modelProfilesClearCommand,

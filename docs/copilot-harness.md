@@ -420,6 +420,23 @@ harness does not execute. Moving the command files to `skills/agento/commands/`
 only `/agento` binding, so the dispatch sends in new and existing chats. See
 issue [#121](https://github.com/david-perry-software/agento/issues/121).
 
+## Mission Control canvas
+
+Mission Control is a canvas extension the router discovers through the user-scope
+link `<extensionsDir>/agento-mission-control` → `<clone>/canvas/agento-mission-control`
+(created by `harness install`; `<extensionsDir>` = `AGENTO_COPILOT_EXTENSIONS_DIR`,
+else `$COPILOT_HOME/extensions` when `COPILOT_HOME` is non-empty, else
+`~/.copilot/extensions`). Canvases run only in **local Copilot-harness sessions**
+with `chat.canvases.enabled` on; they are not loaded in remote or Copilot-app
+sessions. `/agento mission-control` opens the canvas with `instanceId:
+mission-control` when the session has the `open_canvas` tool, and otherwise prints
+the prerequisites (`agento.mjs harness status`, the setting, and the local-session
+requirement). Reopening the same `instanceId` reuses the live server, so the feed
+and UI state persist across open/close of the view; the private store lives under
+`<copilot-home>/extension-data/agento-mission-control/<repo-key>.json` (the same
+`COPILOT_HOME` rule), keyed by a hash of the primary clone path so every window of
+a repo shares one history.
+
 ## Reproduce
 
 From the repository root, on Node ≥ 20:

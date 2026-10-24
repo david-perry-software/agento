@@ -2,7 +2,7 @@
   "name": "agento-dashboard",
   "displayName": "Agento",
   "description": "Dashboard and command launcher for Agento delivery workflows.",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "type": "module",
   "publisher": "david-perry-software",
   "license": "MIT",
@@ -76,6 +76,12 @@
         "command": "agento.openBreakdown",
         "title": "Open Breakdown",
         "category": "Agento"
+      },
+      {
+        "command": "agento.openMissionControl",
+        "title": "Open Mission Control",
+        "category": "Agento",
+        "icon": "$(dashboard)"
       },
       {
         "command": "agento.newPlan",
@@ -217,6 +223,11 @@
           "command": "agento.newPlan",
           "when": "view == agento.deliveries && agento.canPlan",
           "group": "navigation@2"
+        },
+        {
+          "command": "agento.openMissionControl",
+          "when": "view == agento.deliveries",
+          "group": "navigation@4"
         },
         {
           "command": "agento.newInitiative",

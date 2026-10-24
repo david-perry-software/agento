@@ -1306,6 +1306,7 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes("agento.showOutput"));
   assert.ok(commands.includes("agento.openRoadmap"));
   assert.ok(commands.includes("agento.openBreakdown"));
+  assert.ok(commands.includes("agento.openMissionControl"), "agento.openMissionControl is registered");
   assert.ok(commands.includes("agento.showActions"));
   assert.ok(commands.includes("agento.dispatchAction"));
   assert.ok(commands.includes("agento.sessionDoctor.focus"));

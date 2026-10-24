@@ -460,6 +460,7 @@ export const WINDOW_ROLES = Object.freeze({
   "finish-freehand": Object.freeze({ roles: ["freehand"], slugRoles: ["freehand"] }),
   "fix-copilot": ANY,
   "install-skills": ANY,
+  "mission-control": ANY,
   models: ANY,
   "new-feature": PLAN_OR_PROMOTED,
   "new-initiative": PRIMARY_DEFAULT_CLEAN,

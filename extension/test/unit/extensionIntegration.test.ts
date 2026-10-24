@@ -26,6 +26,7 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
   ]);
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openRoadmap"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openBreakdown"));
+  assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.openMissionControl"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.newPlan"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.newInitiative"));
   assert.ok(manifest.contributes.commands.some((command) => command.command === "agento.planInitiativeMember"));
@@ -60,6 +61,10 @@ test("manifest contributes CLI-backed action surfaces without static lifecycle c
       { command: "agento.newPlan", when: "view == agento.deliveries && agento.canPlan", group: "navigation@2" },
       { command: "agento.newPlan", when: "view == agento.sessionDoctor && agento.canPlan", group: "navigation@2" },
     ],
+  );
+  assert.deepEqual(
+    manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.openMissionControl"),
+    [{ command: "agento.openMissionControl", when: "view == agento.deliveries", group: "navigation@4" }],
   );
   assert.deepEqual(
     manifest.contributes.menus["view/title"].filter((item) => item.command === "agento.newInitiative"),
@@ -115,6 +120,8 @@ test("extension refreshes all dashboard views without polling", async () => {
   assert.match(source, /statusBar\.command = "agento\.sessionDoctor\.focus"/);
   assert.match(source, /registerCommand\("agento\.showActions"/);
   assert.match(source, /registerCommand\("agento\.dispatchAction"/);
+  assert.match(source, /registerCommand\("agento\.openMissionControl"/);
+  assert.match(source, /\/agento mission-control/);
   assert.match(source, /registerCommand\("agento\.newPlan"/);
   assert.match(source, /registerCommand\("agento\.newInitiative"/);
   assert.match(source, /registerCommand\(\s*"agento\.planInitiativeMember"/);
