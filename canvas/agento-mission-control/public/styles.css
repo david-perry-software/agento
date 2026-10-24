@@ -402,3 +402,110 @@ a {
 .mc-plan-busy {
   opacity: 0.6;
 }
+
+/* Timeline/Gantt panel (panel: timeline) */
+
+.mc-timeline {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.mc-timeline-legend {
+  font-size: 0.75rem;
+  color: var(--mc-muted);
+}
+
+.mc-timeline-body {
+  position: relative;
+  border: 1px solid var(--mc-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mc-timeline-rows {
+  display: grid;
+  gap: 2px;
+  padding: 0.25rem;
+}
+
+.mc-timeline-row {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 22px;
+}
+
+.mc-timeline-label {
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-timeline-track {
+  position: relative;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--mc-surface-2);
+}
+
+.mc-band {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: 3px;
+}
+
+.mc-band-planned {
+  background: #54aeff;
+}
+
+.mc-band-build {
+  background: #2da44e;
+}
+
+.mc-band-review {
+  background: #8250df;
+}
+
+.mc-band-none {
+  font-size: 0.7rem;
+  color: var(--mc-muted);
+  padding-left: 0.5rem;
+}
+
+.mc-median {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 0;
+  border-left: 2px dotted var(--mc-text);
+}
+
+.mc-paused {
+  font-size: 0.7rem;
+  color: #cf222e;
+  white-space: nowrap;
+}
+
+.mc-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid #d1242f;
+  pointer-events: none;
+}
+
+.mc-now span {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: #d1242f;
+  color: #ffffff;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+}
