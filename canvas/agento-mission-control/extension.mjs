@@ -111,37 +111,51 @@ async function startServer(session) {
   });
 }
 
-const session = await joinSession({
-  canvases: [
-    createCanvas({
-      id: "agento-mission-control",
-      displayName: "Agento Mission Control",
-      description:
-        "A spike probe for the Agento Mission Control canvas: reports the VS Code theme variables and exercises prompt dispatch.",
-      actions: [
-        {
-          name: "ping",
-          description: "Confirms the canvas action dispatch path works.",
-          handler: async () => ({ ok: true, canvas: "agento-mission-control" }),
+let session;
+try {
+  session = await joinSession({
+    // Remote-export setup fails in the extension process (its sensitive env vars
+    // are stripped), which made `session.resume` throw and the host report a
+    // startup failure. Explicitly opt out of remote sessions so resume stays local.
+    remoteSession: "off",
+    canvases: [
+      createCanvas({
+        id: "agento-mission-control",
+        displayName: "Agento Mission Control",
+        description:
+          "A spike probe for the Agento Mission Control canvas: reports the VS Code theme variables and exercises prompt dispatch.",
+        actions: [
+          {
+            name: "ping",
+            description: "Confirms the canvas action dispatch path works.",
+            handler: async () => ({ ok: true, canvas: "agento-mission-control" }),
+          },
+        ],
+        async open(ctx) {
+          const existing = instances.get(ctx.instanceId);
+          if (existing) {
+            return { title: "Mission Control (spike)", status: "reopened", url: existing.url };
+          }
+          const { server, url } = await startServer(session);
+          instances.set(ctx.instanceId, { server, url });
+          await session.log(`Mission Control spike opened at ${url} (instance ${ctx.instanceId})`);
+          return { title: "Mission Control (spike)", status: "spike probe", url };
         },
-      ],
-      async open(ctx) {
-        const existing = instances.get(ctx.instanceId);
-        if (existing) {
-          return { title: "Mission Control (spike)", status: "reopened", url: existing.url };
-        }
-        const { server, url } = await startServer(session);
-        instances.set(ctx.instanceId, { server, url });
-        await session.log(`Mission Control spike opened at ${url} (instance ${ctx.instanceId})`);
-        return { title: "Mission Control (spike)", status: "spike probe", url };
-      },
-      async onClose(ctx) {
-        const existing = instances.get(ctx.instanceId);
-        if (existing) {
-          existing.server.close();
-          instances.delete(ctx.instanceId);
-        }
-      },
-    }),
-  ],
-});
+        async onClose(ctx) {
+          const existing = instances.get(ctx.instanceId);
+          if (existing) {
+            existing.server.close();
+            instances.delete(ctx.instanceId);
+          }
+        },
+      }),
+    ],
+  });
+} catch (err) {
+  // Never stdout: the canvas contract forbids it. stderr is what the host log
+  // captures, so the failure is named there instead of a bare startup error.
+  process.stderr.write(
+    `agento-mission-control: joinSession failed: ${err && err.stack ? err.stack : String(err)}\n`
+  );
+  throw err;
+}
