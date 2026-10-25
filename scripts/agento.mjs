@@ -3244,6 +3244,13 @@ function ship() {
     if (!sw.ok) fail("switch-failed", `git -C ${clone} switch ${target}: ${sw.stderr}`);
     restores.push(() => gitRun(clone, ["switch", back || layout.config.branches.default]));
   };
+  // The §9 receipt data for a rejection that carries `rejectTo`: `allowed` is the
+  // primary row for the post-rejection lifecycle (never the unrelated create
+  // commands), and `elsewhere` names the exact command and window `rejectTo` gives.
+  const receiptForRejectTo = (lifecycle, reason) => {
+    out.allowed = deriveAllowed({ role: "primary", lifecycle, delivery: { type, slug } }).allowed;
+    out.elsewhere = [{ command: out.rejectTo.command, window: out.rejectTo.window, reason }];
+  };
   const integrate = (dir, defaultRef, label) => {
     const merge = mergeRef(dir, defaultRef);
     if (merge.ok) {
@@ -3252,6 +3259,7 @@ function ship() {
     }
     const { clean, conflicts } = merge;
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+    receiptForRejectTo("in-review", `merging ${defaultRef} into ${branch} conflicted; resolve it in the build window`);
     reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, conflicts, next: [out.rejectTo.command] });
   };
   const push = (dir, label, refspec = branch) => {
@@ -3306,6 +3314,7 @@ function ship() {
     for (const restore of restores.splice(0)) restore();
     act("roadmap-reopened", `roadmap status: in-progress (${codes.join(", ")}) on origin/${branch} from ${target}`);
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+    receiptForRejectTo("building", "ship reopened the roadmap to in-progress; resolve the reopen step in the build window, then re-review");
   };
   const rejectReopened = (hard) => {
     out.gaps = { hard, confirm: [] };

@@ -7147,12 +7147,13 @@ test("ship --confirm at checks with a conflicting PR reopens the roadmap and rej
   assert.equal(git(owner, "status", "--porcelain"), "");
   assert.equal(git(owner, "rev-parse", "HEAD"), git(repo, "rev-parse", `origin/${branch}`));
 
-  // The third send derives the audit again and writes nothing.
+  // The third send derives the audit again and writes nothing; the reopen step now
+  // shows up as an unticked Builder step alongside the conflict.
   const before = [refState(repo), JSON.stringify(stub.state())];
   const third = shipRun(repo, stub.env, "feature", "widget");
   assert.equal(third.json.resumedAt, "audit", JSON.stringify(third.json));
   assert.equal(third.json.reason, "audit-gaps");
-  assert.deepEqual(codes(third.json.gaps.hard), ["pr-conflicting"]);
+  assert.deepEqual(codes(third.json.gaps.hard), ["unticked-steps", "pr-conflicting"]);
   assert.deepEqual(third.json.actions, []);
   assert.deepEqual([refState(repo), JSON.stringify(stub.state())], before);
 
