@@ -7264,8 +7264,7 @@ test("ship #132 ship-merge-refusal-loop: a BLOCKED merge refusal waits for the m
   const { repo } = fixture;
   const { branch, owner, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
   const stub = shipStub({
-    product: { prs: { [branch]: { rollups: PASSING, mergeable: "MERGEABLE", mergeStateStatus: "BLOCKED", refuseMerge: "X Pull request #15 is not mergeable: the base branch policy prohibits the merge." } } },
-    api: { "repos/acme/project/rules/branches/main": [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "Unit tests" }, { context: "Vercel" }] } }] },
+    product: { prs: { [branch]: { rollups: PASSING, mergeable: "MERGEABLE", mergeStateStatus: "BLOCKED", refuseMerge: "X Pull request #15 is not mergeable: the base branch policy prohibits the merge." } }, rules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "Unit tests" }, { context: "Vercel" }] } }] },
   });
   const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
   const reviewBefore = git(repo, "show", `origin/${branch}:${dir}/review.md`);

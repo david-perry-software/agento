@@ -3297,6 +3297,40 @@ function ship() {
     out.gaps = { hard, confirm: [] };
     reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-review`, next: [out.rejectTo.command] });
   };
+  // A policy-blocked merge is the base branch policy (a required status check never
+  // reported, or required reviews unresolved), never a conflict: wait within the
+  // grace for the missing required checks, then stop `blocked` / `merge-blocked`
+  // without reopening the roadmap or invalidating the review.
+  const headCommitAge = () => {
+    const ts = Number(pgit("log", "-1", "--format=%ct", codeRef));
+    return Number.isFinite(ts) ? Math.floor(Date.now() / 1000) - ts : Infinity;
+  };
+  const readPrState = () => {
+    const result = ghRun(root, ["pr", "view", branch, "--json", "statusCheckRollup,mergeStateStatus"], 20000);
+    if (!result.ok) return { mergeStateStatus: pr.mergeStateStatus, rollup: [] };
+    try {
+      const json = JSON.parse(result.stdout);
+      return { mergeStateStatus: json.mergeStateStatus ?? pr.mergeStateStatus, rollup: json.statusCheckRollup ?? [] };
+    } catch {
+      return { mergeStateStatus: pr.mergeStateStatus, rollup: [] };
+    }
+  };
+  const blockedMerge = (rollup = null) => {
+    const contexts = ghRequiredContexts(root, nameWithOwner(root), defaultBranch);
+    const required = requiredContexts(contexts.rules, contexts.protection);
+    const { absent, pending: pendingList, failed } = missingRequired(required, rollup ?? readPrState().rollup);
+    const missing = [...absent, ...pendingList];
+    if (missing.length && headCommitAge() <= 600) {
+      pending("checks", `PR #${pr.number} is blocked by the base branch policy; waiting for required check(s) to report: ${missing.join(", ")}`);
+    }
+    if (missing.length) {
+      finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy: required check(s) ${missing.join(", ")} have not reported${failed.length ? ` and ${failed.join(", ")} failed` : ""}. Re-trigger them, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+    }
+    if (failed.length) {
+      finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy: required check(s) ${failed.join(", ")} failed. Fix them, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+    }
+    finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy (required reviews or conversation resolution); nothing was reopened. Resolve the policy requirements, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+  };
   let shippedHere = false;
 
   // ---- confirm → checks → merge-code (the PR is still open) ----
@@ -3383,13 +3417,26 @@ function ship() {
     }
     if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
 
+    // A BLOCKED PR after green checks is the base branch policy (a required status
+    // check never reported), not a conflict: wait within the grace, then report
+    // `merge-blocked` without reopening.
+    if (readPrState().mergeStateStatus === "BLOCKED") blockedMerge();
+
     out.phase = "merge-code";
     const merge = ghRun(root, ["pr", "merge", String(pr.number), "--merge"], 120000);
-    if (!merge.ok && /not mergeable|merge conflict/i.test(merge.stderr)) {
-      reopen(["pr-conflicting"]);
-      rejectReopened([conflictGap()]);
+    if (!merge.ok) {
+      const refusal = classifyMergeRefusal(merge.stderr, pr.mergeStateStatus);
+      if (refusal === "blocked") blockedMerge();
+      if (refusal === "behind") {
+        integrate(productTarget, `origin/${defaultBranch}`, "product");
+        pending("merge-code", `PR #${pr.number} is behind ${defaultBranch}; origin/${defaultBranch} was merged into ${branch} — re-send /agento ship ${slug} to merge`);
+      }
+      if (refusal === "conflict") {
+        reopen(["pr-conflicting"]);
+        rejectReopened([conflictGap()]);
+      }
+      ghFailure(merge, `gh pr merge ${pr.number} --merge`);
     }
-    if (!merge.ok) ghFailure(merge, `gh pr merge ${pr.number} --merge`);
     act("merge-code", `PR #${pr.number} merged into ${defaultBranch} with a merge commit`);
     shippedHere = true;
     const del = gitRun(primary, ["push", "origin", "--delete", branch], 60000);
