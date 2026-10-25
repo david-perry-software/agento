@@ -188,7 +188,8 @@ companion, companionGaps, companionTree }`; `gaps.hard[]` (`unticked-steps`,
 `owner-ahead`, `owner-tree-unreadable`, `companion-dirty` / `-unpushed` / `-behind`
 / `-missing-pr` / `-pr-not-open` / `-pr-conflicting`, `pr-conflicting`,
 `changelog-heading-without-version`, `post-ship-unjustified`; a PR conflicts when
-GitHub reports `mergeable: CONFLICTING` or `mergeStateStatus: DIRTY`) → `status:
+GitHub reports `mergeable: CONFLICTING` or `mergeStateStatus: DIRTY` — `BLOCKED` is
+never a conflict) → `status:
 "rejected"`, `reason: "audit-gaps"`, `rejectTo { command, window }` (`review-<type>`
 when the review is the only gap, else `build-<type>` with an owner or
 `start-session <type>/<slug> --resume` without); `gaps.confirm[]`
@@ -219,15 +220,22 @@ the same `--confirm` command; exit 1 → `failed` / `checks-failed`), `gh pr mer
 origin --delete <branch>` from the primary. At `checks`, three findings **reopen**
 the roadmap instead of leaving it `complete`: a conflicting code or companion PR
 found before any write (`pr-conflicting` / `companion-pr-conflicting`), a `gh pr
-merge` refused as not mergeable (`pr-conflicting`), and a failing required check
-(`checks-failed`). The reopen sets `status: in-review`, `last-updated`, and
-`next-step: "ship reopened (<codes>): resolve in the build window, then
-re-review"`, drops `## Follow-ups (accepted at ship)`, commits `docs(<type>): reopen
-<slug> (<codes>)` in the artifact checkout (the companion half in companion mode),
-pushes it, and reports `actions[]: roadmap-reopened`; the conflicts are `rejected` /
-`audit-gaps` and the failing check stays `failed` / `checks-failed`, both with
-`rejectTo` `build-<type>` (owner) or `start-session <type>/<slug> --resume` (no
-owner). Pending checks never reopen; the next send derives `audit` again. Then
+merge` refused as a conflict (`pr-conflicting`), and a failing required check
+(`checks-failed`). The reopen sets `status: in-progress`, `last-updated`, and
+`next-step` to the first step of an appended `## Phase N: Ship reopen (<date>)`
+section carrying one `(added <date>)` step per code (sync + hotspot recipes for the
+conflicts, fix-the-check for `checks-failed`), drops `## Follow-ups (accepted at
+ship)`, commits `docs(<type>): reopen <slug> (<codes>)` in the artifact checkout
+(the companion half in companion mode), pushes it, and reports `actions[]:
+roadmap-reopened`; the conflicts are `rejected` / `audit-gaps` and the failing check
+stays `failed` / `checks-failed`, both with `rejectTo` `build-<type>` (owner) or
+`start-session <type>/<slug> --resume` (no owner), and `allowed`/`elsewhere` name the
+build window. A `BLOCKED` PR after green checks — or a `gh pr merge` refusal
+classified as blocked — never reopens: within 10 minutes of the head commit it is
+`status: "pending"` / `phase: "checks"` naming the missing required contexts, and
+after the grace it is `status: "blocked"` / `reason: "merge-blocked"` naming them
+(or the base branch policy), with review.md and the roadmap untouched. Pending
+checks never reopen; the next send derives `audit` again. Then
 `merge-companion` (`wait-for-checks.sh
 pr <m> --repo <nameWithOwner>` from inside the clone, `gh pr merge <m> --merge`, the
 companion remote branch delete; a failure here is `failed` / `companion-merge` with

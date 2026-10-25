@@ -2,6 +2,14 @@
 
 ## 0.15.0
 
+- **Fixed.** `/agento ship` no longer misreports a policy-blocked merge
+  (`mergeStateStatus: BLOCKED`, e.g. a required status check that never reported) as
+  a conflict: it waits within a 10-minute grace for the missing required checks,
+  then stops with `merge-blocked` naming them, without reopening the roadmap or
+  invalidating the review. A genuine conflict or failing check now reopens the
+  roadmap to `in-progress` with a `## Phase N: Ship reopen (<date>)` step, so the
+  build window routes to the Builder (`/agento continue` → `/agento build-<type>
+  <slug>`) instead of looping between ship and review.
 - **Added.** Mission Control canvas (`canvas/agento-mission-control/`) — a Copilot
   SDK canvas beside the chat with a delivery kanban, an initiative wave graph, a
   timeline, a worktree and window map, and a live activity feed. Its buttons
