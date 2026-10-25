@@ -7322,6 +7322,25 @@ test("ship #132 ship-merge-refusal-loop: a BLOCKED merge refusal waits for the m
   assert.equal(git(repo, "show", `origin/${branch}:${dir}/review.md`), reviewBefore, "review.md is untouched");
 });
 
+test("ship #132 ship-merge-refusal-loop: unknown required contexts are reported with gh's refusal, never guessed", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  // No ruleset and no classic protection → both endpoints 404, so ghRequiredContexts
+  // returns known: false. The refusal classifies as blocked, and ship must quote it
+  // instead of guessing "required reviews or conversation resolution".
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING, refuseMerge: "X Pull request #15 is not mergeable: the base branch policy prohibits the merge." } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "blocked");
+  assert.equal(json.reason, "merge-blocked");
+  assert.match(json.message, /required status checks could not be read/);
+  assert.match(json.message, /X Pull request #15 is not mergeable: the base branch policy prohibits the merge/);
+  assert.doesNotMatch(json.message, /required reviews or conversation resolution/);
+  assert.deepEqual(json.next, ["/agento ship widget"]);
+});
+
 test("ship #132 ship-merge-refusal-loop: a DIRTY refusal reopens to in-progress and routes the build window to the Builder", () => {
   const fixture = makeWorktreeRepo();
   const { repo } = fixture;
