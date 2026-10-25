@@ -3270,7 +3270,20 @@ function ship() {
     if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
     fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
   };
-  // Reopen at checks: the roadmap goes back to in-review on origin/<branch>, so the next send re-audits.
+  // Reopen at checks: the roadmap goes back to in-progress on origin/<branch>, so the
+  // build window routes to the Builder and the next ship send re-audits after a fix.
+  const reopenStepText = (code) => {
+    switch (code) {
+      case "pr-conflicting":
+        return `Merge \`origin/${defaultBranch}\` into \`${branch}\` with \`agento.mjs sync\` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: \`sync\` reports no \`integration-conflict\`; \`gh pr view ${pr.number} --json mergeable,mergeStateStatus\` is not CONFLICTING/DIRTY; the full test command passes`;
+      case "companion-pr-conflicting":
+        return `Merge \`origin/${artifactDefault}\` into the companion half with \`agento.mjs sync\` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: \`sync\` reports no \`integration-conflict\`; \`gh pr view ${companionPr.number} --json mergeable,mergeStateStatus\` is not CONFLICTING/DIRTY`;
+      case "checks-failed":
+        return `Fix the failing required check — verify: \`scripts/wait-for-checks.sh pr ${pr.number}\` succeeds`;
+      default:
+        return null;
+    }
+  };
   const reopen = (codes) => {
     const target = !external ? (owner ? owner.path : primary) : companion?.registered ? companion.path : artifactsClone;
     if (target === primary || target === artifactsClone) switchTo(target, branch, external ? "companion" : "primary");
@@ -3281,7 +3294,8 @@ function ship() {
     }
     const roadmapFile = path.join(target, roadmapRel);
     const current = fs.readFileSync(roadmapFile, "utf8");
-    const reopened = reopenRoadmap(current, { date: utcDate(), codes });
+    const stepText = Object.fromEntries(codes.map((code) => [code, reopenStepText(code)]).filter(([, text]) => text));
+    const reopened = reopenRoadmap(current, { date: utcDate(), codes, stepText });
     if (reopened !== current) {
       fs.writeFileSync(roadmapFile, reopened);
       gitRun(target, ["add", "--", roadmapRel]);
@@ -3290,12 +3304,12 @@ function ship() {
     }
     if (git(target, "rev-parse", "HEAD") !== git(target, "rev-parse", ref)) push(target, external ? "companion" : "product");
     for (const restore of restores.splice(0)) restore();
-    act("roadmap-reopened", `roadmap status: in-review (${codes.join(", ")}) on origin/${branch} from ${target}`);
+    act("roadmap-reopened", `roadmap status: in-progress (${codes.join(", ")}) on origin/${branch} from ${target}`);
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
   };
   const rejectReopened = (hard) => {
     out.gaps = { hard, confirm: [] };
-    reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-review`, next: [out.rejectTo.command] });
+    reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-progress`, next: [out.rejectTo.command] });
   };
   // A policy-blocked merge is the base branch policy (a required status check never
   // reported, or required reviews unresolved), never a conflict: wait within the
@@ -3413,7 +3427,7 @@ function ship() {
     if (checks.code === 2) pending("checks", `PR #${pr.number}: ${checks.last}`);
     if (checks.code === 1) {
       reopen(["checks-failed"]);
-      fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); the roadmap was reopened to in-review — fix it in the build window, then re-review and re-send`, { rejectTo: out.rejectTo });
+      fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); the roadmap was reopened to in-progress — fix it in the build window, then re-review and re-send`, { rejectTo: out.rejectTo });
     }
     if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
 

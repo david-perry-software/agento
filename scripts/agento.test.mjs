@@ -7062,7 +7062,7 @@ test("ship --confirm: pending checks return exit 2 with the same --confirm comma
   // The failing check reopened the roadmap, so the next send runs the audit (#107).
   assert.ok(stepsOf(failed.json).includes("roadmap-reopened"), JSON.stringify(failed.json.actions));
   git(repo, "fetch", "-q", "origin");
-  assert.match(git(repo, "show", `origin/${failing.branch}:${failing.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(repo, "show", `origin/${failing.branch}:${failing.dir}/roadmap.md`), /^status: in-progress$/m);
   assert.match(git(repo, "log", "-1", "--format=%s", `origin/${failing.branch}`), /^docs\(feature\): reopen broken \(checks-failed\)$/);
   assert.equal(git(failing.owner, "status", "--porcelain"), "");
   assert.equal(shipRun(repo, failStub.env, "feature", "broken").json.resumedAt, "audit");
@@ -7079,25 +7079,38 @@ test("ship --confirm: pending checks return exit 2 with the same --confirm comma
   assert.equal(git(repo, "branch", "--show-current"), "main");
   assert.equal(git(repo, "status", "--porcelain"), "");
   git(repo, "fetch", "-q", "origin");
-  assert.match(git(repo, "show", `origin/${orphan.branch}:${orphan.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(repo, "show", `origin/${orphan.branch}:${orphan.dir}/roadmap.md`), /^status: in-progress$/m);
 });
 
-test("reopenRoadmap restores in-review, sets last-updated and next-step, and removes only the accepted-at-ship follow-ups", () => {
+test("reopenRoadmap reopens to in-progress with a Ship reopen phase named by next-step, and removes only the accepted-at-ship follow-ups", () => {
   const original = '```yaml\nstatus: in-review\nbranch: feature/widget\nlast-updated: 2026-10-01\nnext-step: "review"\n```\n\n## Phase 1\n\n- [x] 1.1 done — verify: x\n\n## Follow-ups\n\n- later\n';
   const completed = completeRoadmap(original, { date: "2026-10-10", followups: [{ code: "pr-behind", detail: "PR #15 is behind main" }, { code: "untracked-byproducts", detail: "1 untracked file(s)", paths: ["a.png"] }] });
   assert.match(completed, /^status: complete$/m);
   assert.match(completed, /## Follow-ups \(accepted at ship\)\n\n- pr-behind: .*\n- untracked-byproducts: /);
-  const reopened = reopenRoadmap(completed, { date: "2026-10-11", codes: ["pr-conflicting"] });
-  assert.equal(reopened, original.replace("last-updated: 2026-10-01", "last-updated: 2026-10-11").replace('next-step: "review"', 'next-step: "ship reopened (pr-conflicting): resolve in the build window, then re-review"'));
 
-  // Without the section only the three header fields change.
+  const reopened = reopenRoadmap(completed, { date: "2026-10-11", codes: ["pr-conflicting"] });
+  assert.match(reopened, /^status: in-progress$/m);
+  assert.match(reopened, /^last-updated: 2026-10-11$/m);
+  assert.match(reopened, /^next-step: "2\.1 \(added 2026-10-11\)"$/m);
+  assert.match(reopened, /^## Phase 2: Ship reopen \(2026-10-11\)$/m);
+  assert.match(reopened, /^- \[ \] 2\.1 \(added 2026-10-11\) Merge `origin\/main` into the branch with `agento\.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: `sync` reports no `integration-conflict`; `gh pr view <n> --json mergeable,mergeStateStatus` is not CONFLICTING\/DIRTY; the full test command passes$/m);
+  assert.doesNotMatch(reopened, /## Follow-ups \(accepted at ship\)/);
+  assert.match(reopened, /^## Follow-ups$/m, "the pre-existing Follow-ups section is kept");
+
+  // A richer step text from the caller wins over the default.
+  const rich = reopenRoadmap(completed, { date: "2026-10-11", codes: ["pr-conflicting"], stepText: { "pr-conflicting": "Merge `origin/main` into `feature/widget` — verify: `sync` reports no `integration-conflict`" } });
+  assert.match(rich, /2\.1 \(added 2026-10-11\) Merge `origin\/main` into `feature\/widget` — verify: `sync` reports no `integration-conflict`$/m);
+
+  // Without the accepted-at-ship section the header changes and the Ship reopen phase is appended.
   const done = original.replace("status: in-review", "status: complete");
   const plain = reopenRoadmap(done, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] });
-  const before = done.split("\n");
-  const after = plain.split("\n");
-  assert.equal(after.length, before.length);
-  assert.deepEqual(after.filter((line, i) => line !== before[i]), ["status: in-review", "last-updated: 2026-10-11", 'next-step: "ship reopened (checks-failed, pr-conflicting): resolve in the build window, then re-review"']);
+  assert.match(plain, /^status: in-progress$/m);
+  assert.match(plain, /^last-updated: 2026-10-11$/m);
+  assert.match(plain, /^next-step: "2\.1 \(added 2026-10-11\)"$/m);
+  assert.match(plain, /^- \[ \] 2\.1 \(added 2026-10-11\) Fix the failing required check — verify: `scripts\/wait-for-checks\.sh pr <n>` succeeds$/m);
+  assert.match(plain, /^- \[ \] 2\.2 \(added 2026-10-11\) Merge `origin\/main` into the branch with `agento\.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes/m);
   assert.equal(reopenRoadmap(plain, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] }), plain, "idempotent");
+  assert.equal(reopenRoadmap(plain, { date: "2026-10-12", codes: ["pr-conflicting"] }), reopenRoadmap(plain, { date: "2026-10-12", codes: ["pr-conflicting"] }), "a second reopen with different codes reuses the section, never duplicates");
 });
 
 test("ship --confirm at checks with a conflicting PR reopens the roadmap and rejects (#107 ship-conflict-gate)", () => {
@@ -7125,7 +7138,7 @@ test("ship --confirm at checks with a conflicting PR reopens the roadmap and rej
   assert.deepEqual(json.next, ["/agento build-feature widget"]);
   git(repo, "fetch", "-q", "origin");
   const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
-  assert.match(roadmap, /^status: in-review$/m);
+  assert.match(roadmap, /^status: in-progress$/m);
   assert.doesNotMatch(roadmap, /## Follow-ups \(accepted at ship\)/);
   assert.match(git(repo, "log", "-1", "--format=%s", `origin/${branch}`), /^docs\(feature\): reopen widget \(pr-conflicting\)$/);
   assert.ok(stub.calls().every((c) => !/ pr merge/.test(c)), stub.calls().join("\n"));
@@ -7160,7 +7173,7 @@ test("ship --confirm at checks with a conflicting PR reopens the roadmap and rej
   git(pair.repo, "fetch", "-q", "origin");
   git(pair.docs, "fetch", "-q", "origin");
   assert.equal(git(pair.repo, "rev-parse", `origin/${paired.branch}`), productHead, "the product branch is untouched");
-  assert.match(git(pair.docs, "show", `origin/${paired.branch}:${paired.dir}/roadmap.md`), /^status: in-review$/m);
+  assert.match(git(pair.docs, "show", `origin/${paired.branch}:${paired.dir}/roadmap.md`), /^status: in-progress$/m);
   assert.match(git(pair.docs, "log", "-1", "--format=%s", `origin/${paired.branch}`), /^docs\(feature\): reopen widget \(companion-pr-conflicting\)$/);
   assert.equal(git(paired.half, "status", "--porcelain"), "");
   assert.ok(pairedStub.calls().every((c) => !/ pr merge/.test(c)));
@@ -7185,7 +7198,7 @@ test("ship --confirm: a merge refused as not mergeable reopens the roadmap on th
   assert.equal(git(repo, "status", "--porcelain"), "");
   git(repo, "fetch", "-q", "origin");
   const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
-  assert.match(roadmap, /^status: in-review$/m);
+  assert.match(roadmap, /^status: in-progress$/m);
   assert.doesNotMatch(roadmap, /## Follow-ups \(accepted at ship\)/);
   assert.equal(stub.state().product.prs[branch].state, "OPEN");
 
