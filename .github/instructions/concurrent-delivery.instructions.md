@@ -78,7 +78,9 @@ configured `branches.default` for `main` throughout):
   the branch must contain `origin/main` (and, in companion mode, the companion branch
   must contain the companion's `origin/<default>`). Check `gh pr view <n> --json
   mergeStateStatus`: `BEHIND` means merge main; `DIRTY` means conflicts to resolve
-  on the branch; `BLOCKED` means required checks still pending.
+  on the branch — the Builder resolves it via `/agento continue` in the build
+  window; `BLOCKED` is never a conflict: ship waits for the missing required
+  checks, then reports `merge-blocked`.
 - **Known hotspots** (most-changed files across recent PR merges) and their recipes:
   - Lockfiles: take main's version (`git checkout origin/main -- <lockfile>`),
     regenerate with the project's package manager (`--lockfile-only` or equivalent),

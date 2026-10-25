@@ -24,17 +24,71 @@ export function completeRoadmap(content, { date, followups }) {
   return next;
 }
 
-// The inverse at ship's checks phase: status in-review with a reopen next-step, and
-// the section completeRoadmap appended removed; every other line is kept.
-export function reopenRoadmap(content, { date, codes }) {
-  let next = setRoadmapHeader(content, "status", "in-review");
-  next = setRoadmapHeader(next, "last-updated", date);
-  next = setRoadmapHeader(next, "next-step", `"ship reopened (${codes.join(", ")}): resolve in the build window, then re-review"`);
-  const start = next.indexOf(`\n${ACCEPTED_AT_SHIP}\n`);
-  if (start === -1) return next;
-  const after = next.slice(start + 1 + ACCEPTED_AT_SHIP.length);
+// Removes the `## Follow-ups (accepted at ship)` section completeRoadmap appended;
+// every following section is kept.
+function removeAcceptedAtShip(content) {
+  const start = content.indexOf(`\n${ACCEPTED_AT_SHIP}\n`);
+  if (start === -1) return content;
+  const after = content.slice(start + 1 + ACCEPTED_AT_SHIP.length);
   const following = after.search(/\n## /);
-  return following === -1 ? `${next.slice(0, start).replace(/\s+$/, "")}\n` : `${next.slice(0, start).replace(/\s+$/, "")}\n${after.slice(following)}`;
+  return following === -1 ? `${content.slice(0, start).replace(/\s+$/, "")}\n` : `${content.slice(0, start).replace(/\s+$/, "")}\n${after.slice(following)}`;
+}
+
+// The step text a reopen adds per code, when the caller does not supply richer text
+// (ship supplies PR numbers, branch names, and the failing check where it can).
+const REOPEN_STEP_TEXT = {
+  "pr-conflicting": "Merge `origin/main` into the branch with `agento.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: `sync` reports no `integration-conflict`; `gh pr view <n> --json mergeable,mergeStateStatus` is not CONFLICTING/DIRTY; the full test command passes",
+  "companion-pr-conflicting": "Merge `origin/main` into the companion half with `agento.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: `sync` reports no `integration-conflict`; the companion `gh pr view <n> --json mergeable,mergeStateStatus` is not CONFLICTING/DIRTY",
+  "checks-failed": "Fix the failing required check — verify: `scripts/wait-for-checks.sh pr <n>` succeeds",
+};
+
+// The inverse at ship's checks phase: status in-progress with a `## Phase N: Ship
+// reopen (<date>)` section naming the Builder's next step, and the section
+// completeRoadmap appended removed; every other line is kept. Idempotent: an
+// existing Ship reopen section is reused, never duplicated — a code whose step is
+// already present and unticked is left alone, and a code whose step was ticked (or
+// was never present) gains a new step continuing the section's numbering.
+export function reopenRoadmap(content, { date, codes, stepText = {} }) {
+  let next = setRoadmapHeader(content, "status", "in-progress");
+  next = setRoadmapHeader(next, "last-updated", date);
+  next = removeAcceptedAtShip(next);
+
+  const stepFor = (code) => stepText[code] ?? REOPEN_STEP_TEXT[code] ?? `Resolve the ${code} reopen — verify: re-run the ship audit`;
+
+  const reopenHeadings = [...next.matchAll(/^## Phase (\d+): Ship reopen \([^\n]*\)/gm)];
+  if (reopenHeadings.length) {
+    const heading = reopenHeadings[reopenHeadings.length - 1];
+    const sectionStart = heading.index;
+    const sectionText = next.slice(sectionStart);
+    const nextHeading = sectionText.search(/\n## /);
+    let body = nextHeading === -1 ? sectionText : sectionText.slice(0, nextHeading);
+    const tail = nextHeading === -1 ? "" : sectionText.slice(nextHeading);
+
+    const steps = [...body.matchAll(/^- \[( |x)\] (\d+\.\d+) \(added ([^)]+)\) ([^\n]*)$/gm)].map((m) => ({ done: m[1] === "x", number: m[2], date: m[3], text: m[4] }));
+    const untickedTexts = new Set(steps.filter((s) => !s.done).map((s) => s.text));
+    const phaseNumber = Number(heading[1]);
+    let lastStep = steps.reduce((max, s) => Math.max(max, Number(s.number.split(".")[1])), 0);
+    const additions = [];
+    for (const code of codes) {
+      const text = stepFor(code);
+      if (untickedTexts.has(text)) continue; // identical repeat: the unticked step already names this code
+      untickedTexts.add(text);
+      lastStep += 1;
+      additions.push(`- [ ] ${phaseNumber}.${lastStep} (added ${date}) ${text}`);
+    }
+    if (additions.length) body = `${body.replace(/\s+$/, "")}\n${additions.join("\n")}\n`;
+    next = `${next.slice(0, sectionStart)}${body}${tail}`;
+
+    // Point next-step at the first unticked step of the section, on that step's own date.
+    const firstUnticked = [...body.matchAll(/^- \[ \] (\d+\.\d+) \(added ([^)]+)\)/gm)][0];
+    if (firstUnticked) next = setRoadmapHeader(next, "next-step", `"${firstUnticked[1]} (added ${firstUnticked[2]})"`);
+    return next;
+  }
+
+  const phaseNumber = (next.match(/^## Phase (\d+)/gm) ?? []).reduce((max, line) => Math.max(max, Number(line.match(/\d+/)[0])), 0) + 1;
+  const lines = codes.map((code, index) => `- [ ] ${phaseNumber}.${index + 1} (added ${date}) ${stepFor(code)}`);
+  next = `${next.replace(/\s+$/, "")}\n\n## Phase ${phaseNumber}: Ship reopen (${date})\n\n${lines.join("\n")}\n`;
+  return setRoadmapHeader(next, "next-step", `"${phaseNumber}.1 (added ${date})"`);
 }
 
 function artifactRoots(config) {

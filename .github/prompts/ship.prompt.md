@@ -79,10 +79,13 @@ The CLI path is announced in the session context as `Agento CLI:`.
     command, follow it with `/agento ap <slug>` in its own block as the unattended
     alternative.
     When `resumedAt` is `checks` (a conflict found after the confirm writes, or a
-    merge GitHub refused as not mergeable), this rejection did write: `actions[]`
-    carries `roadmap-reopened` — the roadmap is back at `status: in-review` on
-    `origin/<branch>`. Say so, and that after the fix in the build window and a
-    fresh review the next `/agento ship <slug>` re-runs the full audit.
+    merge GitHub refused as a conflict), this rejection did write: `actions[]`
+    carries `roadmap-reopened` — the roadmap is reopened to `status: in-progress`
+    with an added `## Phase N: Ship reopen (<date>)` step named by `next-step`.
+    Say so, and to run `/agento continue` (or `/agento build-<type> <slug>`) in the
+    build window — followed by `/agento ap <slug>` as the unattended alternative —
+    then, after the fix and a fresh review, `/agento ship <slug>` re-runs the full
+    audit.
   - `confirm-stale`: show `providedToken`, the fresh `confirmToken`, and the current
     `gaps.confirm[]`; go back to step 4 with the new list.
   - `integration-conflict`: quote `message` (the merge was aborted and the tree is
@@ -96,15 +99,21 @@ The CLI path is announced in the session context as `Agento CLI:`.
   `merge-companion`, `release`, or `epilogue`) and quote `message`; emit `next[0]`
   in its own §12 block as the command to re-send, and re-send it yourself while the
   turn allows (step 6). The §9 result is `completed` with state `pending at <phase>`.
-- **`status: "blocked"`** (`reason: "occupied"`, `outcome: "paused-teardown"`):
-  the merge and syncs are done; a half of the pair is still open. List
-  `teardown.occupants.product` and `teardown.occupants.companion` verbatim under
-  their paths. Emit `/agento ship <slug>` in its own §12 block, preceded by one line
-  saying to close the flagged window first, and end with the §9 completed result
-  whose state and next step read exactly
-  `paused at teardown (worktree <teardown.pausedPath> still open); next: close that VS Code window, then /agento ship <slug>`.
-  Nothing was removed; the re-send resumes at the teardown with halves already
-  removed skipped.
+- **`status: "blocked"`** — two reasons:
+  - `merge-blocked`: the base branch policy blocked the merge (a required status
+    check never reported, or required reviews / conversation resolution unmet).
+    Quote `message` verbatim and say nothing was reopened and review.md is
+    unchanged. Re-trigger the named check (or resolve the named policy
+    requirement), then re-send `/agento ship <slug>` in its own §12 block.
+  - `occupied` / `outcome: "paused-teardown"`: the merge and syncs are done; a half
+    of the pair is still open. List `teardown.occupants.product` and
+    `teardown.occupants.companion` verbatim under their paths. Emit `/agento ship
+    <slug>` in its own §12 block, preceded by one line saying to close the flagged
+    window first, and end with the §9 completed result whose state and next step
+    read exactly
+    `paused at teardown (worktree <teardown.pausedPath> still open); next: close that VS Code window, then /agento ship <slug>`.
+    Nothing was removed; the re-send resumes at the teardown with halves already
+    removed skipped.
 - **`status: "failed"`**: accepted receipt and the §9 failed result quoting
   `message`, what the `actions[]` already did, and that re-sending `/agento ship
   <slug>` resumes from git and GitHub state:
@@ -113,8 +122,10 @@ The CLI path is announced in the session context as `Agento CLI:`.
   - `checks-failed`: a required check failed before the merge; emit
     `rejectTo.command` in its own §12 block for the build window (with
     `/agento ap <slug>` after it) when set. `actions[]` carries
-    `roadmap-reopened`: the roadmap is back at `status: in-review`, so after the fix
-    and a fresh review the next `/agento ship <slug>` re-runs the full audit.
+    `roadmap-reopened`: the roadmap is reopened to `status: in-progress` with an
+    added `## Phase N: Ship reopen (<date>)` step, so run `/agento continue` (or
+    `/agento build-<type> <slug>`) in the build window, fix the check, and after a
+    fresh review the next `/agento ship <slug>` re-runs the full audit.
   - `companion-merge`: the code PR is merged and the companion PR is not; the
     result line's state and next step are the CLI's `message` verbatim (it names
     both PRs and says the re-send resumes at the companion merge).
