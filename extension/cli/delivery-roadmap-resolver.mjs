@@ -45,21 +45,47 @@ const REOPEN_STEP_TEXT = {
 // The inverse at ship's checks phase: status in-progress with a `## Phase N: Ship
 // reopen (<date>)` section naming the Builder's next step, and the section
 // completeRoadmap appended removed; every other line is kept. Idempotent: an
-// existing Ship reopen section is reused, never duplicated.
+// existing Ship reopen section is reused, never duplicated — a code whose step is
+// already present and unticked is left alone, and a code whose step was ticked (or
+// was never present) gains a new step continuing the section's numbering.
 export function reopenRoadmap(content, { date, codes, stepText = {} }) {
   let next = setRoadmapHeader(content, "status", "in-progress");
   next = setRoadmapHeader(next, "last-updated", date);
   next = removeAcceptedAtShip(next);
 
-  const existing = next.match(/^## Phase \d+: Ship reopen \([^\n]*\)/m);
-  if (existing) {
-    const firstStep = next.match(/^- \[ \] (\d+\.\d+) \(added [^\n]*\)/m)?.[1] ?? null;
-    if (firstStep) next = setRoadmapHeader(next, "next-step", `"${firstStep} (added ${date})"`);
+  const stepFor = (code) => stepText[code] ?? REOPEN_STEP_TEXT[code] ?? `Resolve the ${code} reopen — verify: re-run the ship audit`;
+
+  const reopenHeadings = [...next.matchAll(/^## Phase (\d+): Ship reopen \([^\n]*\)/gm)];
+  if (reopenHeadings.length) {
+    const heading = reopenHeadings[reopenHeadings.length - 1];
+    const sectionStart = heading.index;
+    const sectionText = next.slice(sectionStart);
+    const nextHeading = sectionText.search(/\n## /);
+    let body = nextHeading === -1 ? sectionText : sectionText.slice(0, nextHeading);
+    const tail = nextHeading === -1 ? "" : sectionText.slice(nextHeading);
+
+    const steps = [...body.matchAll(/^- \[( |x)\] (\d+\.\d+) \(added ([^)]+)\) ([^\n]*)$/gm)].map((m) => ({ done: m[1] === "x", number: m[2], date: m[3], text: m[4] }));
+    const untickedTexts = new Set(steps.filter((s) => !s.done).map((s) => s.text));
+    const phaseNumber = Number(heading[1]);
+    let lastStep = steps.reduce((max, s) => Math.max(max, Number(s.number.split(".")[1])), 0);
+    const additions = [];
+    for (const code of codes) {
+      const text = stepFor(code);
+      if (untickedTexts.has(text)) continue; // identical repeat: the unticked step already names this code
+      untickedTexts.add(text);
+      lastStep += 1;
+      additions.push(`- [ ] ${phaseNumber}.${lastStep} (added ${date}) ${text}`);
+    }
+    if (additions.length) body = `${body.replace(/\s+$/, "")}\n${additions.join("\n")}\n`;
+    next = `${next.slice(0, sectionStart)}${body}${tail}`;
+
+    // Point next-step at the first unticked step of the section, on that step's own date.
+    const firstUnticked = [...body.matchAll(/^- \[ \] (\d+\.\d+) \(added ([^)]+)\)/gm)][0];
+    if (firstUnticked) next = setRoadmapHeader(next, "next-step", `"${firstUnticked[1]} (added ${firstUnticked[2]})"`);
     return next;
   }
 
   const phaseNumber = (next.match(/^## Phase (\d+)/gm) ?? []).reduce((max, line) => Math.max(max, Number(line.match(/\d+/)[0])), 0) + 1;
-  const stepFor = (code) => stepText[code] ?? REOPEN_STEP_TEXT[code] ?? `Resolve the ${code} reopen — verify: re-run the ship audit`;
   const lines = codes.map((code, index) => `- [ ] ${phaseNumber}.${index + 1} (added ${date}) ${stepFor(code)}`);
   next = `${next.replace(/\s+$/, "")}\n\n## Phase ${phaseNumber}: Ship reopen (${date})\n\n${lines.join("\n")}\n`;
   return setRoadmapHeader(next, "next-step", `"${phaseNumber}.1 (added ${date})"`);

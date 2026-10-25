@@ -3338,7 +3338,7 @@ function ship() {
       return { mergeStateStatus: pr.mergeStateStatus, rollup: [] };
     }
   };
-  const blockedMerge = (rollup = null) => {
+  const blockedMerge = (rollup = null, refusalStderr = null) => {
     const contexts = ghRequiredContexts(root, nameWithOwner(root), defaultBranch);
     const required = requiredContexts(contexts.rules, contexts.protection);
     const { absent, pending: pendingList, failed } = missingRequired(required, rollup ?? readPrState().rollup);
@@ -3351,6 +3351,10 @@ function ship() {
     }
     if (failed.length) {
       finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy: required check(s) ${failed.join(", ")} failed. Fix them, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+    }
+    if (!contexts.known) {
+      const refusal = refusalStderr ? ` (gh: ${refusalStderr.split("\n")[0]})` : "";
+      finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy; the required status checks could not be read from the ruleset/protection endpoints${refusal}. Resolve the policy requirements, then re-send /agento ship ${slug}`, next: [shipCommand()] });
     }
     finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy (required reviews or conversation resolution); nothing was reopened. Resolve the policy requirements, then re-send /agento ship ${slug}`, next: [shipCommand()] });
   };
@@ -3449,7 +3453,7 @@ function ship() {
     const merge = ghRun(root, ["pr", "merge", String(pr.number), "--merge"], 120000);
     if (!merge.ok) {
       const refusal = classifyMergeRefusal(merge.stderr, pr.mergeStateStatus);
-      if (refusal === "blocked") blockedMerge();
+      if (refusal === "blocked") blockedMerge(null, merge.stderr);
       if (refusal === "behind") {
         integrate(productTarget, `origin/${defaultBranch}`, "product");
         pending("merge-code", `PR #${pr.number} is behind ${defaultBranch}; origin/${defaultBranch} was merged into ${branch} — re-send /agento ship ${slug} to merge`);
