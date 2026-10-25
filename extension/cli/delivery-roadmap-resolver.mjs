@@ -24,17 +24,45 @@ export function completeRoadmap(content, { date, followups }) {
   return next;
 }
 
-// The inverse at ship's checks phase: status in-review with a reopen next-step, and
-// the section completeRoadmap appended removed; every other line is kept.
-export function reopenRoadmap(content, { date, codes }) {
-  let next = setRoadmapHeader(content, "status", "in-review");
-  next = setRoadmapHeader(next, "last-updated", date);
-  next = setRoadmapHeader(next, "next-step", `"ship reopened (${codes.join(", ")}): resolve in the build window, then re-review"`);
-  const start = next.indexOf(`\n${ACCEPTED_AT_SHIP}\n`);
-  if (start === -1) return next;
-  const after = next.slice(start + 1 + ACCEPTED_AT_SHIP.length);
+// Removes the `## Follow-ups (accepted at ship)` section completeRoadmap appended;
+// every following section is kept.
+function removeAcceptedAtShip(content) {
+  const start = content.indexOf(`\n${ACCEPTED_AT_SHIP}\n`);
+  if (start === -1) return content;
+  const after = content.slice(start + 1 + ACCEPTED_AT_SHIP.length);
   const following = after.search(/\n## /);
-  return following === -1 ? `${next.slice(0, start).replace(/\s+$/, "")}\n` : `${next.slice(0, start).replace(/\s+$/, "")}\n${after.slice(following)}`;
+  return following === -1 ? `${content.slice(0, start).replace(/\s+$/, "")}\n` : `${content.slice(0, start).replace(/\s+$/, "")}\n${after.slice(following)}`;
+}
+
+// The step text a reopen adds per code, when the caller does not supply richer text
+// (ship supplies PR numbers, branch names, and the failing check where it can).
+const REOPEN_STEP_TEXT = {
+  "pr-conflicting": "Merge `origin/main` into the branch with `agento.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: `sync` reports no `integration-conflict`; `gh pr view <n> --json mergeable,mergeStateStatus` is not CONFLICTING/DIRTY; the full test command passes",
+  "companion-pr-conflicting": "Merge `origin/main` into the companion half with `agento.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: `sync` reports no `integration-conflict`; the companion `gh pr view <n> --json mergeable,mergeStateStatus` is not CONFLICTING/DIRTY",
+  "checks-failed": "Fix the failing required check — verify: `scripts/wait-for-checks.sh pr <n>` succeeds",
+};
+
+// The inverse at ship's checks phase: status in-progress with a `## Phase N: Ship
+// reopen (<date>)` section naming the Builder's next step, and the section
+// completeRoadmap appended removed; every other line is kept. Idempotent: an
+// existing Ship reopen section is reused, never duplicated.
+export function reopenRoadmap(content, { date, codes, stepText = {} }) {
+  let next = setRoadmapHeader(content, "status", "in-progress");
+  next = setRoadmapHeader(next, "last-updated", date);
+  next = removeAcceptedAtShip(next);
+
+  const existing = next.match(/^## Phase \d+: Ship reopen \([^\n]*\)/m);
+  if (existing) {
+    const firstStep = next.match(/^- \[ \] (\d+\.\d+) \(added [^\n]*\)/m)?.[1] ?? null;
+    if (firstStep) next = setRoadmapHeader(next, "next-step", `"${firstStep} (added ${date})"`);
+    return next;
+  }
+
+  const phaseNumber = (next.match(/^## Phase (\d+)/gm) ?? []).reduce((max, line) => Math.max(max, Number(line.match(/\d+/)[0])), 0) + 1;
+  const stepFor = (code) => stepText[code] ?? REOPEN_STEP_TEXT[code] ?? `Resolve the ${code} reopen — verify: re-run the ship audit`;
+  const lines = codes.map((code, index) => `- [ ] ${phaseNumber}.${index + 1} (added ${date}) ${stepFor(code)}`);
+  next = `${next.replace(/\s+$/, "")}\n\n## Phase ${phaseNumber}: Ship reopen (${date})\n\n${lines.join("\n")}\n`;
+  return setRoadmapHeader(next, "next-step", `"${phaseNumber}.1 (added ${date})"`);
 }
 
 function artifactRoots(config) {

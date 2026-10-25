@@ -48,6 +48,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { hasAgentoWorkspaceWiring, loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
+import { classifyMergeRefusal, missingRequired, requiredContexts } from "./merge-state.mjs";
 import {
   closeBuildSessionDecision,
   completeRoadmap,
@@ -3243,6 +3244,13 @@ function ship() {
     if (!sw.ok) fail("switch-failed", `git -C ${clone} switch ${target}: ${sw.stderr}`);
     restores.push(() => gitRun(clone, ["switch", back || layout.config.branches.default]));
   };
+  // The §9 receipt data for a rejection that carries `rejectTo`: `allowed` is the
+  // primary row for the post-rejection lifecycle (never the unrelated create
+  // commands), and `elsewhere` names the exact command and window `rejectTo` gives.
+  const receiptForRejectTo = (lifecycle, reason) => {
+    out.allowed = deriveAllowed({ role: "primary", lifecycle, delivery: { type, slug } }).allowed;
+    out.elsewhere = [{ command: out.rejectTo.command, window: out.rejectTo.window, reason }];
+  };
   const integrate = (dir, defaultRef, label) => {
     const merge = mergeRef(dir, defaultRef);
     if (merge.ok) {
@@ -3251,6 +3259,7 @@ function ship() {
     }
     const { clean, conflicts } = merge;
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+    receiptForRejectTo("in-review", `merging ${defaultRef} into ${branch} conflicted; resolve it in the build window`);
     reject("integration-conflict", { message: `merging ${defaultRef} into ${branch} at ${dir} conflicts (${merge.stderr}); the merge was aborted${clean ? " and the tree is clean again" : " but the tree is NOT clean — inspect it"}; resolve it in the build window`, conflicts, next: [out.rejectTo.command] });
   };
   const push = (dir, label, refspec = branch) => {
@@ -3269,7 +3278,20 @@ function ship() {
     if (result.missing || /HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(result.stderr)) fail("gh-auth", `${what}: ${result.stderr.split("\n")[0]}`, { reauth: "gh auth login" });
     fail("gh-error", `${what}: ${result.stderr.split("\n")[0]}`);
   };
-  // Reopen at checks: the roadmap goes back to in-review on origin/<branch>, so the next send re-audits.
+  // Reopen at checks: the roadmap goes back to in-progress on origin/<branch>, so the
+  // build window routes to the Builder and the next ship send re-audits after a fix.
+  const reopenStepText = (code) => {
+    switch (code) {
+      case "pr-conflicting":
+        return `Merge \`origin/${defaultBranch}\` into \`${branch}\` with \`agento.mjs sync\` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: \`sync\` reports no \`integration-conflict\`; \`gh pr view ${pr.number} --json mergeable,mergeStateStatus\` is not CONFLICTING/DIRTY; the full test command passes`;
+      case "companion-pr-conflicting":
+        return `Merge \`origin/${artifactDefault}\` into the companion half with \`agento.mjs sync\` and resolve the conflict per the concurrent-delivery hotspot recipes — verify: \`sync\` reports no \`integration-conflict\`; \`gh pr view ${companionPr.number} --json mergeable,mergeStateStatus\` is not CONFLICTING/DIRTY`;
+      case "checks-failed":
+        return `Fix the failing required check — verify: \`scripts/wait-for-checks.sh pr ${pr.number}\` succeeds`;
+      default:
+        return null;
+    }
+  };
   const reopen = (codes) => {
     const target = !external ? (owner ? owner.path : primary) : companion?.registered ? companion.path : artifactsClone;
     if (target === primary || target === artifactsClone) switchTo(target, branch, external ? "companion" : "primary");
@@ -3280,7 +3302,8 @@ function ship() {
     }
     const roadmapFile = path.join(target, roadmapRel);
     const current = fs.readFileSync(roadmapFile, "utf8");
-    const reopened = reopenRoadmap(current, { date: utcDate(), codes });
+    const stepText = Object.fromEntries(codes.map((code) => [code, reopenStepText(code)]).filter(([, text]) => text));
+    const reopened = reopenRoadmap(current, { date: utcDate(), codes, stepText });
     if (reopened !== current) {
       fs.writeFileSync(roadmapFile, reopened);
       gitRun(target, ["add", "--", roadmapRel]);
@@ -3289,12 +3312,47 @@ function ship() {
     }
     if (git(target, "rev-parse", "HEAD") !== git(target, "rev-parse", ref)) push(target, external ? "companion" : "product");
     for (const restore of restores.splice(0)) restore();
-    act("roadmap-reopened", `roadmap status: in-review (${codes.join(", ")}) on origin/${branch} from ${target}`);
+    act("roadmap-reopened", `roadmap status: in-progress (${codes.join(", ")}) on origin/${branch} from ${target}`);
     out.rejectTo = owner ? { command: `/agento build-${type} ${slug}`, window: "build" } : { command: `/agento start-session ${type}/${slug} --resume`, window: "primary" };
+    receiptForRejectTo("building", "ship reopened the roadmap to in-progress; resolve the reopen step in the build window, then re-review");
   };
   const rejectReopened = (hard) => {
     out.gaps = { hard, confirm: [] };
-    reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-review`, next: [out.rejectTo.command] });
+    reject("audit-gaps", { message: `${hard.length} hard gap(s) at checks: ${hard.map((g) => g.code).join(", ")}; the roadmap was reopened to in-progress`, next: [out.rejectTo.command] });
+  };
+  // A policy-blocked merge is the base branch policy (a required status check never
+  // reported, or required reviews unresolved), never a conflict: wait within the
+  // grace for the missing required checks, then stop `blocked` / `merge-blocked`
+  // without reopening the roadmap or invalidating the review.
+  const headCommitAge = () => {
+    const ts = Number(pgit("log", "-1", "--format=%ct", codeRef));
+    return Number.isFinite(ts) ? Math.floor(Date.now() / 1000) - ts : Infinity;
+  };
+  const readPrState = () => {
+    const result = ghRun(root, ["pr", "view", branch, "--json", "statusCheckRollup,mergeStateStatus"], 20000);
+    if (!result.ok) return { mergeStateStatus: pr.mergeStateStatus, rollup: [] };
+    try {
+      const json = JSON.parse(result.stdout);
+      return { mergeStateStatus: json.mergeStateStatus ?? pr.mergeStateStatus, rollup: json.statusCheckRollup ?? [] };
+    } catch {
+      return { mergeStateStatus: pr.mergeStateStatus, rollup: [] };
+    }
+  };
+  const blockedMerge = (rollup = null) => {
+    const contexts = ghRequiredContexts(root, nameWithOwner(root), defaultBranch);
+    const required = requiredContexts(contexts.rules, contexts.protection);
+    const { absent, pending: pendingList, failed } = missingRequired(required, rollup ?? readPrState().rollup);
+    const missing = [...absent, ...pendingList];
+    if (missing.length && headCommitAge() <= 600) {
+      pending("checks", `PR #${pr.number} is blocked by the base branch policy; waiting for required check(s) to report: ${missing.join(", ")}`);
+    }
+    if (missing.length) {
+      finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy: required check(s) ${missing.join(", ")} have not reported${failed.length ? ` and ${failed.join(", ")} failed` : ""}. Re-trigger them, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+    }
+    if (failed.length) {
+      finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy: required check(s) ${failed.join(", ")} failed. Fix them, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+    }
+    finish({ status: "blocked", reason: "merge-blocked", message: `PR #${pr.number} is blocked by the base branch policy (required reviews or conversation resolution); nothing was reopened. Resolve the policy requirements, then re-send /agento ship ${slug}`, next: [shipCommand()] });
   };
   let shippedHere = false;
 
@@ -3378,17 +3436,30 @@ function ship() {
     if (checks.code === 2) pending("checks", `PR #${pr.number}: ${checks.last}`);
     if (checks.code === 1) {
       reopen(["checks-failed"]);
-      fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); the roadmap was reopened to in-review — fix it in the build window, then re-review and re-send`, { rejectTo: out.rejectTo });
+      fail("checks-failed", `PR #${pr.number} has a failing required check (${checks.last}); the roadmap was reopened to in-progress — fix it in the build window, then re-review and re-send`, { rejectTo: out.rejectTo });
     }
     if (checks.code !== 0) fail("gh-auth", `wait-for-checks.sh pr ${pr.number}: ${checks.last}`, { reauth: "gh auth login" });
 
+    // A BLOCKED PR after green checks is the base branch policy (a required status
+    // check never reported), not a conflict: wait within the grace, then report
+    // `merge-blocked` without reopening.
+    if (readPrState().mergeStateStatus === "BLOCKED") blockedMerge();
+
     out.phase = "merge-code";
     const merge = ghRun(root, ["pr", "merge", String(pr.number), "--merge"], 120000);
-    if (!merge.ok && /not mergeable|merge conflict/i.test(merge.stderr)) {
-      reopen(["pr-conflicting"]);
-      rejectReopened([conflictGap()]);
+    if (!merge.ok) {
+      const refusal = classifyMergeRefusal(merge.stderr, pr.mergeStateStatus);
+      if (refusal === "blocked") blockedMerge();
+      if (refusal === "behind") {
+        integrate(productTarget, `origin/${defaultBranch}`, "product");
+        pending("merge-code", `PR #${pr.number} is behind ${defaultBranch}; origin/${defaultBranch} was merged into ${branch} — re-send /agento ship ${slug} to merge`);
+      }
+      if (refusal === "conflict") {
+        reopen(["pr-conflicting"]);
+        rejectReopened([conflictGap()]);
+      }
+      ghFailure(merge, `gh pr merge ${pr.number} --merge`);
     }
-    if (!merge.ok) ghFailure(merge, `gh pr merge ${pr.number} --merge`);
     act("merge-code", `PR #${pr.number} merged into ${defaultBranch} with a merge commit`);
     shippedHere = true;
     const del = gitRun(primary, ["push", "origin", "--delete", branch], 60000);
@@ -4246,6 +4317,23 @@ function ghApi(apiPath, { notFound = "gh-error" } = {}) {
   } catch {
     throw new GhFailure("gh-error", `gh api ${apiPath} returned non-JSON output`);
   }
+}
+
+// The required status-check contexts a branch protection asks for, read through the
+// ruleset and classic-protection endpoints. Any error yields `{ known: false }` and
+// never a failure: a policy-blocked merge is reported, never guessed at.
+function ghRequiredContexts(cwd, nwo, branch) {
+  const get = (apiPath) => {
+    try {
+      const out = execFileSync("gh", ["api", "-H", "Accept: application/vnd.github+json", apiPath], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+      return { known: true, json: JSON.parse(out) };
+    } catch {
+      return { known: false, json: null };
+    }
+  };
+  const rules = get(`repos/${nwo}/rules/branches/${branch}`);
+  const protection = get(`repos/${nwo}/branches/${branch}/protection/required_status_checks`);
+  return { known: rules.known || protection.known, rules: rules.json, protection: protection.json };
 }
 
 const runSummary = (run) => (run ? { id: run.id, event: run.event, status: run.status, conclusion: run.conclusion ?? null, url: run.html_url ?? null, headSha: run.head_sha } : null);

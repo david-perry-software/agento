@@ -12,6 +12,7 @@ const cliFiles = [
   "delivery-roadmap-resolver.mjs",
   "harness.mjs",
   "delivery-metrics.mjs",
+  "merge-state.mjs",
   "model-filter.mjs",
   "model-profiles.mjs",
   "pending-dispatch.mjs",
