@@ -48,6 +48,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { hasAgentoWorkspaceWiring, loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
+import { classifyMergeRefusal, missingRequired, requiredContexts } from "./merge-state.mjs";
 import {
   closeBuildSessionDecision,
   completeRoadmap,
@@ -4246,6 +4247,23 @@ function ghApi(apiPath, { notFound = "gh-error" } = {}) {
   } catch {
     throw new GhFailure("gh-error", `gh api ${apiPath} returned non-JSON output`);
   }
+}
+
+// The required status-check contexts a branch protection asks for, read through the
+// ruleset and classic-protection endpoints. Any error yields `{ known: false }` and
+// never a failure: a policy-blocked merge is reported, never guessed at.
+function ghRequiredContexts(cwd, nwo, branch) {
+  const get = (apiPath) => {
+    try {
+      const out = execFileSync("gh", ["api", "-H", "Accept: application/vnd.github+json", apiPath], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
+      return { known: true, json: JSON.parse(out) };
+    } catch {
+      return { known: false, json: null };
+    }
+  };
+  const rules = get(`repos/${nwo}/rules/branches/${branch}`);
+  const protection = get(`repos/${nwo}/branches/${branch}/protection/required_status_checks`);
+  return { known: rules.known || protection.known, rules: rules.json, protection: protection.json };
 }
 
 const runSummary = (run) => (run ? { id: run.id, event: run.event, status: run.status, conclusion: run.conclusion ?? null, url: run.html_url ?? null, headSha: run.head_sha } : null);

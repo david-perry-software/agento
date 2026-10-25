@@ -6217,7 +6217,13 @@ if (args[0] === "pr" && args[1] === "view") {
     process.exit(0);
   }
   const view = {};
-  for (const f of fields) view[f] = f === "mergeCommit" ? (pr.mergeCommit ? { oid: pr.mergeCommit } : null) : f === "statusCheckRollup" ? [] : (pr[f] ?? null);
+  for (const f of fields) {
+    if (f === "mergeCommit") view[f] = pr.mergeCommit ? { oid: pr.mergeCommit } : null;
+    else if (f === "statusCheckRollup") {
+      const snapshots = pr.rollups || [[]];
+      view[f] = snapshots[Math.min(pr.rollupCalls || 0, snapshots.length - 1)].map((c) => ({ __typename: "CheckRun", name: c.name, status: c.status, conclusion: c.conclusion }));
+    } else view[f] = pr[f] ?? null;
+  }
   console.log(JSON.stringify(fields.length ? view : pr));
   process.exit(0);
 }
@@ -6267,6 +6273,12 @@ if (args[0] === "api") {
     if (field) pr.body = field.slice(5);
     save(); console.log(JSON.stringify({ number: pr.number, body: pr.body })); process.exit(0);
   }
+  // Native rules / classic-protection endpoints: serve repo.rules / repo.protection
+  // when set, else fall through to the generic api map (which 404s when absent).
+  const rulesMatch = target.match(/^repos\\/[^/]+\\/[^/]+\\/rules\\/branches\\/[^/]+$/);
+  if (rulesMatch && repo.rules !== undefined && repo.rules !== null) { console.log(JSON.stringify(repo.rules)); process.exit(0); }
+  const protectionMatch = target.match(/^repos\\/[^/]+\\/[^/]+\\/branches\\/[^/]+\\/protection\\/required_status_checks$/);
+  if (protectionMatch && repo.protection !== undefined && repo.protection !== null) { console.log(JSON.stringify(repo.protection)); process.exit(0); }
   const key = Object.keys(state.api).filter((k) => target.startsWith(k)).sort((a, b) => b.length - a.length)[0];
   if (!key) die("gh: Not Found (HTTP 404)");
   let reply = state.api[key];
@@ -7326,6 +7338,29 @@ test("ship #132 ship-merge-refusal-loop: checks-failed reopens to in-progress wi
   assert.match(roadmap, /^status: in-progress$/m);
   assert.match(roadmap, /^## Phase \d+: Ship reopen \(/m);
   assert.match(roadmap.match(/^next-step: "(.*)"$/m)[1], /^2\.1 \(added /);
+});
+
+test("ghRequiredContexts stub endpoints: the ruleset and classic protection are served, an absent classic protection is 404", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const gh = (stub, ...args) => spawnSync("gh", args, { cwd: repo, env: stub.env, encoding: "utf8" });
+  const stub = shipStub({
+    product: {
+      prs: { [branch]: { rollups: PASSING } },
+      rules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "Unit tests" }, { context: "Vercel" }] } }],
+    },
+  });
+  const rules = gh(stub, "api", "-H", "Accept: application/vnd.github+json", "repos/acme/project/rules/branches/main");
+  assert.equal(rules.status, 0, rules.stderr);
+  assert.deepEqual(JSON.parse(rules.stdout), stub.state().product.rules);
+  const absent = gh(stub, "api", "-H", "Accept: application/vnd.github+json", "repos/acme/project/branches/main/protection/required_status_checks");
+  assert.equal(absent.status, 1, "classic protection absent is 404");
+  assert.match(absent.stderr, /Not Found/);
+  stub.update((s) => { s.product.protection = { contexts: ["Unit tests"], checks: [] }; });
+  const classic = gh(stub, "api", "-H", "Accept: application/vnd.github+json", "repos/acme/project/branches/main/protection/required_status_checks");
+  assert.equal(classic.status, 0, classic.stderr);
+  assert.deepEqual(JSON.parse(classic.stdout), { contexts: ["Unit tests"], checks: [] });
 });
 
 // A companion-mode delivery ready to ship: code on the product branch, artifacts on the
