@@ -7243,6 +7243,91 @@ test("ship --confirm (in-repo, no owner): the primary is switched onto the branc
   assert.equal(clashStub.state().product.prs[conflict.branch].state, "OPEN");
 });
 
+// #132: a policy-blocked merge (required status check never reported) must not be
+// misreported as a conflict, and a genuine conflict or failed check must reopen the
+// roadmap to in-progress so the build window routes to the Builder — not to a
+// stale re-review or a second ship.
+test("ship #132 ship-merge-refusal-loop: a BLOCKED merge refusal waits for the missing required check, then reports merge-blocked without reopening", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({
+    product: { prs: { [branch]: { rollups: PASSING, mergeable: "MERGEABLE", mergeStateStatus: "BLOCKED", refuseMerge: "X Pull request #15 is not mergeable: the base branch policy prohibits the merge." } } },
+    api: { "repos/acme/project/rules/branches/main": [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "Unit tests" }, { context: "Vercel" }] } }] },
+  });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const reviewBefore = git(repo, "show", `origin/${branch}:${dir}/review.md`);
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  // Within the grace: pending, naming the missing Vercel context; never a conflict, never reopened.
+  assert.equal(code, 2, JSON.stringify(json));
+  assert.equal(json.status, "pending");
+  assert.equal(json.phase, "checks");
+  assert.match(json.message, /Vercel/);
+  assert.deepEqual(codes(json.gaps.hard), []);
+  assert.ok(!stepsOf(json).includes("roadmap-reopened"));
+
+  // Move the head commit out of the 10-minute grace and re-send the same confirm.
+  execFileSync("git", ["-C", owner, "commit", "-q", "--allow-empty", "-m", "old head"], { env: { ...process.env, GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z" } });
+  git(owner, "push", "-q");
+  const blocked = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(blocked.code, 3, JSON.stringify(blocked.json));
+  assert.equal(blocked.json.status, "blocked");
+  assert.equal(blocked.json.reason, "merge-blocked");
+  assert.deepEqual(blocked.json.next, ["/agento ship widget"]);
+  assert.ok(!stepsOf(blocked.json).includes("roadmap-reopened"));
+  git(repo, "fetch", "-q", "origin");
+  assert.match(git(repo, "show", `origin/${branch}:${dir}/roadmap.md`), /^status: complete$/m);
+  assert.equal(git(repo, "show", `origin/${branch}:${dir}/review.md`), reviewBefore, "review.md is untouched");
+});
+
+test("ship #132 ship-merge-refusal-loop: a DIRTY refusal reopens to in-progress and routes the build window to the Builder", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, owner, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { rollups: PASSING, refuseMerge: "X Pull request #15 is not mergeable: the merge commit cannot be cleanly created." } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const shipped = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(shipped.code, 3, JSON.stringify(shipped.json));
+  assert.equal(shipped.json.status, "rejected");
+  assert.equal(shipped.json.reason, "audit-gaps");
+  assert.deepEqual(codes(shipped.json.gaps.hard), ["pr-conflicting"]);
+
+  // The roadmap on origin is in-progress with a Ship reopen step named by next-step.
+  git(repo, "fetch", "-q", "origin");
+  const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: in-progress$/m);
+  assert.match(roadmap, /^## Phase \d+: Ship reopen \(/m);
+  assert.match(roadmap.match(/^next-step: "(.*)"$/m)[1], /^2\.1 \(added /);
+
+  // The owner build window derives build-feature; session allows build and ap.
+  const next = runWith({ cwd: owner, env: stub.env }, "next");
+  assert.equal(next.json.next && next.json.next.invocation, "/agento build-feature widget", JSON.stringify(next.json));
+  const session = runWith({ cwd: owner, env: stub.env }, "session");
+  assert.ok(session.json.allowed.includes("/agento build-feature widget"), JSON.stringify(session.json.allowed));
+  assert.ok(session.json.allowed.includes("/agento ap widget"), JSON.stringify(session.json.allowed));
+
+  // Ship's receipt names the build window, not the primary create commands.
+  assert.ok(!shipped.json.allowed.includes("/agento new-feature"), JSON.stringify(shipped.json.allowed));
+  assert.deepEqual(shipped.json.elsewhere, [{ command: "/agento build-feature widget", window: "build", reason: "ship reopened the roadmap to in-progress; resolve the reopen step in the build window, then re-review" }]);
+});
+
+test("ship #132 ship-merge-refusal-loop: checks-failed reopens to in-progress with the fix-the-check step", () => {
+  const fixture = makeWorktreeRepo();
+  const { repo } = fixture;
+  const { branch, dir } = shippable(fixture, "widget", { extra: writeFile("src.js", "code\n") });
+  const stub = shipStub({ product: { prs: { [branch]: { number: 16, rollups: [[{ name: "Unit tests", status: "COMPLETED", conclusion: "FAILURE" }]] } } } });
+  const token = shipRun(repo, stub.env, "feature", "widget").json.confirmToken;
+  const { code, json } = shipRun(repo, stub.env, "feature", "widget", "--confirm", token, "--wait", "0");
+  assert.equal(code, 3, JSON.stringify(json));
+  assert.equal(json.status, "failed");
+  assert.equal(json.reason, "checks-failed");
+  git(repo, "fetch", "-q", "origin");
+  const roadmap = git(repo, "show", `origin/${branch}:${dir}/roadmap.md`);
+  assert.match(roadmap, /^status: in-progress$/m);
+  assert.match(roadmap, /^## Phase \d+: Ship reopen \(/m);
+  assert.match(roadmap.match(/^next-step: "(.*)"$/m)[1], /^2\.1 \(added /);
+});
+
 // A companion-mode delivery ready to ship: code on the product branch, artifacts on the
 // companion branch, optionally a managed pair with its workspace file.
 function pairShippable(pair, slug, { owner = true, extra = writeFile("src.js", "code\n") } = {}) {
