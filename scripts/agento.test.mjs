@@ -7110,7 +7110,24 @@ test("reopenRoadmap reopens to in-progress with a Ship reopen phase named by nex
   assert.match(plain, /^- \[ \] 2\.1 \(added 2026-10-11\) Fix the failing required check — verify: `scripts\/wait-for-checks\.sh pr <n>` succeeds$/m);
   assert.match(plain, /^- \[ \] 2\.2 \(added 2026-10-11\) Merge `origin\/main` into the branch with `agento\.mjs sync` and resolve the conflict per the concurrent-delivery hotspot recipes/m);
   assert.equal(reopenRoadmap(plain, { date: "2026-10-11", codes: ["checks-failed", "pr-conflicting"] }), plain, "idempotent");
-  assert.equal(reopenRoadmap(plain, { date: "2026-10-12", codes: ["pr-conflicting"] }), reopenRoadmap(plain, { date: "2026-10-12", codes: ["pr-conflicting"] }), "a second reopen with different codes reuses the section, never duplicates");
+
+  // A second reopen with a different code adds exactly that code's step and no
+  // duplicate of the existing ones.
+  const second = reopenRoadmap(plain, { date: "2026-10-12", codes: ["companion-pr-conflicting"] });
+  assert.match(second, /^- \[ \] 2\.3 \(added 2026-10-12\) Merge `origin\/main` into the companion half with `agento\.mjs sync`/m);
+  assert.equal([...second.matchAll(/^- \[ \] 2\.1 \(added /gm)].length, 1, "no duplicate checks-failed step");
+  assert.equal([...second.matchAll(/^- \[ \] 2\.2 \(added /gm)].length, 1, "no duplicate pr-conflicting step");
+  assert.equal([...second.matchAll(/^- \[ \] 2\./gm)].length, 3, "exactly three steps in the reused section");
+
+  // A reopen after the earlier step was ticked and the roadmap completed yields
+  // exactly one unticked step named by next-step, on that step's own date.
+  const ticked = reopened.replace("- [ ] 2.1 (added 2026-10-11)", "- [x] 2.1 (added 2026-10-11)");
+  const completedAgain = completeRoadmap(ticked, { date: "2026-10-12", followups: [] });
+  const third = reopenRoadmap(completedAgain, { date: "2026-10-13", codes: ["checks-failed"] });
+  assert.match(third, /^next-step: "2\.2 \(added 2026-10-13\)"$/m);
+  assert.equal([...third.matchAll(/^- \[ \] 2\./gm)].length, 1, "exactly one unticked step after the reopen");
+  assert.match(third, /^- \[ \] 2\.2 \(added 2026-10-13\) Fix the failing required check/m);
+  assert.equal([...third.matchAll(/^- \[x\] 2\.1 \(added /gm)].length, 1, "the ticked step is kept");
 });
 
 test("ship --confirm at checks with a conflicting PR reopens the roadmap and rejects (#107 ship-conflict-gate)", () => {
