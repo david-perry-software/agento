@@ -30,6 +30,7 @@
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
+//   node scripts/agento.mjs canvas <command>   (read-only Mission Control fact document for §11 step 6: attempt, reason, canvasId, instanceId, autoOpen, link, setting, refresh.pr; no doctor, no git network, no gh; unknown or missing command exits 1)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models <verb> [--plugin-root <dir>]   (model profiles in ~/.config/agento/model-profiles.json; read: list | pins [--role primary|secondary] | resolve <command> [--role primary|secondary] | show <name>; write: create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker> | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init; write verbs accept --expect <sha256> and report profilesFile.hash)
@@ -4589,9 +4590,60 @@ function receiptLines({ opId, window, doctor }) {
   return { status: "ok", receipt: `Receipt: accepted ${opId}`, preflightLines };
 }
 
+// The Mission Control canvas fact document (§11 step 6): whether a top-level
+// session should refresh/open the canvas for `command`. Built only from local
+// reads — never git network, never gh — so it is cheap enough for every command.
+function canvasDocument({ command, session }) {
+  const autoOpen = config.missionControl?.autoOpen ?? true;
+  const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
+  const link = linkState(facts.canvasLink, facts.canvasExpected).state;
+
+  let setting = null;
+  try {
+    const parsed = parseJsonc(fs.readFileSync(vscodeSettingsPath(), "utf8"));
+    if (typeof parsed?.["chat.canvases.enabled"] === "boolean") setting = parsed["chat.canvases.enabled"];
+  } catch {
+    setting = null; // unset or unreadable: never blocks the attempt
+  }
+
+  const attempt =
+    autoOpen === true &&
+    facts.hasCanvas &&
+    link === "installed" &&
+    setting !== false &&
+    !session.hosted &&
+    command !== "mission-control";
+
+  const reason = !autoOpen
+    ? "missionControl.autoOpen is false in .github/agento.json"
+    : !facts.hasCanvas
+      ? "canvas not present in this clone"
+      : link !== "installed"
+        ? `canvas link ${link}`
+        : setting === false
+          ? "chat.canvases.enabled is false"
+          : session.hosted
+            ? "hosted session"
+            : command === "mission-control"
+              ? "mission-control opens the canvas itself"
+              : `canvas installed, chat.canvases.enabled ${setting === null ? "unknown" : String(setting)}`;
+
+  return {
+    attempt,
+    reason,
+    canvasId: "agento-mission-control",
+    instanceId: "mission-control",
+    autoOpen: autoOpen === true,
+    link,
+    setting,
+    refresh: { pr: command === "ship" || command === "delivery-status" },
+  };
+}
+
 // What `preflight <command> [<type> <slug>]` emits: the session record, the §11
 // window verdict, `doctor --for <command>`, the slug's resolution (null without a
-// slug), the config document, and the §9 op-id, receipt, and preflight lines.
+// slug), the config document, the canvas fact document, and the §9 op-id, receipt,
+// and preflight lines.
 function preflightDocument({ command, type, slug }) {
   const session = sessionRecord();
   const rule = WINDOW_ROLES[command];
@@ -4612,6 +4664,7 @@ function preflightDocument({ command, type, slug }) {
     doctor,
     resolve: slug ? resolveDocument(type, slug) : null,
     config: configDocument(),
+    canvas: canvasDocument({ command, session }),
     root,
     configSource: source,
   };
@@ -5015,6 +5068,14 @@ switch (command) {
   case "preflight": {
     const document = preflightDocument(preflightArgs());
     emit(document, document.status === "ok" ? 0 : 3);
+    break;
+  }
+
+  case "canvas": {
+    const command = rest[0];
+    if (!command || !COMMAND_NEEDS[command]) usage(`canvas needs a known command; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+    if (rest.length > 1) usage(`canvas takes <command>, got ${JSON.stringify(rest.slice(1).join(" "))}`);
+    emit(canvasDocument({ command, session: sessionRecord() }));
     break;
   }
 
