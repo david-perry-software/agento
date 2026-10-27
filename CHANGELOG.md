@@ -7,7 +7,10 @@
   `agento.mjs canvas <command>`), delivery-policy §11 step 6 refreshes the canvas —
   opening it on first use — and posts each command's result line to the activity
   feed, and a repository can opt out with `missionControl.autoOpen: false` in
-  `.github/agento.json`.
+  `.github/agento.json`. The canvas link counts as available when it is `installed`,
+  or `foreign` whose resolved target directory contains `extension.mjs` — so the
+  auto-open works from any registered plugin clone, not only the one the link was
+  created for.
 
 ## 0.15.0
 
