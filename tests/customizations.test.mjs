@@ -948,6 +948,7 @@ test("only the core and ai-skills are always-on", () => {
   assert.deepEqual(alwaysOn, ["agento-core.instructions.md", "ai-skills.instructions.md"], "applyTo: \"**\" set changed");
   const core = fs.readFileSync(rel(".github", "instructions", "agento-core.instructions.md"), "utf8");
   assert.ok(core.trimEnd().split(/\r?\n/).length <= 40, "agento-core.instructions.md exceeds 40 lines");
+  assert.ok(core.includes("canvas.attempt") && core.includes("§11"), "agento-core.instructions.md must point at §11 step 6 via the preflight canvas.attempt field");
   const policy = rel(".github", "instructions", "delivery-policy.instructions.md");
   assert.notEqual(parseFrontmatter(splitFrontmatter(policy).frontmatter, "delivery-policy").applyTo, "**", "delivery-policy.instructions.md must not be always-on");
 });
