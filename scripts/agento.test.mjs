@@ -2201,6 +2201,98 @@ test("preflight usage errors exit 1", () => {
   assert.match(run(repo, "preflight", "nope").json.message, /unknown command nope/);
 });
 
+// --- canvas (Mission Control fact document) ------------------------------------
+
+test("canvas <command> reports the attempt matrix from local reads only", () => {
+  const { plugin, env, canvasLink, canvasExpected } = harnessFixture();
+  const settingsFile = (value) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-vscode-"));
+    const file = path.join(dir, "settings.json");
+    fs.writeFileSync(file, JSON.stringify({ "chat.canvases.enabled": value }));
+    return file;
+  };
+  const installed = () => {
+    fs.rmSync(canvasLink, { recursive: true, force: true });
+    fs.symlinkSync(canvasExpected, canvasLink, "dir");
+  };
+  const canvasIn = (canvasEnv, ...args) => runWith({ cwd: plugin, env: canvasEnv }, "canvas", ...args, "--plugin-root", plugin);
+
+  // Installed link + setting true → attempt true; refresh.pr false for a generic command.
+  installed();
+  const goodEnv = { ...env, AGENTO_VSCODE_SETTINGS: settingsFile(true) };
+  const good = canvasIn(goodEnv, "build-feature").json;
+  assert.equal(good.attempt, true);
+  assert.equal(good.reason, "canvas installed, chat.canvases.enabled true");
+  assert.equal(good.autoOpen, true);
+  assert.equal(good.link, "installed");
+  assert.equal(good.setting, true);
+  assert.deepEqual(good.refresh, { pr: false });
+  assert.equal(good.canvasId, "agento-mission-control");
+  assert.equal(good.instanceId, "mission-control");
+
+  // refresh.pr is true only for ship and delivery-status.
+  assert.deepEqual(canvasIn(goodEnv, "ship").json.refresh, { pr: true });
+  assert.deepEqual(canvasIn(goodEnv, "delivery-status").json.refresh, { pr: true });
+  assert.deepEqual(canvasIn(goodEnv, "mission-control").json.refresh, { pr: false });
+
+  // autoOpen false → attempt false, named reason.
+  const offRepo = makeRepo({ config: { missionControl: { autoOpen: false } } });
+  const off = runWith({ cwd: offRepo, env: goodEnv }, "canvas", "build-feature", "--plugin-root", plugin).json;
+  assert.equal(off.attempt, false);
+  assert.equal(off.autoOpen, false);
+  assert.equal(off.reason, "missionControl.autoOpen is false in .github/agento.json");
+
+  // Link absent and foreign.
+  fs.rmSync(canvasLink, { recursive: true, force: true });
+  const absent = canvasIn(goodEnv, "build-feature").json;
+  assert.equal(absent.attempt, false);
+  assert.equal(absent.link, "absent");
+  assert.equal(absent.reason, "canvas link absent");
+
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), "agento-other-canvas-"));
+  fs.symlinkSync(other, canvasLink, "dir");
+  const foreign = canvasIn(goodEnv, "build-feature").json;
+  assert.equal(foreign.attempt, false);
+  assert.equal(foreign.link, "foreign");
+  assert.equal(foreign.reason, "canvas link foreign");
+
+  // Setting false → attempt false.
+  installed();
+  const falseEnv = { ...env, AGENTO_VSCODE_SETTINGS: settingsFile(false) };
+  const offSetting = canvasIn(falseEnv, "build-feature").json;
+  assert.equal(offSetting.attempt, false);
+  assert.equal(offSetting.setting, false);
+  assert.equal(offSetting.reason, "chat.canvases.enabled is false");
+
+  // Unreadable settings → setting null, attempt true.
+  installed();
+  const unreadableEnv = { ...env, AGENTO_VSCODE_SETTINGS: path.join(os.tmpdir(), "does-not-exist-settings.json") };
+  const unreadable = canvasIn(unreadableEnv, "build-feature").json;
+  assert.equal(unreadable.attempt, true);
+  assert.equal(unreadable.setting, null);
+  assert.equal(unreadable.reason, "canvas installed, chat.canvases.enabled unknown");
+
+  // Hosted session → attempt false.
+  installed();
+  const hostedEnv = { ...goodEnv, GITHUB_ACTIONS: "true" };
+  const hosted = canvasIn(hostedEnv, "build-feature").json;
+  assert.equal(hosted.attempt, false);
+  assert.equal(hosted.reason, "hosted session");
+
+  // mission-control opens the canvas itself → attempt false.
+  installed();
+  const mc = canvasIn(goodEnv, "mission-control").json;
+  assert.equal(mc.attempt, false);
+  assert.equal(mc.reason, "mission-control opens the canvas itself");
+
+  // Usage errors exit 1.
+  for (const args of [["canvas"], ["canvas", "nope"], ["canvas", "delivery-status", "extra"]]) {
+    const { code, json } = canvasIn(goodEnv, ...args);
+    assert.equal(code, 1, args.join(" "));
+    assert.equal(json.status, "usage-error");
+  }
+});
+
 // Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).
 function makeWorktreeRepo() {
   const repo = makeRepo({ config: { worktrees: { dir: "../wt" } } });

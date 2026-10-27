@@ -30,6 +30,7 @@
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
+//   node scripts/agento.mjs canvas <command>   (read-only Mission Control fact document for §11 step 6: attempt, reason, canvasId, instanceId, autoOpen, link, setting, refresh.pr; no doctor, no git network, no gh; unknown or missing command exits 1)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models <verb> [--plugin-root <dir>]   (model profiles in ~/.config/agento/model-profiles.json; read: list | pins [--role primary|secondary] | resolve <command> [--role primary|secondary] | show <name>; write: create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker> | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init; write verbs accept --expect <sha256> and report profilesFile.hash)
@@ -5067,6 +5068,14 @@ switch (command) {
   case "preflight": {
     const document = preflightDocument(preflightArgs());
     emit(document, document.status === "ok" ? 0 : 3);
+    break;
+  }
+
+  case "canvas": {
+    const command = rest[0];
+    if (!command || !COMMAND_NEEDS[command]) usage(`canvas needs a known command; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
+    if (rest.length > 1) usage(`canvas takes <command>, got ${JSON.stringify(rest.slice(1).join(" "))}`);
+    emit(canvasDocument({ command, session: sessionRecord() }));
     break;
   }
 
