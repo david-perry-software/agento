@@ -2242,19 +2242,38 @@ test("canvas <command> reports the attempt matrix from local reads only", () => 
   assert.equal(off.autoOpen, false);
   assert.equal(off.reason, "missionControl.autoOpen is false in .github/agento.json");
 
-  // Link absent and foreign.
+  // Link absent.
   fs.rmSync(canvasLink, { recursive: true, force: true });
   const absent = canvasIn(goodEnv, "build-feature").json;
   assert.equal(absent.attempt, false);
   assert.equal(absent.link, "absent");
   assert.equal(absent.reason, "canvas link absent");
 
+  // Foreign link to a directory without extension.mjs → attempt false.
   const other = fs.mkdtempSync(path.join(os.tmpdir(), "agento-other-canvas-"));
   fs.symlinkSync(other, canvasLink, "dir");
   const foreign = canvasIn(goodEnv, "build-feature").json;
   assert.equal(foreign.attempt, false);
   assert.equal(foreign.link, "foreign");
   assert.equal(foreign.reason, "canvas link foreign");
+
+  // Foreign link to a usable canvas (extension.mjs present) → attempt true.
+  fs.rmSync(canvasLink, { recursive: true, force: true });
+  const foreignValid = fs.mkdtempSync(path.join(os.tmpdir(), "agento-foreign-canvas-"));
+  fs.writeFileSync(path.join(foreignValid, "extension.mjs"), "export default {};\n");
+  fs.symlinkSync(foreignValid, canvasLink, "dir");
+  const foreignOk = canvasIn(goodEnv, "build-feature").json;
+  assert.equal(foreignOk.attempt, true);
+  assert.equal(foreignOk.link, "foreign");
+  assert.equal(foreignOk.reason, `canvas installed from ${fs.realpathSync(foreignValid)}`);
+
+  // Dangling canvas link → attempt false.
+  fs.rmSync(canvasLink, { recursive: true, force: true });
+  fs.symlinkSync(path.join(plugin, "gone-canvas"), canvasLink, "dir");
+  const dangling = canvasIn(goodEnv, "build-feature").json;
+  assert.equal(dangling.attempt, false);
+  assert.equal(dangling.link, "dangling");
+  assert.equal(dangling.reason, "canvas link dangling");
 
   // Setting false → attempt false.
   installed();

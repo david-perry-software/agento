@@ -4593,10 +4593,29 @@ function receiptLines({ opId, window, doctor }) {
 // The Mission Control canvas fact document (§11 step 6): whether a top-level
 // session should refresh/open the canvas for `command`. Built only from local
 // reads — never git network, never gh — so it is cheap enough for every command.
+// The resolved target of a foreign canvas link when it is a usable Mission Control
+// canvas — a directory containing `extension.mjs` — else null. A foreign link whose
+// resolved target is usable counts as available, while `link` keeps the raw state.
+function usableForeignCanvasTarget(canvasLink) {
+  let real;
+  try {
+    real = fs.realpathSync(canvasLink);
+  } catch {
+    return null;
+  }
+  try {
+    return fs.statSync(real).isDirectory() && fs.existsSync(path.join(real, "extension.mjs")) ? real : null;
+  } catch {
+    return null;
+  }
+}
+
 function canvasDocument({ command, session }) {
   const autoOpen = config.missionControl?.autoOpen ?? true;
   const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
   const link = linkState(facts.canvasLink, facts.canvasExpected).state;
+  const foreignTarget = link === "foreign" ? usableForeignCanvasTarget(facts.canvasLink) : null;
+  const linkAvailable = link === "installed" || foreignTarget !== null;
 
   let setting = null;
   try {
@@ -4609,7 +4628,7 @@ function canvasDocument({ command, session }) {
   const attempt =
     autoOpen === true &&
     facts.hasCanvas &&
-    link === "installed" &&
+    linkAvailable &&
     setting !== false &&
     !session.hosted &&
     command !== "mission-control";
@@ -4618,7 +4637,7 @@ function canvasDocument({ command, session }) {
     ? "missionControl.autoOpen is false in .github/agento.json"
     : !facts.hasCanvas
       ? "canvas not present in this clone"
-      : link !== "installed"
+      : !linkAvailable
         ? `canvas link ${link}`
         : setting === false
           ? "chat.canvases.enabled is false"
@@ -4626,7 +4645,9 @@ function canvasDocument({ command, session }) {
             ? "hosted session"
             : command === "mission-control"
               ? "mission-control opens the canvas itself"
-              : `canvas installed, chat.canvases.enabled ${setting === null ? "unknown" : String(setting)}`;
+              : foreignTarget !== null
+                ? `canvas installed from ${foreignTarget}`
+                : `canvas installed, chat.canvases.enabled ${setting === null ? "unknown" : String(setting)}`;
 
   return {
     attempt,
