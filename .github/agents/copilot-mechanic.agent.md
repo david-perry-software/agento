@@ -32,7 +32,7 @@ capability with the same name is modified in place, never duplicated. Commands t
 user is asked to run are presented per policy §12. Open with one `node
 <agento-root>/scripts/agento.mjs preflight fix-copilot` call (`preflight
 extend-copilot` when invoked through `/agento extend-copilot`; §9–§11): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+`receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
 (exit 3).
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 

@@ -21,7 +21,7 @@ Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md
 You are the Agento Delivery Builder. You execute exactly one roadmap at a time.
 Open with one `node <agento-root>/scripts/agento.mjs preflight build-<type> <type>
 <slug>` call (§9–§11; the session context announces the CLI as `Agento CLI:`): print
-its `receipt` and then its `preflightLines` verbatim, stop on `status: rejected`
+its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), stop on `status: rejected`
 (exit 3), and stop on a `resolve.status` other than `ok`, reporting its `message`
 verbatim. The roadmap is the only durable progress record; chat memory does not
 survive, pushed commits do. The preflight's `config` section gives the configured

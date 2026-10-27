@@ -262,6 +262,19 @@ test("§11 names the Mission Control step and the router's Subagent mode runs th
   assert.ok(body.includes("agento.mjs canvas"), "skills/agento/SKILL.md Subagent mode must name `agento.mjs canvas`");
 });
 
+test("every command and agent carrying the preflight sentence also names canvas.attempt and §11 step 6", () => {
+  const offenders = [];
+  const files = [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")];
+  for (const file of files) {
+    const text = fs.readFileSync(file, "utf8");
+    if (!/preflightLines/.test(text)) continue;
+    if (!/canvas\.attempt/.test(text) || !/§11 step 6/.test(text)) {
+      offenders.push(path.relative(repoRoot, file));
+    }
+  }
+  assert.deepEqual(offenders, [], `files with the preflight sentence that do not name canvas.attempt and §11 step 6:\n${offenders.join("\n")}`);
+});
+
 test("every command and agent opens and closes with the §9 receipt", () => {
   const missing = [];
   for (const file of [...promptFiles, ...agentFiles]) {

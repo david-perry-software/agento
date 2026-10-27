@@ -17,7 +17,7 @@ idempotency row (a slug that already has a roadmap enters your resume protocol �
 second branch, worktree, or PR; an existing GitHub issue is linked, not duplicated).
 Open with one `node <agento-root>/scripts/agento.mjs preflight new-issue` call
 (§9–§11), with `issue <slug>` appended when resuming a promoted planning worktree:
-print its `receipt` and then its `preflightLines` verbatim, and stop on `status:
+print its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status:
 rejected` (exit 3), writing nothing.
 Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 

@@ -59,7 +59,7 @@ being run.
 1. Open with one `node <agento-root>/scripts/agento.mjs preflight ap <slug>` call
    (§9–§11; the slug as given — `<type>/<slug>` or bare; its path is in the session
    context line `Agento CLI:`): print its `receipt` and then its `preflightLines`
-   verbatim, stop on `status: rejected` (exit 3), and stop on a `resolve.status`
+   verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), stop on `status: rejected` (exit 3), and stop on a `resolve.status`
    other than `ok`.
    When the invocation names no slug (the Reviewer's "Continue unattended" handoff),
    the slug is the session record's `delivery.slug`.
