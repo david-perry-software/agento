@@ -2091,13 +2091,20 @@ test("preflight returns the named sections, the op-id, and an accepted receipt i
   const sha = git(repo, "rev-parse", "--short", "HEAD");
   const { code, json } = runWith({ cwd: repo, env }, "preflight", "delivery-status");
   assert.equal(code, 0);
-  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "session", "window", "doctor", "resolve", "config", "root", "configSource"]);
+  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "session", "window", "doctor", "resolve", "config", "canvas", "root", "configSource"]);
   assert.equal(json.status, "ok");
   assert.equal(json.command, "delivery-status");
   assert.equal(json.subject, "main");
   assert.equal(json.opId, `delivery-status:main:${sha}`);
   assert.equal(json.receipt, `Receipt: accepted delivery-status:main:${sha}`);
   assert.deepEqual(json.preflightLines, []);
+  // The Mission Control fact document is present and self-describing, and never
+  // changes status, receipt, or preflightLines.
+  assert.deepEqual(Object.keys(json.canvas), ["attempt", "reason", "canvasId", "instanceId", "autoOpen", "link", "setting", "refresh"]);
+  assert.equal(json.canvas.canvasId, "agento-mission-control");
+  assert.equal(json.canvas.instanceId, "mission-control");
+  assert.equal(typeof json.canvas.attempt, "boolean");
+  assert.equal(typeof json.canvas.reason, "string");
   // Each section is the standalone subcommand's document.
   const { worktrees, ...session } = json.session;
   const { worktrees: standaloneWorktrees, ...standalone } = run(repo, "session").json;
@@ -2120,6 +2127,10 @@ test("preflight rejects a window mismatch with the §9 receipt and the record's 
   const alternatives = [...wrong.json.session.allowed, ...wrong.json.session.elsewhere.map((e) => `${e.command} (${e.window} window)`)];
   assert.equal(wrong.json.receipt, `Receipt: rejected — wrong window: role=primary (${repo}, branch main); allowed: ${alternatives.join(", ")}`);
   assert.deepEqual(wrong.json.preflightLines, []);
+  // The canvas document is present on a rejected document too; the rejection never
+  // changes it.
+  assert.equal(wrong.json.canvas.instanceId, "mission-control");
+  assert.equal(typeof wrong.json.canvas.attempt, "boolean");
 
   // §11 step 5 branch conditions: on the default branch; clean; on a work branch.
   assert.equal(runWith({ cwd: repo, env }, "preflight", "start-session").code, 0);

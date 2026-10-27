@@ -4589,9 +4589,60 @@ function receiptLines({ opId, window, doctor }) {
   return { status: "ok", receipt: `Receipt: accepted ${opId}`, preflightLines };
 }
 
+// The Mission Control canvas fact document (§11 step 6): whether a top-level
+// session should refresh/open the canvas for `command`. Built only from local
+// reads — never git network, never gh — so it is cheap enough for every command.
+function canvasDocument({ command, session }) {
+  const autoOpen = config.missionControl?.autoOpen ?? true;
+  const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
+  const link = linkState(facts.canvasLink, facts.canvasExpected).state;
+
+  let setting = null;
+  try {
+    const parsed = parseJsonc(fs.readFileSync(vscodeSettingsPath(), "utf8"));
+    if (typeof parsed?.["chat.canvases.enabled"] === "boolean") setting = parsed["chat.canvases.enabled"];
+  } catch {
+    setting = null; // unset or unreadable: never blocks the attempt
+  }
+
+  const attempt =
+    autoOpen === true &&
+    facts.hasCanvas &&
+    link === "installed" &&
+    setting !== false &&
+    !session.hosted &&
+    command !== "mission-control";
+
+  const reason = !autoOpen
+    ? "missionControl.autoOpen is false in .github/agento.json"
+    : !facts.hasCanvas
+      ? "canvas not present in this clone"
+      : link !== "installed"
+        ? `canvas link ${link}`
+        : setting === false
+          ? "chat.canvases.enabled is false"
+          : session.hosted
+            ? "hosted session"
+            : command === "mission-control"
+              ? "mission-control opens the canvas itself"
+              : `canvas installed, chat.canvases.enabled ${setting === null ? "unknown" : String(setting)}`;
+
+  return {
+    attempt,
+    reason,
+    canvasId: "agento-mission-control",
+    instanceId: "mission-control",
+    autoOpen: autoOpen === true,
+    link,
+    setting,
+    refresh: { pr: command === "ship" || command === "delivery-status" },
+  };
+}
+
 // What `preflight <command> [<type> <slug>]` emits: the session record, the §11
 // window verdict, `doctor --for <command>`, the slug's resolution (null without a
-// slug), the config document, and the §9 op-id, receipt, and preflight lines.
+// slug), the config document, the canvas fact document, and the §9 op-id, receipt,
+// and preflight lines.
 function preflightDocument({ command, type, slug }) {
   const session = sessionRecord();
   const rule = WINDOW_ROLES[command];
@@ -4612,6 +4663,7 @@ function preflightDocument({ command, type, slug }) {
     doctor,
     resolve: slug ? resolveDocument(type, slug) : null,
     config: configDocument(),
+    canvas: canvasDocument({ command, session }),
     root,
     configSource: source,
   };
