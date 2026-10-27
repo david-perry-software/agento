@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Added.** Auto-open Mission Control on every top-level `/agento` command: the
+  preflight document now carries a `canvas` fact document (also exposed read-only as
+  `agento.mjs canvas <command>`), delivery-policy §11 step 6 refreshes the canvas —
+  opening it on first use — and posts each command's result line to the activity
+  feed, and a repository can opt out with `missionControl.autoOpen: false` in
+  `.github/agento.json`.
+
 ## 0.15.0
 
 - **Fixed.** `/agento ship` no longer misreports a policy-blocked merge

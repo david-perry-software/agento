@@ -101,7 +101,10 @@ after updating Agento so the link always points at that clone's canvas.
 
 The canvas runs only in a **local Copilot-harness chat session** with
 `chat.canvases.enabled` on in VS Code user settings; it does not run in remote or
-Copilot-app sessions. `harness uninstall` removes the canvas link together with the
+Copilot-app sessions. When it can run, every top-level `/agento` command refreshes
+the canvas (opening it on first use) and posts its result to the activity feed, per
+delivery-policy §11 step 6; set `missionControl.autoOpen: false` in
+`.github/agento.json` to opt a repository out. `harness uninstall` removes the canvas link together with the
 router link.
 
 Routing every `/agento` through the router skill also changes **Local** sessions:

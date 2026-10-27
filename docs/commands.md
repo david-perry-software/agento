@@ -426,6 +426,12 @@ nothing pinned, or a named profile applied, `warn` on an invalid profiles file,
 when the clone is also registered in `chat.pluginLocations`; `harness` is `ok` when
 the `~/.copilot/skills/agento` link is `installed`, `fail` otherwise with a
 `harness install` or `install --force` fallback),
+`canvas <command>` (a read-only Mission Control fact document for delivery-policy
+§11 step 6: `{ attempt, reason, canvasId, instanceId, autoOpen, link, setting,
+refresh: { pr } }`, read only from local files — the canvas link state, the VS Code
+`chat.canvases.enabled` user setting, the config, and the session `hosted` flag; no
+doctor checks, no git network, no `gh`; unknown or missing command is a usage error,
+exit 1),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
 preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
@@ -657,6 +663,10 @@ the standard fallback. Every command opens with one `agento.mjs preflight <name>
 call that runs the `doctor --for <name>` checks with the window check and the slug
 resolution; `/agento doctor` runs the
 same checks on demand and only reports — installs and logins stay with the user.
+The preflight document also carries a `canvas` field (the `agento.mjs canvas <name>`
+document) describing whether the top-level session should refresh or open the Mission
+Control canvas and post its result to the feed — delivery-policy §11 step 6, which
+never changes the receipt, the result, or the command's outcome.
 
 ## The standard flow
 
