@@ -31,7 +31,7 @@ and reports them in `preflight[]`. Window check per §11: requires role `primary
 The CLI path is announced in the session context as `Agento CLI:`.
 
 1. `node <agento-root>/scripts/agento.mjs preflight ship <slug>` — print its
-   `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+   `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
    (exit 3). Its `resolve` section gives the delivery `type` (`feature` or `issue`);
    a `conflict`, `branch-mismatch`, or `missing` resolution is reported verbatim with
    the §9 rejected receipt; stop.

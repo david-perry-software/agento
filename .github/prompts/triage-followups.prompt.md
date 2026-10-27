@@ -22,7 +22,7 @@ directly above the result line per §12; a duplicate submission follows this com
 idempotency row (already-annotated follow-up lines and already-flagged issues are
 skipped). Open with one `node <agento-root>/scripts/agento.mjs preflight
 triage-followups` call (§9–§11): print its `receipt` and then its `preflightLines`
-verbatim, and stop on `status: rejected` (exit 3), writing nothing.
+verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Companion mode** (`agento.mjs config` reports `artifactsRoot` different from

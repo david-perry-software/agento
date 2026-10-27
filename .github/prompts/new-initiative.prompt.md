@@ -18,7 +18,7 @@ idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; 
 merged one is rejected naming the existing breakdown), which takes precedence over
 the slug reservation in step 5. Open with one
 `node <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11): print
-its `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
 (exit 3), writing nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 

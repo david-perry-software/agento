@@ -18,7 +18,7 @@ delivery system. Layout:
   so Agento development is guarded by Agento itself.
 - `scripts/` — `agento.mjs` (the CLI prompts call: config, resolve, find, status,
   close-decision, ship-preflight, sync, step-commit, paths, ports, session, windows, handoff, artifacts,
-  next, initiative, metrics, doctor, dashboard, harness, migrate, release),
+  next, initiative, metrics, doctor, canvas, dashboard, harness, migrate, release),
   `agento-config.mjs`, `session-state.mjs`,
   `delivery-roadmap-resolver.mjs`, `delivery-metrics.mjs`, `release-state.mjs`,
   `pending-dispatch.mjs` (the cross-window handoff queue shared with the extension),

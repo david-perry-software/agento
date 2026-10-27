@@ -18,6 +18,7 @@ or acting as an Agento agent, unless it is already in context.
   delivery PR.
 - **Receipts (§9).** Every `/agento` command response opens with one receipt line and
   closes with one result line naming the next command.
+- **Mission Control (§11 step 6).** When a top-level preflight shows `canvas.attempt: true` and the session has the canvas tools, do §11 step 6 silently: refresh `mission-control`, `open_canvas` on error, closing `post_note`.
 
 ## Command spelling
 

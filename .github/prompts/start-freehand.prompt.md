@@ -26,7 +26,7 @@ delivery-policy.instructions.md §9; a duplicate submission follows this command
 idempotency row: a registered worktree for the same slug is resumed with `--resume`
 semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
 Open with one `node <agento-root>/scripts/agento.mjs preflight start-freehand` call
-(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
+(§9–§11): print its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on
 `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 

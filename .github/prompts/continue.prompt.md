@@ -26,7 +26,7 @@ transition is now legal — never a second worktree, branch, or PR — and the d
 command's own row governs the rest. Open with one `node
 <agento-root>/scripts/agento.mjs preflight continue [<slug>]` call (§9–§11), the slug
 argument appended verbatim when one was given: print its `receipt` and then its
-`preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing nothing;
+`preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected` (exit 3), writing nothing;
 the needs above are the union of what the dispatched commands declare.
 Window check per §11: requires role `primary`, `plan`, or `build` (in `build` or
 `plan`, a slug argument must equal the record's `delivery.slug`; `freehand` and

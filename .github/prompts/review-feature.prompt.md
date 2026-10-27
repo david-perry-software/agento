@@ -18,7 +18,7 @@ directly above the result line per §12; a duplicate submission follows this com
 idempotency row (a fresh verdict overwrites review.md; no second PR comment thread).
 Open with one `node <agento-root>/scripts/agento.mjs preflight review-feature feature
 <slug>` call (§9–§11; path in the session context line `Agento CLI:`): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+`receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
 (exit 3), writing nothing.
 Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 

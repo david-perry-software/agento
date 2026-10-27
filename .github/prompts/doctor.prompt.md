@@ -18,7 +18,7 @@ Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row (read-only: a fresh run of the checks). Open with one `node
 <agento-root>/scripts/agento.mjs preflight doctor` call (§9–§11): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
+`receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
 (exit 3).
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 

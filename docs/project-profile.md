@@ -23,7 +23,8 @@ entirely for defaults.
     "freehand": "changes/",
     "postShip": "post-ship/"
   },
-  "checks": { "releaseWorkflow": null }
+  "checks": { "releaseWorkflow": null },
+  "missionControl": { "autoOpen": null }
 }
 ```
 
@@ -39,6 +40,7 @@ entirely for defaults.
 | `branches.feature` / `branches.issue` | `feature/` / `issue/` | Branch prefixes; the roadmap nudge fires on these. Must match the `branch:` header in roadmaps. |
 | `branches.freehand` / `branches.postShip` | `changes/` / `post-ship/` | Freehand and post-ship-epilogue branch prefixes. |
 | `checks.releaseWorkflow` | `null` | A GitHub Actions workflow file name; `/agento ship` waits on it after merge with `agento.mjs release <merge-sha> --wait 50`. Verdicts: `success` (the merge's own `push` run passed); `superseded-success` (that run was cancelled, e.g. by a `concurrency` group, and a later default-branch `push` run on a descendant commit passed); `not-triggered` (the merge changed only files the workflow's `paths`/`paths-ignore` filters exclude, or the workflow has no trigger for the default branch); `pending` (a run is in progress, or none has registered within 180 s of the merge commit); `dispatch-required` (the workflow is `workflow_dispatch`-only, so ship dispatches it once); `failed` and `no-run` stop ship. Unset → `not-configured`. |
+| `missionControl.autoOpen` | `true` | Whether every top-level `/agento` command refreshes/opens the Mission Control canvas and posts its result to the activity feed (delivery-policy §11 step 6). Set `false` to opt a repository out; `null` keeps the default. |
 
 When `artifacts.repo` is set, the **primary** VS Code window only sees the companion's
 files if it adds the companion checkout as a workspace folder (*File → Add Folder to

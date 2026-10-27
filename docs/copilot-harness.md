@@ -431,7 +431,11 @@ with `chat.canvases.enabled` on; they are not loaded in remote or Copilot-app
 sessions. `/agento mission-control` opens the canvas with `instanceId:
 mission-control` when the session has the `open_canvas` tool, and otherwise prints
 the prerequisites (`agento.mjs harness status`, the setting, and the local-session
-requirement). Reopening the same `instanceId` reuses the live server, so the feed
+requirement). Beyond the explicit command, every top-level `/agento` command now
+refreshes the canvas on start (opening it on first use) and posts its result line to
+the feed at the end, per delivery-policy §11 step 6, gated by the preflight `canvas`
+document — `missionControl.autoOpen: false` in `.github/agento.json` opts out.
+Reopening the same `instanceId` reuses the live server, so the feed
 and UI state persist across open/close of the view; the private store lives under
 `<copilot-home>/extension-data/agento-mission-control/<repo-key>.json` (the same
 `COPILOT_HOME` rule), keyed by a hash of the primary clone path so every window of

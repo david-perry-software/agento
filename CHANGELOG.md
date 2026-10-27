@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Added.** Auto-open Mission Control on every top-level `/agento` command: the
+  preflight document now carries a `canvas` fact document (also exposed read-only as
+  `agento.mjs canvas <command>`, and emitted directly after `preflightLines` so the
+  first ~600 characters reach `canvas.attempt`), delivery-policy §11 step 6 refreshes
+  the canvas — opening it on first use — and posts each command's result line to the
+  activity feed, and a repository can opt out with `missionControl.autoOpen: false` in
+  `.github/agento.json`. The canvas link counts as available when it is `installed`,
+  or `foreign` whose resolved target directory contains `extension.mjs` — so the
+  auto-open works from any registered plugin clone, not only the one the link was
+  created for. The shared preflight sentence in every command and agent now carries
+  the §11 step 6 clause itself (`then, when its canvas.attempt is true, do §11 step 6
+  (top-level only; silent)`) so the instruction is delivered reliably from the branch
+  on every command, before the always-on core pointer and router changes take effect
+  through a plugin-clone update.
+
 ## 0.15.0
 
 - **Fixed.** `/agento ship` no longer misreports a policy-blocked merge
