@@ -93,6 +93,20 @@ test("worktrees.autoApprove can be overridden to false", () => {
   assert.equal(config.worktrees.autoApprove, false);
 });
 
+test("missionControl.autoOpen defaults to true and an explicit false is honored", () => {
+  const root = tmpRoot();
+  const configDir = path.join(root, ".github");
+  fs.mkdirSync(configDir, { recursive: true });
+
+  assert.equal(defaultConfig(root).missionControl.autoOpen, true);
+
+  fs.writeFileSync(path.join(configDir, "agento.json"), JSON.stringify({ missionControl: { autoOpen: false } }));
+  assert.equal(loadAgentoConfig(root).config.missionControl.autoOpen, false);
+
+  fs.writeFileSync(path.join(configDir, "agento.json"), JSON.stringify({ missionControl: { autoOpen: null } }));
+  assert.equal(loadAgentoConfig(root).config.missionControl.autoOpen, true);
+});
+
 test("the shipped templates/agento.json loads without clobbering defaults", () => {
   const root = tmpRoot();
   const configDir = path.join(root, ".github");
@@ -108,6 +122,7 @@ test("the shipped templates/agento.json loads without clobbering defaults", () =
   assert.equal(config.artifacts.features, "features");
   assert.equal(config.artifacts.initiatives, "initiatives");
   assert.deepEqual(config.artifacts.repo, { name: null, dir: null });
+  assert.equal(config.missionControl.autoOpen, true);
 });
 
 test("a root-level agento.json is accepted as a fallback location", () => {
