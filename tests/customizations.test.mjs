@@ -250,6 +250,18 @@ test("policy section references (§N) point at sections that exist", () => {
   }
 });
 
+test("§11 names the Mission Control step and the router's Subagent mode runs the canvas subcommand", () => {
+  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  const section11 = policy.match(/^## 11\. Window check\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m)?.[1] ?? "";
+  assert.ok(section11, "delivery-policy has no ## 11. Window check section");
+  for (const token of ["refresh", "open_canvas", "post_note", 'instanceId: "mission-control"']) {
+    assert.ok(section11.includes(token), `delivery-policy §11 step 6 must name ${JSON.stringify(token)}`);
+  }
+
+  const { body } = readSkill();
+  assert.ok(body.includes("agento.mjs canvas"), "skills/agento/SKILL.md Subagent mode must name `agento.mjs canvas`");
+});
+
 test("every command and agent opens and closes with the §9 receipt", () => {
   const missing = [];
   for (const file of [...promptFiles, ...agentFiles]) {
