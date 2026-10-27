@@ -436,7 +436,7 @@ doctor checks, no git network, no `gh`; unknown or missing command is a usage er
 exit 1),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
-preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
+preflightLines, canvas, session, window, doctor, resolve, config, root, configSource }`, where
 `session` is `session`, `doctor` is `doctor --for <command>`, `resolve` is `resolve
 <type> <slug>` (`find <slug>` for a bare slug; `null` without one), `config` is
 `config`, `window` is the §11 verdict `{ role, required { roles, branch, clean,
@@ -668,7 +668,12 @@ same checks on demand and only reports — installs and logins stay with the use
 The preflight document also carries a `canvas` field (the `agento.mjs canvas <name>`
 document) describing whether the top-level session should refresh or open the Mission
 Control canvas and post its result to the feed — delivery-policy §11 step 6, which
-never changes the receipt, the result, or the command's outcome.
+never changes the receipt, the result, or the command's outcome. The `canvas` field
+is emitted directly after `preflightLines` (before `session`) so that the first
+~600 characters of the pretty-printed document reach `canvas.attempt`. The shared
+preflight sentence in every command and agent therefore says: print its `receipt` and
+then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do
+§11 step 6 (top-level only; silent), and stop on `status: rejected`.
 
 ## The standard flow
 
