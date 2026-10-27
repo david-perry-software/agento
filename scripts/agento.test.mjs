@@ -2091,7 +2091,7 @@ test("preflight returns the named sections, the op-id, and an accepted receipt i
   const sha = git(repo, "rev-parse", "--short", "HEAD");
   const { code, json } = runWith({ cwd: repo, env }, "preflight", "delivery-status");
   assert.equal(code, 0);
-  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "session", "window", "doctor", "resolve", "config", "canvas", "root", "configSource"]);
+  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "canvas", "session", "window", "doctor", "resolve", "config", "root", "configSource"]);
   assert.equal(json.status, "ok");
   assert.equal(json.command, "delivery-status");
   assert.equal(json.subject, "main");
@@ -2310,6 +2310,30 @@ test("canvas <command> reports the attempt matrix from local reads only", () => 
     assert.equal(code, 1, args.join(" "));
     assert.equal(json.status, "usage-error");
   }
+});
+
+test("preflight places canvas directly after preflightLines and attempt within the first 600 characters", () => {
+  const { plugin, env, canvasLink, canvasExpected } = harnessFixture();
+  const settingsFile = (value) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-vscode-"));
+    const file = path.join(dir, "settings.json");
+    fs.writeFileSync(file, JSON.stringify({ "chat.canvases.enabled": value }));
+    return file;
+  };
+  fs.symlinkSync(canvasExpected, canvasLink, "dir");
+  const goodEnv = { ...env, AGENTO_VSCODE_SETTINGS: settingsFile(true) };
+  const result = spawnSync("node", [cli, "preflight", "delivery-status", "--plugin-root", plugin], { cwd: plugin, encoding: "utf8", env: goodEnv });
+  assert.equal(result.status, 0, result.stderr);
+  const raw = result.stdout;
+  const doc = JSON.parse(raw);
+  const keys = Object.keys(doc);
+  const preflightAt = keys.indexOf("preflightLines");
+  const canvasAt = keys.indexOf("canvas");
+  assert.ok(preflightAt >= 0, "preflight document must have preflightLines");
+  assert.ok(canvasAt === preflightAt + 1, `canvas must be the key directly after preflightLines, got ${JSON.stringify(keys.slice(preflightAt, preflightAt + 4))}`);
+  const pretty = JSON.stringify(doc, null, 2);
+  assert.ok(pretty.indexOf('"attempt"') < 600, `"attempt" must appear within the first 600 characters, found at ${pretty.indexOf('"attempt"')}`);
+  assert.equal(doc.canvas.attempt, true);
 });
 
 // Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).

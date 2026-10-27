@@ -4661,10 +4661,11 @@ function canvasDocument({ command, session }) {
   };
 }
 
-// What `preflight <command> [<type> <slug>]` emits: the session record, the §11
+// What `preflight <command> [<type> <slug>]` emits: the §9 op-id, receipt, and
+// preflight lines, the canvas fact document (directly after the preflight lines so
+// the chat tool's first read reaches `canvas.attempt`), the session record, the §11
 // window verdict, `doctor --for <command>`, the slug's resolution (null without a
-// slug), the config document, the canvas fact document, and the §9 op-id, receipt,
-// and preflight lines.
+// slug), and the config document.
 function preflightDocument({ command, type, slug }) {
   const session = sessionRecord();
   const rule = WINDOW_ROLES[command];
@@ -4680,12 +4681,12 @@ function preflightDocument({ command, type, slug }) {
     subject,
     receipt,
     preflightLines,
+    canvas: canvasDocument({ command, session }),
     session,
     window,
     doctor,
     resolve: slug ? resolveDocument(type, slug) : null,
     config: configDocument(),
-    canvas: canvasDocument({ command, session }),
     root,
     configSource: source,
   };
