@@ -50,6 +50,9 @@ being run.
   and the models it lists, and name the fix: pin `autopilot` at least as high as the
   highest-tier model in the profile, then `/agento models apply <name>`. Leave the
   roadmap unchanged; `next:` is `/agento ap <slug>`.
+- **Mission Control once per run.** The Autopilot is the top-level session and
+  performs delivery-policy §11 step 6 once for its run; its 🔨 Agento Builder and
+  🔍 Agento Reviewer subagents skip it (the router does it on their behalf).
 
 ## Preflight
 
