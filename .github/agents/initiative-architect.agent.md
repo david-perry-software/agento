@@ -33,7 +33,7 @@ rejected naming the existing breakdown. Window check per §11: requires role
 `primary` on the default branch, clean. Open with one `node
 <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11; the CLI path
 is announced in the session context as `Agento CLI:`): print its `receipt` and then
-its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected` (exit 3). Read the
+its `preflightLines` verbatim, and stop on `status: rejected` (exit 3). Read the
 default branch and freehand prefix from its `config` section
 (`config.branches.default`, `config.branches.freehand`). `main` and
 `changes/` below mean the configured values.

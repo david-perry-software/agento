@@ -426,17 +426,9 @@ nothing pinned, or a named profile applied, `warn` on an invalid profiles file,
 when the clone is also registered in `chat.pluginLocations`; `harness` is `ok` when
 the `~/.copilot/skills/agento` link is `installed`, `fail` otherwise with a
 `harness install` or `install --force` fallback),
-`canvas <command>` (a read-only Mission Control fact document for delivery-policy
-§11 step 6: `{ attempt, reason, canvasId, instanceId, autoOpen, link, setting,
-refresh: { pr } }`, read only from local files — the canvas link state (`installed`,
-or `foreign` whose resolved target directory contains `extension.mjs`; `link` reports
-the raw state), the VS Code `chat.canvases.enabled` user setting, the config, and the
-session `hosted` flag; no
-doctor checks, no git network, no `gh`; unknown or missing command is a usage error,
-exit 1),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
-preflightLines, canvas, session, window, doctor, resolve, config, root, configSource }`, where
+preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
 `session` is `session`, `doctor` is `doctor --for <command>`, `resolve` is `resolve
 <type> <slug>` (`find <slug>` for a bare slug; `null` without one), `config` is
 `config`, `window` is the §11 verdict `{ role, required { roles, branch, clean,
@@ -665,15 +657,6 @@ the standard fallback. Every command opens with one `agento.mjs preflight <name>
 call that runs the `doctor --for <name>` checks with the window check and the slug
 resolution; `/agento doctor` runs the
 same checks on demand and only reports — installs and logins stay with the user.
-The preflight document also carries a `canvas` field (the `agento.mjs canvas <name>`
-document) describing whether the top-level session should refresh or open the Mission
-Control canvas and post its result to the feed — delivery-policy §11 step 6, which
-never changes the receipt, the result, or the command's outcome. The `canvas` field
-is emitted directly after `preflightLines` (before `session`) so that the first
-~600 characters of the pretty-printed document reach `canvas.attempt`. The shared
-preflight sentence in every command and agent therefore says: print its `receipt` and
-then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do
-§11 step 6 (top-level only; silent), and stop on `status: rejected`.
 
 ## The standard flow
 

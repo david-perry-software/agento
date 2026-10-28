@@ -24,7 +24,7 @@ idempotency row (existing files are kept unless `--force`; an existing companion
 repository or clone is adopted; with `--migrate`, roots already moved report nothing
 to migrate and existing `changes/agento-init` PRs in either repository are resumed).
 Open with one `node <agento-root>/scripts/agento.mjs preflight agento-init` call
-(§9–§11): print its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on
+(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
 `status: rejected` (exit 3), writing nothing. `<agento-root>` comes from the session context line
 `Agento CLI: node <agento-root>/scripts/agento.mjs` (fallback: the user-level
 `chat.pluginLocations` setting — it is machine-scoped, so only user settings carry it).

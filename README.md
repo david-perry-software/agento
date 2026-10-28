@@ -527,8 +527,7 @@ rule table and testing notes: [docs/hooks.md](docs/hooks.md).
     "freehand": "changes/",
     "postShip": "post-ship/"
   },
-  "checks": { "releaseWorkflow": null },
-  "missionControl": { "autoOpen": null }
+  "checks": { "releaseWorkflow": null }
 }
 ```
 
@@ -541,10 +540,7 @@ acting as the safety layer. Set
 after merging through `agento.mjs release <merge-sha> --wait 50`, which finds the
 merge's own run, accepts a descendant push run when a newer merge cancelled it,
 reports `not-triggered` when `paths-ignore` skips the merge, and asks for one
-dispatch when the workflow has no push trigger. `missionControl.autoOpen` defaults to
-`true`: every top-level `/agento` command refreshes (or opens, on first use) the
-Mission Control canvas and posts its result to the activity feed; set it `false` to
-opt a repository out. Hooks, the CLI, and the prompts all read this file, so a project
+dispatch when the workflow has no push trigger. Hooks, the CLI, and the prompts all read this file, so a project
 on `trunk` with `planning/features` works end to end.
 
 **`AGENTS.md` `## Agento` section** — the narrative facts agents need: commands

@@ -250,31 +250,6 @@ test("policy section references (§N) point at sections that exist", () => {
   }
 });
 
-test("§11 names the Mission Control step and the router's Subagent mode runs the canvas subcommand", () => {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const section11 = policy.match(/^## 11\. Window check\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m)?.[1] ?? "";
-  assert.ok(section11, "delivery-policy has no ## 11. Window check section");
-  for (const token of ["refresh", "open_canvas", "post_note", 'instanceId: "mission-control"']) {
-    assert.ok(section11.includes(token), `delivery-policy §11 step 6 must name ${JSON.stringify(token)}`);
-  }
-
-  const { body } = readSkill();
-  assert.ok(body.includes("agento.mjs canvas"), "skills/agento/SKILL.md Subagent mode must name `agento.mjs canvas`");
-});
-
-test("every command and agent carrying the preflight sentence also names canvas.attempt and §11 step 6", () => {
-  const offenders = [];
-  const files = [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")];
-  for (const file of files) {
-    const text = fs.readFileSync(file, "utf8");
-    if (!/preflightLines/.test(text)) continue;
-    if (!/canvas\.attempt/.test(text) || !/§11 step 6/.test(text)) {
-      offenders.push(path.relative(repoRoot, file));
-    }
-  }
-  assert.deepEqual(offenders, [], `files with the preflight sentence that do not name canvas.attempt and §11 step 6:\n${offenders.join("\n")}`);
-});
-
 test("every command and agent opens and closes with the §9 receipt", () => {
   const missing = [];
   for (const file of [...promptFiles, ...agentFiles]) {
@@ -961,7 +936,6 @@ test("only the core and ai-skills are always-on", () => {
   assert.deepEqual(alwaysOn, ["agento-core.instructions.md", "ai-skills.instructions.md"], "applyTo: \"**\" set changed");
   const core = fs.readFileSync(rel(".github", "instructions", "agento-core.instructions.md"), "utf8");
   assert.ok(core.trimEnd().split(/\r?\n/).length <= 40, "agento-core.instructions.md exceeds 40 lines");
-  assert.ok(core.includes("canvas.attempt") && core.includes("§11"), "agento-core.instructions.md must point at §11 step 6 via the preflight canvas.attempt field");
   const policy = rel(".github", "instructions", "delivery-policy.instructions.md");
   assert.notEqual(parseFrontmatter(splitFrontmatter(policy).frontmatter, "delivery-policy").applyTo, "**", "delivery-policy.instructions.md must not be always-on");
 });

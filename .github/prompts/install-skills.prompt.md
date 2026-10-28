@@ -16,7 +16,7 @@ delivery-policy.instructions.md §9, its `next:` command repeated in its own blo
 directly above the result line per §12; a duplicate submission follows this command's §9
 idempotency row (already-installed skills are excluded from the batch, step 3).
 Open with one `node <agento-root>/scripts/agento.mjs preflight install-skills` call
-(§9–§11): print its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on
+(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
 `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 

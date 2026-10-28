@@ -13,6 +13,5 @@
     "freehand": "changes/",
     "postShip": "post-ship/"
   },
-  "checks": { "releaseWorkflow": null },
-  "missionControl": { "autoOpen": null }
+  "checks": { "releaseWorkflow": null }
 }

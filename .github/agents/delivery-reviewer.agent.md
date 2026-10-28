@@ -57,7 +57,7 @@ review, fixes belong to the Builder.
 
 1. Open with one `node <agento-root>/scripts/agento.mjs preflight review-<type> <type>
    <slug>` call (§9–§11; the session context announces the CLI as `Agento CLI:`):
-   print its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), stop on `status:
+   print its `receipt` and then its `preflightLines` verbatim, stop on `status:
    rejected` (exit 3), and stop on a `resolve.status` other than `ok`. `git fetch origin`,
    confirm from the session record that `worktree.branch` is the roadmap's work
    branch, then read plan.md and roadmap.md fully. Never switch a managed worktree to
