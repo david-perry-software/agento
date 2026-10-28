@@ -65,11 +65,8 @@ The command file's `agent:` frontmatter decides how it runs:
   invoke the agent with the subagent tool available — `task` (Copilot) with
   `copilotModel` as its `model`, or `runSubagent` (Local) with `subagentModel` as its
   `model`, omitting the model when it is `null` — passing the command body and the
-  argument. Before invoking it, run `node <agento-root>/scripts/agento.mjs canvas
-  <name>` and perform delivery-policy §11 step 6's refresh/open on its document (the
-  subagent itself never runs that step). Relay the subagent's final message verbatim,
-  including its receipt and result lines and its command blocks, and then post its
-  result line as the note per §11 step 6.
+  argument. Relay the subagent's final message verbatim, including its receipt and
+  result lines and its command blocks.
 
 Whichever mode applies, the dispatched command's §9 receipt line must be printed verbatim as visible text, before any question or other output.
 

@@ -2091,20 +2091,13 @@ test("preflight returns the named sections, the op-id, and an accepted receipt i
   const sha = git(repo, "rev-parse", "--short", "HEAD");
   const { code, json } = runWith({ cwd: repo, env }, "preflight", "delivery-status");
   assert.equal(code, 0);
-  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "canvas", "session", "window", "doctor", "resolve", "config", "root", "configSource"]);
+  assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "session", "window", "doctor", "resolve", "config", "root", "configSource"]);
   assert.equal(json.status, "ok");
   assert.equal(json.command, "delivery-status");
   assert.equal(json.subject, "main");
   assert.equal(json.opId, `delivery-status:main:${sha}`);
   assert.equal(json.receipt, `Receipt: accepted delivery-status:main:${sha}`);
   assert.deepEqual(json.preflightLines, []);
-  // The Mission Control fact document is present and self-describing, and never
-  // changes status, receipt, or preflightLines.
-  assert.deepEqual(Object.keys(json.canvas), ["attempt", "reason", "canvasId", "instanceId", "autoOpen", "link", "setting", "refresh"]);
-  assert.equal(json.canvas.canvasId, "agento-mission-control");
-  assert.equal(json.canvas.instanceId, "mission-control");
-  assert.equal(typeof json.canvas.attempt, "boolean");
-  assert.equal(typeof json.canvas.reason, "string");
   // Each section is the standalone subcommand's document.
   const { worktrees, ...session } = json.session;
   const { worktrees: standaloneWorktrees, ...standalone } = run(repo, "session").json;
@@ -2127,10 +2120,6 @@ test("preflight rejects a window mismatch with the §9 receipt and the record's 
   const alternatives = [...wrong.json.session.allowed, ...wrong.json.session.elsewhere.map((e) => `${e.command} (${e.window} window)`)];
   assert.equal(wrong.json.receipt, `Receipt: rejected — wrong window: role=primary (${repo}, branch main); allowed: ${alternatives.join(", ")}`);
   assert.deepEqual(wrong.json.preflightLines, []);
-  // The canvas document is present on a rejected document too; the rejection never
-  // changes it.
-  assert.equal(wrong.json.canvas.instanceId, "mission-control");
-  assert.equal(typeof wrong.json.canvas.attempt, "boolean");
 
   // §11 step 5 branch conditions: on the default branch; clean; on a work branch.
   assert.equal(runWith({ cwd: repo, env }, "preflight", "start-session").code, 0);
@@ -2199,141 +2188,6 @@ test("preflight usage errors exit 1", () => {
     assert.equal(json.status, "usage-error");
   }
   assert.match(run(repo, "preflight", "nope").json.message, /unknown command nope/);
-});
-
-// --- canvas (Mission Control fact document) ------------------------------------
-
-test("canvas <command> reports the attempt matrix from local reads only", () => {
-  const { plugin, env, canvasLink, canvasExpected } = harnessFixture();
-  const settingsFile = (value) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-vscode-"));
-    const file = path.join(dir, "settings.json");
-    fs.writeFileSync(file, JSON.stringify({ "chat.canvases.enabled": value }));
-    return file;
-  };
-  const installed = () => {
-    fs.rmSync(canvasLink, { recursive: true, force: true });
-    fs.symlinkSync(canvasExpected, canvasLink, "dir");
-  };
-  const canvasIn = (canvasEnv, ...args) => runWith({ cwd: plugin, env: canvasEnv }, "canvas", ...args, "--plugin-root", plugin);
-
-  // Installed link + setting true → attempt true; refresh.pr false for a generic command.
-  installed();
-  const goodEnv = { ...env, AGENTO_VSCODE_SETTINGS: settingsFile(true) };
-  const good = canvasIn(goodEnv, "build-feature").json;
-  assert.equal(good.attempt, true);
-  assert.equal(good.reason, "canvas installed, chat.canvases.enabled true");
-  assert.equal(good.autoOpen, true);
-  assert.equal(good.link, "installed");
-  assert.equal(good.setting, true);
-  assert.deepEqual(good.refresh, { pr: false });
-  assert.equal(good.canvasId, "agento-mission-control");
-  assert.equal(good.instanceId, "mission-control");
-
-  // refresh.pr is true only for ship and delivery-status.
-  assert.deepEqual(canvasIn(goodEnv, "ship").json.refresh, { pr: true });
-  assert.deepEqual(canvasIn(goodEnv, "delivery-status").json.refresh, { pr: true });
-  assert.deepEqual(canvasIn(goodEnv, "mission-control").json.refresh, { pr: false });
-
-  // autoOpen false → attempt false, named reason.
-  const offRepo = makeRepo({ config: { missionControl: { autoOpen: false } } });
-  const off = runWith({ cwd: offRepo, env: goodEnv }, "canvas", "build-feature", "--plugin-root", plugin).json;
-  assert.equal(off.attempt, false);
-  assert.equal(off.autoOpen, false);
-  assert.equal(off.reason, "missionControl.autoOpen is false in .github/agento.json");
-
-  // Link absent.
-  fs.rmSync(canvasLink, { recursive: true, force: true });
-  const absent = canvasIn(goodEnv, "build-feature").json;
-  assert.equal(absent.attempt, false);
-  assert.equal(absent.link, "absent");
-  assert.equal(absent.reason, "canvas link absent");
-
-  // Foreign link to a directory without extension.mjs → attempt false.
-  const other = fs.mkdtempSync(path.join(os.tmpdir(), "agento-other-canvas-"));
-  fs.symlinkSync(other, canvasLink, "dir");
-  const foreign = canvasIn(goodEnv, "build-feature").json;
-  assert.equal(foreign.attempt, false);
-  assert.equal(foreign.link, "foreign");
-  assert.equal(foreign.reason, "canvas link foreign");
-
-  // Foreign link to a usable canvas (extension.mjs present) → attempt true.
-  fs.rmSync(canvasLink, { recursive: true, force: true });
-  const foreignValid = fs.mkdtempSync(path.join(os.tmpdir(), "agento-foreign-canvas-"));
-  fs.writeFileSync(path.join(foreignValid, "extension.mjs"), "export default {};\n");
-  fs.symlinkSync(foreignValid, canvasLink, "dir");
-  const foreignOk = canvasIn(goodEnv, "build-feature").json;
-  assert.equal(foreignOk.attempt, true);
-  assert.equal(foreignOk.link, "foreign");
-  assert.equal(foreignOk.reason, `canvas installed from ${fs.realpathSync(foreignValid)}`);
-
-  // Dangling canvas link → attempt false.
-  fs.rmSync(canvasLink, { recursive: true, force: true });
-  fs.symlinkSync(path.join(plugin, "gone-canvas"), canvasLink, "dir");
-  const dangling = canvasIn(goodEnv, "build-feature").json;
-  assert.equal(dangling.attempt, false);
-  assert.equal(dangling.link, "dangling");
-  assert.equal(dangling.reason, "canvas link dangling");
-
-  // Setting false → attempt false.
-  installed();
-  const falseEnv = { ...env, AGENTO_VSCODE_SETTINGS: settingsFile(false) };
-  const offSetting = canvasIn(falseEnv, "build-feature").json;
-  assert.equal(offSetting.attempt, false);
-  assert.equal(offSetting.setting, false);
-  assert.equal(offSetting.reason, "chat.canvases.enabled is false");
-
-  // Unreadable settings → setting null, attempt true.
-  installed();
-  const unreadableEnv = { ...env, AGENTO_VSCODE_SETTINGS: path.join(os.tmpdir(), "does-not-exist-settings.json") };
-  const unreadable = canvasIn(unreadableEnv, "build-feature").json;
-  assert.equal(unreadable.attempt, true);
-  assert.equal(unreadable.setting, null);
-  assert.equal(unreadable.reason, "canvas installed, chat.canvases.enabled unknown");
-
-  // Hosted session → attempt false.
-  installed();
-  const hostedEnv = { ...goodEnv, GITHUB_ACTIONS: "true" };
-  const hosted = canvasIn(hostedEnv, "build-feature").json;
-  assert.equal(hosted.attempt, false);
-  assert.equal(hosted.reason, "hosted session");
-
-  // mission-control opens the canvas itself → attempt false.
-  installed();
-  const mc = canvasIn(goodEnv, "mission-control").json;
-  assert.equal(mc.attempt, false);
-  assert.equal(mc.reason, "mission-control opens the canvas itself");
-
-  // Usage errors exit 1.
-  for (const args of [["canvas"], ["canvas", "nope"], ["canvas", "delivery-status", "extra"]]) {
-    const { code, json } = canvasIn(goodEnv, ...args);
-    assert.equal(code, 1, args.join(" "));
-    assert.equal(json.status, "usage-error");
-  }
-});
-
-test("preflight places canvas directly after preflightLines and attempt within the first 600 characters", () => {
-  const { plugin, env, canvasLink, canvasExpected } = harnessFixture();
-  const settingsFile = (value) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-vscode-"));
-    const file = path.join(dir, "settings.json");
-    fs.writeFileSync(file, JSON.stringify({ "chat.canvases.enabled": value }));
-    return file;
-  };
-  fs.symlinkSync(canvasExpected, canvasLink, "dir");
-  const goodEnv = { ...env, AGENTO_VSCODE_SETTINGS: settingsFile(true) };
-  const result = spawnSync("node", [cli, "preflight", "delivery-status", "--plugin-root", plugin], { cwd: plugin, encoding: "utf8", env: goodEnv });
-  assert.equal(result.status, 0, result.stderr);
-  const raw = result.stdout;
-  const doc = JSON.parse(raw);
-  const keys = Object.keys(doc);
-  const preflightAt = keys.indexOf("preflightLines");
-  const canvasAt = keys.indexOf("canvas");
-  assert.ok(preflightAt >= 0, "preflight document must have preflightLines");
-  assert.ok(canvasAt === preflightAt + 1, `canvas must be the key directly after preflightLines, got ${JSON.stringify(keys.slice(preflightAt, preflightAt + 4))}`);
-  const pretty = JSON.stringify(doc, null, 2);
-  assert.ok(pretty.indexOf('"attempt"') < 600, `"attempt" must appear within the first 600 characters, found at ${pretty.indexOf('"attempt"')}`);
-  assert.equal(doc.canvas.attempt, true);
 });
 
 // Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).

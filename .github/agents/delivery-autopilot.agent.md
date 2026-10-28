@@ -50,16 +50,13 @@ being run.
   and the models it lists, and name the fix: pin `autopilot` at least as high as the
   highest-tier model in the profile, then `/agento models apply <name>`. Leave the
   roadmap unchanged; `next:` is `/agento ap <slug>`.
-- **Mission Control once per run.** The Autopilot is the top-level session and
-  performs delivery-policy §11 step 6 once for its run; its 🔨 Agento Builder and
-  🔍 Agento Reviewer subagents skip it (the router does it on their behalf).
 
 ## Preflight
 
 1. Open with one `node <agento-root>/scripts/agento.mjs preflight ap <slug>` call
    (§9–§11; the slug as given — `<type>/<slug>` or bare; its path is in the session
    context line `Agento CLI:`): print its `receipt` and then its `preflightLines`
-   verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), stop on `status: rejected` (exit 3), and stop on a `resolve.status`
+   verbatim, stop on `status: rejected` (exit 3), and stop on a `resolve.status`
    other than `ok`.
    When the invocation names no slug (the Reviewer's "Continue unattended" handoff),
    the slug is the session record's `delivery.slug`.

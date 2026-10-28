@@ -16,7 +16,6 @@ export function defaultConfig(rootDir) {
       postShip: "post-ship/",
     },
     checks: { releaseWorkflow: null },
-    missionControl: { autoOpen: true },
   };
 }
 

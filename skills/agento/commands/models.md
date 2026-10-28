@@ -21,7 +21,7 @@ its worktrees are cleaned of pins by the filter. Format and rules:
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
 idempotency row. Open with one `node <agento-root>/scripts/agento.mjs preflight
-models` call (§9–§11): print its `receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent),
+models` call (§9–§11): print its `receipt` and then its `preflightLines` verbatim,
 and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (not window-sensitive: it rewrites the
 plugin clone, never the current checkout's delivery state).

@@ -28,7 +28,7 @@ idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
 its current step; see step 2 for the suffix rule). Open with one
 `node <agento-root>/scripts/agento.mjs preflight quick-fix` call (§9–§11; the CLI
 path is announced in the session context as `Agento CLI:`): print its `receipt` and
-then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected` (exit 3), writing
+then its `preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing
 nothing.
 Window check per §11: requires role `primary` on the default branch, clean.
 

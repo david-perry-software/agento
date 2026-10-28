@@ -16,7 +16,7 @@ directly above the result line per §12; a duplicate submission follows this com
 idempotency row (an existing capability with the same name is modified in place,
 never duplicated). Open with one `node <agento-root>/scripts/agento.mjs preflight
 extend-copilot` call (§9–§11): print its `receipt` and then its `preflightLines`
-verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected` (exit 3), writing nothing.
+verbatim, and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 Follow your creation protocol: load the `agent-customization` skill, pick the right

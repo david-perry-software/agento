@@ -21,7 +21,7 @@ repeated in its own block directly above the result line per §12; a duplicate
 submission follows this command's §9 idempotency row (a fresh open — reopening the
 canvas with the same `instanceId` reuses the live instance). Open with one `node
 <agento-root>/scripts/agento.mjs preflight mission-control` call (§9–§11): print its
-`receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
 (exit 3). Window check per §11: requires role
 `any` (opening is read-only, and dispatch buttons stay limited to this window's `allowed[]`).
 

@@ -17,7 +17,7 @@ second branch, worktree, or PR; the slug rejection in step 4 is for a different
 feature colliding on the same slug). Open with one
 `node <agento-root>/scripts/agento.mjs preflight new-feature` call (§9–§11), with
 `feature <slug>` appended when resuming a promoted planning worktree: print its
-`receipt` and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected`
+`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
 (exit 3), writing nothing.
 Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 

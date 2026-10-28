@@ -20,7 +20,7 @@ idempotency row (the Builder resume/audit protocol below — ticked steps are au
 never redone). Open with one `node <agento-root>/scripts/agento.mjs preflight
 build-feature feature <slug>` call (§9–§11; the CLI path is announced in the session
 context as `Agento CLI:`): print its `receipt` and then its `preflightLines`
-verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), and stop on `status: rejected` (exit 3), writing nothing.
+verbatim, and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
 - If the argument is blank, run `agento.mjs status feature`, list each item's slug,

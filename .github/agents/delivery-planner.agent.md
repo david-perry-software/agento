@@ -48,7 +48,7 @@ mode. Never modify source code, configuration, or other directories.
 1. **Require isolation.** Before asking questions, open with one `node
    <agento-root>/scripts/agento.mjs preflight new-<type>` call (§9–§11; `<type>
    <slug>` appended when resuming a promoted planning worktree): print its `receipt`
-   and then its `preflightLines` verbatim, then, when its `canvas.attempt` is `true`, do §11 step 6 (top-level only; silent), stop on `status: rejected` (exit 3), and
+   and then its `preflightLines` verbatim, stop on `status: rejected` (exit 3), and
    from its `session` section require `worktree.isManaged` with
    `worktree.dirPrefix: "plan"` (a managed planning worktree inside `worktrees.dir`);
    `role` must be `plan`, or `build` only when the same worktree was already promoted

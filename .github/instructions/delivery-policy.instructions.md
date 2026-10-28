@@ -405,19 +405,6 @@ never here or in a prompt.
    `/agento start-freehand`); build-window commands whose `delivery.slug` must equal
    the argument — states it on the same line and checks it from the record's
    `worktree.branch` and `delivery`, never from a fresh `git branch` reading.
-6. **Mission Control.** A top-level session — never a subagent — reads the preflight
-   `canvas` field. When `canvas.attempt` is `true` and the session has the canvas
-   tools: right after printing the receipt and preflight lines, call
-   `invoke_canvas_action` with `instanceId: "mission-control"`, action `refresh`,
-   and input `{ "pr": canvas.refresh.pr }`; if that call errors, call `open_canvas`
-   with canvas id `agento-mission-control` and the same `instanceId:
-   "mission-control"` and input `{}`. Directly before the final line, call
-   `post_note` with the command's §9 result line (or, for a rejection, the receipt
-   line) truncated to 500 characters, the slug when the command has one, and level
-   `success` — `warn` for `Result: failed` or a rejection. Any canvas error or
-   missing tool is skipped silently: nothing about the canvas is printed, and the
-   step never alters the receipt, the result, or the command's outcome.
-   `attempt: false` skips the step entirely.
 
 ## 12. Command presentation
 
