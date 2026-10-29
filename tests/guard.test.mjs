@@ -89,6 +89,20 @@ test("denies git push --mirror from any branch", () => {
   }
 });
 
+test("denies inline core.hooksPath overrides", () => {
+  for (const command of [
+    "git -c core.hooksPath=/dev/null commit -m x",
+    "git -c core.hookspath=/dev/null push origin feature/widget",
+    "git --config-env=core.hooksPath=X commit -m x",
+  ]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /core\.hooksPath/);
+    assert.match(reason, /--no-verify/);
+  }
+  assert.equal(decide("git -c user.name=x commit -m x").decision, "allow");
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

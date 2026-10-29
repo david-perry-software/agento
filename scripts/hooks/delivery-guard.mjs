@@ -385,6 +385,10 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
 
   for (const segment of segments) {
     if (!/\bgit\b/.test(segment)) continue;
+    // Inline hooks-path overrides bypass hooks the same way --no-verify does.
+    if (/(?:^|\s)-c\s+core\.hookspath=/i.test(segment) || /--config-env=core\.hookspath=/i.test(segment)) {
+      return verdict("deny", "Overriding core.hooksPath bypasses hooks like `--no-verify`.");
+    }
     const isPush = re(GIT + String.raw`\s+push\b`).test(segment);
     const isCommit = re(GIT + String.raw`\s+commit\b`).test(segment);
     const push = isPush ? pushRefspecs(shellSplit(segment)) : null;

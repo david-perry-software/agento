@@ -149,3 +149,7 @@ allow git push origin HEAD:main-thing
 # Ruleset, merge, and hook-path bypasses (guard-bypass-gaps)
 deny  git push --mirror origin
 deny  git push --mirror
+deny  git -c core.hooksPath=/dev/null commit -m x
+deny  git -c core.hookspath=/dev/null push origin feature/widget
+deny  git --config-env=core.hooksPath=X commit -m x
+allow git -c user.name=x commit -m x
