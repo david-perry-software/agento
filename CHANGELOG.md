@@ -2,6 +2,16 @@
 
 ## 0.15.0
 
+- **Fixed.** The PreToolUse delivery guard now closes the ruleset, merge, and
+  hook-bypass gaps: `gh api` REST writes to `rulesets/<id>`, `branches/*/protection`,
+  and `pulls/<n>/merge` deny (their GraphQL equivalents — `mergePullRequest`,
+  `updateRepositoryRuleset`, `deleteRepositoryRuleset`, and the branch-protection
+  mutations — deny too), as do `git push --mirror` from any branch, the inline
+  `-c core.hooksPath=…` / `--config-env=core.hooksPath=…` override, and `HUSKY=0` /
+  `HUSKY_SKIP_HOOKS` as a prefix or `export`. Ruleset creation (REST POST to the
+  collection or the `createRepositoryRuleset` mutation) and `git config` writes of
+  `core.hooksPath` ask instead of deny, so `/agento agento-init`'s ruleset creation
+  still works behind one approval card.
 - **Fixed.** `/agento ship` no longer misreports a policy-blocked merge
   (`mergeStateStatus: BLOCKED`, e.g. a required status check that never reported) as
   a conflict: it waits within a 10-minute grace for the missing required checks,
