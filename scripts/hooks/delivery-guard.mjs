@@ -292,6 +292,88 @@ function hookSkipExport(segment) {
   return toks.slice(at + 1).some(hookSkipEnv);
 }
 
+// `gh api` writes. `-f`/`-F`/`--field`/`--raw-field`/`--input` imply POST when no
+// explicit method is given (gh's real behaviour); `-X`/`-XVAL`/`--method`/`--method=`
+// name the method in any case.
+function ghApiMethodAndEndpoint(toks, start) {
+  let method = "";
+  let endpoint = "";
+  let fieldFlag = false;
+  for (let i = start; i < toks.length; i += 1) {
+    const t = toks[i];
+    if (t === "-X" || t === "-x" || t === "--method") {
+      method = toks[i + 1] ?? "";
+      i += 1;
+      continue;
+    }
+    if (/^-[xX][A-Za-z]+$/.test(t)) {
+      method = t.slice(2);
+      continue;
+    }
+    if (/^--method=/i.test(t)) {
+      method = t.slice("--method=".length);
+      continue;
+    }
+    if (t === "-f" || t === "-F" || t === "--field" || t === "--raw-field" || t === "--input") {
+      fieldFlag = true;
+      i += 1;
+      continue;
+    }
+    if (!endpoint && !t.startsWith("-")) {
+      endpoint = t;
+      continue;
+    }
+  }
+  return { method: method.toUpperCase(), endpoint, fieldFlag };
+}
+
+function normalizeGhEndpoint(raw) {
+  let ep = raw.replace(/^https:\/\/api\.github\.com/i, "").replace(/^\//, "");
+  const q = ep.indexOf("?");
+  if (q >= 0) ep = ep.slice(0, q);
+  return ep;
+}
+
+export function ghApiVerdict(segments, command) {
+  for (const segment of segments) {
+    const toks = shellSplit(segment);
+    let i = 0;
+    while (i < toks.length) {
+      const tok = toks[i];
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
+        i += 1;
+        continue;
+      }
+      if (PREFIXES.has(tok)) {
+        i += 1;
+        if (tok === "timeout" && i < toks.length) i += 1;
+        continue;
+      }
+      break;
+    }
+    if (toks[i] !== "gh" || toks[i + 1] !== "api") continue;
+    const { method, endpoint, fieldFlag } = ghApiMethodAndEndpoint(toks, i + 2);
+    if (!endpoint) continue;
+    const ep = normalizeGhEndpoint(endpoint);
+    const write = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+    if (!write) continue;
+    if (/^(repos\/[^/]+\/[^/]+|orgs\/[^/]+)\/rulesets$/.test(ep)) {
+      if (method === "POST") return verdict("ask", "Creating a ruleset adds protection; approve this ruleset creation?");
+      continue;
+    }
+    if (/^(repos\/[^/]+\/[^/]+|orgs\/[^/]+)\/rulesets\//.test(ep)) {
+      return verdict("deny", "Changing or deleting a ruleset removes the enforcement layer the guard relies on; edit rulesets in the GitHub UI yourself.");
+    }
+    if (/^repos\/[^/]+\/[^/]+\/branches\/.+\/protection(?:\/|$)/.test(ep)) {
+      return verdict("deny", "Changing or deleting branch protection removes the enforcement layer the guard relies on; edit branch protection in the GitHub UI yourself.");
+    }
+    if (/^repos\/[^/]+\/[^/]+\/pulls\/[^/]+\/merge$/.test(ep)) {
+      return verdict("deny", "Merging through the API bypasses the `/agento ship` audit gate; run `/agento ship <slug>` from the primary window.");
+    }
+  }
+  return null;
+}
+
 export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFindOccupants } = {}) {
   const tool = String(payload.tool_name || payload.toolName || "").toLowerCase();
   const toolInput = readToolInput(payload);
@@ -344,6 +426,11 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
       }
     }
   }
+
+  // `gh api` writes against rulesets, branch protection, and the pull-request merge
+  // endpoint bypass the enforcement layer and the ship gate.
+  const ghApi = ghApiVerdict(segments, command);
+  if (ghApi) return ghApi;
 
   // Hook-skipping exports carry no git word, so they must be denied before the early
   // "no git word → allow" return.

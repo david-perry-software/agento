@@ -142,6 +142,30 @@ test("denies hook-skipping environment assignments and exports", () => {
   assert.equal(decide("export FOO=0").decision, "allow");
 });
 
+test("denies gh api REST writes to rulesets, branch protection, and merge", () => {
+  const ruleset = decide("gh api -X DELETE repos/o/r/rulesets/1");
+  assert.equal(ruleset.decision, "deny");
+  assert.match(ruleset.reason, /ruleset/);
+  assert.match(ruleset.reason, /GitHub UI/);
+
+  const protection = decide("gh api -XDELETE repos/o/r/branches/main/protection");
+  assert.equal(protection.decision, "deny");
+  assert.match(protection.reason, /protection/);
+  assert.match(protection.reason, /GitHub UI/);
+
+  const merge = decide("gh api -X PUT repos/o/r/pulls/1/merge");
+  assert.equal(merge.decision, "deny");
+  assert.match(merge.reason, /\/agento ship/);
+
+  const create = decide("gh api -X POST repos/o/r/rulesets --input ruleset.json");
+  assert.equal(create.decision, "ask");
+  assert.match(create.reason, /approve this ruleset creation/);
+
+  assert.equal(decide("gh api repos/o/r/rulesets --jq '.[] | .name'").decision, "allow");
+  assert.equal(decide("gh api repos/o/r/pulls/1/merge").decision, "allow");
+  assert.equal(decide("gh api repos/o/r/pulls/1 -X PATCH -f body=x").decision, "allow");
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);
