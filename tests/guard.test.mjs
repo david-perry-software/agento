@@ -125,6 +125,23 @@ test("asks before persistent core.hooksPath writes", () => {
   }
 });
 
+test("denies hook-skipping environment assignments and exports", () => {
+  for (const command of [
+    "HUSKY=0 git commit -m x",
+    "env HUSKY=0 git push origin feature/widget",
+    "HUSKY_SKIP_HOOKS=1 git commit -m x",
+    "export HUSKY=0",
+    "export HUSKY_SKIP_HOOKS=1",
+  ]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /HUSKY/);
+    assert.match(reason, /--no-verify/);
+  }
+  assert.equal(decide("HUSKY=1 git commit -m x").decision, "allow");
+  assert.equal(decide("export FOO=0").decision, "allow");
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

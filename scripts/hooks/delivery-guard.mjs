@@ -259,6 +259,39 @@ function gitConfigHooksPathWrite(segment) {
   return toks.slice(keyIdx + 1).some((t) => !t.startsWith("-"));
 }
 
+// HUSKY=0 and a non-empty HUSKY_SKIP_HOOKS skip the project's hooks; HUSKY=1 (or any
+// other HUSKY value) and other variables do not.
+const hookSkipEnv = (tok) => /^HUSKY=0$/.test(tok) || /^HUSKY_SKIP_HOOKS=.+/.test(tok);
+
+// Leading assignments (including after env/sudo/... prefixes) that precede a git word.
+function hookSkipAssignments(segment) {
+  const toks = shellSplit(segment);
+  let i = 0;
+  while (i < toks.length) {
+    const tok = toks[i];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
+      if (hookSkipEnv(tok)) return true;
+      i += 1;
+      continue;
+    }
+    if (PREFIXES.has(tok)) {
+      i += 1;
+      if (tok === "timeout" && i < toks.length) i += 1;
+      continue;
+    }
+    break;
+  }
+  return false;
+}
+
+// `export HUSKY=0` / `export HUSKY_SKIP_HOOKS=<non-empty>` in any segment.
+function hookSkipExport(segment) {
+  const toks = shellSplit(segment);
+  const at = toks.indexOf("export");
+  if (at < 0) return false;
+  return toks.slice(at + 1).some(hookSkipEnv);
+}
+
 export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFindOccupants } = {}) {
   const tool = String(payload.tool_name || payload.toolName || "").toLowerCase();
   const toolInput = readToolInput(payload);
@@ -309,6 +342,14 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
       if (/\s(--squash|--rebase)\b/.test(segment)) {
         return verdict("ask", "Repository policy merges with a normal merge commit; squash/rebase rewrites the branch history. Proceed anyway?");
       }
+    }
+  }
+
+  // Hook-skipping exports carry no git word, so they must be denied before the early
+  // "no git word → allow" return.
+  for (const segment of segments) {
+    if (hookSkipExport(segment)) {
+      return verdict("deny", "HUSKY=0 / HUSKY_SKIP_HOOKS skip the project's hooks, like `--no-verify`.");
     }
   }
 
@@ -410,6 +451,10 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
     const isPush = re(GIT + String.raw`\s+push\b`).test(segment);
     const isCommit = re(GIT + String.raw`\s+commit\b`).test(segment);
     const push = isPush ? pushRefspecs(shellSplit(segment)) : null;
+    const isHookSkipTarget = isPush || isCommit || re(GIT + String.raw`\s+merge\b`).test(segment);
+    if (isHookSkipTarget && hookSkipAssignments(segment)) {
+      return verdict("deny", "HUSKY=0 / HUSKY_SKIP_HOOKS skip the project's hooks, like `--no-verify`.");
+    }
 
     if (isPush) {
       if (/\s--mirror\b/.test(segment)) {

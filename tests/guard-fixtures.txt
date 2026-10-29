@@ -161,3 +161,10 @@ ask   git config set core.hooksPath x
 allow git config --get core.hooksPath
 allow git config core.hooksPath
 allow git config user.name x
+deny  HUSKY=0 git commit -m x
+deny  env HUSKY=0 git push origin feature/widget
+deny  HUSKY_SKIP_HOOKS=1 git commit -m x
+deny  export HUSKY=0
+deny  export HUSKY_SKIP_HOOKS=1
+allow HUSKY=1 git commit -m x
+allow export FOO=0
