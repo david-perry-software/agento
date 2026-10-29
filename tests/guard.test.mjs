@@ -166,6 +166,19 @@ test("denies gh api REST writes to rulesets, branch protection, and merge", () =
   assert.equal(decide("gh api repos/o/r/pulls/1 -X PATCH -f body=x").decision, "allow");
 });
 
+test("treats gh api field flags without a method as POST", () => {
+  for (const command of [
+    "gh api repos/o/r/rulesets/1 -f enforcement=disabled",
+    "gh api repos/o/r/pulls/1/merge -F merge_method=merge",
+    "gh api repos/o/r/branches/main/protection --input p.json",
+  ]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  assert.equal(decide("gh api orgs/o/rulesets -f name=x").decision, "ask");
+  assert.equal(decide("gh api repos/o/r/rulesets --raw-field name=x").decision, "ask");
+  assert.equal(decide("gh api -X GET repos/o/r/rulesets -f includes_parents=true").decision, "allow");
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

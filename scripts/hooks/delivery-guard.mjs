@@ -355,10 +355,11 @@ export function ghApiVerdict(segments, command) {
     const { method, endpoint, fieldFlag } = ghApiMethodAndEndpoint(toks, i + 2);
     if (!endpoint) continue;
     const ep = normalizeGhEndpoint(endpoint);
-    const write = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+    const effectiveMethod = method || (fieldFlag ? "POST" : "GET");
+    const write = effectiveMethod === "POST" || effectiveMethod === "PUT" || effectiveMethod === "PATCH" || effectiveMethod === "DELETE";
     if (!write) continue;
     if (/^(repos\/[^/]+\/[^/]+|orgs\/[^/]+)\/rulesets$/.test(ep)) {
-      if (method === "POST") return verdict("ask", "Creating a ruleset adds protection; approve this ruleset creation?");
+      if (effectiveMethod === "POST") return verdict("ask", "Creating a ruleset adds protection; approve this ruleset creation?");
       continue;
     }
     if (/^(repos\/[^/]+\/[^/]+|orgs\/[^/]+)\/rulesets\//.test(ep)) {

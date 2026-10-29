@@ -185,3 +185,9 @@ allow gh api repos/o/r/pulls/1/merge
 allow gh api repos/o/r/pulls/1 -X PATCH -f body=x
 allow gh api repos/o/r/issues/1/comments -X POST -f body=x
 allow gh api user
+deny  gh api repos/o/r/rulesets/1 -f enforcement=disabled
+deny  gh api repos/o/r/pulls/1/merge -F merge_method=merge
+deny  gh api repos/o/r/branches/main/protection --input p.json
+ask   gh api orgs/o/rulesets -f name=x
+ask   gh api repos/o/r/rulesets --raw-field name=x
+allow gh api -X GET repos/o/r/rulesets -f includes_parents=true
