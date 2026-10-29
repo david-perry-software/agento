@@ -373,7 +373,9 @@ function isGhApiGraphql(segment) {
     }
     break;
   }
-  return toks[i] === "gh" && toks[i + 1] === "api" && toks[i + 2] === "graphql";
+  if (toks[i] !== "gh" || toks[i + 1] !== "api") return false;
+  const { endpoint } = ghApiMethodAndEndpoint(toks, i + 2);
+  return endpoint ? normalizeGhEndpoint(endpoint) === "graphql" : false;
 }
 
 // GraphQL mutation names are matched whole-word against the entire command text,
@@ -400,9 +402,12 @@ function graphqlMutationVerdict(command) {
 }
 
 export function ghApiVerdict(segments, command) {
-  // GraphQL: any `gh api graphql` segment scans the whole command for mutations.
+  // GraphQL: any segment whose normalised endpoint is `graphql` scans the whole
+  // command for mutations. A null verdict (a query with no listed mutation) must not
+  // short-circuit the REST scan — fall through so a chained REST write is still seen.
   if (segments.some(isGhApiGraphql)) {
-    return graphqlMutationVerdict(command);
+    const graphql = graphqlMutationVerdict(command);
+    if (graphql) return graphql;
   }
   for (const segment of segments) {
     const toks = shellSplit(segment);

@@ -227,6 +227,18 @@ test("harden gh api endpoint parsing: value options before the endpoint", () => 
   );
 });
 
+test("detects graphql by normalised endpoint and falls through to the REST scan", () => {
+  for (const command of [
+    "gh api -X POST graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh api /graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh api -H 'X: y' graphql -f query='mutation { deleteRepositoryRuleset(input: {}) { clientMutationId } }'",
+    "gh api graphql -f query='query { viewer { login } }' && gh api -X DELETE repos/o/r/rulesets/1",
+  ]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  assert.equal(decide("gh api -X POST graphql -f query='query { viewer { login } }'").decision, "allow");
+});
+
 test("only an export command word triggers the hook-skip export deny", () => {
   assert.equal(decide("export HUSKY=0").decision, "deny");
   assert.equal(decide("echo export HUSKY=0").decision, "allow");

@@ -206,3 +206,8 @@ deny  gh api -X PUT repos/o/r/pulls/1/merge/
 allow gh api -H "Accept: application/vnd.github+json" repos/o/r/rulesets
 allow gh api --jq .name repos/o/r/rulesets/1
 allow echo export HUSKY=0
+deny  gh api -X POST graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'
+deny  gh api /graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'
+deny  gh api -H 'X: y' graphql -f query='mutation { deleteRepositoryRuleset(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='query { viewer { login } }' && gh api -X DELETE repos/o/r/rulesets/1
+allow gh api -X POST graphql -f query='query { viewer { login } }'
