@@ -334,7 +334,53 @@ function normalizeGhEndpoint(raw) {
   return ep;
 }
 
+function isGhApiGraphql(segment) {
+  const toks = shellSplit(segment);
+  let i = 0;
+  while (i < toks.length) {
+    const tok = toks[i];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
+      i += 1;
+      continue;
+    }
+    if (PREFIXES.has(tok)) {
+      i += 1;
+      if (tok === "timeout" && i < toks.length) i += 1;
+      continue;
+    }
+    break;
+  }
+  return toks[i] === "gh" && toks[i + 1] === "api" && toks[i + 2] === "graphql";
+}
+
+// GraphQL mutation names are matched whole-word against the entire command text,
+// because a multi-line query is split into several segments.
+function graphqlMutationVerdict(command) {
+  const has = (name) => new RegExp(`\\b${name}\\b`).test(command);
+  if (has("mergePullRequest")) {
+    return verdict("deny", "The `mergePullRequest` GraphQL mutation bypasses the `/agento ship` audit gate; run `/agento ship <slug>` from the primary window.");
+  }
+  for (const name of ["updateRepositoryRuleset", "deleteRepositoryRuleset"]) {
+    if (has(name)) {
+      return verdict("deny", `The \`${name}\` GraphQL mutation removes the enforcement layer the guard relies on; edit rulesets in the GitHub UI yourself.`);
+    }
+  }
+  for (const name of ["createBranchProtectionRule", "updateBranchProtectionRule", "deleteBranchProtectionRule"]) {
+    if (has(name)) {
+      return verdict("deny", `The \`${name}\` GraphQL mutation removes the enforcement layer the guard relies on; edit branch protection in the GitHub UI yourself.`);
+    }
+  }
+  if (has("createRepositoryRuleset")) {
+    return verdict("ask", "Creating a ruleset adds protection; approve this ruleset creation?");
+  }
+  return null;
+}
+
 export function ghApiVerdict(segments, command) {
+  // GraphQL: any `gh api graphql` segment scans the whole command for mutations.
+  if (segments.some(isGhApiGraphql)) {
+    return graphqlMutationVerdict(command);
+  }
   for (const segment of segments) {
     const toks = shellSplit(segment);
     let i = 0;

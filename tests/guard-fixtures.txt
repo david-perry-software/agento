@@ -191,3 +191,11 @@ deny  gh api repos/o/r/branches/main/protection --input p.json
 ask   gh api orgs/o/rulesets -f name=x
 ask   gh api repos/o/r/rulesets --raw-field name=x
 allow gh api -X GET repos/o/r/rulesets -f includes_parents=true
+deny  gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { deleteRepositoryRuleset(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { updateRepositoryRuleset(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { createBranchProtectionRule(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { updateBranchProtectionRule(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { deleteBranchProtectionRule(input: {}) { clientMutationId } }'
+ask   gh api graphql -f query='mutation { createRepositoryRuleset(input: {}) { clientMutationId } }'
+allow gh api graphql -f query='query { viewer { login } }'

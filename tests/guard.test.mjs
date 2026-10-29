@@ -179,6 +179,39 @@ test("treats gh api field flags without a method as POST", () => {
   assert.equal(decide("gh api -X GET repos/o/r/rulesets -f includes_parents=true").decision, "allow");
 });
 
+test("denies gh api graphql mutations and asks on ruleset creation", () => {
+  const deny = [
+    "mergePullRequest",
+    "deleteRepositoryRuleset",
+    "updateRepositoryRuleset",
+    "createBranchProtectionRule",
+    "updateBranchProtectionRule",
+    "deleteBranchProtectionRule",
+  ];
+  for (const name of deny) {
+    const command = `gh api graphql -f query='mutation { ${name}(input: {}) { clientMutationId } }'`;
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, new RegExp(name));
+  }
+  const create = decide("gh api graphql -f query='mutation { createRepositoryRuleset(input: {}) { clientMutationId } }'");
+  assert.equal(create.decision, "ask");
+  assert.match(create.reason, /approve this ruleset creation/);
+  assert.equal(decide("gh api graphql -f query='query { viewer { login } }'").decision, "allow");
+});
+
+test("denies a multi-line gh api graphql merge mutation", () => {
+  const command = `gh api graphql -f query='mutation {
+  mergePullRequest(input: {pullRequestId: "x"}) {
+    clientMutationId
+  }
+}'`;
+  const { decision, reason } = decide(command);
+  assert.equal(decision, "deny");
+  assert.match(reason, /mergePullRequest/);
+  assert.match(reason, /\/agento ship/);
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);
