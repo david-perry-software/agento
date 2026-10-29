@@ -80,6 +80,15 @@ test("denies force-push", () => {
   assert.equal(decide("git push -f origin feature/x").decision, "deny");
 });
 
+test("denies git push --mirror from any branch", () => {
+  for (const command of ["git push --mirror origin", "git push --mirror"]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /--mirror/);
+    assert.match(reason, /push the work branch by name/);
+  }
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

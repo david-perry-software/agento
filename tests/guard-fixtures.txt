@@ -145,3 +145,7 @@ deny  git push origin --delete refs/heads/main
 allow git push origin main-thing
 allow git push origin --delete main-thing
 allow git push origin HEAD:main-thing
+
+# Ruleset, merge, and hook-path bypasses (guard-bypass-gaps)
+deny  git push --mirror origin
+deny  git push --mirror

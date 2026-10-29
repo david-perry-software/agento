@@ -390,6 +390,9 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
     const push = isPush ? pushRefspecs(shellSplit(segment)) : null;
 
     if (isPush) {
+      if (/\s--mirror\b/.test(segment)) {
+        return verdict("deny", `\`git push --mirror\` force-updates and deletes remote refs, including ${defaultBranch}; push the work branch by name.`);
+      }
       if (/\s(--force(?:-with-lease|-if-includes)?(?:=\S*)?|-f)\b/.test(segment) || /\spush\b.*\s\+\S/.test(segment)) {
         return verdict("deny", "Force-push is forbidden by repository policy.");
       }
