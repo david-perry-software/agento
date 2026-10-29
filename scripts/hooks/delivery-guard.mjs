@@ -118,6 +118,18 @@ const MANAGED_HALF = /^(plan|feature|issue|freehand)-/;
 // `git push` options whose value is the next token.
 const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"]);
 
+// `gh api` options that take a value (the value is the next token, or inline after
+// `=`). Every one must be skipped as a pair before the endpoint is picked, or the
+// option's value is mistaken for the endpoint and a write escapes the rule.
+const GH_API_VALUE_OPTIONS = new Set([
+  "-X", "-x", "--method",
+  "-f", "-F", "--field", "--raw-field", "--input",
+  "-H", "--header", "--hostname",
+  "-q", "--jq", "-t", "--template",
+  "-p", "--preview", "--cache",
+]);
+const GH_API_FIELD_FLAGS = new Set(["-f", "-F", "--field", "--raw-field", "--input"]);
+
 // What a `git push` segment sends: `{ all, tags, refspecs: [{ src, dst }] }`. `src` is
 // "" for a deletion, a bare ref is its own destination, and `refs/heads/` is stripped.
 export function pushRefspecs(tokens) {
@@ -284,11 +296,13 @@ function hookSkipAssignments(segment) {
   return false;
 }
 
-// `export HUSKY=0` / `export HUSKY_SKIP_HOOKS=<non-empty>` in any segment.
+// `export HUSKY=0` / `export HUSKY_SKIP_HOOKS=<non-empty>` where the segment's
+// command word is `export`; a bare `echo export HUSKY=0` is not an export.
 function hookSkipExport(segment) {
   const toks = shellSplit(segment);
+  const [word] = commandWord(toks);
+  if (word !== "export") return false;
   const at = toks.indexOf("export");
-  if (at < 0) return false;
   return toks.slice(at + 1).some(hookSkipEnv);
 }
 
@@ -314,8 +328,17 @@ function ghApiMethodAndEndpoint(toks, start) {
       method = t.slice("--method=".length);
       continue;
     }
-    if (t === "-f" || t === "-F" || t === "--field" || t === "--raw-field" || t === "--input") {
-      fieldFlag = true;
+    // `--opt=value` forms of any value-taking option are self-contained.
+    if (/^--[^=\s]+=/.test(t)) {
+      const name = t.slice(0, t.indexOf("=")).toLowerCase();
+      if (GH_API_VALUE_OPTIONS.has(name)) {
+        if (GH_API_FIELD_FLAGS.has(name)) fieldFlag = true;
+        continue;
+      }
+    }
+    // Plain value-taking options consume the next token.
+    if (GH_API_VALUE_OPTIONS.has(t)) {
+      if (GH_API_FIELD_FLAGS.has(t)) fieldFlag = true;
       i += 1;
       continue;
     }
@@ -331,7 +354,7 @@ function normalizeGhEndpoint(raw) {
   let ep = raw.replace(/^https:\/\/api\.github\.com/i, "").replace(/^\//, "");
   const q = ep.indexOf("?");
   if (q >= 0) ep = ep.slice(0, q);
-  return ep;
+  return ep.replace(/\/+$/, "");
 }
 
 function isGhApiGraphql(segment) {

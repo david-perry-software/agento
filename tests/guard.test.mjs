@@ -212,6 +212,26 @@ test("denies a multi-line gh api graphql merge mutation", () => {
   assert.match(reason, /\/agento ship/);
 });
 
+test("harden gh api endpoint parsing: value options before the endpoint", () => {
+  for (const command of [
+    `gh api --method PUT -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/o/r/pulls/1/merge`,
+    `gh api -H "Accept: application/vnd.github+json" -X DELETE repos/o/r/rulesets/1`,
+    "gh api -X DELETE --jq .id repos/o/r/rulesets/1",
+    "gh api -X PUT repos/o/r/pulls/1/merge/",
+  ]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  assert.equal(
+    decide(`gh api -H "Accept: application/vnd.github+json" repos/o/r/rulesets`).decision,
+    "allow",
+  );
+});
+
+test("only an export command word triggers the hook-skip export deny", () => {
+  assert.equal(decide("export HUSKY=0").decision, "deny");
+  assert.equal(decide("echo export HUSKY=0").decision, "allow");
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

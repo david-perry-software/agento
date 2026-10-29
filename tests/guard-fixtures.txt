@@ -199,3 +199,10 @@ deny  gh api graphql -f query='mutation { updateBranchProtectionRule(input: {}) 
 deny  gh api graphql -f query='mutation { deleteBranchProtectionRule(input: {}) { clientMutationId } }'
 ask   gh api graphql -f query='mutation { createRepositoryRuleset(input: {}) { clientMutationId } }'
 allow gh api graphql -f query='query { viewer { login } }'
+deny  gh api --method PUT -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/o/r/pulls/1/merge
+deny  gh api -H "Accept: application/vnd.github+json" -X DELETE repos/o/r/rulesets/1
+deny  gh api -X DELETE --jq .id repos/o/r/rulesets/1
+deny  gh api -X PUT repos/o/r/pulls/1/merge/
+allow gh api -H "Accept: application/vnd.github+json" repos/o/r/rulesets
+allow gh api --jq .name repos/o/r/rulesets/1
+allow echo export HUSKY=0
