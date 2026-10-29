@@ -244,6 +244,21 @@ function hookFileVerdict(segments) {
   return null;
 }
 
+// A `git config` segment that writes core.hooksPath (case-insensitive key): a value
+// positional after the key, the --unset/--unset-all/--replace-all/--add flags, or the
+// git >= 2.46 `set`/`unset` subcommands. Reads (--get, --get-all, the key alone) and
+// other keys are not writes.
+function gitConfigHooksPathWrite(segment) {
+  const match = segment.match(/\bgit\b(?:\s+-[Cc]\s+\S+)*\s+config\b/);
+  if (!match) return false;
+  const toks = shellSplit(segment.slice(match.index + match[0].length));
+  const keyIdx = toks.findIndex((t) => t.toLowerCase() === "core.hookspath");
+  if (keyIdx < 0) return false;
+  if (toks.some((t) => /^--(unset|unset-all|replace-all|add)$/.test(t))) return true;
+  if (toks.slice(0, keyIdx).some((t) => t === "set" || t === "unset")) return true;
+  return toks.slice(keyIdx + 1).some((t) => !t.startsWith("-"));
+}
+
 export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFindOccupants } = {}) {
   const tool = String(payload.tool_name || payload.toolName || "").toLowerCase();
   const toolInput = readToolInput(payload);
@@ -388,6 +403,9 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
     // Inline hooks-path overrides bypass hooks the same way --no-verify does.
     if (/(?:^|\s)-c\s+core\.hookspath=/i.test(segment) || /--config-env=core\.hookspath=/i.test(segment)) {
       return verdict("deny", "Overriding core.hooksPath bypasses hooks like `--no-verify`.");
+    }
+    if (gitConfigHooksPathWrite(segment)) {
+      return verdict("ask", "Changing core.hooksPath changes which hooks run; is this a tool install such as husky?");
     }
     const isPush = re(GIT + String.raw`\s+push\b`).test(segment);
     const isCommit = re(GIT + String.raw`\s+commit\b`).test(segment);

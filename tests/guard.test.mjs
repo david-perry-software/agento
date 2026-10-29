@@ -103,6 +103,28 @@ test("denies inline core.hooksPath overrides", () => {
   assert.equal(decide("git -c user.name=x commit -m x").decision, "allow");
 });
 
+test("asks before persistent core.hooksPath writes", () => {
+  for (const command of [
+    "git config core.hooksPath /dev/null",
+    "git config --local core.hooksPath .husky/_",
+    "git config --global core.hooksPath /tmp/h",
+    "git config --unset core.hooksPath",
+    "git config set core.hooksPath x",
+  ]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "ask", command);
+    assert.match(reason, /core\.hooksPath/);
+    assert.match(reason, /husky/);
+  }
+  for (const command of [
+    "git config --get core.hooksPath",
+    "git config core.hooksPath",
+    "git config user.name x",
+  ]) {
+    assert.equal(decide(command).decision, "allow", command);
+  }
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

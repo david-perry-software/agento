@@ -153,3 +153,11 @@ deny  git -c core.hooksPath=/dev/null commit -m x
 deny  git -c core.hookspath=/dev/null push origin feature/widget
 deny  git --config-env=core.hooksPath=X commit -m x
 allow git -c user.name=x commit -m x
+ask   git config core.hooksPath /dev/null
+ask   git config --local core.hooksPath .husky/_
+ask   git config --global core.hooksPath /tmp/h
+ask   git config --unset core.hooksPath
+ask   git config set core.hooksPath x
+allow git config --get core.hooksPath
+allow git config core.hooksPath
+allow git config user.name x
