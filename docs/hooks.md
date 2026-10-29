@@ -108,12 +108,18 @@ prompts you normally see once the session `.code-workspace` settings are current
 
 | Rule | Decision |
 |---|---|
-| Commit or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain. A push is judged by its refspec destinations (`refs/heads/` stripped, the default branch matched as a whole name, so `main-thing` is not `main`): denied from any branch when a destination is the default branch; from the default branch also when it names no refspec (and no `--tags`), pushes `HEAD` (or its shorthand `@`), or uses `--all`/`--mirror` — `git push origin HEAD:feature/x` from the default branch is allowed | deny |
+| Commit or non-fast-forward merge while on the configured default branch — including after a `git switch`/`checkout` earlier in the chain. A push is judged by its refspec destinations (`refs/heads/` stripped, the default branch matched as a whole name, so `main-thing` is not `main`): denied from any branch when a destination is the default branch; from the default branch also when it names no refspec (and no `--tags`), pushes `HEAD` (or its shorthand `@`), or uses `--all` — `git push origin HEAD:feature/x` from the default branch is allowed | deny |
+| `git push --mirror` on any `git push`, from any branch (force-updates and deletes remote refs, including the default) | deny — push the work branch by name |
 | `git push --force` / `--force-with-lease` / `--force-if-includes` / `-f` / `+refspec` | deny |
 | `git push --delete <default>` / `:<default>` (also spelled `refs/heads/<default>`) — deleting any **non-default** remote branch (`--delete <ref>` / `:<ref>`) is allowed even while the checkout is on the default branch (#47) | deny |
 | `git commit --no-verify` / `-n`, `git push --no-verify` | deny |
+| `git -c core.hooksPath=…` / `git --config-env=core.hooksPath=…` (key case-insensitive) | deny — the same bypass as `--no-verify` |
+| `git config` writes of `core.hooksPath` (`<key> <value>`, `--unset`/`--unset-all`/`--replace-all`/`--add`, or the `set`/`unset` subcommands) | ask — a tool install such as husky |
+| `HUSKY=0` / `HUSKY_SKIP_HOOKS=<non-empty>` as a leading assignment on `git commit`/`push`/`merge` (including after `env`), and `export HUSKY=0` / `export HUSKY_SKIP_HOOKS=<non-empty>` | deny — the same bypass as `--no-verify` |
 | `gh pr merge --admin` | deny |
 | `gh pr merge --squash` / `--rebase` | ask |
+| `gh api` REST writes (method `-X`/`-XVAL`/`--method`/`--method=`, any case, or implicit POST from `-f`/`-F`/`--field`/`--raw-field`/`--input`) to `rulesets/<id>` and sub-paths, `branches/<branch>/protection` and sub-paths, or `pulls/<n>/merge`; POST to the `repos/*/*/rulesets` or `orgs/*/rulesets` collection asks | deny / ask — edit rulesets and branch protection in the GitHub UI; merges run `/agento ship <slug>` |
+| `gh api graphql` mutations — `mergePullRequest`, `updateRepositoryRuleset`, `deleteRepositoryRuleset`, `createBranchProtectionRule`, `updateBranchProtectionRule`, `deleteBranchProtectionRule` deny, `createRepositoryRuleset` asks (whole-word names matched across the whole command) | deny / ask |
 | `git commit --amend`, `git rebase`, `git reset --hard`, `git branch -D` | ask |
 | Open-ended watchers (`gh pr checks --watch`, `gh run watch`, `vercel --wait`), including behind `nohup`, `setsid`, `timeout`, `&` | deny — use `scripts/wait-for-checks.sh` |
 | Any shell command whose word is not a known read-only command and that names `.github/hooks/` or `scripts/hooks/` (rm, mv, cp/install *into* it, truncate, tee, `perl -pi`, `sed -i`, `git checkout -- <hook>`, redirections) | deny — use an edit tool |
@@ -126,6 +132,12 @@ prompts you normally see once the session `.code-workspace` settings are current
 | `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only) | ask |
 | `git [-C <companion clone>] worktree remove <half>` while the pair's `<kind>-<id>.code-workspace` window is open — `code --status` shows `Window (… <kind>-<id> (Workspace) …)` (observed) or `Workspace (<kind>-<id>)`; both halves share the name, so either removal asks | ask |
 | Everything else | allow |
+
+Known limits of the slip guard: a GraphQL query loaded from a file (`-F
+query=@file`) is not inspected, a write method placed after a piped `--jq` filter
+can escape the `gh api` rule (quoted `|` splits segments), and `GIT_CONFIG_*`
+environment variables or a raw `curl` to the REST API are not matched — the GitHub
+ruleset on the default branch remains the enforcement boundary.
 
 Branch names, the default branch, and artifact roots come from the target repo's
 `.github/agento.json`; the guard walks to the repo root (`git rev-parse
