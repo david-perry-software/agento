@@ -953,16 +953,61 @@ test("the core states the canonical form and the six redirected forms", () => {
   }
 });
 
-test("every agent and built-in-agent command loads the policy explicitly", () => {
-  // VS Code skips linked instruction files by default, so the read must be an instruction.
-  const policyRead = /^Policy: read `<agento-root>\/\.github\/instructions\/delivery-policy\.instructions\.md` once /m;
-  const builtIn = promptFiles.filter((file) => parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file)).agent === "agent");
-  assert.ok(builtIn.length >= 11, `expected at least 11 built-in-agent prompts, got ${builtIn.length}`);
-  const mirrors = builtIn.map((file) => commandRel(`${path.basename(file, ".prompt.md")}.md`));
-  const missing = [...agentFiles, ...builtIn, ...mirrors]
-    .filter((file) => !policyRead.test(splitFrontmatter(file).body))
-    .map((file) => path.relative(repoRoot, file));
-  assert.deepEqual(missing, [], `files that do not read delivery-policy.instructions.md explicitly:\n${missing.join("\n")}`);
+const BASELINE_SECTIONS = ["1", "9", "10", "11", "12"];
+const agentByName = new Map([...agents].map(([file, meta]) => [meta.name, file]));
+
+function citedSections(body) {
+  const bodyWithoutPolicy = body.split(/\r?\n/).filter((l) => !/^Policy: /.test(l)).join("\n");
+  return new Set([...bodyWithoutPolicy.matchAll(/§(\d+)/g)].map((m) => m[1]));
+}
+
+function declaredSections(body) {
+  const policyLines = body.split(/\r?\n/).filter((l) => /^Policy: /.test(l));
+  assert.equal(policyLines.length, 1, "expected exactly one Policy: line");
+  const match = policyLines[0].match(/^Policy: ((?:§\d+, )*§\d+) — load once with `node <agento-root>\/scripts\/agento\.mjs policy ([\d ]+)` before the first step\.$/);
+  assert.ok(match, `malformed Policy: line: ${JSON.stringify(policyLines[0])}`);
+  const sigils = match[1].split(", ").map((s) => s.slice(1));
+  const args = match[2].split(" ").filter(Boolean);
+  assert.deepEqual(sigils, args, "the § list must equal the policy arguments, in the same order");
+  return sigils;
+}
+
+function expectedSections(body, agentFile) {
+  const set = new Set([...BASELINE_SECTIONS, ...citedSections(body)]);
+  if (agentFile) {
+    const agentBody = splitFrontmatter(agentFile).body;
+    for (const n of citedSections(agentBody)) set.add(n);
+  }
+  return [...set].sort((a, b) => Number(a) - Number(b));
+}
+
+function promptAgentFile(file) {
+  const meta = parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file));
+  const agentName = meta.agent;
+  return agentName && agentName !== "agent" ? (agentByName.get(agentName) ?? null) : null;
+}
+
+test("every agent, prompt, and mirror declares its policy sections on one Policy: line", () => {
+  const list = JSON.parse(execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8" }));
+  const knownSections = new Set(list.sections.map((s) => s.n));
+
+  const files = [
+    ...agentFiles.map((file) => ({ file, agentFile: null })),
+    ...promptFiles.map((file) => ({ file, agentFile: promptAgentFile(file) })),
+    ...commandNames.map((name) => {
+      const file = commandRel(`${name}.md`);
+      return { file, agentFile: promptAgentFile(file) };
+    }),
+  ];
+
+  for (const { file, agentFile } of files) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body;
+    const declared = declaredSections(body);
+    const expected = expectedSections(body, agentFile);
+    assert.deepEqual(declared, expected, `${label}: declared set must equal {1,9,10,11,12} ∪ cited${agentFile ? " ∪ agent-cited" : ""}`);
+    for (const n of declared) assert.ok(knownSections.has(n), `${label}: declares §${n}, which policy --list does not know`);
+  }
 });
 
 test("command mirrors use suffix-less command names and hook wiring points at existing executable files", () => {
