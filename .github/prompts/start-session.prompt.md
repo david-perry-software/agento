@@ -6,6 +6,7 @@ argument-hint: "[<feature|issue>/<slug> | session-id] [--resume] [--no-open]"
 Needs: terminal, code
 Fallback: code → §10 standard fallback (keep the worktree; print the open command)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 
 Start an isolated delivery session in a sibling worktree: **plan mode** for a blank
 argument or a bare session ID (`[a-z0-9][a-z0-9-]{1,63}`), **build mode** for

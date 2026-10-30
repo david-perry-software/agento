@@ -6,6 +6,7 @@ argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-ru
 Needs: terminal
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 
 Close the isolated session named by the argument. Run this command from the
 primary worktree of this repository after closing the session's VS Code window. This

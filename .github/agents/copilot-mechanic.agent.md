@@ -11,7 +11,7 @@ disable-model-invocation: false
 Needs: terminal
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 
 You are the Agento Mechanic. You fix and extend the agent customization
 system itself: the Agento plugin's `.github/agents/`, `.github/prompts/`,

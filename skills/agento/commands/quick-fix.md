@@ -8,7 +8,7 @@ tools: [read, search, edit, execute, agent]
 Needs: terminal, gh, network
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 
 Make the change described in the argument end to end in the **current window** on a
 short-lived `changes/<slug>` branch. This is the plan-less tier for work that does

@@ -7,6 +7,7 @@ agent: "🛠️ Agento Mechanic"
 Needs: terminal
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 
 Fix the customization-system bug described in the argument.
 

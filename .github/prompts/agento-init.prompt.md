@@ -6,6 +6,7 @@ argument-hint: "[--force] [--migrate]"
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 
 Initialize the current workspace (the **target repository**, not the Agento clone)
 for Agento delivery work. Delivery artifacts do not live in the product repository:
