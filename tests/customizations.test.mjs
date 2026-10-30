@@ -1075,6 +1075,32 @@ test("every command carries exactly one Duplicate submission: line matching its 
   }
 });
 
+test("every command's declared context stays within the budget (≤ 40,000 each, mean ≤ 24,000)", () => {
+  const list = spawnSync("node", [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: restrictedBin() } });
+  assert.equal(list.status, 0, list.stderr);
+  const sectionBytes = new Map(JSON.parse(list.stdout).sections.map((s) => [s.n, s.bytes]));
+  const agentByName = new Map([...agents].map(([file, meta]) => [meta.name, file]));
+
+  const rows = commandNames.map((name) => {
+    const file = rel(".github", "prompts", `${name}.prompt.md`);
+    const { frontmatter, body } = splitFrontmatter(file);
+    const meta = parseFrontmatter(frontmatter, path.relative(repoRoot, file));
+    const policyLine = body.split(/\r?\n/).find((l) => /^Policy: /.test(l));
+    const args = policyLine.match(/policy ([\d ]+)`/)[1].split(" ").filter(Boolean);
+    const policyBytes = args.reduce((sum, n) => sum + sectionBytes.get(n), 0);
+    const agentFile = meta.agent && meta.agent !== "agent" ? agentByName.get(meta.agent) : null;
+    const agentBytes = agentFile ? fs.statSync(agentFile).size : 0;
+    const commandBytes = fs.statSync(file).size;
+    return { name, total: policyBytes + agentBytes + commandBytes };
+  });
+
+  const table = rows.map((r) => `${r.name}\t${r.total}`).join("\n");
+  const mean = rows.reduce((sum, r) => sum + r.total, 0) / rows.length;
+  const over = rows.filter((r) => r.total > 40000);
+  assert.deepEqual(over.map((r) => r.name), [], `commands over 40,000 bytes (declared sections + agent + body):\n${over.map((r) => `${r.name}\t${r.total}`).join("\n")}\n\n${table}`);
+  assert.ok(mean <= 24000, `mean ${Math.round(mean)} bytes exceeds 24,000\n\n${table}`);
+});
+
 test("command mirrors use suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);
