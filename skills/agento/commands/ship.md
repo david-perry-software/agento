@@ -6,7 +6,7 @@ agent: "agent"
 
 Needs: terminal, gh, network
 Fallback: none — every need is hard
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Standard fallbacks: delivery-policy §10.
 Policy: §1, §3, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 9 10 11 12` before the first step.
 Duplicate submission: `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it; in companion mode, a code PR merged while the companion PR is still open resumes at the companion merge, then sync, teardown, epilogue; a conflict or a failing required check found at `checks` reopens the roadmap to `in-progress` with an added Builder step and rejects back to the build window, while a policy-blocked merge (`mergeStateStatus: BLOCKED` or a refusal that classifies as blocked) reports `merge-blocked` and does not reopen.
 

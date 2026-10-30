@@ -7,7 +7,7 @@ tools: [read, execute]
 
 Needs: terminal
 Fallback: none — every need is hard
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Standard fallbacks: delivery-policy §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 Duplicate submission: Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks).
 

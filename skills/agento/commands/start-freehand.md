@@ -6,7 +6,7 @@ agent: "agent"
 
 Needs: terminal, code
 Fallback: code → §10 standard fallback (keep the worktree; print the open command)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Standard fallbacks: delivery-policy §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 Duplicate submission: A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened.
 

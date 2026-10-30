@@ -7,7 +7,7 @@ tools: [read, search, edit, execute, agent]
 
 Needs: terminal, gh, network
 Fallback: none — every need is hard
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Standard fallbacks: delivery-policy §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
 Duplicate submission: An open PR on `changes/<slug>` from the same base is resumed; the `-2`, `-3` suffix applies only when that branch's PR is merged or closed.
 

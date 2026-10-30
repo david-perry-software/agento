@@ -2772,6 +2772,15 @@ test("policy rejects unknown, malformed, missing, and empty section arguments", 
   }
 });
 
+test("the shrunk §9, §10, §11 stay within the context budget", () => {
+  const repo = makeRepo({});
+  const { code, json } = run(repo, "policy", "--list");
+  assert.equal(code, 0);
+  const shrunk = json.sections.filter((s) => ["9", "10", "11"].includes(s.n));
+  const bytes = shrunk.reduce((sum, s) => sum + s.bytes, 0);
+  assert.ok(bytes <= 5000, `§9+§10+§11 must be ≤ 5,000 bytes, got ${bytes}`);
+});
+
 // --- next -------------------------------------------------------------------
 
 // Commits with a fixed clock so review-freshness comparisons are deterministic.

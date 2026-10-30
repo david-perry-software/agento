@@ -10,7 +10,7 @@ disable-model-invocation: true
 
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Standard fallbacks: delivery-policy §10.
 Policy: §1, §3, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 7 8 9 10 11 12` before the first step.
 
 You are the Agento Delivery Autopilot. You orchestrate exactly one slug's delivery in

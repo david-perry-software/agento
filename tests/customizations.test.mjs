@@ -563,15 +563,15 @@ test("only worktree-mutating commands inspect `git worktree list --porcelain`", 
   assert.deepEqual(offenders, [], `files that inspect worktrees instead of the session record:\n${offenders.join("\n")}`);
 });
 
-// The §10 vocabulary, parsed from the policy's "- `<token>` — <meaning>" bullets.
+// The §10 vocabulary, parsed from the docs reference's "- `<token>` — <meaning>" bullets.
 function policyCapabilities() {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m);
-  assert.ok(section, "policy has no ## 10. Capability preflight section");
+  const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
+  const section = docs.match(/^### §10 Capability preflight\r?\n([\s\S]*?)(?=^### |$(?![\r\n]))/m);
+  assert.ok(section, "docs/architecture.md has no ### §10 Capability preflight section");
   const vocabulary = section[1].match(/\*\*Vocabulary\*\*[\s\S]*?\n\n([\s\S]*?)\n\n/);
-  assert.ok(vocabulary, "§10 has no Vocabulary list");
+  assert.ok(vocabulary, "docs §10 has no Vocabulary list");
   const tokens = [...vocabulary[1].matchAll(/^- `([a-z0-9-]+)` — /gm)].map((m) => m[1]);
-  assert.ok(tokens.length >= 6, `§10 vocabulary too short: ${tokens.join(", ")}`);
+  assert.ok(tokens.length >= 6, `docs §10 vocabulary too short: ${tokens.join(", ")}`);
   return new Set(tokens);
 }
 
@@ -851,6 +851,23 @@ test("the policy file is the only place the shared rules are spelled out", () =>
     const text = fs.readFileSync(file, "utf8");
     if (file.endsWith("ship.prompt.md")) assert.match(text, teardownPause, "ship.prompt.md lost its teardown pause result line");
     else assert.doesNotMatch(text, teardownPause, `${path.relative(repoRoot, file)} restates the ship teardown pause; only ship.prompt.md spells it out`);
+  }
+});
+
+test("the moved receipts/preflight/window reference lives in docs/architecture.md", () => {
+  const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
+  for (const phrase of [
+    "**Receipt — the first line of the response:**",
+    "**Operation ID** — `<command>:<subject>:<short-sha>`:",
+    "**Idempotency table** — what a duplicate submission does, per command:",
+    "**Vocabulary** — the only tokens a `Needs:` line may use:",
+    "**Hard versus soft.**",
+    "**Declaration contract.**",
+    "**`Policy:` line contract.**",
+    "**When `doctor` runs.**",
+    "1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`",
+  ]) {
+    assert.ok(docs.includes(phrase), `docs/architecture.md lost the moved reference block: ${JSON.stringify(phrase)}`);
   }
 });
 
