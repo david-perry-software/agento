@@ -871,6 +871,31 @@ test("the moved receipts/preflight/window reference lives in docs/architecture.m
   }
 });
 
+function briefPreflightFields() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-brief-"));
+  execFileSync("git", ["init", "-q", "-b", "main", dir]);
+  execFileSync("git", ["-C", dir, "config", "user.email", "test@example.com"]);
+  execFileSync("git", ["-C", dir, "config", "user.name", "Test"]);
+  execFileSync("git", ["-C", dir, "commit", "-q", "--allow-empty", "-m", "init"]);
+  const result = spawnSync("node", [rel("scripts", "agento.mjs"), "preflight", "delivery-status"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: restrictedBin() } });
+  assert.equal(result.status, 0, result.stderr);
+  const json = JSON.parse(result.stdout);
+  return { session: new Set(Object.keys(json.session)), window: new Set(Object.keys(json.window)), doctor: new Set(Object.keys(json.doctor)) };
+}
+
+test("every session.X/window.X/doctor.X field a prompt, agent, or mirror names exists in the brief preflight document", () => {
+  const fields = briefPreflightFields();
+  const offenders = [];
+  for (const file of [...agentFiles, ...promptFiles, ...listFiles(commandRel(), ".md")]) {
+    const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
+    if (/preflight\s+[a-z0-9-]+\b[^.]*--full/.test(body)) continue; // the file reads the full document
+    for (const [, kind, field] of body.matchAll(/`(session|window|doctor)\.([a-z]+)`/g)) {
+      if (!fields[kind].has(field)) offenders.push(`${path.relative(repoRoot, file)}: ${kind}.${field}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `fields missing from the brief preflight document:\n${offenders.join("\n")}`);
+});
+
 test("every slash command is documented in README.md and docs/commands.md", () => {
   const readme = fs.readFileSync(rel("README.md"), "utf8");
   const commands = fs.readFileSync(rel("docs", "commands.md"), "utf8");
