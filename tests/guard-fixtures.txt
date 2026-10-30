@@ -145,3 +145,69 @@ deny  git push origin --delete refs/heads/main
 allow git push origin main-thing
 allow git push origin --delete main-thing
 allow git push origin HEAD:main-thing
+
+# Ruleset, merge, and hook-path bypasses (guard-bypass-gaps)
+deny  git push --mirror origin
+deny  git push --mirror
+deny  git -c core.hooksPath=/dev/null commit -m x
+deny  git -c core.hookspath=/dev/null push origin feature/widget
+deny  git --config-env=core.hooksPath=X commit -m x
+allow git -c user.name=x commit -m x
+ask   git config core.hooksPath /dev/null
+ask   git config --local core.hooksPath .husky/_
+ask   git config --global core.hooksPath /tmp/h
+ask   git config --unset core.hooksPath
+ask   git config set core.hooksPath x
+allow git config --get core.hooksPath
+allow git config core.hooksPath
+allow git config user.name x
+deny  HUSKY=0 git commit -m x
+deny  env HUSKY=0 git push origin feature/widget
+deny  HUSKY_SKIP_HOOKS=1 git commit -m x
+deny  export HUSKY=0
+deny  export HUSKY_SKIP_HOOKS=1
+allow HUSKY=1 git commit -m x
+allow export FOO=0
+deny  gh api -X DELETE repos/o/r/rulesets/1
+deny  gh api -X PUT repos/o/r/pulls/1/merge
+deny  gh api --method PUT repos/o/r/rulesets/1 --input r.json
+deny  gh api --method=delete /repos/o/r/rulesets/1
+deny  gh api -XDELETE repos/o/r/branches/main/protection
+deny  gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input p.json
+deny  gh api -X DELETE repos/o/r/branches/release/v1/protection/required_status_checks
+deny  gh api -X PATCH https://api.github.com/repos/o/r/rulesets/7
+deny  gh api -X DELETE orgs/o/rulesets/3
+ask   gh api -X POST repos/o/r/rulesets --input ruleset.json
+ask   gh api -X POST repos/{owner}/{repo}/rulesets --input ruleset.json
+allow gh api repos/o/r/rulesets --jq '.[] | .name'
+allow gh api repos/o/r/branches/main/protection
+allow gh api repos/o/r/pulls/1/merge
+allow gh api repos/o/r/pulls/1 -X PATCH -f body=x
+allow gh api repos/o/r/issues/1/comments -X POST -f body=x
+allow gh api user
+deny  gh api repos/o/r/rulesets/1 -f enforcement=disabled
+deny  gh api repos/o/r/pulls/1/merge -F merge_method=merge
+deny  gh api repos/o/r/branches/main/protection --input p.json
+ask   gh api orgs/o/rulesets -f name=x
+ask   gh api repos/o/r/rulesets --raw-field name=x
+allow gh api -X GET repos/o/r/rulesets -f includes_parents=true
+deny  gh api graphql -f query='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { deleteRepositoryRuleset(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { updateRepositoryRuleset(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { createBranchProtectionRule(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { updateBranchProtectionRule(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='mutation { deleteBranchProtectionRule(input: {}) { clientMutationId } }'
+ask   gh api graphql -f query='mutation { createRepositoryRuleset(input: {}) { clientMutationId } }'
+allow gh api graphql -f query='query { viewer { login } }'
+deny  gh api --method PUT -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/o/r/pulls/1/merge
+deny  gh api -H "Accept: application/vnd.github+json" -X DELETE repos/o/r/rulesets/1
+deny  gh api -X DELETE --jq .id repos/o/r/rulesets/1
+deny  gh api -X PUT repos/o/r/pulls/1/merge/
+allow gh api -H "Accept: application/vnd.github+json" repos/o/r/rulesets
+allow gh api --jq .name repos/o/r/rulesets/1
+allow echo export HUSKY=0
+deny  gh api -X POST graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'
+deny  gh api /graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'
+deny  gh api -H 'X: y' graphql -f query='mutation { deleteRepositoryRuleset(input: {}) { clientMutationId } }'
+deny  gh api graphql -f query='query { viewer { login } }' && gh api -X DELETE repos/o/r/rulesets/1
+allow gh api -X POST graphql -f query='query { viewer { login } }'

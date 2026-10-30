@@ -118,6 +118,18 @@ const MANAGED_HALF = /^(plan|feature|issue|freehand)-/;
 // `git push` options whose value is the next token.
 const PUSH_VALUE_OPTIONS = new Set(["-o", "--push-option", "--receive-pack", "--exec", "--repo"]);
 
+// `gh api` options that take a value (the value is the next token, or inline after
+// `=`). Every one must be skipped as a pair before the endpoint is picked, or the
+// option's value is mistaken for the endpoint and a write escapes the rule.
+const GH_API_VALUE_OPTIONS = new Set([
+  "-X", "-x", "--method",
+  "-f", "-F", "--field", "--raw-field", "--input",
+  "-H", "--header", "--hostname",
+  "-q", "--jq", "-t", "--template",
+  "-p", "--preview", "--cache",
+]);
+const GH_API_FIELD_FLAGS = new Set(["-f", "-F", "--field", "--raw-field", "--input"]);
+
 // What a `git push` segment sends: `{ all, tags, refspecs: [{ src, dst }] }`. `src` is
 // "" for a deletion, a bare ref is its own destination, and `refs/heads/` is stripped.
 export function pushRefspecs(tokens) {
@@ -244,6 +256,199 @@ function hookFileVerdict(segments) {
   return null;
 }
 
+// A `git config` segment that writes core.hooksPath (case-insensitive key): a value
+// positional after the key, the --unset/--unset-all/--replace-all/--add flags, or the
+// git >= 2.46 `set`/`unset` subcommands. Reads (--get, --get-all, the key alone) and
+// other keys are not writes.
+function gitConfigHooksPathWrite(segment) {
+  const match = segment.match(/\bgit\b(?:\s+-[Cc]\s+\S+)*\s+config\b/);
+  if (!match) return false;
+  const toks = shellSplit(segment.slice(match.index + match[0].length));
+  const keyIdx = toks.findIndex((t) => t.toLowerCase() === "core.hookspath");
+  if (keyIdx < 0) return false;
+  if (toks.some((t) => /^--(unset|unset-all|replace-all|add)$/.test(t))) return true;
+  if (toks.slice(0, keyIdx).some((t) => t === "set" || t === "unset")) return true;
+  return toks.slice(keyIdx + 1).some((t) => !t.startsWith("-"));
+}
+
+// HUSKY=0 and a non-empty HUSKY_SKIP_HOOKS skip the project's hooks; HUSKY=1 (or any
+// other HUSKY value) and other variables do not.
+const hookSkipEnv = (tok) => /^HUSKY=0$/.test(tok) || /^HUSKY_SKIP_HOOKS=.+/.test(tok);
+
+// Leading assignments (including after env/sudo/... prefixes) that precede a git word.
+function hookSkipAssignments(segment) {
+  const toks = shellSplit(segment);
+  let i = 0;
+  while (i < toks.length) {
+    const tok = toks[i];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
+      if (hookSkipEnv(tok)) return true;
+      i += 1;
+      continue;
+    }
+    if (PREFIXES.has(tok)) {
+      i += 1;
+      if (tok === "timeout" && i < toks.length) i += 1;
+      continue;
+    }
+    break;
+  }
+  return false;
+}
+
+// `export HUSKY=0` / `export HUSKY_SKIP_HOOKS=<non-empty>` where the segment's
+// command word is `export`; a bare `echo export HUSKY=0` is not an export.
+function hookSkipExport(segment) {
+  const toks = shellSplit(segment);
+  const [word] = commandWord(toks);
+  if (word !== "export") return false;
+  const at = toks.indexOf("export");
+  return toks.slice(at + 1).some(hookSkipEnv);
+}
+
+// `gh api` writes. `-f`/`-F`/`--field`/`--raw-field`/`--input` imply POST when no
+// explicit method is given (gh's real behaviour); `-X`/`-XVAL`/`--method`/`--method=`
+// name the method in any case.
+function ghApiMethodAndEndpoint(toks, start) {
+  let method = "";
+  let endpoint = "";
+  let fieldFlag = false;
+  for (let i = start; i < toks.length; i += 1) {
+    const t = toks[i];
+    if (t === "-X" || t === "-x" || t === "--method") {
+      method = toks[i + 1] ?? "";
+      i += 1;
+      continue;
+    }
+    if (/^-[xX][A-Za-z]+$/.test(t)) {
+      method = t.slice(2);
+      continue;
+    }
+    if (/^--method=/i.test(t)) {
+      method = t.slice("--method=".length);
+      continue;
+    }
+    // `--opt=value` forms of any value-taking option are self-contained.
+    if (/^--[^=\s]+=/.test(t)) {
+      const name = t.slice(0, t.indexOf("=")).toLowerCase();
+      if (GH_API_VALUE_OPTIONS.has(name)) {
+        if (GH_API_FIELD_FLAGS.has(name)) fieldFlag = true;
+        continue;
+      }
+    }
+    // Plain value-taking options consume the next token.
+    if (GH_API_VALUE_OPTIONS.has(t)) {
+      if (GH_API_FIELD_FLAGS.has(t)) fieldFlag = true;
+      i += 1;
+      continue;
+    }
+    if (!endpoint && !t.startsWith("-")) {
+      endpoint = t;
+      continue;
+    }
+  }
+  return { method: method.toUpperCase(), endpoint, fieldFlag };
+}
+
+function normalizeGhEndpoint(raw) {
+  let ep = raw.replace(/^https:\/\/api\.github\.com/i, "").replace(/^\//, "");
+  const q = ep.indexOf("?");
+  if (q >= 0) ep = ep.slice(0, q);
+  return ep.replace(/\/+$/, "");
+}
+
+function isGhApiGraphql(segment) {
+  const toks = shellSplit(segment);
+  let i = 0;
+  while (i < toks.length) {
+    const tok = toks[i];
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
+      i += 1;
+      continue;
+    }
+    if (PREFIXES.has(tok)) {
+      i += 1;
+      if (tok === "timeout" && i < toks.length) i += 1;
+      continue;
+    }
+    break;
+  }
+  if (toks[i] !== "gh" || toks[i + 1] !== "api") return false;
+  const { endpoint } = ghApiMethodAndEndpoint(toks, i + 2);
+  return endpoint ? normalizeGhEndpoint(endpoint) === "graphql" : false;
+}
+
+// GraphQL mutation names are matched whole-word against the entire command text,
+// because a multi-line query is split into several segments.
+function graphqlMutationVerdict(command) {
+  const has = (name) => new RegExp(`\\b${name}\\b`).test(command);
+  if (has("mergePullRequest")) {
+    return verdict("deny", "The `mergePullRequest` GraphQL mutation bypasses the `/agento ship` audit gate; run `/agento ship <slug>` from the primary window.");
+  }
+  for (const name of ["updateRepositoryRuleset", "deleteRepositoryRuleset"]) {
+    if (has(name)) {
+      return verdict("deny", `The \`${name}\` GraphQL mutation removes the enforcement layer the guard relies on; edit rulesets in the GitHub UI yourself.`);
+    }
+  }
+  for (const name of ["createBranchProtectionRule", "updateBranchProtectionRule", "deleteBranchProtectionRule"]) {
+    if (has(name)) {
+      return verdict("deny", `The \`${name}\` GraphQL mutation removes the enforcement layer the guard relies on; edit branch protection in the GitHub UI yourself.`);
+    }
+  }
+  if (has("createRepositoryRuleset")) {
+    return verdict("ask", "Creating a ruleset adds protection; approve this ruleset creation?");
+  }
+  return null;
+}
+
+export function ghApiVerdict(segments, command) {
+  // GraphQL: any segment whose normalised endpoint is `graphql` scans the whole
+  // command for mutations. A null verdict (a query with no listed mutation) must not
+  // short-circuit the REST scan — fall through so a chained REST write is still seen.
+  if (segments.some(isGhApiGraphql)) {
+    const graphql = graphqlMutationVerdict(command);
+    if (graphql) return graphql;
+  }
+  for (const segment of segments) {
+    const toks = shellSplit(segment);
+    let i = 0;
+    while (i < toks.length) {
+      const tok = toks[i];
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(tok)) {
+        i += 1;
+        continue;
+      }
+      if (PREFIXES.has(tok)) {
+        i += 1;
+        if (tok === "timeout" && i < toks.length) i += 1;
+        continue;
+      }
+      break;
+    }
+    if (toks[i] !== "gh" || toks[i + 1] !== "api") continue;
+    const { method, endpoint, fieldFlag } = ghApiMethodAndEndpoint(toks, i + 2);
+    if (!endpoint) continue;
+    const ep = normalizeGhEndpoint(endpoint);
+    const effectiveMethod = method || (fieldFlag ? "POST" : "GET");
+    const write = effectiveMethod === "POST" || effectiveMethod === "PUT" || effectiveMethod === "PATCH" || effectiveMethod === "DELETE";
+    if (!write) continue;
+    if (/^(repos\/[^/]+\/[^/]+|orgs\/[^/]+)\/rulesets$/.test(ep)) {
+      if (effectiveMethod === "POST") return verdict("ask", "Creating a ruleset adds protection; approve this ruleset creation?");
+      continue;
+    }
+    if (/^(repos\/[^/]+\/[^/]+|orgs\/[^/]+)\/rulesets\//.test(ep)) {
+      return verdict("deny", "Changing or deleting a ruleset removes the enforcement layer the guard relies on; edit rulesets in the GitHub UI yourself.");
+    }
+    if (/^repos\/[^/]+\/[^/]+\/branches\/.+\/protection(?:\/|$)/.test(ep)) {
+      return verdict("deny", "Changing or deleting branch protection removes the enforcement layer the guard relies on; edit branch protection in the GitHub UI yourself.");
+    }
+    if (/^repos\/[^/]+\/[^/]+\/pulls\/[^/]+\/merge$/.test(ep)) {
+      return verdict("deny", "Merging through the API bypasses the `/agento ship` audit gate; run `/agento ship <slug>` from the primary window.");
+    }
+  }
+  return null;
+}
+
 export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFindOccupants } = {}) {
   const tool = String(payload.tool_name || payload.toolName || "").toLowerCase();
   const toolInput = readToolInput(payload);
@@ -294,6 +499,19 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
       if (/\s(--squash|--rebase)\b/.test(segment)) {
         return verdict("ask", "Repository policy merges with a normal merge commit; squash/rebase rewrites the branch history. Proceed anyway?");
       }
+    }
+  }
+
+  // `gh api` writes against rulesets, branch protection, and the pull-request merge
+  // endpoint bypass the enforcement layer and the ship gate.
+  const ghApi = ghApiVerdict(segments, command);
+  if (ghApi) return ghApi;
+
+  // Hook-skipping exports carry no git word, so they must be denied before the early
+  // "no git word → allow" return.
+  for (const segment of segments) {
+    if (hookSkipExport(segment)) {
+      return verdict("deny", "HUSKY=0 / HUSKY_SKIP_HOOKS skip the project's hooks, like `--no-verify`.");
     }
   }
 
@@ -385,11 +603,25 @@ export function decide(payload, { cwd = process.cwd(), findOccupants = defaultFi
 
   for (const segment of segments) {
     if (!/\bgit\b/.test(segment)) continue;
+    // Inline hooks-path overrides bypass hooks the same way --no-verify does.
+    if (/(?:^|\s)-c\s+core\.hookspath=/i.test(segment) || /--config-env=core\.hookspath=/i.test(segment)) {
+      return verdict("deny", "Overriding core.hooksPath bypasses hooks like `--no-verify`.");
+    }
+    if (gitConfigHooksPathWrite(segment)) {
+      return verdict("ask", "Changing core.hooksPath changes which hooks run; is this a tool install such as husky?");
+    }
     const isPush = re(GIT + String.raw`\s+push\b`).test(segment);
     const isCommit = re(GIT + String.raw`\s+commit\b`).test(segment);
     const push = isPush ? pushRefspecs(shellSplit(segment)) : null;
+    const isHookSkipTarget = isPush || isCommit || re(GIT + String.raw`\s+merge\b`).test(segment);
+    if (isHookSkipTarget && hookSkipAssignments(segment)) {
+      return verdict("deny", "HUSKY=0 / HUSKY_SKIP_HOOKS skip the project's hooks, like `--no-verify`.");
+    }
 
     if (isPush) {
+      if (/\s--mirror\b/.test(segment)) {
+        return verdict("deny", `\`git push --mirror\` force-updates and deletes remote refs, including ${defaultBranch}; push the work branch by name.`);
+      }
       if (/\s(--force(?:-with-lease|-if-includes)?(?:=\S*)?|-f)\b/.test(segment) || /\spush\b.*\s\+\S/.test(segment)) {
         return verdict("deny", "Force-push is forbidden by repository policy.");
       }

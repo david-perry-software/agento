@@ -80,6 +80,170 @@ test("denies force-push", () => {
   assert.equal(decide("git push -f origin feature/x").decision, "deny");
 });
 
+test("denies git push --mirror from any branch", () => {
+  for (const command of ["git push --mirror origin", "git push --mirror"]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /--mirror/);
+    assert.match(reason, /push the work branch by name/);
+  }
+});
+
+test("denies inline core.hooksPath overrides", () => {
+  for (const command of [
+    "git -c core.hooksPath=/dev/null commit -m x",
+    "git -c core.hookspath=/dev/null push origin feature/widget",
+    "git --config-env=core.hooksPath=X commit -m x",
+  ]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /core\.hooksPath/);
+    assert.match(reason, /--no-verify/);
+  }
+  assert.equal(decide("git -c user.name=x commit -m x").decision, "allow");
+});
+
+test("asks before persistent core.hooksPath writes", () => {
+  for (const command of [
+    "git config core.hooksPath /dev/null",
+    "git config --local core.hooksPath .husky/_",
+    "git config --global core.hooksPath /tmp/h",
+    "git config --unset core.hooksPath",
+    "git config set core.hooksPath x",
+  ]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "ask", command);
+    assert.match(reason, /core\.hooksPath/);
+    assert.match(reason, /husky/);
+  }
+  for (const command of [
+    "git config --get core.hooksPath",
+    "git config core.hooksPath",
+    "git config user.name x",
+  ]) {
+    assert.equal(decide(command).decision, "allow", command);
+  }
+});
+
+test("denies hook-skipping environment assignments and exports", () => {
+  for (const command of [
+    "HUSKY=0 git commit -m x",
+    "env HUSKY=0 git push origin feature/widget",
+    "HUSKY_SKIP_HOOKS=1 git commit -m x",
+    "export HUSKY=0",
+    "export HUSKY_SKIP_HOOKS=1",
+  ]) {
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, /HUSKY/);
+    assert.match(reason, /--no-verify/);
+  }
+  assert.equal(decide("HUSKY=1 git commit -m x").decision, "allow");
+  assert.equal(decide("export FOO=0").decision, "allow");
+});
+
+test("denies gh api REST writes to rulesets, branch protection, and merge", () => {
+  const ruleset = decide("gh api -X DELETE repos/o/r/rulesets/1");
+  assert.equal(ruleset.decision, "deny");
+  assert.match(ruleset.reason, /ruleset/);
+  assert.match(ruleset.reason, /GitHub UI/);
+
+  const protection = decide("gh api -XDELETE repos/o/r/branches/main/protection");
+  assert.equal(protection.decision, "deny");
+  assert.match(protection.reason, /protection/);
+  assert.match(protection.reason, /GitHub UI/);
+
+  const merge = decide("gh api -X PUT repos/o/r/pulls/1/merge");
+  assert.equal(merge.decision, "deny");
+  assert.match(merge.reason, /\/agento ship/);
+
+  const create = decide("gh api -X POST repos/o/r/rulesets --input ruleset.json");
+  assert.equal(create.decision, "ask");
+  assert.match(create.reason, /approve this ruleset creation/);
+
+  assert.equal(decide("gh api repos/o/r/rulesets --jq '.[] | .name'").decision, "allow");
+  assert.equal(decide("gh api repos/o/r/pulls/1/merge").decision, "allow");
+  assert.equal(decide("gh api repos/o/r/pulls/1 -X PATCH -f body=x").decision, "allow");
+});
+
+test("treats gh api field flags without a method as POST", () => {
+  for (const command of [
+    "gh api repos/o/r/rulesets/1 -f enforcement=disabled",
+    "gh api repos/o/r/pulls/1/merge -F merge_method=merge",
+    "gh api repos/o/r/branches/main/protection --input p.json",
+  ]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  assert.equal(decide("gh api orgs/o/rulesets -f name=x").decision, "ask");
+  assert.equal(decide("gh api repos/o/r/rulesets --raw-field name=x").decision, "ask");
+  assert.equal(decide("gh api -X GET repos/o/r/rulesets -f includes_parents=true").decision, "allow");
+});
+
+test("denies gh api graphql mutations and asks on ruleset creation", () => {
+  const deny = [
+    "mergePullRequest",
+    "deleteRepositoryRuleset",
+    "updateRepositoryRuleset",
+    "createBranchProtectionRule",
+    "updateBranchProtectionRule",
+    "deleteBranchProtectionRule",
+  ];
+  for (const name of deny) {
+    const command = `gh api graphql -f query='mutation { ${name}(input: {}) { clientMutationId } }'`;
+    const { decision, reason } = decide(command);
+    assert.equal(decision, "deny", command);
+    assert.match(reason, new RegExp(name));
+  }
+  const create = decide("gh api graphql -f query='mutation { createRepositoryRuleset(input: {}) { clientMutationId } }'");
+  assert.equal(create.decision, "ask");
+  assert.match(create.reason, /approve this ruleset creation/);
+  assert.equal(decide("gh api graphql -f query='query { viewer { login } }'").decision, "allow");
+});
+
+test("denies a multi-line gh api graphql merge mutation", () => {
+  const command = `gh api graphql -f query='mutation {
+  mergePullRequest(input: {pullRequestId: "x"}) {
+    clientMutationId
+  }
+}'`;
+  const { decision, reason } = decide(command);
+  assert.equal(decision, "deny");
+  assert.match(reason, /mergePullRequest/);
+  assert.match(reason, /\/agento ship/);
+});
+
+test("harden gh api endpoint parsing: value options before the endpoint", () => {
+  for (const command of [
+    `gh api --method PUT -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" /repos/o/r/pulls/1/merge`,
+    `gh api -H "Accept: application/vnd.github+json" -X DELETE repos/o/r/rulesets/1`,
+    "gh api -X DELETE --jq .id repos/o/r/rulesets/1",
+    "gh api -X PUT repos/o/r/pulls/1/merge/",
+  ]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  assert.equal(
+    decide(`gh api -H "Accept: application/vnd.github+json" repos/o/r/rulesets`).decision,
+    "allow",
+  );
+});
+
+test("detects graphql by normalised endpoint and falls through to the REST scan", () => {
+  for (const command of [
+    "gh api -X POST graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh api /graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+    "gh api -H 'X: y' graphql -f query='mutation { deleteRepositoryRuleset(input: {}) { clientMutationId } }'",
+    "gh api graphql -f query='query { viewer { login } }' && gh api -X DELETE repos/o/r/rulesets/1",
+  ]) {
+    assert.equal(decide(command).decision, "deny", command);
+  }
+  assert.equal(decide("gh api -X POST graphql -f query='query { viewer { login } }'").decision, "allow");
+});
+
+test("only an export command word triggers the hook-skip export deny", () => {
+  assert.equal(decide("export HUSKY=0").decision, "deny");
+  assert.equal(decide("echo export HUSKY=0").decision, "allow");
+});
+
 test("denies open-ended watchers", () => {
   for (const command of ["gh pr checks 5 --watch", "gh run watch 123", "vercel --wait"]) {
     const { decision, reason } = decide(command);

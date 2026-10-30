@@ -503,10 +503,15 @@ Two hooks run outside the model on every session:
   line is simply omitted.
 - **PreToolUse** inspects each shell command and file edit and returns `allow`,
   `ask`, or `deny`. It denies commits/pushes/merges on the default branch (including
-  after a `git switch main` earlier in the same line), force-pushes in every
-  spelling, `--no-verify`, `gh pr merge --admin`, open-ended watchers, and shell
-  writes to hook files; it asks before `--amend`, `rebase`, `reset --hard`, editing
-  a hook file, or committing delivery work without a roadmap update.
+  after a `git switch main` earlier in the same line), `git push --mirror`, force-pushes
+  in every spelling, `--no-verify`, `-c core.hooksPath`/`--config-env` overrides,
+  `HUSKY=0`/`HUSKY_SKIP_HOOKS` as a prefix or `export`, `gh api` REST writes to
+  rulesets, branch protection, and `pulls/<n>/merge`, `gh api graphql` merge/ruleset/
+  branch-protection mutations, `gh pr merge --admin`, open-ended watchers, and shell
+  writes to hook files; it asks before `--amend`, `rebase`, `reset --hard`,
+  `git config` writes of `core.hooksPath`, `gh api` ruleset creation (REST or the
+  `createRepositoryRuleset` mutation), editing a hook file, or committing delivery
+  work without a roadmap update.
 
 It matches shell text, so it catches the mistakes agents actually make; a determined
 command can be spelled around it. That is why the GitHub ruleset is required. Full
