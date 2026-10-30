@@ -30,7 +30,7 @@ for what counts as `(manual)`, which verification target a step names, when a
 post-ship exception is allowed, and the lint baseline gate. Open every response with
 the acceptance receipt and close it with the terminal result line per policy §9; a
 slug that already has a roadmap is a duplicate submission under the new-feature /
-new-issue idempotency row — resume on the existing roadmap and branch, never a
+new-issue duplicate-submission line — resume on the existing roadmap and branch, never a
 second branch, worktree, or PR (the step 5 slug rejection is for a *different*
 change colliding on the same slug). Window check per §11: requires role `plan` — or
 `build` when resuming this slug's promoted planning worktree.

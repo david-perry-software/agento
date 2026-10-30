@@ -8,14 +8,14 @@ Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §2, §4, §5, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 4 5 7 9 10 11 12` before the first step.
+Duplicate submission: An existing roadmap for the slug enters the Planner resume protocol; no second branch, worktree, or PR. An existing GitHub issue is linked, not duplicated.
 
 Plan a new **issue** (bug or defect) from the argument. This invocation authorizes
 creating one GitHub issue with `gh issue create` (unless importing an existing one).
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (a slug that already has a roadmap enters your resume protocol — no
-second branch, worktree, or PR; an existing GitHub issue is linked, not duplicated).
+delivery-policy.instructions.md §9; a duplicate submission follows this command's
+duplicate-submission line.
 Open with one `node <agento-root>/scripts/agento.mjs preflight new-issue` call
 (§9–§11), with `issue <slug>` appended when resuming a promoted planning worktree:
 print its `receipt` and then its `preflightLines` verbatim, and stop on `status:

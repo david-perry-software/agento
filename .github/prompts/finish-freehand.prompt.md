@@ -8,6 +8,7 @@ Needs: terminal, gh, network
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: The existing commit, PR, or check-wait phase is reused; never a second commit or PR for the same changes.
 
 Wrap up the freehand session in this worktree: commit the current changes, publish
 the branch, and merge it into `main` through the protected pull-request workflow. This
@@ -17,9 +18,8 @@ supplemental context, but ground the commit message in the actual diff.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
-directly above the result line per §12; a duplicate submission follows this command's §9
-idempotency row (the existing commit, pull request, or check-wait phase is reused —
-step 2 recovers it from repository state). Open with one `node
+directly above the result line per §12; a duplicate submission follows this command's
+duplicate-submission line. Open with one `node
 <agento-root>/scripts/agento.mjs preflight finish-freehand` call (§9–§11): print its
 `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
 (exit 3), writing nothing.

@@ -33,7 +33,7 @@ branch, follow
 so a parallel session's verification is neither used nor disturbed. Open every
 response with the acceptance receipt and close it with the terminal result line per
 policy §9; a duplicate review submission follows the review-feature / review-issue
-idempotency row — a fresh verdict overwrites review.md, never a second PR comment
+duplicate-submission line — a fresh verdict overwrites review.md, never a second PR comment
 thread. Window check per §11: requires role `build` with `delivery.slug` equal to the
 slug under review.
 

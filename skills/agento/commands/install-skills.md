@@ -7,6 +7,7 @@ Needs: terminal, ask-questions, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: Already-installed skills are excluded from the batch.
 
 Install agent skills matched to the current workspace (the **target repository**,
 not the Agento clone). Skills inject instructions into agent sessions, so nothing
@@ -14,8 +15,8 @@ is installed without explicit per-skill approval.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
-directly above the result line per §12; a duplicate submission follows this command's §9
-idempotency row (already-installed skills are excluded from the batch, step 3).
+directly above the result line per §12; a duplicate submission follows this command's
+duplicate-submission line.
 Open with one `node <agento-root>/scripts/agento.mjs preflight install-skills` call
 (§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
 `status: rejected` (exit 3), writing nothing.

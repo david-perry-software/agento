@@ -24,7 +24,7 @@ Follow the target repository's AGENTS.md at its root, the artifact formats in
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
 (git rules §7, cross-window handoff §8, execution receipts §9). Open every response
 with the acceptance receipt and close it with the terminal result line per §9; a
-duplicate `/agento ap` submission follows its §9 idempotency row — re-enter the build
+duplicate `/agento ap` submission follows its duplicate-submission line — re-enter the build
 or review resume protocol wherever the roadmap stands.
 Window check per §11: requires role `build` with `delivery.slug` equal to the slug
 being run.

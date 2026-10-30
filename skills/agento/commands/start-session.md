@@ -7,6 +7,7 @@ Needs: terminal, code
 Fallback: code → §10 standard fallback (keep the worktree; print the open command)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened.
 
 Start an isolated delivery session in a sibling worktree: **plan mode** for a blank
 argument or a bare session ID (`[a-z0-9][a-z0-9-]{1,63}`), **build mode** for
@@ -45,8 +46,7 @@ on the same branch name); the post-add check of both halves; the `.code-workspac
 file (`agento.mjs workspace` semantics: written when missing or stale); and
 `code --new-window`. Do not run any of these steps yourself, before or after the
 call, and do not rerun the CLI within one submission. A duplicate submission follows
-this command's §9 idempotency row: the CLI reuses a registered session untouched and
-reports `outcome: "resumed"`.
+this command's duplicate-submission line.
 
 ## Map the JSON to the response
 

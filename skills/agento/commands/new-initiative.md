@@ -8,14 +8,15 @@ Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §6, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 6 7 9 10 11 12` before the first step.
+Duplicate submission: An open `changes/initiative-<slug>` PR is resumed; a merged one is rejected naming the existing breakdown.
 
 Create a new **initiative** from the brief in the argument, following the Architect's
 procedure end to end in the **current (primary) window**.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
-directly above the result line per §12; a duplicate submission follows this command's §9
-idempotency row (an open `changes/initiative-<slug>` PR is resumed from step 7; a
+directly above the result line per §12; a duplicate submission follows this command's
+duplicate-submission line (an open `changes/initiative-<slug>` PR is resumed from step 7; a
 merged one is rejected naming the existing breakdown), which takes precedence over
 the slug reservation in step 5. Open with one
 `node <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11): print

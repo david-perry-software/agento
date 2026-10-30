@@ -27,7 +27,7 @@ Follow the target repository's AGENTS.md at its root, the skills-first policy in
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
 for the work boundary (§1), shell hygiene (§6), and the git rules (§7). Open every
 response with the acceptance receipt and close it with the terminal result line per
-§9; a duplicate submission follows the new-initiative idempotency row — an open
+§9; a duplicate submission follows the new-initiative duplicate-submission line — an open
 `changes/initiative-<slug>` PR is resumed at its current step, a merged one is
 rejected naming the existing breakdown. Window check per §11: requires role
 `primary` on the default branch, clean. Open with one `node

@@ -9,6 +9,7 @@ Needs: terminal, gh, network
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: An open PR on `changes/<slug>` from the same base is resumed; the `-2`, `-3` suffix applies only when that branch's PR is merged or closed.
 
 Make the change described in the argument end to end in the **current window** on a
 short-lived `changes/<slug>` branch. This is the plan-less tier for work that does
@@ -23,9 +24,8 @@ section (`config.branches.default`, `config.branches.freehand`). `main` below
 means the configured default.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (an open PR on `changes/<slug>` from the same base is resumed at
-its current step; see step 2 for the suffix rule). Open with one
+delivery-policy.instructions.md §9; a duplicate submission follows this command's
+duplicate-submission line. Open with one
 `node <agento-root>/scripts/agento.mjs preflight quick-fix` call (§9–§11; the CLI
 path is announced in the session context as `Agento CLI:`): print its `receipt` and
 then its `preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing

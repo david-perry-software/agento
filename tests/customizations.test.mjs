@@ -1010,6 +1010,29 @@ test("every agent, prompt, and mirror declares its policy sections on one Policy
   }
 });
 
+test("every command carries exactly one Duplicate submission: line matching its idempotency-table row", () => {
+  const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
+  const tableStart = docs.indexOf("**Idempotency table** — what a duplicate submission does, per command:");
+  assert.ok(tableStart !== -1, "docs/architecture.md has no idempotency table");
+  const rowByCommand = new Map();
+  for (const line of docs.slice(tableStart).split("\n")) {
+    if (!line.startsWith("| ") || !line.includes("/agento ")) continue;
+    const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length !== 2) continue;
+    for (const m of cells[0].matchAll(/\/agento ([a-z0-9-]+)/g)) rowByCommand.set(m[1], cells[1]);
+  }
+  assert.equal(rowByCommand.size, commandNames.length, "docs idempotency table must name every command");
+
+  for (const name of commandNames) {
+    for (const file of [rel(".github", "prompts", `${name}.prompt.md`), commandRel(`${name}.md`)]) {
+      const body = splitFrontmatter(file).body;
+      const lines = body.split(/\r?\n/).filter((l) => l.startsWith("Duplicate submission: "));
+      assert.equal(lines.length, 1, `${path.relative(repoRoot, file)} must carry exactly one Duplicate submission: line`);
+      assert.equal(lines[0].slice("Duplicate submission: ".length), rowByCommand.get(name), `${path.relative(repoRoot, file)} Duplicate submission: text must match the docs table row`);
+    }
+  }
+});
+
 test("command mirrors use suffix-less command names and hook wiring points at existing executable files", () => {
   const plugin = JSON.parse(fs.readFileSync(rel(".claude-plugin", "plugin.json"), "utf8"));
   assert.ok(fs.existsSync(rel(plugin.agents)), `plugin.agents ${plugin.agents} missing`);

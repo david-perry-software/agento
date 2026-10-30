@@ -65,7 +65,7 @@ the lint gate, shell hygiene, git rules, and the cross-window handoff —
 
 Open every response with the acceptance receipt and close it with the terminal result
 line per policy §9; a duplicate build submission follows the build-feature /
-build-issue idempotency row, which is this protocol — ticked steps are audited,
+build-issue duplicate-submission line, which is this protocol — ticked steps are audited,
 never redone. Window check per §11: requires role `build` with `delivery.slug` equal
 to the slug being built.
 

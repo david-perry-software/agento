@@ -211,7 +211,7 @@ derived from git + roadmap state (no journal) per the table at the end of this s
 
 - `Receipt: accepted <op-id>` — work starts.
 - `Receipt: accepted <op-id> (duplicate of <op-id>; resuming)` — the same operation
-  was already submitted; the command resumes per its idempotency row and creates
+  was already submitted; the command resumes per its duplicate-submission line and creates
   nothing a second time.
 - `Receipt: rejected — <reason>; allowed: <cmd>[, <cmd>…]` — nothing is written. The
   alternatives are copied from the session record (`agento.mjs session`, echoed by
@@ -284,6 +284,7 @@ roadmap.
 | `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
 | `/agento delivery-status`, `/agento next-feature`, `/agento doctor` | Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks). |
 | `/agento models` | `apply` of the already-active profile and `clear` on an unpinned clone change nothing (`changed: []`); `init` with the file present reports `created: false`; `list` and `show` are reads. |
+| `/agento mission-control` | A fresh open — reopening the canvas with the same `instanceId` reuses the live instance. |
 | `/agento extend-copilot`, `/agento fix-copilot` | An existing capability with the same name is modified in place, never duplicated. |
 
 ## 10. Capability preflight

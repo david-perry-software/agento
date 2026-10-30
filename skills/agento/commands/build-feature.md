@@ -8,6 +8,7 @@ Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 3 4 5 7 8 9 10 11 12` before the first step.
+Duplicate submission: The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone.
 
 Build the **feature** named by the slug in the argument. Its roadmap resolution is
 the `resolve` section of the preflight call below — act on it: `status: ok` gives
@@ -16,9 +17,8 @@ report the `message` verbatim.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
-directly above the result line per §12; a duplicate submission follows this command's §9
-idempotency row (the Builder resume/audit protocol below — ticked steps are audited,
-never redone). Open with one `node <agento-root>/scripts/agento.mjs preflight
+directly above the result line per §12; a duplicate submission follows this command's
+duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs preflight
 build-feature feature <slug>` call (§9–§11; the CLI path is announced in the session
 context as `Agento CLI:`): print its `receipt` and then its `preflightLines`
 verbatim, and stop on `status: rejected` (exit 3), writing nothing.

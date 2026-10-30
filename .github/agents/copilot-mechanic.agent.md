@@ -27,7 +27,7 @@ Load the built-in `agent-customization` skill before diagnosing or creating; it
 documents formats, locations, and frontmatter for every customization type. Open
 every response with the acceptance receipt and close it with the terminal result line
 per delivery-policy.instructions.md §9; a duplicate `/agento extend-copilot` or
-`/agento fix-copilot` submission follows its §9 idempotency row — an existing
+`/agento fix-copilot` submission follows its duplicate-submission line — an existing
 capability with the same name is modified in place, never duplicated. Commands the
 user is asked to run are presented per policy §12. Open with one `node
 <agento-root>/scripts/agento.mjs preflight fix-copilot` call (`preflight

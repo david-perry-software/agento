@@ -9,6 +9,7 @@ Needs: terminal
 Fallback: none — every need is hard
 Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
 Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: `apply` of the already-active profile and `clear` on an unpinned clone change nothing (`changed: []`); `init` with the file present reports `created: false`; `list` and `show` are reads.
 
 Manage model profiles: named sets of `model:` pins for the Agento agents and the
 commands that run on the built-in agent, defined once in the user-level
@@ -19,8 +20,8 @@ its worktrees are cleaned of pins by the filter. Format and rules:
 `docs/model-profiles.md` in the Agento repository.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row. Open with one `node <agento-root>/scripts/agento.mjs preflight
+delivery-policy.instructions.md §9; a duplicate submission follows this command's
+duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs preflight
 models` call (§9–§11): print its `receipt` and then its `preflightLines` verbatim,
 and stop on `status: rejected` (exit 3), writing nothing.
 Window check per §11: requires role `any` (not window-sensitive: it rewrites the
