@@ -59,15 +59,13 @@ keeps the single-repo flow below.
 ## Procedure
 
 1. **Require the primary worktree on `main`, clean, and synchronized.** The
-   preflight's `window` verdict applies the window check: its `session` must report
-   `role: "primary"` with `worktree.branch` equal to the default branch — a managed
-   `plan`/`build`/`freehand` role or `unmanaged` is rejected per §11 with the record's
-   alternatives. `git fetch origin`, then `git status --short --branch` must show
+   preflight's `window` verdict applies the window check per §11 (`primary` on the
+   default branch, clean; a managed or `unmanaged` role is rejected with the record's
+   alternatives). Then `git fetch origin` and `git status --short --branch` must show
    nothing and zero ahead/behind; otherwise stop and name
    `/agento commit-current-changes`. Authentication failures halt per AGENTS.md.
    Companion mode: after `git -C <artifactsRoot> fetch origin`, the clone must also be
-   on its default branch with `git -C <artifactsRoot> status --short --branch`
-   showing nothing and zero ahead/behind; otherwise stop and name the clone.
+   on its default branch, clean, with zero ahead/behind; otherwise stop and name the clone.
 2. **Read the brief.** The argument is exactly one of: inline text, or a
    repository-relative path to an existing file whose content is the brief. If the
    argument names no existing file and contains no whitespace, stop and ask whether it
@@ -117,16 +115,12 @@ keeps the single-repo flow below.
    containing only the two files, then one `node <agento-root>/scripts/agento.mjs
    publish-pr --title "docs(initiative): add <slug> breakdown" --body-file - --merge`
    call (companion mode: with `--dir <artifactsRoot>`) whose body, on stdin, lists
-   the member features by wave and the intended `next`. It pushes with upstream,
-   opens or reuses the PR to the default branch, waits for every required check
-   within its bounded budget, merges the default into the branch when it falls
-   behind (never a rebase), merges with a normal merge commit through the ruleset
-   (no admin, no squash, no rebase), deletes the branch, switches the checkout back
-   to the default branch, and fast-forwards it. Exit 2 (`status: pending`) means
-   checks are still running: re-send the identical call from its `next[]`. Exit 3
-   stops: failing checks (`checks-failed`) are a resumable blocker — report the PR
-   and stop; otherwise report `message` and `reauth`. Confirm the checkout ends on
-   its default branch, clean, with zero ahead/behind.
+   the member features by wave and the intended `next`. The CLI pushes, opens or
+   reuses the PR, waits within its bounded budget, merges the default in when behind,
+   merges through the ruleset, deletes the branch, and syncs the default. Exit 2
+   (`status: pending`) → re-send the identical call from its `next[]`; exit 3 →
+   report `message` (and `reauth`), stopping on `checks-failed` with the PR. Confirm
+   the checkout ends on its default branch, clean, with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
    the §9 result line's `next:` command, emitted as its own block per policy §12:
