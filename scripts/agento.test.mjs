@@ -2716,6 +2716,62 @@ test("initiative flags merged-but-not-complete members without unblocking depend
   assert.equal(after.features.find((f) => f.slug === "c").ready, true);
 });
 
+// --- policy -------------------------------------------------------------------
+
+const policyFile = path.join(repoRoot, ".github", "instructions", "delivery-policy.instructions.md");
+
+function policySlices() {
+  const text = fs.readFileSync(policyFile, "utf8");
+  const heading = /^## (\d+)\. (.+)$/gm;
+  const starts = [];
+  let match;
+  while ((match = heading.exec(text)) !== null) starts.push({ n: match[1], offset: match.index });
+  return { text, starts };
+}
+
+function policySlice({ text, starts }, n) {
+  const index = starts.findIndex((s) => s.n === n);
+  const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
+  return text.slice(starts[index].offset, end);
+}
+
+function runPolicy(repo, ...args) {
+  const result = spawnSync("node", [cli, ...args], { cwd: repo, encoding: "utf8", env: baseEnv });
+  return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+test("policy prints the requested sections as raw Markdown, ascending and deduplicated", () => {
+  const repo = makeRepo({});
+  const slices = policySlices();
+  const expected = `# delivery-policy.instructions.md — sections 1, 9\n\n${policySlice(slices, "1")}${policySlice(slices, "9")}`;
+  const { code, stdout } = runPolicy(repo, "policy", "1", "9");
+  assert.equal(code, 0);
+  assert.equal(stdout, expected);
+  // Dedupe and ascending order: 9 1 9 1 prints the same as 1 9.
+  assert.equal(runPolicy(repo, "policy", "9", "1", "9", "1").stdout, expected);
+});
+
+test("policy --list returns all 12 sections whose bytes sum to the body size", () => {
+  const repo = makeRepo({});
+  const slices = policySlices();
+  const { code, json } = run(repo, "policy", "--list");
+  assert.equal(code, 0);
+  assert.equal(json.sections.length, 12);
+  assert.deepEqual(json.sections.map((s) => s.n), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
+  assert.equal(json.sections[0].title, "Who does the work");
+  const body = slices.text.slice(slices.starts[0].offset);
+  assert.equal(json.sections.reduce((sum, s) => sum + s.bytes, 0), Buffer.byteLength(body, "utf8"));
+});
+
+test("policy rejects unknown, malformed, missing, and empty section arguments", () => {
+  const repo = makeRepo({});
+  for (const args of [["policy"], ["policy", "13"], ["policy", "x"], ["policy", "1", "13"], ["policy", "--list", "1"]]) {
+    const result = spawnSync("node", [cli, ...args], { cwd: repo, encoding: "utf8", env: baseEnv });
+    assert.equal(result.status, 1, `${args.join(" ")} should exit 1`);
+    assert.match(result.stdout, /"status": "usage-error"/);
+  }
+});
+
 // --- next -------------------------------------------------------------------
 
 // Commits with a fixed clock so review-freshness comparisons are deterministic.
