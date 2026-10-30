@@ -146,6 +146,7 @@ function parseArgs(argv) {
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--dry-run") options.dryRun = true;
     else if (arg === "--list") options.list = true;
+    else if (arg === "--full") options.full = true;
     else if (arg === "--from") {
       options.from = argv[++i];
       if (!options.from || options.from.startsWith("--")) usage("--from takes a profile name");
@@ -4591,10 +4592,10 @@ function preflightArgs() {
   if (!COMMAND_NEEDS[command]) usage(`preflight: unknown command ${command}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
   const args = rest.slice(1);
   if (args.length > 2) usage(`preflight takes <command> [<type> <slug> | <type>/<slug> | <slug>], got ${JSON.stringify(rest.join(" "))}`);
-  if (args.length === 2) return { command, type: requireType(args[0]), slug: requireSlug(args[1]) };
+  if (args.length === 2) return { command, type: requireType(args[0]), slug: requireSlug(args[1]), full: Boolean(options.full) };
   const typed = args[0]?.match(/^(feature|issue)\/(.*)$/);
-  if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]) };
-  return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null };
+  if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]), full: Boolean(options.full) };
+  return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null, full: Boolean(options.full) };
 }
 
 // `resolve <type> <slug>`, or `find <slug>` when no type was passed.
@@ -4629,7 +4630,10 @@ function receiptLines({ opId, window, doctor }) {
 // What `preflight <command> [<type> <slug>]` emits: the session record, the §11
 // window verdict, `doctor --for <command>`, the slug's resolution (null without a
 // slug), the config document, and the §9 op-id, receipt, and preflight lines.
-function preflightDocument({ command, type, slug }) {
+// `--full` is that document unchanged; the default is the brief document (the
+// fields commands actually read), which drops `session.worktrees`, `session.allowed`,
+// `session.elsewhere`, `config`, `root`, `configSource`, and `doctor.checks`.
+function preflightDocument({ command, type, slug, full = false }) {
   const session = sessionRecord();
   const rule = WINDOW_ROLES[command];
   const clean = rule.clean ? git(session.worktree.path, "status", "--porcelain") === "" : true;
@@ -4637,6 +4641,24 @@ function preflightDocument({ command, type, slug }) {
   const doctor = doctorDocument(command);
   const { subject, opId } = opIdFor(command, slug, session.worktree);
   const { status, receipt, preflightLines } = receiptLines({ opId, window, doctor });
+  if (full) {
+    return {
+      status,
+      command,
+      opId,
+      subject,
+      receipt,
+      preflightLines,
+      session,
+      window,
+      doctor,
+      resolve: slug ? resolveDocument(type, slug) : null,
+      config: configDocument(),
+      root,
+      configSource: source,
+    };
+  }
+  const { role, hosted, worktree, companion, workspace, delivery, pr, companionPr, lifecycle, warnings } = session;
   return {
     status,
     command,
@@ -4644,13 +4666,18 @@ function preflightDocument({ command, type, slug }) {
     subject,
     receipt,
     preflightLines,
-    session,
-    window,
-    doctor,
-    resolve: slug ? resolveDocument(type, slug) : null,
-    config: configDocument(),
-    root,
-    configSource: source,
+    window: {
+      role: window.role,
+      required: window.required,
+      match: window.match,
+      reason: window.reason,
+      allowed: window.allowed,
+      elsewhere: window.elsewhere,
+      ...(window.role === "unmanaged" ? { primary: session.worktrees[0]?.path ?? root } : {}),
+    },
+    session: { role, hosted, worktree, companion, workspace, delivery, pr, companionPr, lifecycle, warnings },
+    doctor: { status: doctor.status, for: doctor.for, failing: doctor.checks.filter((c) => c.status !== "ok") },
+    ...(slug ? { resolve: resolveDocument(type, slug) } : {}),
   };
 }
 
