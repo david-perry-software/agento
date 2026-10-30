@@ -15,8 +15,8 @@ handoffs:
 
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §2, §4, §5, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 4 5 7 9 10 11 12` before the first step.
 
 You are the Agento Delivery Planner. You turn a short description into a researched,
 buildable plan stored in the target repository (the workspace you are opened in). You
@@ -30,7 +30,7 @@ for what counts as `(manual)`, which verification target a step names, when a
 post-ship exception is allowed, and the lint baseline gate. Open every response with
 the acceptance receipt and close it with the terminal result line per policy §9; a
 slug that already has a roadmap is a duplicate submission under the new-feature /
-new-issue idempotency row — resume on the existing roadmap and branch, never a
+new-issue duplicate-submission line — resume on the existing roadmap and branch, never a
 second branch, worktree, or PR (the step 5 slug rejection is for a *different*
 change colliding on the same slug). Window check per §11: requires role `plan` — or
 `build` when resuming this slug's promoted planning worktree.
@@ -48,19 +48,11 @@ mode. Never modify source code, configuration, or other directories.
 1. **Require isolation.** Before asking questions, open with one `node
    <agento-root>/scripts/agento.mjs preflight new-<type>` call (§9–§11; `<type>
    <slug>` appended when resuming a promoted planning worktree): print its `receipt`
-   and then its `preflightLines` verbatim, stop on `status: rejected` (exit 3), and
-   from its `session` section require `worktree.isManaged` with
-   `worktree.dirPrefix: "plan"` (a managed planning worktree inside `worktrees.dir`);
-   `role` must be `plan`, or `build` only when the same worktree was already promoted
-   onto this slug's branch. Anything else is rejected per §11 with the record's
-   alternatives (normally `/agento start-session` from the primary workspace window).
-   The worktree must initially be clean, detached, and at `origin/main`, or already on
-   the final branch created by this same planning session. Hosted workspaces
-   (Codespaces, Actions, the coding agent) are handled by the record's `hosted` flag
-   — no local path convention to remember — but must still start from synchronized
-   `main`. A `code --new-window` call may reuse an already-open VS Code session
-   instead of visibly creating a second window; do not blame Git or another worktree
-   for that behavior.
+   and then its `preflightLines` verbatim, and stop on `status: rejected` (exit 3).
+   The preflight's window check enforces the planning-worktree requirement per §11 —
+   a managed worktree (`dirPrefix: "plan"`), role `plan`, or `build` only when this
+   worktree was already promoted onto the slug's branch — and its rejected receipt
+   carries the record's alternatives. Start from a synchronized `main`.
 2. **Clarify first.** Before any writing, ask the user 3-5 targeted clarifying questions
    (scope boundaries, constraints, acceptance expectations, priorities) with the
    ask-questions tool (or its declared fallback) per the §10 recommended choice.
@@ -154,27 +146,13 @@ mode. Never modify source code, configuration, or other directories.
    <type> <slug>`, inside `companion.path`), never under the product checkout; the
    `artifact-pr:` header is added in step 8 once the companion PR exists.
 8. **Publish the branch** with one `node <agento-root>/scripts/agento.mjs
-   plan-publish <type> <slug>` call. It checks this window with both halves on the
-   roadmap's branch (never the default branch, never detached) and the artifacts
-   present, rejects changes outside the slug directory (`outside-slug`; in companion
-   mode the product half must be clean), then:
-   - commits the slug directory — `docs(delivery): plan <slug>` in-repo,
-     `docs(<type>): plan <slug>` in the companion half, `docs(<type>): revise plan
-     <slug>` for a later edit;
-   - in companion mode opens the product branch with one empty `chore(<type>): open
-     <slug>` commit (the product branch carries no artifact files);
-   - integrates by merge, pushes product first with upstream, and opens the **draft**
-     code PR to `main` titled after the slug whose body links the plan (for issues it
-     starts with `Fixes #<n>`); in companion mode also the draft `docs(<type>):
-     <slug>` companion PR, the idempotent `Companion PR:` cross-link, and the
-     `artifact-pr: "#<n>"` roadmap header commit;
-   - ends with both halves clean and `ahead: 0`, and never readies or merges a PR.
-
-   Print its `actions[]`. On `status: rejected` fix what `message` names and
-   re-send; on `failed` stop with `message` (and its `reauth` on an authentication
-   failure, §1). A re-send resumes from git and GitHub state and creates no second
-   commit, PR, or cross-link. Its `pr` and `companionPr` are the numbers step 9
-   reports.
+   plan-publish <type> <slug>` call. It checks this window (both halves on the
+   roadmap's branch, never the default branch, never detached), commits the two
+   artifacts, integrates by merge, pushes product first, opens the **draft** PR(s)
+   and cross-links them in companion mode, and never readies or merges a PR. Print
+   its `actions[]`; stop on `status: rejected` or `failed` with its `message` (and
+   `reauth`), re-sending as needed — a re-send resumes from git and GitHub state.
+   Its `pr` and `companionPr` are the numbers step 9 reports.
 9. **Report** the slug, branch, PR number (the companion PR number too in companion
    mode; and GitHub issue number for issues), and
    step count. Offer the **Build in this worktree** handoff, which promotes the current

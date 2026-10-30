@@ -6,8 +6,9 @@ agent: "agent"
 
 Needs: terminal, gh, network
 Fallback: none — every need is hard
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §3, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 9 10 11 12` before the first step.
+Duplicate submission: `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it; in companion mode, a code PR merged while the companion PR is still open resumes at the companion merge, then sync, teardown, epilogue; a conflict or a failing required check found at `checks` reopens the roadmap to `in-progress` with an added Builder step and rejects back to the build window, while a policy-blocked merge (`mergeStateStatus: BLOCKED` or a refusal that classifies as blocked) reports `merge-blocked` and does not reopen.
 
 Ship the work named by the slug in the argument. The whole ship — audit, the
 user's confirmation, marking the PR ready, the bounded check wait, the merge through
@@ -21,8 +22,7 @@ authorizes every write the CLI performs after the confirmation step below.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this
-command's §9 idempotency row — re-sending `/agento ship <slug>` resumes wherever
-the CLI's phase derivation says the ship stands, creating nothing a second time.
+command's duplicate-submission line.
 The ship subcommand repeats the ship capability checks itself before its first write
 and reports them in `preflight[]`. Window check per §11: requires role `primary`.
 

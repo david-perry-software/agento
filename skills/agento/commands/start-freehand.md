@@ -6,8 +6,9 @@ agent: "agent"
 
 Needs: terminal, code
 Fallback: code → §10 standard fallback (keep the worktree; print the open command)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened.
 
 Start an isolated freehand session: a sibling worktree on its own work branch where
 changes are made directly with the default VS Code agent and whatever tools are
@@ -22,9 +23,8 @@ flags. Reject an argument containing `/` and direct `feature/<slug>` or
 slug.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row: a registered worktree for the same slug is resumed with `--resume`
-semantics whether or not the flag was given, leaving HEAD, branch, and files untouched.
+delivery-policy.instructions.md §9; a duplicate submission follows this command's
+duplicate-submission line.
 Open with one `node <agento-root>/scripts/agento.mjs preflight start-freehand` call
 (§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
 `status: rejected` (exit 3), writing nothing.
@@ -64,12 +64,12 @@ Window check per §11: requires role `primary` on the default branch, clean.
      without changing its branch, HEAD, or files, and say the session already exists
      and was resumed.
    - If the path is free but `changes/<slug>` is already checked out elsewhere (an
-     entry on that branch in the record's `worktrees[]`, confirmed with
+     entry on that branch in `agento.mjs session`'s `worktrees[]`, confirmed with
      `git worktree list --porcelain` — permitted here because this command creates
      worktrees), stop; one session per branch.
 3. For a new session, run
    `git -C <primary> worktree add --no-track -b changes/<slug> <path> origin/main`
-   (`<primary>` is the record's `worktrees[0].path`). `origin/main`
+   (`<primary>` is `agento.mjs session`'s `worktrees[0].path`). `origin/main`
    is only the starting point, so `--no-track` is required to keep the branch from
    adopting the wrong upstream. If `changes/<slug>` already exists locally or on
    origin without a registered worktree, reuse that exact branch instead of creating

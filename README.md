@@ -60,7 +60,8 @@ Five ideas carry the whole system:
    🤖 Autopilot loops Builder → Reviewer unattended. 🛠️ Mechanic repairs and extends
    the plugin itself. Each agent's rules are short; the shared policy (who does what,
    verification targets, evidence, git rules) lives once in
-   `.github/instructions/delivery-policy.instructions.md`.
+   `.github/instructions/delivery-policy.instructions.md`, and each command loads only
+   the sections its `Policy:` line declares (`agento.mjs policy <N>…`).
 
 3. **One worktree per session.** Planning and building happen in a *secondary*
    VS Code window on a sibling git worktree; shipping and cleanup happen in the
@@ -70,6 +71,8 @@ Five ideas carry the whole system:
 4. **Deterministic helpers, not prose.** Slug resolution, status listings, worktree
    paths, and config lookups go through `scripts/agento.mjs`, a small Node CLI the
    prompts call. The model never re-derives "find the roadmap" from a description.
+   The opening `preflight <command>` prints a brief document; `--full` returns the
+   whole session record.
 
 5. **Guard + ruleset.** A `PreToolUse` hook inspects every shell command and file
    edit the agent attempts and answers `allow`, `ask`, or `deny`. It is a slip guard

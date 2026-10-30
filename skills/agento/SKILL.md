@@ -68,6 +68,11 @@ The command file's `agent:` frontmatter decides how it runs:
   argument. Relay the subagent's final message verbatim, including its receipt and
   result lines and its command blocks.
 
+Every mode loads the dispatched command's `Policy:` line: run the command it names
+before the command's first step. For agent-dispatched commands that line is a
+superset of the agent's own, so one load suffices; a subagent receives the command
+body — including the line — and runs it itself.
+
 Whichever mode applies, the dispatched command's §9 receipt line must be printed verbatim as visible text, before any question or other output.
 
 ## 6. No own receipt

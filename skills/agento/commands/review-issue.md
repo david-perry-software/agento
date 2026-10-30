@@ -6,7 +6,9 @@ agent: "🔍 Agento Reviewer"
 
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 3 4 5 7 8 9 10 11 12` before the first step.
+Duplicate submission: A fresh verdict overwrites review.md; no second PR comment thread.
 
 Review the **issue** fix named by the slug in the argument. Its roadmap resolution is
 the `resolve` section of the preflight call below; stop on any `status` other than
@@ -14,8 +16,8 @@ the `resolve` section of the preflight call below; stop on any `status` other th
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
-directly above the result line per §12; a duplicate submission follows this command's §9
-idempotency row (a fresh verdict overwrites review.md; no second PR comment thread).
+directly above the result line per §12; a duplicate submission follows this command's
+duplicate-submission line.
 Open with one `node <agento-root>/scripts/agento.mjs preflight review-issue issue
 <slug>` call (§9–§11; path in the session context line `Agento CLI:`): print its
 `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`

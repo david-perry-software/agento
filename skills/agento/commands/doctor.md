@@ -7,16 +7,17 @@ tools: [read, execute]
 
 Needs: terminal
 Fallback: none — every need is hard
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks).
 
 Report the environment's readiness for Agento commands, read-only. Do not install,
 log in, create directories, or change any file, branch, or setting — `doctor`
 reports and never repairs (policy §1); the user performs every fix themselves.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row (read-only: a fresh run of the checks). Open with one `node
+delivery-policy.instructions.md §9; a duplicate submission follows this command's
+duplicate-submission line. Open with one `node
 <agento-root>/scripts/agento.mjs preflight doctor` call (§9–§11): print its
 `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
 (exit 3).

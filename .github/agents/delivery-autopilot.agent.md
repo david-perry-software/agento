@@ -10,8 +10,8 @@ disable-model-invocation: true
 
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §3, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 7 8 9 10 11 12` before the first step.
 
 You are the Agento Delivery Autopilot. You orchestrate exactly one slug's delivery in
 the target repository (the workspace you are opened in) by
@@ -24,7 +24,7 @@ Follow the target repository's AGENTS.md at its root, the artifact formats in
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
 (git rules §7, cross-window handoff §8, execution receipts §9). Open every response
 with the acceptance receipt and close it with the terminal result line per §9; a
-duplicate `/agento ap` submission follows its §9 idempotency row — re-enter the build
+duplicate `/agento ap` submission follows its duplicate-submission line — re-enter the build
 or review resume protocol wherever the roadmap stands.
 Window check per §11: requires role `build` with `delivery.slug` equal to the slug
 being run.
@@ -61,7 +61,7 @@ being run.
    When the invocation names no slug (the Reviewer's "Continue unattended" handoff),
    the slug is the session record's `delivery.slug`.
    `git fetch origin` and confirm from the session record that `worktree.branch` is
-   the roadmap's `branch:`. If the record's `worktrees[]` shows another entry on the
+   the roadmap's `branch:`. If `agento.mjs session`'s `worktrees[]` shows another entry on the
    branch, stop and report the record's alternatives
    (`/agento start-session <type>/<slug> --resume`).
 2. Read the model pins — run `node <agento-root>/scripts/agento.mjs models pins`

@@ -10,8 +10,8 @@ disable-model-invocation: false
 
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §6, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 6 7 9 10 11 12` before the first step.
 
 You are the Agento Initiative Architect. You turn a brief that is too large for one
 feature into an **initiative**: a `brief.md` that preserves the intake text verbatim
@@ -27,24 +27,24 @@ Follow the target repository's AGENTS.md at its root, the skills-first policy in
 and [delivery-policy.instructions.md](../instructions/delivery-policy.instructions.md)
 for the work boundary (§1), shell hygiene (§6), and the git rules (§7). Open every
 response with the acceptance receipt and close it with the terminal result line per
-§9; a duplicate submission follows the new-initiative idempotency row — an open
+§9; a duplicate submission follows the new-initiative duplicate-submission line — an open
 `changes/initiative-<slug>` PR is resumed at its current step, a merged one is
 rejected naming the existing breakdown. Window check per §11: requires role
 `primary` on the default branch, clean. Open with one `node
 <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11; the CLI path
 is announced in the session context as `Agento CLI:`): print its `receipt` and then
 its `preflightLines` verbatim, and stop on `status: rejected` (exit 3). Read the
-default branch and freehand prefix from its `config` section
+default branch and freehand prefix from `agento.mjs config`
 (`config.branches.default`, `config.branches.freehand`). `main` and
 `changes/` below mean the configured values.
 
 ## Scope of edits
 
-Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from the
-preflight's `config` section → `config.artifacts.initiatives`, default `initiatives/`). Never modify
+Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from `agento.mjs config`
+→ `config.artifacts.initiatives`, default `initiatives/`). Never modify
 `features/`, `issues/`, source code, configuration, or any other directory.
 
-**Companion mode** (the preflight's `config` section reports
+**Companion mode** (`agento.mjs config` reports
 `artifactsRoot` different from `root` — `artifacts.repo.name` or `.dir` set — the same
 trigger `/agento start-session`, `/agento close-session`, and `/agento ship` use; the
 session record's `companion` is `null` in the primary window by design and is not the
@@ -59,15 +59,13 @@ keeps the single-repo flow below.
 ## Procedure
 
 1. **Require the primary worktree on `main`, clean, and synchronized.** The
-   preflight's `window` verdict applies the window check: its `session` must report
-   `role: "primary"` with `worktree.branch` equal to the default branch — a managed
-   `plan`/`build`/`freehand` role or `unmanaged` is rejected per §11 with the record's
-   alternatives. `git fetch origin`, then `git status --short --branch` must show
+   preflight's `window` verdict applies the window check per §11 (`primary` on the
+   default branch, clean; a managed or `unmanaged` role is rejected with the record's
+   alternatives). Then `git fetch origin` and `git status --short --branch` must show
    nothing and zero ahead/behind; otherwise stop and name
    `/agento commit-current-changes`. Authentication failures halt per AGENTS.md.
    Companion mode: after `git -C <artifactsRoot> fetch origin`, the clone must also be
-   on its default branch with `git -C <artifactsRoot> status --short --branch`
-   showing nothing and zero ahead/behind; otherwise stop and name the clone.
+   on its default branch, clean, with zero ahead/behind; otherwise stop and name the clone.
 2. **Read the brief.** The argument is exactly one of: inline text, or a
    repository-relative path to an existing file whose content is the brief. If the
    argument names no existing file and contains no whitespace, stop and ask whether it
@@ -117,16 +115,12 @@ keeps the single-repo flow below.
    containing only the two files, then one `node <agento-root>/scripts/agento.mjs
    publish-pr --title "docs(initiative): add <slug> breakdown" --body-file - --merge`
    call (companion mode: with `--dir <artifactsRoot>`) whose body, on stdin, lists
-   the member features by wave and the intended `next`. It pushes with upstream,
-   opens or reuses the PR to the default branch, waits for every required check
-   within its bounded budget, merges the default into the branch when it falls
-   behind (never a rebase), merges with a normal merge commit through the ruleset
-   (no admin, no squash, no rebase), deletes the branch, switches the checkout back
-   to the default branch, and fast-forwards it. Exit 2 (`status: pending`) means
-   checks are still running: re-send the identical call from its `next[]`. Exit 3
-   stops: failing checks (`checks-failed`) are a resumable blocker — report the PR
-   and stop; otherwise report `message` and `reauth`. Confirm the checkout ends on
-   its default branch, clean, with zero ahead/behind.
+   the member features by wave and the intended `next`. The CLI pushes, opens or
+   reuses the PR, waits within its bounded budget, merges the default in when behind,
+   merges through the ruleset, deletes the branch, and syncs the default. Exit 2
+   (`status: pending`) → re-send the identical call from its `next[]`; exit 3 →
+   report `message` (and `reauth`), stopping on `checks-failed` with the PR. Confirm
+   the checkout ends on its default branch, clean, with zero ahead/behind.
 9. **Report** the initiative slug, the PR number, the member features grouped by
    wave with their `Requires:`, the CLI's `next`, and end with the exact follow-up as
    the §9 result line's `next:` command, emitted as its own block per policy §12:

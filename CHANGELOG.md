@@ -2,6 +2,14 @@
 
 ## 0.15.0
 
+- **Added.** Lean per-command context. Each agent and command declares the
+  delivery-policy sections it loads on a `Policy: §…` line and loads exactly those
+  with `agento.mjs policy <N>…` (`--list` prints the sections), instead of reading
+  the whole policy. The §9/§10/§11 reference detail (receipt grammar, idempotency
+  table, capability vocabulary, window-check procedure) moved to
+  `docs/architecture.md`, each command carries its own `Duplicate submission:` line,
+  and `preflight <command>` now prints a brief document by default (`--full` returns
+  the whole record).
 - **Fixed.** The PreToolUse delivery guard now closes the ruleset, merge, and
   hook-bypass gaps: `gh api` REST writes to `rulesets/<id>`, `branches/*/protection`,
   and `pulls/<n>/merge` deny (their GraphQL equivalents — `mergePullRequest`,

@@ -1876,7 +1876,7 @@ test("doctor harness check is ok without a router and when installed, fails per 
   // Informational: never in doctor --for new-feature or preflight new-feature.
   const forCheck = byId(runWith({ cwd: plugin, env: doctorEnv }, "doctor", "--for", "new-feature").json);
   assert.equal(forCheck["harness"], undefined);
-  const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature").json;
+  const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature", "--full").json;
   assert.equal(byId(preflight.doctor)["harness"], undefined);
 });
 
@@ -2016,7 +2016,7 @@ test("doctor canvas check is ok when installed, warn per state, ok without a can
   // Informational: never in doctor --for new-feature or preflight new-feature.
   const forCheck = byId(runWith({ cwd: plugin, env: doctorEnv }, "doctor", "--for", "new-feature").json);
   assert.equal(forCheck["canvas"], undefined);
-  const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature").json;
+  const preflight = runWith({ cwd: plugin, env: doctorEnv }, "preflight", "new-feature", "--full").json;
   assert.equal(byId(preflight.doctor)["canvas"], undefined);
 });
 
@@ -2089,7 +2089,7 @@ test("preflight returns the named sections, the op-id, and an accepted receipt i
   const { repo } = makeWorktreeRepo();
   const { env } = restrictedPath(okStubs);
   const sha = git(repo, "rev-parse", "--short", "HEAD");
-  const { code, json } = runWith({ cwd: repo, env }, "preflight", "delivery-status");
+  const { code, json } = runWith({ cwd: repo, env }, "preflight", "delivery-status", "--full");
   assert.equal(code, 0);
   assert.deepEqual(Object.keys(json), ["status", "command", "opId", "subject", "receipt", "preflightLines", "session", "window", "doctor", "resolve", "config", "root", "configSource"]);
   assert.equal(json.status, "ok");
@@ -2109,10 +2109,25 @@ test("preflight returns the named sections, the op-id, and an accepted receipt i
   assert.match(run(repo).json.usage.join("\n"), /preflight <command> \[<type> <slug> \| <slug>\]/);
 });
 
+test("preflight defaults to the brief document; --full keeps the pre-change shape", () => {
+  const { repo } = makeWorktreeRepo();
+  const { env } = restrictedPath(okStubs);
+  const brief = runWith({ cwd: repo, env }, "preflight", "delivery-status").json;
+  assert.deepEqual(Object.keys(brief), ["status", "command", "opId", "subject", "receipt", "preflightLines", "window", "session", "doctor"]);
+  assert.deepEqual(Object.keys(brief.session), ["role", "hosted", "worktree", "companion", "workspace", "delivery", "pr", "companionPr", "lifecycle", "warnings"]);
+  assert.deepEqual(Object.keys(brief.doctor), ["status", "for", "failing"]);
+  assert.deepEqual(Object.keys(brief.window), ["role", "required", "match", "reason", "allowed", "elsewhere"]);
+  const full = runWith({ cwd: repo, env }, "preflight", "delivery-status", "--full").json;
+  assert.ok(Array.isArray(full.session.worktrees), "--full keeps session.worktrees");
+  assert.ok(Array.isArray(full.session.allowed) && Array.isArray(full.session.elsewhere), "--full keeps session.allowed/elsewhere");
+  assert.ok(Array.isArray(full.doctor.checks), "--full keeps doctor.checks");
+  assert.ok(full.config && full.root && full.configSource, "--full keeps config, root, configSource");
+});
+
 test("preflight rejects a window mismatch with the §9 receipt and the record's alternatives (exit 3)", () => {
   const { repo, wt } = makeWorktreeRepo();
   const { env } = restrictedPath(okStubs);
-  const wrong = runWith({ cwd: repo, env }, "preflight", "new-feature");
+  const wrong = runWith({ cwd: repo, env }, "preflight", "new-feature", "--full");
   assert.equal(wrong.code, 3);
   assert.equal(wrong.json.status, "rejected");
   assert.equal(wrong.json.window.match, false);
@@ -2153,7 +2168,7 @@ test("preflight rejects a window mismatch with the §9 receipt and the record's 
   assert.equal(bare.resolve.type, "feature");
   assert.equal(bare.resolve.status, "ok");
   assert.deepEqual(runWith({ cwd: build, env }, "preflight", "ap", "feature/widget").json.resolve.status, "ok");
-  const blank = runWith({ cwd: build, env }, "preflight", "build-feature").json;
+  const blank = runWith({ cwd: build, env }, "preflight", "build-feature", "--full").json;
   assert.equal(blank.status, "ok");
   assert.equal(blank.resolve, null);
   assert.equal(blank.subject, "feature-widget");
@@ -2188,6 +2203,30 @@ test("preflight usage errors exit 1", () => {
     assert.equal(json.status, "usage-error");
   }
   assert.match(run(repo, "preflight", "nope").json.message, /unknown command nope/);
+});
+
+test("brief preflight output stays ≤ 2,500 bytes in a plan window with ≥ 3 registered worktrees", () => {
+  const { repo, wt } = makeWorktreeRepo();
+  git(repo, "worktree", "add", "-q", "--detach", path.join(wt, "plan-alpha"), "origin/main");
+  git(repo, "worktree", "add", "-q", "--detach", path.join(wt, "plan-beta"), "origin/main");
+  git(repo, "worktree", "add", "-q", "-b", "feature/other", path.join(wt, "feature-other"));
+  const plan = path.join(wt, "plan-alpha");
+  const { env } = restrictedPath(okStubs);
+  const result = spawnSync("node", [cli, "preflight", "new-feature"], { cwd: plan, encoding: "utf8", env });
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(result.stdout.length <= 2500, `brief preflight output is ${result.stdout.length} bytes (≤ 2,500)`);
+});
+
+test("unmanaged-window rejections carry window.primary in the brief output", () => {
+  const { repo } = makeWorktreeRepo();
+  const stray = path.join(path.dirname(repo), "stray");
+  git(repo, "worktree", "add", "-q", "-b", "feature/widget", stray);
+  const { env } = restrictedPath(okStubs);
+  const { code, json } = runWith({ cwd: stray, env }, "preflight", "build-feature", "feature", "widget");
+  assert.equal(code, 3);
+  assert.equal(json.window.role, "unmanaged");
+  assert.equal(json.window.primary, repo);
+  assert.equal(json.window.match, false);
 });
 
 // Primary clone plus managed worktrees under <base>/wt (worktrees.dir: ../wt).
@@ -2714,6 +2753,71 @@ test("initiative flags merged-but-not-complete members without unblocking depend
   const after = run(repo, "initiative", "demo").json;
   assert.deepEqual(after.anomalies, []);
   assert.equal(after.features.find((f) => f.slug === "c").ready, true);
+});
+
+// --- policy -------------------------------------------------------------------
+
+const policyFile = path.join(repoRoot, ".github", "instructions", "delivery-policy.instructions.md");
+
+function policySlices() {
+  const text = fs.readFileSync(policyFile, "utf8");
+  const heading = /^## (\d+)\. (.+)$/gm;
+  const starts = [];
+  let match;
+  while ((match = heading.exec(text)) !== null) starts.push({ n: match[1], offset: match.index });
+  return { text, starts };
+}
+
+function policySlice({ text, starts }, n) {
+  const index = starts.findIndex((s) => s.n === n);
+  const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
+  return text.slice(starts[index].offset, end);
+}
+
+function runPolicy(repo, ...args) {
+  const result = spawnSync("node", [cli, ...args], { cwd: repo, encoding: "utf8", env: baseEnv });
+  return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+}
+
+test("policy prints the requested sections as raw Markdown, ascending and deduplicated", () => {
+  const repo = makeRepo({});
+  const slices = policySlices();
+  const expected = `# delivery-policy.instructions.md — sections 1, 9\n\n${policySlice(slices, "1")}${policySlice(slices, "9")}`;
+  const { code, stdout } = runPolicy(repo, "policy", "1", "9");
+  assert.equal(code, 0);
+  assert.equal(stdout, expected);
+  // Dedupe and ascending order: 9 1 9 1 prints the same as 1 9.
+  assert.equal(runPolicy(repo, "policy", "9", "1", "9", "1").stdout, expected);
+});
+
+test("policy --list returns all 12 sections whose bytes sum to the body size", () => {
+  const repo = makeRepo({});
+  const slices = policySlices();
+  const { code, json } = run(repo, "policy", "--list");
+  assert.equal(code, 0);
+  assert.equal(json.sections.length, 12);
+  assert.deepEqual(json.sections.map((s) => s.n), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
+  assert.equal(json.sections[0].title, "Who does the work");
+  const body = slices.text.slice(slices.starts[0].offset);
+  assert.equal(json.sections.reduce((sum, s) => sum + s.bytes, 0), Buffer.byteLength(body, "utf8"));
+});
+
+test("policy rejects unknown, malformed, missing, and empty section arguments", () => {
+  const repo = makeRepo({});
+  for (const args of [["policy"], ["policy", "13"], ["policy", "x"], ["policy", "1", "13"], ["policy", "--list", "1"]]) {
+    const result = spawnSync("node", [cli, ...args], { cwd: repo, encoding: "utf8", env: baseEnv });
+    assert.equal(result.status, 1, `${args.join(" ")} should exit 1`);
+    assert.match(result.stdout, /"status": "usage-error"/);
+  }
+});
+
+test("the shrunk §9, §10, §11 stay within the context budget", () => {
+  const repo = makeRepo({});
+  const { code, json } = run(repo, "policy", "--list");
+  assert.equal(code, 0);
+  const shrunk = json.sections.filter((s) => ["9", "10", "11"].includes(s.n));
+  const bytes = shrunk.reduce((sum, s) => sum + s.bytes, 0);
+  assert.ok(bytes <= 5000, `§9+§10+§11 must be ≤ 5,000 bytes, got ${bytes}`);
 });
 
 // --- next -------------------------------------------------------------------

@@ -563,15 +563,15 @@ test("only worktree-mutating commands inspect `git worktree list --porcelain`", 
   assert.deepEqual(offenders, [], `files that inspect worktrees instead of the session record:\n${offenders.join("\n")}`);
 });
 
-// The §10 vocabulary, parsed from the policy's "- `<token>` — <meaning>" bullets.
+// The §10 vocabulary, parsed from the docs reference's "- `<token>` — <meaning>" bullets.
 function policyCapabilities() {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m);
-  assert.ok(section, "policy has no ## 10. Capability preflight section");
+  const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
+  const section = docs.match(/^### §10 Capability preflight\r?\n([\s\S]*?)(?=^### |$(?![\r\n]))/m);
+  assert.ok(section, "docs/architecture.md has no ### §10 Capability preflight section");
   const vocabulary = section[1].match(/\*\*Vocabulary\*\*[\s\S]*?\n\n([\s\S]*?)\n\n/);
-  assert.ok(vocabulary, "§10 has no Vocabulary list");
+  assert.ok(vocabulary, "docs §10 has no Vocabulary list");
   const tokens = [...vocabulary[1].matchAll(/^- `([a-z0-9-]+)` — /gm)].map((m) => m[1]);
-  assert.ok(tokens.length >= 6, `§10 vocabulary too short: ${tokens.join(", ")}`);
+  assert.ok(tokens.length >= 6, `docs §10 vocabulary too short: ${tokens.join(", ")}`);
   return new Set(tokens);
 }
 
@@ -854,6 +854,48 @@ test("the policy file is the only place the shared rules are spelled out", () =>
   }
 });
 
+test("the moved receipts/preflight/window reference lives in docs/architecture.md", () => {
+  const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
+  for (const phrase of [
+    "**Receipt — the first line of the response:**",
+    "**Operation ID** — `<command>:<subject>:<short-sha>`:",
+    "**Idempotency table** — what a duplicate submission does, per command:",
+    "**Vocabulary** — the only tokens a `Needs:` line may use:",
+    "**Hard versus soft.**",
+    "**Declaration contract.**",
+    "**`Policy:` line contract.**",
+    "**When `doctor` runs.**",
+    "1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`",
+  ]) {
+    assert.ok(docs.includes(phrase), `docs/architecture.md lost the moved reference block: ${JSON.stringify(phrase)}`);
+  }
+});
+
+function briefPreflightFields() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-brief-"));
+  execFileSync("git", ["init", "-q", "-b", "main", dir]);
+  execFileSync("git", ["-C", dir, "config", "user.email", "test@example.com"]);
+  execFileSync("git", ["-C", dir, "config", "user.name", "Test"]);
+  execFileSync("git", ["-C", dir, "commit", "-q", "--allow-empty", "-m", "init"]);
+  const result = spawnSync("node", [rel("scripts", "agento.mjs"), "preflight", "delivery-status"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: restrictedBin() } });
+  assert.equal(result.status, 0, result.stderr);
+  const json = JSON.parse(result.stdout);
+  return { session: new Set(Object.keys(json.session)), window: new Set(Object.keys(json.window)), doctor: new Set(Object.keys(json.doctor)) };
+}
+
+test("every session.X/window.X/doctor.X field a prompt, agent, or mirror names exists in the brief preflight document", () => {
+  const fields = briefPreflightFields();
+  const offenders = [];
+  for (const file of [...agentFiles, ...promptFiles, ...listFiles(commandRel(), ".md")]) {
+    const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
+    if (/preflight\s+[a-z0-9-]+\b[^.]*--full/.test(body)) continue; // the file reads the full document
+    for (const [, kind, field] of body.matchAll(/`(session|window|doctor)\.([a-z]+)`/g)) {
+      if (!fields[kind].has(field)) offenders.push(`${path.relative(repoRoot, file)}: ${kind}.${field}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `fields missing from the brief preflight document:\n${offenders.join("\n")}`);
+});
+
 test("every slash command is documented in README.md and docs/commands.md", () => {
   const readme = fs.readFileSync(rel("README.md"), "utf8");
   const commands = fs.readFileSync(rel("docs", "commands.md"), "utf8");
@@ -953,16 +995,110 @@ test("the core states the canonical form and the six redirected forms", () => {
   }
 });
 
-test("every agent and built-in-agent command loads the policy explicitly", () => {
-  // VS Code skips linked instruction files by default, so the read must be an instruction.
-  const policyRead = /^Policy: read `<agento-root>\/\.github\/instructions\/delivery-policy\.instructions\.md` once /m;
-  const builtIn = promptFiles.filter((file) => parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file)).agent === "agent");
-  assert.ok(builtIn.length >= 11, `expected at least 11 built-in-agent prompts, got ${builtIn.length}`);
-  const mirrors = builtIn.map((file) => commandRel(`${path.basename(file, ".prompt.md")}.md`));
-  const missing = [...agentFiles, ...builtIn, ...mirrors]
-    .filter((file) => !policyRead.test(splitFrontmatter(file).body))
-    .map((file) => path.relative(repoRoot, file));
-  assert.deepEqual(missing, [], `files that do not read delivery-policy.instructions.md explicitly:\n${missing.join("\n")}`);
+const BASELINE_SECTIONS = ["1", "9", "10", "11", "12"];
+const agentByName = new Map([...agents].map(([file, meta]) => [meta.name, file]));
+
+function citedSections(body) {
+  const bodyWithoutPolicy = body.split(/\r?\n/).filter((l) => !/^Policy: /.test(l)).join("\n");
+  return new Set([...bodyWithoutPolicy.matchAll(/§(\d+)/g)].map((m) => m[1]));
+}
+
+function declaredSections(body) {
+  const policyLines = body.split(/\r?\n/).filter((l) => /^Policy: /.test(l));
+  assert.equal(policyLines.length, 1, "expected exactly one Policy: line");
+  const match = policyLines[0].match(/^Policy: ((?:§\d+, )*§\d+) — load once with `node <agento-root>\/scripts\/agento\.mjs policy ([\d ]+)` before the first step\.$/);
+  assert.ok(match, `malformed Policy: line: ${JSON.stringify(policyLines[0])}`);
+  const sigils = match[1].split(", ").map((s) => s.slice(1));
+  const args = match[2].split(" ").filter(Boolean);
+  assert.deepEqual(sigils, args, "the § list must equal the policy arguments, in the same order");
+  return sigils;
+}
+
+function expectedSections(body, agentFile) {
+  const set = new Set([...BASELINE_SECTIONS, ...citedSections(body)]);
+  if (agentFile) {
+    const agentBody = splitFrontmatter(agentFile).body;
+    for (const n of citedSections(agentBody)) set.add(n);
+  }
+  return [...set].sort((a, b) => Number(a) - Number(b));
+}
+
+function promptAgentFile(file) {
+  const meta = parseFrontmatter(splitFrontmatter(file).frontmatter, path.relative(repoRoot, file));
+  const agentName = meta.agent;
+  return agentName && agentName !== "agent" ? (agentByName.get(agentName) ?? null) : null;
+}
+
+test("every agent, prompt, and mirror declares its policy sections on one Policy: line", () => {
+  const list = JSON.parse(execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8" }));
+  const knownSections = new Set(list.sections.map((s) => s.n));
+
+  const files = [
+    ...agentFiles.map((file) => ({ file, agentFile: null })),
+    ...promptFiles.map((file) => ({ file, agentFile: promptAgentFile(file) })),
+    ...commandNames.map((name) => {
+      const file = commandRel(`${name}.md`);
+      return { file, agentFile: promptAgentFile(file) };
+    }),
+  ];
+
+  for (const { file, agentFile } of files) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body;
+    const declared = declaredSections(body);
+    const expected = expectedSections(body, agentFile);
+    assert.deepEqual(declared, expected, `${label}: declared set must equal {1,9,10,11,12} ∪ cited${agentFile ? " ∪ agent-cited" : ""}`);
+    for (const n of declared) assert.ok(knownSections.has(n), `${label}: declares §${n}, which policy --list does not know`);
+  }
+});
+
+test("every command carries exactly one Duplicate submission: line matching its idempotency-table row", () => {
+  const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
+  const tableStart = docs.indexOf("**Idempotency table** — what a duplicate submission does, per command:");
+  assert.ok(tableStart !== -1, "docs/architecture.md has no idempotency table");
+  const rowByCommand = new Map();
+  for (const line of docs.slice(tableStart).split("\n")) {
+    if (!line.startsWith("| ") || !line.includes("/agento ")) continue;
+    const cells = line.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length !== 2) continue;
+    for (const m of cells[0].matchAll(/\/agento ([a-z0-9-]+)/g)) rowByCommand.set(m[1], cells[1]);
+  }
+  assert.equal(rowByCommand.size, commandNames.length, "docs idempotency table must name every command");
+
+  for (const name of commandNames) {
+    for (const file of [rel(".github", "prompts", `${name}.prompt.md`), commandRel(`${name}.md`)]) {
+      const body = splitFrontmatter(file).body;
+      const lines = body.split(/\r?\n/).filter((l) => l.startsWith("Duplicate submission: "));
+      assert.equal(lines.length, 1, `${path.relative(repoRoot, file)} must carry exactly one Duplicate submission: line`);
+      assert.equal(lines[0].slice("Duplicate submission: ".length), rowByCommand.get(name), `${path.relative(repoRoot, file)} Duplicate submission: text must match the docs table row`);
+    }
+  }
+});
+
+test("every command's declared context stays within the budget (≤ 40,000 each, mean ≤ 24,000)", () => {
+  const list = spawnSync("node", [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8", env: { ...process.env, PATH: restrictedBin() } });
+  assert.equal(list.status, 0, list.stderr);
+  const sectionBytes = new Map(JSON.parse(list.stdout).sections.map((s) => [s.n, s.bytes]));
+  const agentByName = new Map([...agents].map(([file, meta]) => [meta.name, file]));
+
+  const rows = commandNames.map((name) => {
+    const file = rel(".github", "prompts", `${name}.prompt.md`);
+    const { frontmatter, body } = splitFrontmatter(file);
+    const meta = parseFrontmatter(frontmatter, path.relative(repoRoot, file));
+    const policyLine = body.split(/\r?\n/).find((l) => /^Policy: /.test(l));
+    const args = policyLine.match(/policy ([\d ]+)`/)[1].split(" ").filter(Boolean);
+    const policyBytes = args.reduce((sum, n) => sum + sectionBytes.get(n), 0);
+    const agentFile = meta.agent && meta.agent !== "agent" ? agentByName.get(meta.agent) : null;
+    const agentBytes = agentFile ? fs.statSync(agentFile).size : 0;
+    const commandBytes = fs.statSync(file).size;
+    return { name, total: policyBytes + agentBytes + commandBytes };
+  });
+
+  const table = rows.map((r) => `${r.name}\t${r.total}`).join("\n");
+  const mean = rows.reduce((sum, r) => sum + r.total, 0) / rows.length;
+  const over = rows.filter((r) => r.total > 40000);
+  assert.deepEqual(over.map((r) => r.name), [], `commands over 40,000 bytes (declared sections + agent + body):\n${over.map((r) => `${r.name}\t${r.total}`).join("\n")}\n\n${table}`);
+  assert.ok(mean <= 24000, `mean ${Math.round(mean)} bytes exceeds 24,000\n\n${table}`);
 });
 
 test("command mirrors use suffix-less command names and hook wiring points at existing executable files", () => {

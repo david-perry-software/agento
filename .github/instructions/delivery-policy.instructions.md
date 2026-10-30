@@ -203,116 +203,31 @@ commands.
 ## 9. Execution receipts
 
 Every `/agento …` command and every agent response opens with exactly one receipt
-line and closes with exactly one result line, in the spellings below and nowhere else
-restated. Re-sending any command is safe by construction: duplicate behaviour is
-derived from git + roadmap state (no journal) per the table at the end of this section.
+line and closes with exactly one result line. The CLI derives the operation ID
+(`opId`) and assembles the `receipt` and `preflightLines`; print them verbatim, never
+rebuild them, and stop on `status: rejected` (emit its alternatives as §12 blocks,
+write nothing).
 
-**Receipt — the first line of the response:**
+- A duplicate submission of the same operation receives the duplicate form of the
+  accepted receipt (`Receipt: accepted <op-id> (duplicate of <op-id>; resuming)`);
+  re-sending any command is safe by construction, and the command resumes per its
+  duplicate-submission line.
+- Close with one result line: `Result: completed — <resulting state>; next:
+  <command>`, or `Result: failed — <retry-safe explanation>`. A pause (manual step or
+  blocker awaiting the user) is a `completed` result whose state is `paused`, and a
+  session break (§3 pause kinds) a `completed` result whose state is `in-progress`;
+  both name the resume command in `next:` and neither is a failure.
 
-- `Receipt: accepted <op-id>` — work starts.
-- `Receipt: accepted <op-id> (duplicate of <op-id>; resuming)` — the same operation
-  was already submitted; the command resumes per its idempotency row and creates
-  nothing a second time.
-- `Receipt: rejected — <reason>; allowed: <cmd>[, <cmd>…]` — nothing is written. The
-  alternatives are copied from the session record (`agento.mjs session`, echoed by
-  the SessionStart hook's `Session:` line): every `allowed[]` entry verbatim, then
-  each `elsewhere[]` entry as `<cmd> (<window> window)`. Commands never hand-maintain
-  alternative lists.
-- `Receipt: rejected — <capability>: <reason>; fallback: <fallback>` — nothing is
-  written; a *hard* need from the command's `Needs:` line is unmet (§10). There is no
-  `allowed:` list because the command is right and the environment is not; `<reason>`
-  and `<fallback>` are the `detail` and `fallback` of the failing `doctor` check, or
-  the §10 standard fallback for a chat capability.
-
-**Preflight — an optional second line, directly after an `accepted` receipt:**
-
-- `Preflight: <capability> <warn|missing> — <fallback>` — one line per unmet *soft*
-  need (§10), quoting the `doctor` check's `fallback` or the §10 standard fallback
-  verbatim. The command then proceeds using that fallback. No line is printed when
-  every need is met.
-
-**Result — the last line of the response:**
-
-- `Result: completed — <resulting state>; next: <command>` — state names the branch,
-  PR, roadmap `status`, or lifecycle as applicable; `next:` is the concrete next
-  command and is how the AGENTS.md "ends with a concrete suggested next step" rule is
-  satisfied.
-- `Result: failed — <retry-safe explanation>` — what was done, what was not, and that
-  re-sending the same command resumes from git + roadmap state (or what must change
-  first). A pause (manual step or blocker awaiting the user) is a `completed` result
-  whose state is `paused`, and a session break (§3 pause kinds) a `completed` result
-  whose state is `in-progress`; both name the resume command in `next:` and neither
-  is a failure.
-
-**Operation ID** — `<command>:<subject>:<short-sha>`:
-
-- `<command>` is the suffix-less command name (`new-feature`, `ship`, `ap`).
-- `<subject>` is the slug when the command takes one; else the session id of a
-  managed worktree (`plan-<id>`); else the current branch name (`git branch
-  --show-current`, e.g. `delivery-status:main:e0bbddf`); else, detached and unmanaged,
-  the literal `HEAD`.
-- `<short-sha>` is `git rev-parse --short HEAD` at acceptance.
-
-`node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]` derives
-the ID (`opId`, with its `subject`) and returns the receipt and preflight lines ready
-to print (`receipt`, `preflightLines`) in the spellings above; commands print them
-verbatim instead of assembling them. A duplicate submission prints the duplicate
-form of the accepted receipt with that `opId`.
-
-The ID is deterministic: the same command on the same subject at the same HEAD is a
-duplicate submission and receives the duplicate receipt. Nothing is persisted; the
-command recognises the duplicate from what the first submission left in git and the
-roadmap.
-
-**Idempotency table** — what a duplicate submission does, per command:
-
-| Command | Duplicate submission |
-| --- | --- |
-| `/agento new-feature`, `/agento new-issue` | An existing roadmap for the slug enters the Planner resume protocol; no second branch, worktree, or PR. An existing GitHub issue is linked, not duplicated. |
-| `/agento build-feature`, `/agento build-issue` | The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone. |
-| `/agento review-feature`, `/agento review-issue` | A fresh verdict overwrites review.md; no second PR comment thread. |
-| `/agento ship` | `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it; in companion mode, a code PR merged while the companion PR is still open resumes at the companion merge, then sync, teardown, epilogue; a conflict or a failing required check found at `checks` reopens the roadmap to `in-progress` with an added Builder step and rejects back to the build window, while a policy-blocked merge (`mergeStateStatus: BLOCKED` or a refusal that classifies as blocked) reports `merge-blocked` and does not reopen. |
-| `/agento ap` | Re-enters the build or review resume protocol wherever the roadmap stands. |
-| `/agento continue` | Re-derives the transition from git + roadmap state and performs whatever is legal now; never a second worktree, branch, or PR — the dispatched command's own row governs the rest. |
-| `/agento start-session`, `/agento start-freehand` | A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened. |
-| `/agento close-session` | A worktree already removed is reported as already closed; a merged local branch is still deleted and worktrees pruned. |
-| `/agento finish-freehand`, `/agento commit-current-changes` | The existing commit, PR, or check-wait phase is reused; never a second commit or PR for the same changes. |
-| `/agento quick-fix` | An open PR on `changes/<slug>` from the same base is resumed; the `-2`, `-3` suffix applies only when that branch's PR is merged or closed. |
-| `/agento new-initiative` | An open `changes/initiative-<slug>` PR is resumed; a merged one is rejected naming the existing breakdown. |
-| `/agento agento-init` | Existing files are kept unless `--force`; an existing companion repository or clone is adopted, never recreated or reset. With `--migrate`, roots already moved report nothing to migrate and existing `changes/agento-init` PRs in either repository are resumed, never duplicated. |
-| `/agento install-skills` | Already-installed skills are excluded from the batch. |
-| `/agento triage-followups` | Already-annotated follow-up lines and already-flagged issues are skipped. |
-| `/agento delivery-status`, `/agento next-feature`, `/agento doctor` | Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks). |
-| `/agento models` | `apply` of the already-active profile and `clear` on an unpinned clone change nothing (`changed: []`); `init` with the file present reports `created: false`; `list` and `show` are reads. |
-| `/agento extend-copilot`, `/agento fix-copilot` | An existing capability with the same name is modified in place, never duplicated. |
+The op-id grammar, the receipt variants the CLI assembles, and the idempotency table
+live in `docs/architecture.md`.
 
 ## 10. Capability preflight
 
-Commands state what they need before they start and name the fallback immediately;
-a missing capability is never discovered mid-command. `agento.mjs doctor [--for
-<command>]` is the canonical presence check for everything CLI-side.
-
-**Vocabulary** — the only tokens a `Needs:` line may use:
-
-- `terminal` — a shell the agent can run commands in (Agent mode; Plan and Ask chat
-  modes have none).
-- `ask-questions` — the structured ask-questions chat tool (`vscode/askQuestions` in
-  an agent's `tools:`) for clarification.
-- `browser` — the integrated browser tools for driving a URL and capturing state.
-- `gh` — the GitHub CLI, installed and authenticated (`doctor` check `gh`).
-- `code` — the VS Code CLI for opening a worktree window (`doctor` check `code`).
-- `network` — the `origin` remote reachable for fetch, push, PR, and package
-  installs (`doctor` check `git-remote`).
-
-No token stands for Node: Node ≥ 20 runs the CLI and both hooks (the delivery guard
-and SessionStart context) and is part of `terminal` (`doctor` check `node`). Without
-it the hooks are silent — no guard, no session context — and `doctor` fails `node`.
-
-**Hard versus soft.** `terminal` is hard for every command that runs anything; `gh`
-and `network` are hard for every command that pushes, opens or merges a PR, or files
-an issue. `ask-questions`, `browser`, and `code` are soft: the command
-proceeds with the fallback. A hard need unmet → the §9 preflight rejection receipt;
-a soft need unmet → the §9 `Preflight:` line, then proceed.
+The opening `agento.mjs preflight <command>` call has already run the command's
+`doctor --for` checks: on `status: rejected` print the receipt and stop; each
+`Preflight:` line names a soft fallback to apply. The capability vocabulary, the
+hard/soft classification, the Declaration contract, and when `doctor` runs live in
+`docs/architecture.md`.
 
 **Standard fallbacks** (declared once here; `Fallback:` lines cite them, never
 restate them):
@@ -339,72 +254,27 @@ or the agent runs as a subagent, where VS Code withholds it), options are letter
 and the recommended one is bold and suffixed `(recommended)` with a one-line reason.
 Retain the answers verbatim, noting which option was the recommended one.
 
-**Declaration contract.** Every prompt (`.github/prompts/*.prompt.md`) and agent
-(`.github/agents/*.agent.md`) opens its body with exactly two lines:
-
-```
-Needs: <capability>[, <capability>…]
-Fallback: <one clause per soft need naming the §10 standard fallback, or "none — every need is hard">
-```
-
-followed by a one-sentence pointer to this section. Tokens come from the vocabulary
-above; the CLI's `doctor --for <command>` table lists the same needs for every
-command, and `tests/customizations.test.mjs` fails on any disagreement.
-
-**When `doctor` runs.** Every command opens with `node
-<agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`, which runs the
-`doctor --for <command>` checks in process before the first write. Overall `fail` →
-`status: rejected` (exit 3) with the §9 preflight rejection receipt quoting the
-failing check's `detail` and `fallback`; `warn` → `status: ok` (exit 0) with one
-`Preflight:` line per warning check in `preflightLines`, then proceed. `doctor --for
-<command>` stays available standalone; `/agento doctor` runs the full `doctor` after
-its own preflight; `doctor` reports and never repairs (no installs, no logins — §1).
-
 ## 11. Window check
 
-Which window a command runs in is data, not prose. Every command and agent carries one
-line of the form `Window check per §11: requires role <roles>` and applies this
-procedure before reading delivery state or writing anything; the roles table itself
-lives in the CLI (`WINDOW_ROLES` and `deriveAllowed` in `scripts/session-state.mjs`),
-never here or in a prompt.
+Which window a command runs in is data, not prose: every command and agent carries a
+`Window check per §11: requires role <roles>` line, and the roles table lives in the
+CLI (`WINDOW_ROLES` and `deriveAllowed` in `scripts/session-state.mjs`).
 
-1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`
-   (the SessionStart hook's `Session:` line is a hint; the CLI call is the check).
-   Its `session` section is the session record (`agento.mjs session` returns the same
-   document) and its `window` section the verdict (`role`, `required`, `match`,
-   `reason`, `allowed`, `elsewhere`). The record carries `role`
-   (`primary` | `plan` | `build` | `freehand` | `unmanaged`), `hosted`, `worktree`
-   (`path`, `branch`, `detached`, `isPrimary`, `isManaged`, `dirPrefix`, `id`),
-   `worktrees[]` (every registered checkout classified the same way), `delivery`,
-   `lifecycle`, `allowed[]`, `elsewhere[]`, and `warnings[]`.
-2. Compare `role` with the roles the command's line names (`window.match`). Match →
-   proceed; from here
-   on the record's `worktree`, `delivery`, and `worktrees[]` replace any further
-   worktree inspection. Only commands that create or remove worktrees
-   (`/agento start-session`, `/agento start-freehand`, `/agento close-session`, and
-   `/agento ship` for its post-merge teardown) may additionally
-   read `git worktree list --porcelain` — in companion mode also the companion
-   clone's, `git -C <companion> worktree list --porcelain`, for the paired half —
-   and only for that mutation. Ownership of a
-   delivery branch comes from `worktrees[]` or from `close-decision` /
-   `ship-preflight` `owner` (`{ path, role, dirPrefix, id } | null`; reasons
-   `managed-worktree-present`, `primary-owns-branch`, `remote-roadmap-only`).
-3. Mismatch → the §9 `rejected` receipt (the preflight's `receipt`) with reason
-   `wrong window: role=<role>
-   (<worktree.path>, branch <worktree.branch|detached>)` and the alternatives copied
-   from the record per §9. `role: unmanaged` always rejects delivery commands
-   (its `allowed[]` is empty by design) and the rejection adds the fix: open the
-   primary checkout at `worktrees[0].path`, or one of the managed entries in
-   `worktrees[]`. Never carve out an exception for being on `main`.
-4. `hosted: true` (Codespaces, Actions, the coding agent) is not an exemption anyone
-   remembers: the record has already derived `role` from the branch alone and said
-   so in `warnings[]`; commands treat a hosted record like any other.
-5. A requirement with a branch condition — `primary` on a non-default branch
-   (`/agento commit-current-changes`); `primary` on the default branch, clean
-   (`/agento quick-fix`, `/agento new-initiative`, `/agento start-session`,
-   `/agento start-freehand`); build-window commands whose `delivery.slug` must equal
-   the argument — states it on the same line and checks it from the record's
-   `worktree.branch` and `delivery`, never from a fresh `git branch` reading.
+- `window.match: false` → print the preflight `receipt` and its alternatives as §12
+  blocks, write nothing.
+- On a match, the record's `worktree`, `companion`, `delivery`, and `lifecycle`
+  replace fresh git inspection. Only worktree-mutating commands (`start-session`,
+  `start-freehand`, `close-session`, and `ship` teardown) read
+  `git worktree list --porcelain`, and they call `preflight --full` (or
+  `agento.mjs session`) for `worktrees[]`.
+- A requirement with a branch condition — `primary` on a non-default branch
+  (`commit-current-changes`); `primary` on the default branch, clean (`quick-fix`,
+  `new-initiative`, `start-session`, `start-freehand`); build-window commands whose
+  `delivery.slug` must equal the argument — states it on the same line and checks it
+  from the record's `worktree.branch` and `delivery`, never from a fresh `git branch`
+  reading.
+
+The record field catalogue and the numbered procedure live in `docs/architecture.md`.
 
 ## 12. Command presentation
 

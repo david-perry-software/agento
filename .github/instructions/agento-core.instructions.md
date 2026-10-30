@@ -4,8 +4,9 @@ applyTo: "**"
 ---
 
 The full delivery rules live in `.github/instructions/delivery-policy.instructions.md`;
-`§N` anywhere names its section N. Read it once before running an `/agento …` command
-or acting as an Agento agent, unless it is already in context.
+`§N` anywhere names its section N. Load the sections a command's (or, with no
+command, the agent's) `Policy:` line declares, with the command that line names;
+load any other cited §N on demand with `agento.mjs policy N`.
 
 - **Work boundary (§1).** The agent runs everything a CLI or a browser can do; only
   secrets, dashboards or accounts it cannot reach, approvals, and physical devices

@@ -29,6 +29,7 @@
 //   node scripts/agento.mjs handoff <checkout> "<command>" [--no-open]   (queue one /agento command in <agento-config>/pending-dispatch for that checkout's window, then code <target> to focus or open it; the extension there runs it)
 //   node scripts/agento.mjs next [<slug>]              (the one legal transition: command, args, window, target { path, workspace }, dispatch paths)
 //   node scripts/agento.mjs doctor [--for <command>]   (environment checks: ok | warn | fail, with fallbacks)
+//   node scripts/agento.mjs policy <N> [<N>…] | --list   (print the named ## N. sections of delivery-policy.instructions.md as raw Markdown after one header line, ascending and deduplicated; --list prints JSON { sections: [{ n, title, bytes }] }; unknown/missing sections and no args exit 1)
 //   node scripts/agento.mjs preflight <command> [<type> <slug> | <slug>]   (session, window verdict, doctor --for, resolve, config, opId, receipt, preflightLines in one call; exit 0 accepted, 3 rejected)
 //   node scripts/agento.mjs dashboard [--pr] [--plugin-root <dir>]   (session, doctor, deliveries (= status), initiatives { list, details }, metrics and timings in one document; a failing section is { status: "error", message })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
@@ -88,6 +89,41 @@ function emit(result, code = 0) {
   process.exit(code);
 }
 
+// Raw stdout for subcommands whose contract is plain text, not one JSON document
+// (`policy` prints Markdown sections; `--list` is the JSON view).
+function emitRaw(text, code = 0) {
+  const buffer = Buffer.from(text, "utf8");
+  let offset = 0;
+  while (offset < buffer.length) {
+    try {
+      offset += fs.writeSync(1, buffer, offset, buffer.length - offset);
+    } catch (error) {
+      if (error.code !== "EAGAIN") throw error;
+    }
+  }
+  process.exit(code);
+}
+
+// Parses `<root>/.github/instructions/delivery-policy.instructions.md` into its
+// `## N.` sections. Each entry carries the section number (the heading's digits),
+// the heading title, the section's byte length, and its raw Markdown (heading line
+// through the line before the next heading, or EOF for the last section).
+function policySections(root) {
+  const file = path.join(root, ".github", "instructions", "delivery-policy.instructions.md");
+  const text = fs.readFileSync(file, "utf8");
+  const heading = /^## (\d+)\. (.+)$/gm;
+  const starts = [];
+  let match;
+  while ((match = heading.exec(text)) !== null) {
+    starts.push({ n: match[1], title: match[2].trim(), offset: match.index });
+  }
+  return starts.map((section, index) => {
+    const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
+    const raw = text.slice(section.offset, end);
+    return { n: section.n, title: section.title, bytes: Buffer.byteLength(raw, "utf8"), raw };
+  });
+}
+
 function git(root, ...args) {
   try {
     return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -109,6 +145,8 @@ function parseArgs(argv) {
     else if (arg === "--resume") options.resume = true;
     else if (arg === "--no-open") options.noOpen = true;
     else if (arg === "--dry-run") options.dryRun = true;
+    else if (arg === "--list") options.list = true;
+    else if (arg === "--full") options.full = true;
     else if (arg === "--from") {
       options.from = argv[++i];
       if (!options.from || options.from.startsWith("--")) usage("--from takes a profile name");
@@ -4554,10 +4592,10 @@ function preflightArgs() {
   if (!COMMAND_NEEDS[command]) usage(`preflight: unknown command ${command}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
   const args = rest.slice(1);
   if (args.length > 2) usage(`preflight takes <command> [<type> <slug> | <type>/<slug> | <slug>], got ${JSON.stringify(rest.join(" "))}`);
-  if (args.length === 2) return { command, type: requireType(args[0]), slug: requireSlug(args[1]) };
+  if (args.length === 2) return { command, type: requireType(args[0]), slug: requireSlug(args[1]), full: Boolean(options.full) };
   const typed = args[0]?.match(/^(feature|issue)\/(.*)$/);
-  if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]) };
-  return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null };
+  if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]), full: Boolean(options.full) };
+  return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null, full: Boolean(options.full) };
 }
 
 // `resolve <type> <slug>`, or `find <slug>` when no type was passed.
@@ -4592,7 +4630,10 @@ function receiptLines({ opId, window, doctor }) {
 // What `preflight <command> [<type> <slug>]` emits: the session record, the §11
 // window verdict, `doctor --for <command>`, the slug's resolution (null without a
 // slug), the config document, and the §9 op-id, receipt, and preflight lines.
-function preflightDocument({ command, type, slug }) {
+// `--full` is that document unchanged; the default is the brief document (the
+// fields commands actually read), which drops `session.worktrees`, `session.allowed`,
+// `session.elsewhere`, `config`, `root`, `configSource`, and `doctor.checks`.
+function preflightDocument({ command, type, slug, full = false }) {
   const session = sessionRecord();
   const rule = WINDOW_ROLES[command];
   const clean = rule.clean ? git(session.worktree.path, "status", "--porcelain") === "" : true;
@@ -4600,6 +4641,24 @@ function preflightDocument({ command, type, slug }) {
   const doctor = doctorDocument(command);
   const { subject, opId } = opIdFor(command, slug, session.worktree);
   const { status, receipt, preflightLines } = receiptLines({ opId, window, doctor });
+  if (full) {
+    return {
+      status,
+      command,
+      opId,
+      subject,
+      receipt,
+      preflightLines,
+      session,
+      window,
+      doctor,
+      resolve: slug ? resolveDocument(type, slug) : null,
+      config: configDocument(),
+      root,
+      configSource: source,
+    };
+  }
+  const { role, hosted, worktree, companion, workspace, delivery, pr, companionPr, lifecycle, warnings } = session;
   return {
     status,
     command,
@@ -4607,13 +4666,18 @@ function preflightDocument({ command, type, slug }) {
     subject,
     receipt,
     preflightLines,
-    session,
-    window,
-    doctor,
-    resolve: slug ? resolveDocument(type, slug) : null,
-    config: configDocument(),
-    root,
-    configSource: source,
+    window: {
+      role: window.role,
+      required: window.required,
+      match: window.match,
+      reason: window.reason,
+      allowed: window.allowed,
+      elsewhere: window.elsewhere,
+      ...(window.role === "unmanaged" ? { primary: session.worktrees[0]?.path ?? root } : {}),
+    },
+    session: { role, hosted, worktree, companion, workspace, delivery, pr, companionPr, lifecycle, warnings },
+    doctor: { status: doctor.status, for: doctor.for, failing: doctor.checks.filter((c) => c.status !== "ok") },
+    ...(slug ? { resolve: resolveDocument(type, slug) } : {}),
   };
 }
 
@@ -5000,6 +5064,27 @@ switch (command) {
 
   case "publish-pr": {
     publishPr();
+    break;
+  }
+
+  case "policy": {
+    const sections = policySections(PLUGIN_ROOT);
+    if (options.list) {
+      if (rest.length) usage(`policy --list takes no section arguments, got ${JSON.stringify(rest.join(" "))}`);
+      emit({ sections: sections.map(({ n, title, bytes }) => ({ n, title, bytes })) });
+      break;
+    }
+    if (rest.length === 0) usage("policy requires one or more section numbers, or --list");
+    const byN = new Map(sections.map((section) => [section.n, section]));
+    const requested = [];
+    for (const arg of rest) {
+      if (!/^\d+$/.test(arg)) usage(`policy: unknown section ${JSON.stringify(arg)}`);
+      if (!byN.has(arg)) usage(`policy: no such section ${JSON.stringify(arg)}`);
+      if (!requested.includes(arg)) requested.push(arg);
+    }
+    requested.sort((a, b) => Number(a) - Number(b));
+    const header = `# delivery-policy.instructions.md — sections ${requested.join(", ")}\n`;
+    emitRaw(header + "\n" + requested.map((n) => byN.get(n).raw).join(""));
     break;
   }
 

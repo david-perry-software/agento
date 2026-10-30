@@ -6,8 +6,9 @@ agent: "agent"
 
 Needs: terminal, ask-questions, browser, gh, code, network
 Fallback: ask-questions, browser, code → §10 standard fallbacks (the dispatched command's own soft needs apply once it runs)
-Capability vocabulary, hard/soft classification, and standard fallbacks: delivery-policy.instructions.md §10.
-Policy: read `<agento-root>/.github/instructions/delivery-policy.instructions.md` once before the first step unless it is already in context; `<agento-root>` comes from the session context line `Agento CLI: node <agento-root>/scripts/agento.mjs`.
+Standard fallbacks: delivery-policy §10.
+Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Duplicate submission: Re-derives the transition from git + roadmap state and performs whatever is legal now; never a second worktree, branch, or PR — the dispatched command's own row governs the rest.
 
 Continue the delivery lifecycle from wherever it stands. The Agento CLI derives the
 single transition that is legal right now — `node <agento-root>/scripts/agento.mjs
@@ -20,10 +21,8 @@ a rejection that lists the choices. This command adds no workflow logic of its o
 dispatched command's prompt and agent files are the only procedure.
 
 Open with the acceptance receipt and close with the terminal result line per
-delivery-policy.instructions.md §9; a duplicate submission follows this command's §9
-idempotency row: it re-derives from git + roadmap state and performs whatever
-transition is now legal — never a second worktree, branch, or PR — and the dispatched
-command's own row governs the rest. Open with one `node
+delivery-policy.instructions.md §9; a duplicate submission follows this command's
+duplicate-submission line. Open with one `node
 <agento-root>/scripts/agento.mjs preflight continue [<slug>]` call (§9–§11), the slug
 argument appended verbatim when one was given: print its `receipt` and then its
 `preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing nothing;
@@ -64,7 +63,7 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      `<type>/<slug> [--resume]` (build mode); when `next.then` is set, that command
      is the first thing to run in the window `start-session` opens.
    - `primary` or `secondary` → the transition belongs to another window. Locate it
-     from the record: `primary` is `worktrees[0].path`; `secondary` is the managed
+     from `agento.mjs session`: `primary` is `worktrees[0].path`; `secondary` is the managed
      entry in `worktrees[]` whose `branch` equals `delivery.branch` (its `repo` is
      `product`). For `secondary`, open the pair's workspace file when it exists —
      `<path>.code-workspace` next to that entry, written by `/agento start-session` in
