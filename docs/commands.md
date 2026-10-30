@@ -637,8 +637,9 @@ fixed spellings defined once in `delivery-policy.instructions.md` §9 (execution
 receipts). The receipt names a deterministic operation ID
 (`<command>:<subject>:<short-sha>`); a rejection lists the alternatives from the
 session record; `agento.mjs preflight` returns both ready to print; the result names the resulting state and the concrete next
-command. Re-sending any command is safe: §9's idempotency table says, per command,
-what a duplicate submission does, all derived from git + roadmap state. Every
+command. Re-sending any command is safe: each command's `Duplicate submission:`
+line says what a duplicate does (the full idempotency table lives in
+[architecture.md](architecture.md)), all derived from git + roadmap state. Every
 `/agento …` command the user is asked to run — the result's `next:`, handoff and
 resume commands, a rejection's alternatives — is also emitted as its own one-command
 fenced block with no language tag, so chat offers a copy button on it (§12), and
@@ -655,8 +656,11 @@ fallback instead of a half-started command; soft needs (`ask-questions`, `browse
 `code`) missing add one `Preflight:` line and the command proceeds with
 the standard fallback. Every command opens with one `agento.mjs preflight <name>`
 call that runs the `doctor --for <name>` checks with the window check and the slug
-resolution; `/agento doctor` runs the
+resolution, printing a **brief** document by default — `preflight <name> --full`
+returns the whole session record — and `/agento doctor` runs the
 same checks on demand and only reports — installs and logins stay with the user.
+Each command and agent also declares its policy sections on a `Policy: §…` line and
+loads exactly those with `agento.mjs policy <N>…` before its first step.
 
 ## The standard flow
 

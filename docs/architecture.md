@@ -62,10 +62,11 @@ flowchart TD
   rule for slash commands: `/agento <name>`; old forms are read as the canonical
   command and proceed without confirmation) and **ai-skills** (the skills-first
   policy). The **delivery policy** (`delivery-policy.instructions.md`) is loaded on
-  demand: every agent and every built-in-agent command reads it once through an
-  explicit `Policy: read <agento-root>/…` line (VS Code does not follow instruction
-  links by default), and it auto-attaches only while Agento's own agents, prompts,
-  commands, and instructions are edited. It is the
+  demand: every agent and command declares the sections it loads on a `Policy: §…`
+  line and loads exactly those with `node <agento-root>/scripts/agento.mjs policy
+  <N>…` (an uncited section loads on demand with `agento.mjs policy N`), and it
+  auto-attaches only while Agento's own agents, prompts, commands, and instructions
+  are edited. It is the
   single source for the rules every role shares — who does the work, verification
   targets, manual/post-ship steps and evidence, the lint gate, shell hygiene, git
   rules, the cross-window handoff, and execution receipts with per-command
@@ -73,7 +74,9 @@ flowchart TD
   operation ID and closes with a result line; a duplicate submission resumes from git
   + roadmap state), capability preflight (§10: every command and agent declares
   `Needs:`/`Fallback:`; `agento.mjs doctor --for <name>` runs before the first write
-  of any command needing `gh`, `code`, or `network`), and the window check (§11: every
+  of any command needing `gh`, `code`, or `network`; the opening
+  `agento.mjs preflight <command>` prints a brief document, `--full` returning the
+  whole record), and the window check (§11: every
   command names the `role` it requires and checks it against `agento.mjs session` — a
   mismatch is a `rejected` receipt with the record's alternatives; the roles table
   itself lives in the CLI), and command presentation (§12: every `/agento …`
