@@ -61,7 +61,7 @@ review, fixes belong to the Builder.
    rejected` (exit 3), and stop on a `resolve.status` other than `ok`. `git fetch origin`,
    confirm from the session record that `worktree.branch` is the roadmap's work
    branch, then read plan.md and roadmap.md fully. Never switch a managed worktree to
-   another delivery branch; if the record's `worktrees[]` shows another entry on the
+   another delivery branch; if `agento.mjs session`'s `worktrees[]` shows another entry on the
    branch, stop and direct the user to the record's alternatives (resume that build
    session for review). If `origin/main` is not
    an ancestor of `HEAD`, the review would judge stale code: stop and use the Builder

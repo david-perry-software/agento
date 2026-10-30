@@ -63,7 +63,7 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      `<type>/<slug> [--resume]` (build mode); when `next.then` is set, that command
      is the first thing to run in the window `start-session` opens.
    - `primary` or `secondary` → the transition belongs to another window. Locate it
-     from the record: `primary` is `worktrees[0].path`; `secondary` is the managed
+     from `agento.mjs session`: `primary` is `worktrees[0].path`; `secondary` is the managed
      entry in `worktrees[]` whose `branch` equals `delivery.branch` (its `repo` is
      `product`). For `secondary`, open the pair's workspace file when it exists —
      `<path>.code-workspace` next to that entry, written by `/agento start-session` in

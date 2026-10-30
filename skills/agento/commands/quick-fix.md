@@ -19,8 +19,8 @@ none of the plan → build → review → two-window choreography. This invocati
 authorizes creating and deleting a branch, committing, pushing, opening and merging a
 pull request, and synchronizing the default branch.
 
-Read the default branch and freehand prefix from the preflight call's `config`
-section (`config.branches.default`, `config.branches.freehand`). `main` below
+Read the default branch and freehand prefix from `agento.mjs config`
+(`config.branches.default`, `config.branches.freehand`). `main` below
 means the configured default.
 
 Open with the acceptance receipt and close with the terminal result line per

@@ -39,7 +39,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    The companion is cloned to `../<name>` relative to the primary checkout (that is
    where every `agento.mjs` reader resolves it); running from a managed worktree
    would put the clone in the worktrees directory, so stop and name the primary
-   path (`worktrees[0].path`) instead. Record `gh repo view --json
+   path (`agento.mjs session`'s `worktrees[0].path`) instead. Record `gh repo view --json
    nameWithOwner,visibility` as `<owner>/<repo>` and `<visibility>`, and the default
    branch from `git remote show origin` as `<default>`.
 

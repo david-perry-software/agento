@@ -24,9 +24,8 @@ Open with one `node <agento-root>/scripts/agento.mjs preflight build-<type> <typ
 its `receipt` and then its `preflightLines` verbatim, stop on `status: rejected`
 (exit 3), and stop on a `resolve.status` other than `ok`, reporting its `message`
 verbatim. The roadmap is the only durable progress record; chat memory does not
-survive, pushed commits do. The preflight's `config` section gives the configured
-default branch and branch prefixes; `main` in these instructions means
-`config.branches.default`.
+survive, pushed commits do. `agento.mjs config` gives the configured default branch and branch
+prefixes; `main` in these instructions means `config.branches.default`.
 
 **Companion mode** (the session record's `companion` is not `null`): the code lives
 in this product worktree and the artifacts — plan.md, roadmap.md, review.md,
@@ -73,7 +72,7 @@ to the slug being built.
    and then `origin/main` into each where they are not ancestors of `HEAD`, then pushes
    any half left ahead, product first. From the session record, confirm
    `worktree.branch` is the branch named in the roadmap header; never switch a shared
-   or managed worktree to another delivery branch. If the record's `worktrees[]` shows
+   or managed worktree to another delivery branch. If `agento.mjs session`'s `worktrees[]` shows
    another entry on that branch, stop and direct the user to the record's
    alternatives (`/agento start-session <type>/<slug> --resume`). `merged: true` means
    the audit in step 3 spot-checks the merged tree; `reason: dirty` is uncommitted work

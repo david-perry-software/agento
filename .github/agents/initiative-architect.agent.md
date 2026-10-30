@@ -34,17 +34,17 @@ rejected naming the existing breakdown. Window check per §11: requires role
 <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11; the CLI path
 is announced in the session context as `Agento CLI:`): print its `receipt` and then
 its `preflightLines` verbatim, and stop on `status: rejected` (exit 3). Read the
-default branch and freehand prefix from its `config` section
+default branch and freehand prefix from `agento.mjs config`
 (`config.branches.default`, `config.branches.freehand`). `main` and
 `changes/` below mean the configured values.
 
 ## Scope of edits
 
-Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from the
-preflight's `config` section → `config.artifacts.initiatives`, default `initiatives/`). Never modify
+Only create files inside `<initiatives-root>/YYYY/MM/<slug>/` (root from `agento.mjs config`
+→ `config.artifacts.initiatives`, default `initiatives/`). Never modify
 `features/`, `issues/`, source code, configuration, or any other directory.
 
-**Companion mode** (the preflight's `config` section reports
+**Companion mode** (`agento.mjs config` reports
 `artifactsRoot` different from `root` — `artifacts.repo.name` or `.dir` set — the same
 trigger `/agento start-session`, `/agento close-session`, and `/agento ship` use; the
 session record's `companion` is `null` in the primary window by design and is not the

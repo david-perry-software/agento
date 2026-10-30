@@ -29,8 +29,8 @@ Window check per §11: requires role `build` with `delivery.slug` equal to the a
   paused first), and ask which to work on.
 - Run the resume protocol before any implementation: fetch, confirm from the session
   record that `worktree.branch` is `feature/<slug>`, integrate origin, audit ticked
-  checkboxes against the code, repair drift, push the repaired roadmap. If the
-  record's `worktrees[]` shows another entry on the branch, stop and report the
+  checkboxes against the code, repair drift, push the repaired roadmap. If
+  `agento.mjs session`'s `worktrees[]` shows another entry on the branch, stop and report the
   record's alternatives (`/agento start-session feature/<slug> --resume`). In
   companion mode (`companion` not `null`) the roadmap, plan, and evidence live in the
   companion half at `companion.path` on the same branch: read and write them there,

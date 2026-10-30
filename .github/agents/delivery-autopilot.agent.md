@@ -61,7 +61,7 @@ being run.
    When the invocation names no slug (the Reviewer's "Continue unattended" handoff),
    the slug is the session record's `delivery.slug`.
    `git fetch origin` and confirm from the session record that `worktree.branch` is
-   the roadmap's `branch:`. If the record's `worktrees[]` shows another entry on the
+   the roadmap's `branch:`. If `agento.mjs session`'s `worktrees[]` shows another entry on the
    branch, stop and report the record's alternatives
    (`/agento start-session <type>/<slug> --resume`).
 2. Read the model pins — run `node <agento-root>/scripts/agento.mjs models pins`

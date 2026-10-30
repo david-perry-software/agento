@@ -64,12 +64,12 @@ Window check per §11: requires role `primary` on the default branch, clean.
      without changing its branch, HEAD, or files, and say the session already exists
      and was resumed.
    - If the path is free but `changes/<slug>` is already checked out elsewhere (an
-     entry on that branch in the record's `worktrees[]`, confirmed with
+     entry on that branch in `agento.mjs session`'s `worktrees[]`, confirmed with
      `git worktree list --porcelain` — permitted here because this command creates
      worktrees), stop; one session per branch.
 3. For a new session, run
    `git -C <primary> worktree add --no-track -b changes/<slug> <path> origin/main`
-   (`<primary>` is the record's `worktrees[0].path`). `origin/main`
+   (`<primary>` is `agento.mjs session`'s `worktrees[0].path`). `origin/main`
    is only the starting point, so `--no-track` is required to keep the branch from
    adopting the wrong upstream. If `changes/<slug>` already exists locally or on
    origin without a registered worktree, reuse that exact branch instead of creating
