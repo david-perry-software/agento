@@ -95,17 +95,10 @@ review, fixes belong to the Builder.
    `Verdict: approve` or `Verdict: request-changes`.
 8. Publish with one `node <agento-root>/scripts/agento.mjs review-publish <type>
    <slug> --body-file -` call, the verdict summary with the top findings on stdin.
-   It checks this build window, requires review.md with `# Review: <slug>` and
-   exactly one `Verdict:` line, changes only inside the slug directory (in companion
-   mode the product half clean), and the open code PR; then it commits review.md and
-   roadmap repairs as one `docs(<type>): review <slug> — <verdict>` commit in the
-   artifact half (the companion half in companion mode), merges `origin/<branch>` into
-   every half and `origin/<default>` into the companion half only (never a rebase;
-   the reviewed code does not change under the verdict), pushes, and leaves exactly
-   one verdict comment on the **code** PR — `Verdict: <approve|request-changes>`,
-   the link to review.md on the branch, and the summary — editing that same comment
-   on a re-review, never a second thread. It ends with the trees clean per policy §7
-   clean handoff. On `status: rejected` fix what `message` names and re-send; on
+   It checks this build window, commits review.md and roadmap repairs as one
+   `docs(<type>): review <slug> — <verdict>` commit in the artifact half, integrates
+   by merge (never a rebase), pushes, and leaves exactly one verdict comment on the
+   **code** PR. On `status: rejected` fix what `message` names and re-send; on
    `failed` stop with `message` (and its `reauth` on an authentication failure, §1).
    Then summarize the verdict with the top findings.
    End with the cross-window sequence from policy §8,

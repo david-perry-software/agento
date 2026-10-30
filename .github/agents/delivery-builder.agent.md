@@ -41,16 +41,12 @@ commit.
 <type> <slug>` integrates; `node <agento-root>/scripts/agento.mjs step-commit <type>
 <slug> [--step N.M] --message-file -` commits, integrates, and pushes, reading the
 Conventional Commit message on stdin (`printf '%s\n' "<message>" | …`), so no message
-file lands in a worktree. Both check this build window, both halves on the roadmap's
-branch, and refuse the default branch and a detached HEAD; neither ever rebases,
-forces, amends, or skips hooks. They answer one JSON document: `status` `ok`,
-`reverify` (exit 2), `rejected`, or `failed`, with `reason`, `message`, `actions[]`,
-and `reauth` on an authentication failure (stop and name it, policy §1). A
-`rejected` call wrote nothing: fix what `message` names and re-send. Re-sending
-either call resumes from git state. `integration-conflict` is the one case for
-hand-run git: the merge was aborted and `conflicts[]` names the files, so run `git
-merge <ref>` in the named `half`, resolve per the hotspot recipes in
-[concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md),
+file lands in a worktree. Both check this build window and never rebase, force,
+amend, or skip hooks; a `rejected` call wrote nothing — fix what `message` names and
+re-send, and re-sending either call resumes from git state. `integration-conflict` is
+the one case for hand-run git: the merge was aborted and `conflicts[]` names the
+files, so run `git merge <ref>` in the named `half`, resolve per the hotspot recipes
+in [concurrent-delivery.instructions.md](../instructions/concurrent-delivery.instructions.md),
 commit the merge, rerun the step's `verify:`, and re-send.
 
 Follow the target repository's AGENTS.md at its root, the skills-first policy in
