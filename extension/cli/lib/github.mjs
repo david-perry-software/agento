@@ -86,7 +86,22 @@ function lookupCompanionPullRequest(branch, layout = checkoutLayout(), lookup = 
   return lookup(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
 }
 
+// The same shape for gh: stdin closed, stderr captured, never a prompt.
+function ghRun(cwd, args, timeout = 30000) {
+  try {
+    const stdout = execFileSync("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1" } });
+    return { ok: true, stdout: stdout.trim(), stderr: "", timedOut: false, missing: false };
+  } catch (error) {
+    const missing = error?.code === "ENOENT";
+    const timedOut = error?.code === "ETIMEDOUT" || Boolean(error?.signal && !error?.status);
+    const stderr = (error?.stderr ?? "").toString().trim();
+    const message = missing ? "gh CLI not found on PATH" : timedOut ? `gh ${args[0]} timed out after ${timeout / 1000} s` : stderr || error?.message || "unknown error";
+    return { ok: false, stdout: (error?.stdout ?? "").toString().trim(), stderr: message, timedOut, missing };
+  }
+}
+
 export {
+  ghRun,
   lookupPullRequest,
   lookupPullRequestAsync,
   lookupPullRequests,
