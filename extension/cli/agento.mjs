@@ -40,102 +40,11 @@
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
 
-import fs from "node:fs";
-import path from "node:path";
-
-import { classifyWorktrees, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, resolveNextTarget } from "./session-state.mjs";
-import {
-  usage,
-  emit,
-  anchor,
-  root,
-  roleCwd,
-  config,
-  source,
-  artifactsRoot,
-  agit,
-  companionWorktreesDir,
-  companionWorktrees,
-  productWorktrees,
-  primaryWorktreesDir,
-  PLUGIN_ROOT,
-  command,
-  rest,
-} from "./lib/context.mjs";
-import { allRoadmaps } from "./lib/records.mjs";
-import { checkoutLayout, roadmapOnBranch } from "./lib/layout.mjs";
-import { requireSlug } from "./lib/resolve.mjs";
-import { companionHalfOf, describeCompanion, describeWorkspace } from "./lib/session.mjs";
-import { allBreakdowns, deriveInitiative, refFor } from "./lib/documents.mjs";
-
-
-
-
-
-
-
-
-
-// close-decision / ship-preflight: the companion half owned alongside the product
-// half, or null when no managed worktree owns the branch (or in-repo mode).
-
-
-
-
-
-
-// the primary: in companion mode every registered companion half that is a managed
-
-
-
-
-
-
-// --- next ------------------------------------------------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// --- ship ------------------------------------------------------------------
-
-
-
-
-
-
-// GitHub reports a conflict as mergeable CONFLICTING / mergeStateStatus DIRTY; mergeStateStatus is never CONFLICTING.
-
-
-
-
-// --- preflight: the §9–§11 opening of every command in one call ---------------
-
-
-
+import { command, usage } from "./lib/context.mjs";
 
 // One module per command family (plan Approach rule 2). Each entry maps a
 // subcommand name to the `scripts/commands/<file>.mjs` module that exports it as
-// `commands[<name>]`. The table is empty until Phase 3; unlisted commands fall
-// through to the legacy switch below, which shrinks as each family moves out.
+// `commands[<name>]`. Missing and unknown commands fall through to the usage error.
 const COMMAND_MODULES = {
   release: "release",
   migrate: "migrate",
@@ -175,28 +84,5 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
   const handlers = await import(`./commands/${COMMAND_MODULES[command]}.mjs`);
   await handlers.commands[command]();
 } else {
-  switch (command) {
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  default:
-    usage(command ? `unknown command ${command}` : "missing command");
-  }
+  usage(command ? `unknown command ${command}` : "missing command");
 }
