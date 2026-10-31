@@ -100,6 +100,8 @@ import { execAsync, ghVersion, probe, probeAsync } from "./lib/probe.mjs";
 import { ghRequiredContexts, once, releaseVerdict } from "./lib/release.mjs";
 import { allRoadmaps, describeFromRef, header, holdsArtifacts, parseBreakdown, recordBases, walkBreakdowns } from "./lib/records.mjs";
 import { harnessFacts, LOCAL_TAKEOVER, primaryCheckoutOf } from "./lib/copilot.mjs";
+import { checkoutLayout, decideWithLayout, deliveryBranch, layoutFor, resolveWithLayout, withLayout } from "./lib/layout.mjs";
+import { configDocument, requireSlug, requireType, resolveDocument } from "./lib/resolve.mjs";
 import { gitRun } from "./lib/git.mjs";
 import { loadProfiles, loadRoles, modelsPins, modelsState, pinWarnings, resolveProfile } from "./lib/models.mjs";
 
@@ -121,89 +123,6 @@ function policySections(root) {
     const raw = text.slice(section.offset, end);
     return { n: section.n, title: section.title, bytes: Buffer.byteLength(raw, "utf8"), raw };
   });
-}
-
-// The artifact objects a slug-targeted read works against. `layout: "checkout"` is
-// this checkout's own resolution (the module-level objects). `layout: "branch"` is
-// the branch-aware fallback: from an in-repo checkout, the delivery branch's own
-// committed `.github/agento.json` (origin/<branch>, then <branch>) names a companion
-// that exists beside the primary, so the read is redone against that clone —
-// `/agento ship` from a `main` that is still in-repo finds a migrated roadmap this
-// way. Null when the branch sets no companion; `absent: true` (with `artifactsRoot`
-// naming the missing clone) when it names one that is not on disk — never auto-cloned.
-function checkoutLayout() {
-  return { layout: "checkout", config, artifacts, artifactsRoot, artifactsGit, agit, companionWorktreesDir, companionWorktrees: companionWorktrees(), absent: false };
-}
-
-function layoutFor(branch) {
-  if (artifacts.external) return checkoutLayout();
-  if (!branch) return null;
-  const text = git(root, "show", `origin/${branch}:.github/agento.json`) || git(root, "show", `${branch}:.github/agento.json`);
-  if (!text) return null;
-  let branchConfig;
-  try {
-    branchConfig = parseConfigText(text, root);
-  } catch {
-    return null;
-  }
-  const primaryRoot = productWorktrees()[0]?.path ?? root;
-  const resolved = resolveArtifactsRoot({ config: branchConfig, rootDir: root, primaryRoot });
-  if (!resolved.external) return null;
-  const dir = resolved.dir;
-  const toplevel = git(dir, "rev-parse", "--show-toplevel");
-  const bound = (...args) => git(dir, ...args);
-  if (!toplevel || !samePath(toplevel, dir)) {
-    return { layout: "branch", config: branchConfig, artifacts: resolved, artifactsRoot: dir, artifactsGit: null, agit: bound, companionWorktreesDir: resolved.worktreesDir, companionWorktrees: [], absent: true };
-  }
-  return {
-    layout: "branch",
-    config: branchConfig,
-    artifacts: resolved,
-    artifactsRoot: dir,
-    artifactsGit: { lsTree: (ref) => bound("ls-tree", "-r", "--name-only", ref), show: (spec) => bound("show", spec) },
-    agit: bound,
-    companionWorktreesDir: resolved.worktreesDir,
-    companionWorktrees: parseWorktreeList(bound("worktree", "list", "--porcelain")),
-    absent: false,
-  };
-}
-
-const deliveryBranch = (type, slug) => `${type === "feature" ? config.branches.feature : config.branches.issue}${slug}`;
-
-// The slug-targeted read: this checkout's layout first; when that is `missing` in
-// an in-repo checkout, the delivery branch's own layout (`layoutFor`). Returns the
-// resolution and the layout it came from; an absent companion stays `missing` with
-// the clone named in the message.
-function resolveWithLayout(type, slug) {
-  const base = checkoutLayout();
-  const first = resolveRoadmapArtifact({ rootDir: root, artifactsRoot, type, slug, currentBranch, git: artifactsGit, config });
-  if (first.status !== "missing" || artifacts.external) return { result: first, layout: base };
-  const branch = deliveryBranch(type, slug);
-  const alt = layoutFor(branch);
-  if (!alt) return { result: first, layout: base };
-  if (alt.absent) {
-    return { result: { ...first, message: `${first.message} ${branch} sets artifacts.repo to ${alt.artifacts.name}, but the companion checkout ${alt.artifactsRoot} is not on disk; clone it with /agento agento-init.` }, layout: base };
-  }
-  const second = resolveRoadmapArtifact({ rootDir: root, artifactsRoot: alt.artifactsRoot, type, slug, currentBranch, git: alt.artifactsGit, config: alt.config });
-  return second.status === "missing" ? { result: first, layout: base } : { result: second, layout: alt };
-}
-
-const withLayout = (result, layout) => ({ ...result, layout: layout.layout, artifactsRoot: layout.artifactsRoot });
-
-// The same retry for the resolver's decision helpers (close-decision, ship-preflight),
-// which report a missing roadmap as `reason: "no-resolvable-roadmap"`.
-function decideWithLayout(type, slug, decide) {
-  const base = checkoutLayout();
-  const first = decide(base);
-  if (first.reason !== "no-resolvable-roadmap" || artifacts.external) return { decision: first, layout: base };
-  const branch = deliveryBranch(type, slug);
-  const alt = layoutFor(branch);
-  if (!alt) return { decision: first, layout: base };
-  if (alt.absent) {
-    return { decision: { ...first, message: `${first.message} ${branch} sets artifacts.repo to ${alt.artifacts.name}, but the companion checkout ${alt.artifactsRoot} is not on disk; clone it with /agento agento-init.` }, layout: base };
-  }
-  const second = decide(alt);
-  return second.reason === "no-resolvable-roadmap" ? { decision: first, layout: base } : { decision: second, layout: alt };
 }
 
 // The companion half paired with a managed product worktree, with the git facts the
@@ -347,16 +266,6 @@ function companionTreeOf(companion) {
   if (!companion?.registered) return null;
   const tree = treeState(companion.path);
   return tree && { tracked: tree.tracked, untracked: tree.untracked };
-}
-
-function requireType(type) {
-  if (type !== "feature" && type !== "issue") usage(`type must be feature or issue, got ${JSON.stringify(type ?? "")}`);
-  return type;
-}
-
-function requireSlug(slug) {
-  if (!slug || !/^[a-z0-9][a-z0-9-]{1,63}$/.test(slug)) usage(`slug must match [a-z0-9][a-z0-9-]{1,63}, got ${JSON.stringify(slug ?? "")}`);
-  return slug;
 }
 
 // the primary: in companion mode every registered companion half that is a managed
@@ -3223,20 +3132,6 @@ function doctorDocument(command = null) {
   return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
 }
 
-// What `config` emits.
-function configDocument() {
-  return {
-    status: "ok",
-    root,
-    repoName,
-    configSource: source,
-    pluginRoot: PLUGIN_ROOT,
-    currentBranch,
-    artifactsRoot,
-    config: { ...config, artifacts: { ...config.artifacts, repo: { name: artifacts.name, dir: artifacts.dir } }, worktrees: { dir: primaryWorktreesDir() } },
-  };
-}
-
 // --- preflight: the §9–§11 opening of every command in one call ---------------
 
 // §9 operation ID `<command>:<subject>:<short-sha>`: the slug when one was passed;
@@ -3257,23 +3152,6 @@ function preflightArgs() {
   const typed = args[0]?.match(/^(feature|issue)\/(.*)$/);
   if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]), full: Boolean(options.full) };
   return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null, full: Boolean(options.full) };
-}
-
-// `resolve <type> <slug>`, or `find <slug>` when no type was passed.
-function resolveDocument(type, slug) {
-  if (type) {
-    const { result, layout } = resolveWithLayout(type, slug);
-    return { ...withLayout(result, layout), root, configSource: source };
-  }
-  const found = ["feature", "issue"]
-    .map((t) => {
-      const { result, layout } = resolveWithLayout(t, slug);
-      return { type: t, ...withLayout(result, layout) };
-    })
-    .filter((r) => r.status !== "missing");
-  if (found.length === 0) return { status: "missing", message: `No roadmap for slug ${slug} under ${config.artifacts.features}/ or ${config.artifacts.issues}/, locally or on origin.`, root, configSource: source };
-  if (found.length > 1) return { status: "conflict", candidates: found, message: `Slug ${slug} exists as both a feature and an issue; specify the type.`, root, configSource: source };
-  return { ...found[0], root, configSource: source };
 }
 
 // The §9 receipt and preflight lines, spelled exactly as the policy does.
@@ -3510,6 +3388,10 @@ const COMMAND_MODULES = {
   migrate: "migrate",
   harness: "harness",
   models: "models",
+  config: "resolve",
+  resolve: "resolve",
+  find: "resolve",
+  ports: "resolve",
 };
 
 if (Object.hasOwn(COMMAND_MODULES, command)) {
@@ -3517,22 +3399,6 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
   await handlers.commands[command]();
 } else {
   switch (command) {
-  case "config":
-    emit(configDocument());
-    break;
-
-  case "resolve": {
-    const type = requireType(rest[0]);
-    const slug = requireSlug(rest[1]);
-    withExit(resolveDocument(type, slug));
-    break;
-  }
-
-  case "find": {
-    withExit(resolveDocument(null, requireSlug(rest[0])));
-    break;
-  }
-
   case "status": {
     const typeFilter = rest[0] ? requireType(rest[0]) : null;
     const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
@@ -3590,17 +3456,6 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
       else if (isConflicting(companionPr)) gaps.push("conflicting-pr");
     }
     withExit(withLayout({ ...preflight, companion, companionGaps: gaps, ownerTree, companionTree, pr, companionPr, warnings: [...prWarnings, ...companionPrWarnings] }, layout));
-    break;
-  }
-
-  case "ports": {
-    // Stable per-slug ports so concurrent sessions never collide and a resumed
-    // session reuses the same numbers (see concurrent-delivery.instructions.md).
-    const slug = requireSlug(rest[0]);
-    let hash = 0;
-    for (const ch of slug) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-    const offset = hash % 90;
-    emit({ status: "ok", slug, WEB_PORT: 3100 + offset, API_PORT: 4100 + offset, offset });
     break;
   }
 
