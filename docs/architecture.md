@@ -92,7 +92,11 @@ flowchart TD
   bypasses, open-ended watchers, ruleset-bypassing merges, hook self-protection,
   worktree-occupant detection). The guard is a slip guard for the model, not an
   enforcement boundary — that is the GitHub ruleset on the default branch.
-- **Scripts** are the deterministic helpers, fronted by `scripts/agento.mjs`: the
+- **Scripts** are the deterministic helpers, fronted by `scripts/agento.mjs` — a
+  thin dispatcher that maps each subcommand to `scripts/commands/<name>.mjs` via
+  the `COMMAND_MODULES` table and a lazy `import()`, with shared helpers in
+  `scripts/lib/*.mjs` and shared test fixtures in
+  `scripts/test-helpers/agento-fixtures.mjs` — providing: the
   config loader, the roadmap resolver (local search with origin fallback and
   branch-header validation), the status lister, the initiative deriver (per-member
   state, `blockedBy`, waves, and `next` computed from member roadmaps — the
