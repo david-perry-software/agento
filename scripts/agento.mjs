@@ -54,8 +54,6 @@ import {
   reopenRoadmap,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { isCanonicalAgentoCommand, pendingDispatchDir, removePendingDispatch, writePendingDispatch } from "./pending-dispatch.mjs";
-import { openWindows, readStorage, windowFor } from "./vscode-windows.mjs";
 import { classifyFetchFailure, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 
@@ -91,7 +89,8 @@ import {
 } from "./lib/context.mjs";
 import { ghRequiredContexts, once, releaseVerdict } from "./lib/release.mjs";
 import { allRoadmaps, describeFromRef, header, recordBases } from "./lib/records.mjs";
-import { checkoutLayout, decideWithLayout, deliveryBranch, layoutFor, resolveWithLayout, withLayout } from "./lib/layout.mjs";
+import { checkoutLayout, decideWithLayout, deliveryBranch, layoutFor, resolveWithLayout, roadmapOnBranch, withLayout } from "./lib/layout.mjs";
+import { originOf, resolveSessionPaths, writeSessionWorkspace } from "./lib/paths.mjs";
 import { requireSlug, requireType } from "./lib/resolve.mjs";
 import { gitRun } from "./lib/git.mjs";
 import { lookupCompanionPullRequest, lookupPullRequest } from "./lib/github.mjs";
@@ -112,54 +111,9 @@ import { allBreakdowns, deriveInitiative, refFor } from "./lib/documents.mjs";
 
 
 
-function managedWorktreePath(worktrees, kind, id, worktreesBaseDir) {
-  const name = `${kind}-${id}`;
-  const direct = worktrees.find((w) => path.basename(w.path) === name && samePath(path.dirname(w.path), worktreesBaseDir));
-  if (direct) return direct.path;
-  const fallback = worktrees.find((w) => path.basename(w.path) === name);
-  return fallback?.path ?? path.join(worktreesBaseDir, name);
-}
 
-function resolveSessionPaths(kind, id, layoutOverride = null) {
-  const prefixes = { feature: config.branches.feature, issue: config.branches.issue, freehand: config.branches.freehand };
-  const artifactRel = kind === "feature" ? config.artifacts.features : kind === "issue" ? config.artifacts.issues : null;
-  const branch = kind === "plan" ? null : `${prefixes[kind]}${id}`;
-  // Deliveries are branch-aware: an in-repo checkout whose delivery branch flips to
-  // a companion reports that companion's roots and pair (plan/freehand unchanged).
-  const branchLayout = !layoutOverride && artifactRel !== null && !artifacts.external ? layoutFor(branch) : null;
-  const layout = layoutOverride ?? (branchLayout && !branchLayout.absent ? branchLayout : checkoutLayout());
-  const productList = productWorktrees();
-  const worktree = managedWorktreePath(productList, kind, id, primaryWorktreesDir(productList));
-  const companion = layout.artifacts.external
-    ? {
-        worktreesDir: layout.companionWorktreesDir,
-        worktree: managedWorktreePath(layout.companionWorktrees, kind, id, layout.companionWorktreesDir),
-        branch,
-      }
-    : null;
-  const workspace = layout.artifacts.external ? path.join(path.dirname(worktree), `${kind}-${id}.code-workspace`) : null;
-  return { kind, id, branch, artifactRel, layout, worktree, companion, workspace, productWorktrees: productList };
-}
 
-const originOf = (dir) => git(dir, "remote", "get-url", "origin") || null;
 
-// The pair's `.code-workspace` document for a resolved session (companion mode);
-// with `write`, written when missing or stale.
-function writeSessionWorkspace(resolved, { write = true } = {}) {
-  const autoApprove = resolved.layout.config.worktrees?.autoApprove !== false;
-  const document = sessionWorkspaceDocument({ product: resolved.worktree, companion: resolved.companion.worktree, autoApprove });
-  let exists = fs.existsSync(resolved.workspace);
-  let current = exists ? workspaceDocumentCurrent(resolved.workspace, document) : false;
-  let written = false;
-  if (write && !current) {
-    fs.mkdirSync(path.dirname(resolved.workspace), { recursive: true });
-    fs.writeFileSync(resolved.workspace, JSON.stringify(document, null, 2) + "\n");
-    exists = true;
-    current = true;
-    written = true;
-  }
-  return { exists, current, autoApprove, document, written };
-}
 
 
 // close-decision / ship-preflight: the companion half owned alongside the product
@@ -226,26 +180,6 @@ function reviewFreshness(branch, dir, g = agit) {
   return { reviewFresh: Number(reviewTs) >= Number(otherTs || 0), ref, warning };
 }
 
-// A roadmap that lives only on its delivery branch: origin/<branch> first (via the
-// shared resolver, branch-aware), then the unpushed local branch. Never fetches.
-// The record carries the layout it was read from.
-function roadmapOnBranch(type, slug) {
-  const { result: resolved, layout } = resolveWithLayout(type, slug);
-  const tag = (record) => ({ ...record, layout: layout.layout, artifactsRoot: layout.artifactsRoot });
-  if (resolved.status === "ok" && resolved.source === "remote") {
-    const record = describeFromRef(`origin/${resolved.branch}`, resolved.path, type, layout.agit);
-    if (record) return { record: tag(record), source: "origin", layout };
-  }
-  const branch = deliveryBranch(type, slug);
-  if (!layout.agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
-  const top = type === "feature" ? layout.config.artifacts.features : layout.config.artifacts.issues;
-  const roadmap = layout.agit("ls-tree", "-r", "--name-only", branch)
-    .split("\n")
-    .find((p) => p.startsWith(`${top}/`) && p.endsWith(`/${slug}/roadmap.md`));
-  if (!roadmap) return null;
-  const record = describeFromRef(branch, roadmap, type, layout.agit);
-  return record ? { record: tag(record), source: "local-branch", layout } : null;
-}
 
 // Where `/agento continue` finds the files to follow for the emitted command: the
 // plugin command file and, for custom-agent prompts, the agent file whose `name:`
@@ -485,99 +419,7 @@ function startSession() {
   finish();
 }
 
-// --- artifacts -------------------------------------------------------------
 
-const ARTIFACT_FILES = ["plan", "roadmap", "review"];
-
-// One delivery's plan.md, roadmap.md, and review.md, read from the copy `status`
-// shows: the delivery's own managed half (its working tree is the truth) or the
-// artifacts checkout; else origin/<branch> or the local branch via git. Never fetches.
-function artifactsCommand(type, slug) {
-  const record = allRoadmaps(type, managedHalves(productWorktrees())).find((r) => r.slug === slug);
-  const out = { status: "ok", type, slug, dir: null, source: null, base: null, ref: null, files: {} };
-  if (record) {
-    const base = recordBases.get(record) ?? artifactsRoot;
-    Object.assign(out, { dir: record.dir, source: samePath(base, artifactsRoot) ? "checkout" : "worktree", base });
-    for (const name of ARTIFACT_FILES) {
-      const file = path.join(base, record.dir, `${name}.md`);
-      out.files[name] = fs.existsSync(file) ? { exists: true, path: file, content: fs.readFileSync(file, "utf8") } : { exists: false };
-    }
-    emit(out);
-  }
-  const onBranch = roadmapOnBranch(type, slug);
-  if (!onBranch) {
-    emit({ ...out, status: "missing", message: `No roadmap for ${type}/${slug} in the artifacts checkout, a managed worktree, origin/${deliveryBranch(type, slug)}, or the local branch` }, 3);
-  }
-  const ref = onBranch.source === "origin" ? `origin/${onBranch.record.branch}` : onBranch.record.branch;
-  Object.assign(out, { dir: onBranch.record.dir, source: onBranch.source, ref, base: onBranch.layout.artifactsRoot ?? artifactsRoot });
-  for (const name of ARTIFACT_FILES) {
-    const content = onBranch.layout.agit("show", `${ref}:${onBranch.record.dir}/${name}.md`);
-    out.files[name] = content ? { exists: true, path: null, content: `${content}\n` } : { exists: false };
-  }
-  emit(out);
-}
-
-// --- windows / handoff -----------------------------------------------------
-
-// The registered product checkouts a window target may name, keyed by resolved
-// path, with the target to open when no window holds one (its session workspace
-// file in companion mode, else the folder).
-function windowCheckouts() {
-  const { classified, sessionWorktreesDir } = sessionContext();
-  const checkouts = new Map();
-  for (const entry of classified) {
-    if ((entry.repo ?? "product") !== "product" || !entry.path) continue;
-    const workspace = describeWorkspace(entry, sessionWorktreesDir);
-    checkouts.set(path.resolve(entry.path), { entry, fallback: workspace?.exists ? workspace.path : entry.path });
-  }
-  return checkouts;
-}
-
-function windowsCommand(paths) {
-  if (!paths.length) usage("windows takes one or more checkout paths");
-  const checkouts = windowCheckouts();
-  const open = openWindows({ storageText: readStorage(), statusText: defaultCodeStatus() });
-  const windows = paths.map((p) => {
-    const known = checkouts.get(path.resolve(p));
-    if (!known) return { checkout: p, known: false, open: false, target: null, kind: null };
-    return { checkout: known.entry.path, known: true, role: known.entry.role ?? null, ...windowFor(known.entry.path, open, known.fallback) };
-  });
-  emit({ status: "ok", windows });
-}
-
-function handoffCommand(checkout, command) {
-  if (!checkout || !command) usage('handoff takes <checkout> "<command>"');
-  if (!isCanonicalAgentoCommand(command)) usage(`handoff command must be a canonical /agento command, got ${JSON.stringify(command)}`);
-  const known = windowCheckouts().get(path.resolve(checkout));
-  if (!known) {
-    emit({ status: "rejected", reason: "unknown-checkout", message: `${checkout} is not a registered checkout of this repository`, checkout, command }, 3);
-  }
-  const window = windowFor(known.entry.path, openWindows({ storageText: readStorage(), statusText: defaultCodeStatus() }), known.fallback);
-  const dir = pendingDispatchDir();
-  const pendingFile = writePendingDispatch(dir, { target: window.target, command });
-  const out = {
-    status: "ok",
-    checkout: known.entry.path,
-    role: known.entry.role ?? null,
-    target: window.target,
-    kind: window.kind,
-    wasOpen: window.open,
-    command,
-    pendingFile,
-    opened: false,
-    openCommand: `code ${window.target}`,
-  };
-  if (!options.noOpen) {
-    try {
-      execFileSync("code", [window.target], { cwd: root, stdio: "ignore", timeout: 15000 });
-      out.opened = true;
-    } catch (error) {
-      removePendingDispatch(dir, window.target);
-      emit({ ...out, status: "failed", pendingFile: null, reason: error?.code === "ENOENT" ? "code CLI not found on PATH" : `code failed: ${error?.message ?? error}` }, 3);
-    }
-  }
-  emit(out);
-}
 
 // --- close-session ---------------------------------------------------------
 
@@ -2431,6 +2273,11 @@ const COMMAND_MODULES = {
   policy: "doctor",
   doctor: "doctor",
   preflight: "doctor",
+  paths: "paths",
+  workspace: "paths",
+  windows: "paths",
+  artifacts: "paths",
+  handoff: "paths",
 };
 
 if (Object.hasOwn(COMMAND_MODULES, command)) {
@@ -2492,65 +2339,7 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
     break;
   }
 
-  case "paths": {
-    const kind = rest[0];
-    const id = rest[1];
-    if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("paths kind must be feature, issue, plan, or freehand");
-    requireSlug(id);
-    const resolved = resolveSessionPaths(kind, id);
-    const companionList = resolved.companion ? resolved.layout.companionWorktrees : [];
-    const stateOf = (halfPath, own, expectedOrigin) => {
-      const onDisk = fs.existsSync(halfPath);
-      return halfState({ path: halfPath, own, worktrees: resolved.productWorktrees, companionWorktrees: companionList, origin: onDisk ? originOf(halfPath) : null, expectedOrigin, onDisk });
-    };
-    emit({
-      status: "ok",
-      worktreesDir: primaryWorktreesDir(resolved.productWorktrees),
-      worktree: resolved.worktree,
-      // Post-`git worktree add` check: on disk, registered in the right clone, right origin.
-      worktreeState: stateOf(resolved.worktree, "product", originOf(root)),
-      branch: resolved.branch,
-      artifactsRoot: resolved.layout.artifactsRoot,
-      artifactRoot: resolved.artifactRel === null ? null : path.join(resolved.layout.artifactsRoot, resolved.artifactRel),
-      layout: resolved.layout.layout,
-      defaultBranch: config.branches.default,
-      postShipBranch: kind === "plan" || kind === "freehand" ? null : `${config.branches.postShip}${id}`,
-      // Companion mode: the paired companion half (same <kind>-<id>, same branch) and the
-      // two-folder workspace file the session opens; both null in the in-repo layout.
-      companion: resolved.companion && { ...resolved.companion, state: stateOf(resolved.companion.worktree, "companion", originOf(resolved.layout.artifactsRoot)) },
-      workspace: resolved.workspace,
-    });
-    break;
-  }
 
-  case "workspace": {
-    const kind = rest[0];
-    const id = rest[1];
-    if (!["feature", "issue", "plan", "freehand"].includes(kind)) usage("workspace kind must be feature, issue, plan, or freehand");
-    requireSlug(id);
-    const resolved = resolveSessionPaths(kind, id);
-    if (!resolved.layout.artifacts.external || !resolved.workspace || !resolved.companion) {
-      emit({ status: "not-applicable", message: "workspace is only available in companion mode (artifacts.repo set)", root, configSource: source });
-    }
-    const folders = [
-      { path: resolved.worktree, exists: fs.existsSync(resolved.worktree) },
-      { path: resolved.companion.worktree, exists: fs.existsSync(resolved.companion.worktree) },
-    ];
-    const { exists, current, autoApprove, document, written } = writeSessionWorkspace(resolved, { write: Boolean(options.write) });
-    emit({
-      status: "ok",
-      path: resolved.workspace,
-      exists,
-      current,
-      autoApprove,
-      folders,
-      settings: document.settings,
-      written,
-      root,
-      configSource: source,
-    });
-    break;
-  }
 
 
 
@@ -2560,23 +2349,8 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
     break;
   }
 
-  case "windows": {
-    windowsCommand(rest);
-    break;
-  }
 
-  case "artifacts": {
-    const [typeArg, slugArg, ...extra] = rest;
-    if (!["feature", "issue"].includes(typeArg) || !slugArg || extra.length) usage("artifacts takes <feature|issue> <slug>");
-    artifactsCommand(typeArg, requireSlug(slugArg));
-    break;
-  }
 
-  case "handoff": {
-    if (rest.length !== 2) usage(`handoff takes <checkout> "<command>" (quote the command), got ${rest.length} arguments`);
-    handoffCommand(rest[0], rest[1]);
-    break;
-  }
 
   case "start-session": {
     startSession();

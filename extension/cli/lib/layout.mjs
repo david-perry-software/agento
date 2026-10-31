@@ -5,6 +5,7 @@
 import { parseConfigText, resolveArtifactsRoot } from "../agento-config.mjs";
 import { resolveRoadmapArtifact } from "../delivery-roadmap-resolver.mjs";
 import { parseWorktreeList } from "../session-state.mjs";
+import { describeFromRef } from "./records.mjs";
 import {
   agit,
   artifacts,
@@ -102,6 +103,27 @@ function decideWithLayout(type, slug, decide) {
   const second = decide(alt);
   return second.reason === "no-resolvable-roadmap" ? { decision: first, layout: base } : { decision: second, layout: alt };
 }
+// A roadmap that lives only on its delivery branch: origin/<branch> first (via the
+// shared resolver, branch-aware), then the unpushed local branch. Never fetches.
+// The record carries the layout it was read from.
+function roadmapOnBranch(type, slug) {
+  const { result: resolved, layout } = resolveWithLayout(type, slug);
+  const tag = (record) => ({ ...record, layout: layout.layout, artifactsRoot: layout.artifactsRoot });
+  if (resolved.status === "ok" && resolved.source === "remote") {
+    const record = describeFromRef(`origin/${resolved.branch}`, resolved.path, type, layout.agit);
+    if (record) return { record: tag(record), source: "origin", layout };
+  }
+  const branch = deliveryBranch(type, slug);
+  if (!layout.agit("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) return null;
+  const top = type === "feature" ? layout.config.artifacts.features : layout.config.artifacts.issues;
+  const roadmap = layout.agit("ls-tree", "-r", "--name-only", branch)
+    .split("\n")
+    .find((p) => p.startsWith(`${top}/`) && p.endsWith(`/${slug}/roadmap.md`));
+  if (!roadmap) return null;
+  const record = describeFromRef(branch, roadmap, type, layout.agit);
+  return record ? { record: tag(record), source: "local-branch", layout } : null;
+}
+
 export {
   checkoutLayout,
   layoutFor,
@@ -109,4 +131,5 @@ export {
   resolveWithLayout,
   withLayout,
   decideWithLayout,
+  roadmapOnBranch,
 };
