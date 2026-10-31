@@ -56,13 +56,12 @@ import {
 } from "./delivery-roadmap-resolver.mjs";
 import { isCanonicalAgentoCommand, pendingDispatchDir, removePendingDispatch, writePendingDispatch } from "./pending-dispatch.mjs";
 import { openWindows, readStorage, windowFor } from "./vscode-windows.mjs";
-import { classifyFetchFailure, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
+import { classifyFetchFailure, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 
 import {
   usage,
   emit,
-  emitRaw,
   withExit,
   git,
   samePath,
@@ -93,7 +92,7 @@ import {
 import { ghRequiredContexts, once, releaseVerdict } from "./lib/release.mjs";
 import { allRoadmaps, describeFromRef, header, recordBases } from "./lib/records.mjs";
 import { checkoutLayout, decideWithLayout, deliveryBranch, layoutFor, resolveWithLayout, withLayout } from "./lib/layout.mjs";
-import { configDocument, requireSlug, requireType, resolveDocument } from "./lib/resolve.mjs";
+import { requireSlug, requireType } from "./lib/resolve.mjs";
 import { gitRun } from "./lib/git.mjs";
 import { lookupCompanionPullRequest, lookupPullRequest } from "./lib/github.mjs";
 import {
@@ -107,28 +106,9 @@ import {
   sessionRecord,
   workspaceDocumentCurrent,
 } from "./lib/session.mjs";
-import { capabilityOf, checksFor, COMMAND_NEEDS, doctorDocument, runDoctor } from "./lib/doctor.mjs";
+import { capabilityOf, checksFor, COMMAND_NEEDS, runDoctor } from "./lib/doctor.mjs";
 import { allBreakdowns, deriveInitiative, refFor } from "./lib/documents.mjs";
 
-// Parses `<root>/.github/instructions/delivery-policy.instructions.md` into its
-// `## N.` sections. Each entry carries the section number (the heading's digits),
-// the heading title, the section's byte length, and its raw Markdown (heading line
-// through the line before the next heading, or EOF for the last section).
-function policySections(root) {
-  const file = path.join(root, ".github", "instructions", "delivery-policy.instructions.md");
-  const text = fs.readFileSync(file, "utf8");
-  const heading = /^## (\d+)\. (.+)$/gm;
-  const starts = [];
-  let match;
-  while ((match = heading.exec(text)) !== null) {
-    starts.push({ n: match[1], title: match[2].trim(), offset: match.index });
-  }
-  return starts.map((section, index) => {
-    const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
-    const raw = text.slice(section.offset, end);
-    return { n: section.n, title: section.title, bytes: Buffer.byteLength(raw, "utf8"), raw };
-  });
-}
 
 
 
@@ -2428,91 +2408,6 @@ function parseRoadmapSteps(content) {
 
 // --- preflight: the §9–§11 opening of every command in one call ---------------
 
-// §9 operation ID `<command>:<subject>:<short-sha>`: the slug when one was passed;
-// else the managed session id; else the branch; else, detached and unmanaged, HEAD.
-function opIdFor(command, slug, worktree) {
-  const subject = slug ?? (worktree.isManaged && worktree.dirPrefix && worktree.id ? `${worktree.dirPrefix}-${worktree.id}` : !worktree.detached && worktree.branch ? worktree.branch : "HEAD");
-  const sha = git(root, "rev-parse", "--short", "HEAD") || "HEAD";
-  return { subject, opId: `${command}:${subject}:${sha}` };
-}
-
-function preflightArgs() {
-  const command = rest[0];
-  if (!command) usage(`preflight needs a command; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
-  if (!COMMAND_NEEDS[command]) usage(`preflight: unknown command ${command}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
-  const args = rest.slice(1);
-  if (args.length > 2) usage(`preflight takes <command> [<type> <slug> | <type>/<slug> | <slug>], got ${JSON.stringify(rest.join(" "))}`);
-  if (args.length === 2) return { command, type: requireType(args[0]), slug: requireSlug(args[1]), full: Boolean(options.full) };
-  const typed = args[0]?.match(/^(feature|issue)\/(.*)$/);
-  if (typed) return { command, type: typed[1], slug: requireSlug(typed[2]), full: Boolean(options.full) };
-  return { command, type: null, slug: args[0] ? requireSlug(args[0]) : null, full: Boolean(options.full) };
-}
-
-// The §9 receipt and preflight lines, spelled exactly as the policy does.
-function receiptLines({ opId, window, doctor }) {
-  if (!window.match) {
-    const alternatives = [...window.allowed, ...window.elsewhere.map((e) => `${e.command} (${e.window} window)`)];
-    return { status: "rejected", receipt: `Receipt: rejected — ${window.reason}; allowed: ${alternatives.length ? alternatives.join(", ") : "none"}`, preflightLines: [] };
-  }
-  const failed = doctor.checks.find((c) => c.status === "fail");
-  if (failed) return { status: "rejected", receipt: `Receipt: rejected — ${capabilityOf(failed.id)}: ${failed.detail}; fallback: ${failed.fallback}`, preflightLines: [] };
-  const preflightLines = doctor.checks.filter((c) => c.status === "warn").map((c) => `Preflight: ${capabilityOf(c.id)} warn — ${c.fallback}`);
-  return { status: "ok", receipt: `Receipt: accepted ${opId}`, preflightLines };
-}
-
-// What `preflight <command> [<type> <slug>]` emits: the session record, the §11
-// window verdict, `doctor --for <command>`, the slug's resolution (null without a
-// slug), the config document, and the §9 op-id, receipt, and preflight lines.
-// `--full` is that document unchanged; the default is the brief document (the
-// fields commands actually read), which drops `session.worktrees`, `session.allowed`,
-// `session.elsewhere`, `config`, `root`, `configSource`, and `doctor.checks`.
-function preflightDocument({ command, type, slug, full = false }) {
-  const session = sessionRecord();
-  const rule = WINDOW_ROLES[command];
-  const clean = rule.clean ? git(session.worktree.path, "status", "--porcelain") === "" : true;
-  const window = windowVerdict({ command, record: session, slug, clean, defaultBranch: config.branches.default });
-  const doctor = doctorDocument(command);
-  const { subject, opId } = opIdFor(command, slug, session.worktree);
-  const { status, receipt, preflightLines } = receiptLines({ opId, window, doctor });
-  if (full) {
-    return {
-      status,
-      command,
-      opId,
-      subject,
-      receipt,
-      preflightLines,
-      session,
-      window,
-      doctor,
-      resolve: slug ? resolveDocument(type, slug) : null,
-      config: configDocument(),
-      root,
-      configSource: source,
-    };
-  }
-  const { role, hosted, worktree, companion, workspace, delivery, pr, companionPr, lifecycle, warnings } = session;
-  return {
-    status,
-    command,
-    opId,
-    subject,
-    receipt,
-    preflightLines,
-    window: {
-      role: window.role,
-      required: window.required,
-      match: window.match,
-      reason: window.reason,
-      allowed: window.allowed,
-      elsewhere: window.elsewhere,
-      ...(window.role === "unmanaged" ? { primary: session.worktrees[0]?.path ?? root } : {}),
-    },
-    session: { role, hosted, worktree, companion, workspace, delivery, pr, companionPr, lifecycle, warnings },
-    doctor: { status: doctor.status, for: doctor.for, failing: doctor.checks.filter((c) => c.status !== "ok") },
-    ...(slug ? { resolve: resolveDocument(type, slug) } : {}),
-  };
-}
 
 
 
@@ -2533,6 +2428,9 @@ const COMMAND_MODULES = {
   initiative: "status",
   metrics: "status",
   dashboard: "status",
+  policy: "doctor",
+  doctor: "doctor",
+  preflight: "doctor",
 };
 
 if (Object.hasOwn(COMMAND_MODULES, command)) {
@@ -2719,43 +2617,6 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
     publishPr();
     break;
   }
-
-  case "policy": {
-    const sections = policySections(PLUGIN_ROOT);
-    if (options.list) {
-      if (rest.length) usage(`policy --list takes no section arguments, got ${JSON.stringify(rest.join(" "))}`);
-      emit({ sections: sections.map(({ n, title, bytes }) => ({ n, title, bytes })) });
-      break;
-    }
-    if (rest.length === 0) usage("policy requires one or more section numbers, or --list");
-    const byN = new Map(sections.map((section) => [section.n, section]));
-    const requested = [];
-    for (const arg of rest) {
-      if (!/^\d+$/.test(arg)) usage(`policy: unknown section ${JSON.stringify(arg)}`);
-      if (!byN.has(arg)) usage(`policy: no such section ${JSON.stringify(arg)}`);
-      if (!requested.includes(arg)) requested.push(arg);
-    }
-    requested.sort((a, b) => Number(a) - Number(b));
-    const header = `# delivery-policy.instructions.md — sections ${requested.join(", ")}\n`;
-    emitRaw(header + "\n" + requested.map((n) => byN.get(n).raw).join(""));
-    break;
-  }
-
-  case "doctor": {
-    if (rest.length) usage(`doctor takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    if (options.for && !COMMAND_NEEDS[options.for]) usage(`--for: unknown command ${options.for}; known: ${Object.keys(COMMAND_NEEDS).join(", ")}`);
-    const document = doctorDocument(options.for ?? null);
-    // warn is usable (exit 0); only a failed hard requirement is a resolution failure (exit 3).
-    emit(document, document.status === "fail" ? 3 : 0);
-    break;
-  }
-
-  case "preflight": {
-    const document = preflightDocument(preflightArgs());
-    emit(document, document.status === "ok" ? 0 : 3);
-    break;
-  }
-
 
   case "next": {
     if (rest.length > 1) usage(`next takes at most one slug, got ${JSON.stringify(rest.slice(1).join(" "))}`);
