@@ -4609,7 +4609,17 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
   return { ...document, timings, root, configSource: source };
 }
 
-switch (command) {
+// One module per command family (plan Approach rule 2). Each entry maps a
+// subcommand name to the `scripts/commands/<file>.mjs` module that exports it as
+// `commands[<name>]`. The table is empty until Phase 3; unlisted commands fall
+// through to the legacy switch below, which shrinks as each family moves out.
+const COMMAND_MODULES = {};
+
+if (Object.hasOwn(COMMAND_MODULES, command)) {
+  const handlers = await import(`./commands/${COMMAND_MODULES[command]}.mjs`);
+  await handlers.commands[command]();
+} else {
+  switch (command) {
   case "config":
     emit(configDocument());
     break;
@@ -5393,4 +5403,5 @@ switch (command) {
 
   default:
     usage(command ? `unknown command ${command}` : "missing command");
+  }
 }
