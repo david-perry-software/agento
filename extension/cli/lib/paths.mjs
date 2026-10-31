@@ -63,9 +63,12 @@ function writeSessionWorkspace(resolved, { write = true } = {}) {
   return { exists, current, autoApprove, document, written };
 }
 
+const registeredAt = (list, p) => list.find((w) => samePath(w.path, p)) ?? null;
+
 export {
   managedWorktreePath,
   resolveSessionPaths,
   originOf,
   writeSessionWorkspace,
+  registeredAt,
 };
