@@ -98,6 +98,8 @@ import {
   rest,
   startDir,
 } from "./lib/context.mjs";
+import { execAsync, ghVersion, probe, probeAsync } from "./lib/probe.mjs";
+import { ghRequiredContexts, once, releaseVerdict } from "./lib/release.mjs";
 
 // Parses `<root>/.github/instructions/delivery-policy.instructions.md` into its
 // `## N.` sections. Each entry carries the section number (the heading's digits),
@@ -524,15 +526,6 @@ function failedLookup(label, branch, error) {
   return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
 }
 
-const execFileAsync = promisify(execFile);
-
-// execFile with stdin closed, like the synchronous calls' `stdio: ["ignore", …]`.
-function execAsync(cmd, args, opts) {
-  const pending = execFileAsync(cmd, args, { encoding: "utf8", ...opts });
-  pending.child.stdin?.end();
-  return pending;
-}
-
 // lookupPullRequest's exact result, without blocking the process.
 async function lookupPullRequestAsync(branch, { cwd = root, label = "pr" } = {}) {
   if (!branch) return lookupPullRequest(branch, { cwd, label });
@@ -635,59 +628,6 @@ function sessionContext() {
 
 // --- doctor ----------------------------------------------------------------
 
-const probeCache = new Map();
-const probeKey = (cmd, args) => [cmd, ...args].join("\0");
-const probeOptions = () => ({ cwd: root, encoding: "utf8", timeout: 10000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-
-function probeFailure(cmd, error) {
-  const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0];
-  const stdout = (error?.stdout ?? "").toString().trim().split("\n")[0];
-  const timedOut = error?.code === "ETIMEDOUT" || (error?.signal && !error?.status);
-  return {
-    ok: false,
-    missing: error?.code === "ENOENT",
-    timedOut,
-    detail: timedOut ? `${cmd} timed out after 10 s` : stderr || stdout || error?.message || "unknown error",
-  };
-}
-
-// Every probe is bounded and never throws: a missing binary, a nonzero exit, and a
-// timeout all become a result the caller maps to ok | warn | fail. Each command +
-// arguments runs at most once per process (probeAsync may have run it already).
-function probe(cmd, args) {
-  const key = probeKey(cmd, args);
-  if (!probeCache.has(key)) {
-    try {
-      probeCache.set(key, { ok: true, out: execFileSync(cmd, args, { ...probeOptions(), stdio: ["ignore", "pipe", "pipe"] }).trim().split("\n")[0] ?? "" });
-    } catch (error) {
-      probeCache.set(key, probeFailure(cmd, error));
-    }
-  }
-  return probeCache.get(key);
-}
-
-const probesInFlight = new Map();
-
-// probe() without blocking the process; concurrent callers share one run.
-function probeAsync(cmd, args) {
-  const key = probeKey(cmd, args);
-  if (probeCache.has(key)) return Promise.resolve(probeCache.get(key));
-  if (!probesInFlight.has(key)) {
-    probesInFlight.set(
-      key,
-      execAsync(cmd, args, probeOptions()).then(
-        ({ stdout }) => ({ ok: true, out: stdout.trim().split("\n")[0] ?? "" }),
-        (error) => probeFailure(cmd, error),
-      ).then((result) => {
-        probeCache.set(key, result);
-        return result;
-      }),
-    );
-  }
-  return probesInFlight.get(key);
-}
-
-const ghVersion = () => probe("gh", ["--version"]);
 const lsRemoteArgs = () => ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default];
 
 // The external commands DOCTOR_CHECKS probe, so `dashboard` can run them concurrently first.
@@ -4092,149 +4032,6 @@ function pinModels({ mode, verb, name, pluginRoot, loaded, state }) {
   emit({ status: "ok", verb, profile: name ?? null, changed: writes.map((w) => w.file), warnings: tierWarnings(targets, mode === "apply" ? loaded.profiles[name] : null, loaded.copilotModels), ...(mode === "clear" && primaryCheckout ? { primaryCheckout } : {}), ...modelsReport(pluginRoot, loaded, modelsState(pluginRoot, loaded)) });
 }
 
-// --- release ---------------------------------------------------------------
-
-const RELEASE_EXIT = { success: 0, "superseded-success": 0, "not-triggered": 0, "not-configured": 0, pending: 2, "dispatch-required": 2, failed: 4, "no-run": 4 };
-const RELEASE_STATUS = { 0: "ok", 2: "pending", 4: "failed" };
-
-class GhFailure extends Error {
-  constructor(reason, message) {
-    super(message);
-    this.reason = reason;
-  }
-}
-
-// `{owner}/{repo}` placeholders are filled in by gh from the cwd's git remote.
-function ghApi(apiPath, { notFound = "gh-error" } = {}) {
-  let out;
-  try {
-    out = execFileSync("gh", ["api", "-H", "Accept: application/vnd.github+json", apiPath], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
-  } catch (error) {
-    if (error?.code === "ENOENT") throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
-    const stderr = (error?.stderr ?? "").toString().trim();
-    const first = stderr.split("\n")[0] || error?.message || "unknown error";
-    if (/HTTP 401|HTTP 403|not logged in|authentication|gh auth login/i.test(stderr)) {
-      throw new GhFailure("auth", `gh is not authenticated for this repository (${first}); run \`gh auth login\` in your own terminal, then re-run`);
-    }
-    if (/HTTP 404|HTTP 422/.test(stderr)) {
-      if (notFound === null) return null;
-      if (notFound === "unknown-sha") throw new GhFailure("unknown-sha", `GitHub does not know the commit: ${first}`);
-    }
-    if (error?.code === "ETIMEDOUT") throw new GhFailure("gh-error", `gh api ${apiPath} timed out after 15 s`);
-    throw new GhFailure("gh-error", `gh api ${apiPath} failed: ${first}`);
-  }
-  try {
-    return JSON.parse(out);
-  } catch {
-    throw new GhFailure("gh-error", `gh api ${apiPath} returned non-JSON output`);
-  }
-}
-
-// The required status-check contexts a branch protection asks for, read through the
-// ruleset and classic-protection endpoints. Any error yields `{ known: false }` and
-// never a failure: a policy-blocked merge is reported, never guessed at.
-function ghRequiredContexts(cwd, nwo, branch) {
-  const get = (apiPath) => {
-    try {
-      const out = execFileSync("gh", ["api", "-H", "Accept: application/vnd.github+json", apiPath], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 });
-      return { known: true, json: JSON.parse(out) };
-    } catch {
-      return { known: false, json: null };
-    }
-  };
-  const rules = get(`repos/${nwo}/rules/branches/${branch}`);
-  const protection = get(`repos/${nwo}/branches/${branch}/protection/required_status_checks`);
-  return { known: rules.known || protection.known, rules: rules.json, protection: protection.json };
-}
-
-const runSummary = (run) => (run ? { id: run.id, event: run.event, status: run.status, conclusion: run.conclusion ?? null, url: run.html_url ?? null, headSha: run.head_sha } : null);
-
-function once(fn) {
-  let done = false;
-  let value;
-  return () => {
-    if (!done) {
-      value = fn();
-      done = true;
-    }
-    return value;
-  };
-}
-
-// The immutable facts about a merge commit, fetched at most once per call.
-function releaseContext(workflow, shaArg) {
-  const commit = ghApi(`repos/{owner}/{repo}/commits/${shaArg}`, { notFound: "unknown-sha" });
-  const sha = commit.sha;
-  const mergeDate = commit.commit?.committer?.date ?? null;
-  const parent = commit.parents?.[0]?.sha ?? null;
-  const runs = `repos/{owner}/{repo}/actions/workflows/${encodeURIComponent(workflow)}/runs`;
-  const diff = once(() => (parent ? ghApi(`repos/{owner}/{repo}/compare/${parent}...${sha}`) : null));
-  const descendants = new Map();
-  return {
-    sha,
-    mergeDate,
-    exactRunsPath: `${runs}?head_sha=${sha}&per_page=100`,
-    laterRunsPath: `${runs}?branch=${encodeURIComponent(config.branches.default)}&event=push&created=${encodeURIComponent(`>=${mergeDate}`)}&per_page=100`,
-    // A missing or non-file workflow is treated as unparsed: wait for a run rather than declare none needed.
-    triggers: once(() => {
-      if (!/\.ya?ml$/.test(workflow)) return { push: null, dispatch: false, unparsed: true };
-      const file = ghApi(`repos/{owner}/{repo}/contents/.github/workflows/${encodeURIComponent(workflow)}?ref=${sha}`, { notFound: null });
-      if (!file?.content) return { push: null, dispatch: false, unparsed: true };
-      return parseWorkflowTriggers(Buffer.from(file.content, file.encoding === "base64" ? "base64" : "utf8").toString("utf8"));
-    }),
-    files: () => (diff()?.files ?? []).map((f) => f.filename),
-    // GitHub caps compare files[] at 300; a root commit has no parent diff at all.
-    filesTruncated: () => !diff() || (diff().files?.length ?? 0) >= 300,
-    descendantOf: (head) => {
-      if (!descendants.has(head)) descendants.set(head, ghApi(`repos/{owner}/{repo}/compare/${sha}...${head}`).status);
-      return descendants.get(head);
-    },
-  };
-}
-
-function releaseSnapshot(ctx) {
-  return deriveReleaseVerdict({
-    sha: ctx.sha,
-    defaultBranch: config.branches.default,
-    mergeDate: ctx.mergeDate,
-    now: Date.now(),
-    exactRuns: () => ghApi(ctx.exactRunsPath).workflow_runs ?? [],
-    laterRuns: () => ghApi(ctx.laterRunsPath).workflow_runs ?? [],
-    triggers: ctx.triggers,
-    files: ctx.files,
-    filesTruncated: ctx.filesTruncated,
-    descendantOf: ctx.descendantOf,
-  });
-}
-
-// The `release` document and its exit code for a merge commit: one snapshot, then
-// bounded polls while `pending` (dispatch-required never loops: only the caller can
-// start that run). Shared by `case "release"` and the ship release phase.
-function releaseVerdict(shaArg, { wait = 0, interval = 10 } = {}) {
-  const workflow = config.checks?.releaseWorkflow ?? null;
-  const base = { status: "ok", verdict: null, sha: shaArg, workflow, run: null, supersededBy: null, reason: null, mergeDate: null, graceSeconds: GRACE_SECONDS, polls: 0, waitedSeconds: 0 };
-  if (!workflow) return { fields: { ...base, verdict: "not-configured", reason: "checks.releaseWorkflow is not set; there is no release to wait for" }, code: 0 };
-  try {
-    if (!ghVersion().ok) throw new GhFailure("gh-missing", "gh CLI not found on PATH; install GitHub CLI, then re-run");
-    const ctx = releaseContext(workflow, shaArg);
-    const sleeper = new Int32Array(new SharedArrayBuffer(4));
-    let result = releaseSnapshot(ctx);
-    let polls = 1;
-    let waited = 0;
-    while (result.verdict === "pending" && waited + interval <= wait) {
-      Atomics.wait(sleeper, 0, 0, interval * 1000);
-      waited += interval;
-      result = releaseSnapshot(ctx);
-      polls += 1;
-    }
-    const code = RELEASE_EXIT[result.verdict];
-    return { fields: { ...base, status: RELEASE_STATUS[code], verdict: result.verdict, sha: ctx.sha, run: runSummary(result.run), supersededBy: runSummary(result.supersededBy), reason: result.reason, mergeDate: ctx.mergeDate, polls, waitedSeconds: waited }, code };
-  } catch (error) {
-    if (!(error instanceof GhFailure)) throw error;
-    return { fields: { ...base, status: "error", reason: error.reason, message: error.message }, code: 3 };
-  }
-}
-
 // --- documents -------------------------------------------------------------
 
 const STATUS_ORDER = ["in-progress", "paused", "in-review", "planned", "complete"];
@@ -4613,7 +4410,9 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
 // subcommand name to the `scripts/commands/<file>.mjs` module that exports it as
 // `commands[<name>]`. The table is empty until Phase 3; unlisted commands fall
 // through to the legacy switch below, which shrinks as each family moves out.
-const COMMAND_MODULES = {};
+const COMMAND_MODULES = {
+  release: "release",
+};
 
 if (Object.hasOwn(COMMAND_MODULES, command)) {
   const handlers = await import(`./commands/${COMMAND_MODULES[command]}.mjs`);
@@ -5392,14 +5191,6 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
     break;
   }
 
-  case "release": {
-    const [shaArg, ...extra] = rest;
-    if (!shaArg || extra.length) usage("release takes exactly one <merge-sha>");
-    if (!/^[0-9a-f]{7,40}$/.test(shaArg)) usage(`release: <merge-sha> must be 7-40 lowercase hex characters, got ${JSON.stringify(shaArg)}`);
-    const { fields, code } = releaseVerdict(shaArg, { wait: options.wait ?? 0, interval: options.interval ?? 10 });
-    emit({ ...fields, root, configSource: source }, code);
-    break;
-  }
 
   default:
     usage(command ? `unknown command ${command}` : "missing command");
