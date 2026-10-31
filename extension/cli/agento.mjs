@@ -40,15 +40,12 @@
 // Options: --root <dir> (default: the git toplevel of the cwd; a companion clone or
 // companion half re-anchors on its product checkout).
 
-import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
-import { hasAgentoWorkspaceWiring, loadAgentoConfig, parseConfigText, resolveArtifactsRoot } from "./agento-config.mjs";
 import { classifyMergeRefusal, missingRequired, requiredContexts } from "./merge-state.mjs";
 import {
   closeBuildSessionDecision,
@@ -57,13 +54,10 @@ import {
   reopenRoadmap,
   resolveRoadmapArtifact,
 } from "./delivery-roadmap-resolver.mjs";
-import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
 import { isCanonicalAgentoCommand, pendingDispatchDir, removePendingDispatch, writePendingDispatch } from "./pending-dispatch.mjs";
 import { openWindows, readStorage, windowFor } from "./vscode-windows.mjs";
-import { GRACE_SECONDS, parseWorkflowTriggers, releaseVerdict as deriveReleaseVerdict } from "./release-state.mjs";
-import { classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, LIFECYCLES, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
+import { classifyFetchFailure, classifyWorktrees, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, WINDOW_ROLES, windowVerdict } from "./session-state.mjs";
 import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
-import { linkState, linkType } from "./harness.mjs";
 
 import {
   usage,
@@ -96,14 +90,25 @@ import {
   rest,
   startDir,
 } from "./lib/context.mjs";
-import { execAsync, ghVersion, probe, probeAsync } from "./lib/probe.mjs";
 import { ghRequiredContexts, once, releaseVerdict } from "./lib/release.mjs";
-import { allRoadmaps, describeFromRef, header, holdsArtifacts, parseBreakdown, recordBases, walkBreakdowns } from "./lib/records.mjs";
-import { harnessFacts, LOCAL_TAKEOVER, primaryCheckoutOf } from "./lib/copilot.mjs";
+import { allRoadmaps, describeFromRef, header, recordBases } from "./lib/records.mjs";
 import { checkoutLayout, decideWithLayout, deliveryBranch, layoutFor, resolveWithLayout, withLayout } from "./lib/layout.mjs";
 import { configDocument, requireSlug, requireType, resolveDocument } from "./lib/resolve.mjs";
 import { gitRun } from "./lib/git.mjs";
-import { loadProfiles, loadRoles, modelsPins, modelsState, pinWarnings, resolveProfile } from "./lib/models.mjs";
+import { lookupCompanionPullRequest, lookupPullRequest } from "./lib/github.mjs";
+import {
+  canonicalizeJson,
+  companionHalfOf,
+  companionOfOwner,
+  describeCompanion,
+  describeWorkspace,
+  managedHalves,
+  sessionContext,
+  sessionRecord,
+  workspaceDocumentCurrent,
+} from "./lib/session.mjs";
+import { capabilityOf, checksFor, COMMAND_NEEDS, doctorDocument, runDoctor } from "./lib/doctor.mjs";
+import { allBreakdowns, deriveInitiative, refFor } from "./lib/documents.mjs";
 
 // Parses `<root>/.github/instructions/delivery-policy.instructions.md` into its
 // `## N.` sections. Each entry carries the section number (the heading's digits),
@@ -125,39 +130,7 @@ function policySections(root) {
   });
 }
 
-// The companion half paired with a managed product worktree, with the git facts the
-// close and ship decisions need: `dirty` (uncommitted changes), `ahead` (commits
-// not on the upstream, or on no remote ref at all when there is no upstream), and
-// `behind` (upstream commits not in HEAD; 0 without an upstream). `layout` names
-// the companion objects (this checkout's by default; a branch's for the fallback).
-function describeCompanion(worktree, layout = checkoutLayout()) {
-  const pair = pairFor({ worktree, companionWorktreesDir: layout.companionWorktreesDir, companionWorktrees: layout.companionWorktrees });
-  if (!pair) return null;
-  if (!pair.registered || !fs.existsSync(pair.path)) return { ...pair, dirty: false, ahead: 0, behind: 0 };
-  const dirty = git(pair.path, "status", "--porcelain") !== "";
-  const upstream = git(pair.path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
-  const count = upstream ? git(pair.path, "rev-list", "--count", "@{upstream}..HEAD") : git(pair.path, "rev-list", "--count", "HEAD", "--not", "--remotes");
-  const behind = upstream ? git(pair.path, "rev-list", "--count", "HEAD..@{upstream}") : "0";
-  return { path: pair.path, branch: pair.branch, detached: pair.detached, dirty, ahead: Number.parseInt(count, 10) || 0, behind: Number.parseInt(behind, 10) || 0, registered: true };
-}
 
-function canonicalizeJson(value) {
-  if (Array.isArray(value)) return value.map(canonicalizeJson);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizeJson(value[key])]));
-  }
-  return value;
-}
-
-function workspaceDocumentCurrent(file, expected) {
-  if (!fs.existsSync(file)) return false;
-  try {
-    const current = JSON.parse(fs.readFileSync(file, "utf8"));
-    return JSON.stringify(canonicalizeJson(current)) === JSON.stringify(canonicalizeJson(expected));
-  } catch {
-    return false;
-  }
-}
 
 function managedWorktreePath(worktrees, kind, id, worktreesBaseDir) {
   const name = `${kind}-${id}`;
@@ -208,24 +181,9 @@ function writeSessionWorkspace(resolved, { write = true } = {}) {
   return { exists, current, autoApprove, document, written };
 }
 
-// The multi-root workspace file a paired session opens (product side, next to the
-// product half); null for the primary, unmanaged cwds, and in-repo mode.
-function describeWorkspace(worktree, sessionWorktreesDir) {
-  if (!artifacts.external || !worktree?.isManaged) return null;
-  const file = path.join(sessionWorktreesDir, `${worktree.dirPrefix}-${worktree.id}.code-workspace`);
-  const exists = fs.existsSync(file);
-  if (!exists) return { path: file, exists, current: null };
-  const companion = describeCompanion(worktree);
-  const expected = sessionWorkspaceDocument({ product: worktree.path, companion: companion.path, autoApprove: config.worktrees?.autoApprove !== false });
-  return { path: file, exists, current: workspaceDocumentCurrent(file, expected) };
-}
 
 // close-decision / ship-preflight: the companion half owned alongside the product
 // half, or null when no managed worktree owns the branch (or in-repo mode).
-function companionOfOwner(owner, layout) {
-  if (!owner || owner.role === "primary" || !owner.dirPrefix) return null;
-  return describeCompanion({ isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id }, layout);
-}
 
 function companionGaps(companion) {
   if (!companion?.registered) return [];
@@ -269,581 +227,14 @@ function companionTreeOf(companion) {
 }
 
 // the primary: in companion mode every registered companion half that is a managed
-// `<kind>-<id>` directory under the companion worktrees dir; in the in-repo layout
-// every managed product worktree with role build. Only bases present on disk.
-function managedHalves(worktrees) {
-  if (artifacts.external) {
-    if (!companionWorktreesDir) return [];
-    return companionWorktrees()
-      .filter((w) => MANAGED_HALF.test(path.basename(w.path)) && samePath(path.dirname(w.path), companionWorktreesDir) && fs.existsSync(w.path))
-      .map((w) => w.path);
-  }
-  const classified = classifyWorktrees({ worktrees, worktreesDir: primaryWorktreesDir(worktrees), config });
-  return classified.filter((w) => w.isManaged && w.role === "build" && fs.existsSync(w.path)).map((w) => w.path);
-}
-
-// The companion half a session reads roadmaps from, or null (primary, unregistered
-// pair, in-repo layout).
-function companionHalfOf(companion) {
-  return companion?.registered && fs.existsSync(companion.path) ? companion.path : null;
-}
-
-// Only `session --pr` and `ship-preflight --pr` reach this; every failure is a warning, never an exit code.
-// `label` names the field in warnings (`pr` for the code PR in the product checkout,
-// `companionPr` for the artifact PR looked up in the companion clone).
-function lookupPullRequest(branch, { cwd = root, label = "pr" } = {}) {
-  if (!branch) return { pr: null, warnings: [`${label}: no branch to look up (detached HEAD)`] };
-  const opts = { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15000 };
-  if (!ghVersion().ok) return ghMissingLookup(label);
-  try {
-    return { pr: JSON.parse(execFileSync("gh", prViewArgs(branch), opts)), warnings: [] };
-  } catch (error) {
-    return failedLookup(label, branch, error);
-  }
-}
-
-const prViewArgs = (branch) => ["pr", "view", branch, "--json", "number,state,isDraft,mergeStateStatus,mergeable,url"];
-const ghMissingLookup = (label) => ({ pr: null, warnings: [`${label}: gh CLI not found on PATH; install GitHub CLI to include pull request state`] });
-
-function failedLookup(label, branch, error) {
-  const stderr = (error?.stderr ?? "").toString().trim().split("\n")[0] || error?.message || "unknown error";
-  return { pr: null, warnings: [`${label}: gh pr view ${branch} failed: ${stderr}`] };
-}
-
-// lookupPullRequest's exact result, without blocking the process.
-async function lookupPullRequestAsync(branch, { cwd = root, label = "pr" } = {}) {
-  if (!branch) return lookupPullRequest(branch, { cwd, label });
-  if (!(await probeAsync("gh", ["--version"])).ok) return ghMissingLookup(label);
-  try {
-    const { stdout } = await execAsync("gh", prViewArgs(branch), { cwd, timeout: 15000 });
-    return { pr: JSON.parse(stdout), warnings: [] };
-  } catch (error) {
-    return failedLookup(label, branch, error);
-  }
-}
-
-// Runs the thunks with at most `limit` in flight; results keep the input order.
-async function runPool(tasks, limit = 4) {
-  const results = new Array(tasks.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < tasks.length) {
-      const index = next++;
-      results[index] = await tasks[index]();
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
-  return results;
-}
-
-const lookupKey = (cwd, branch) => `${cwd}\0${branch}`;
-
-// Prefetch: the deduplicated `{ cwd, branch, label }` PR lookups and the doctor's
-// external probes (into the probe cache), through one pool. `gh --version` goes first
-// so the lookups waiting on it never hold the pool's slots, then the lookups (network
-// round-trips of up to a second each), then the probes. Returns the lookups keyed by
-// cwd + branch.
-async function lookupPullRequests(requests, { probes = [] } = {}) {
-  const unique = new Map();
-  for (const request of requests) {
-    const cwd = request.cwd ?? root;
-    if (request.branch && !unique.has(lookupKey(cwd, request.branch))) unique.set(lookupKey(cwd, request.branch), { ...request, cwd });
-  }
-  const results = new Map();
-  const ghFirst = unique.size ? [["gh", ["--version"]]] : [];
-  const probeTask = ([cmd, args]) => () => probeAsync(cmd, args);
-  const lookupTasks = [...unique].map(([key, { branch, cwd, label }]) => async () => results.set(key, await lookupPullRequestAsync(branch, { cwd, label })));
-  await runPool([...ghFirst.map(probeTask), ...lookupTasks, ...probes.map(probeTask)]);
-  return results;
-}
-
-// A lookupPullRequest-compatible function answering from `lookupPullRequests` results.
-const prefetchedLookup = (results) => (branch, opts = {}) => results.get(lookupKey(opts.cwd ?? root, branch)) ?? lookupPullRequest(branch, opts);
-
-// The mirrored artifact PR: the same branch name looked up in the companion clone
-// the layout names. In-repo layout → null with no gh call, so today's output is unchanged.
-function lookupCompanionPullRequest(branch, layout = checkoutLayout(), lookup = lookupPullRequest) {
-  if (!layout.artifacts.external) return { pr: null, warnings: [] };
-  return lookup(branch, { cwd: layout.artifactsRoot, label: "companionPr" });
-}
-
-// The `session` record: role, worktree, worktrees, companion, workspace, delivery,
-// lifecycle, allowed/elsewhere, warnings; `pr` adds the PR lookups (`lookup`: a
-// lookupPullRequest-compatible function, e.g. one answering from prefetched results).
-// `context` is sessionContext(), passed in when the caller needed `prBranch` first.
-function sessionRecord({ pr: withPr = false, lookup = lookupPullRequest } = {}, context = sessionContext()) {
-  const { worktrees, sessionWorktreesDir, role, worktree, hosted, hostedReason, classified, companion, delivery, prBranch } = context;
-  const { pr, warnings: prWarnings } = withPr ? lookup(prBranch) : { pr: null, warnings: [] };
-  const { pr: companionPr, warnings: companionPrWarnings } = withPr ? lookupCompanionPullRequest(prBranch, undefined, lookup) : { pr: null, warnings: [] };
-  const { lifecycle, warnings } = deriveLifecycle({ delivery, pr, companionPr });
-  const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery, worktree });
-  const unregistered = companionWarning({ pair: companion, onDisk: Boolean(companion) && fs.existsSync(companion.path), productWorktrees: worktrees, companionClone: artifacts.dir, productRoot: worktrees[0]?.path ?? root });
-  return {
-    status: "ok",
-    role,
-    hosted,
-    worktree,
-    worktrees: classified,
-    companion,
-    workspace: describeWorkspace(worktree, sessionWorktreesDir),
-    delivery,
-    pr,
-    companionPr,
-    lifecycle,
-    allowed,
-    elsewhere,
-    warnings: [...(hostedReason ? [hostedReason] : []), ...anchor.warnings, ...prWarnings, ...companionPrWarnings, ...warnings, ...(unregistered ? [unregistered] : [])],
-    root,
-    configSource: source,
-  };
-}
-
-// Everything the session record derives before its PR lookups, including the branch they use.
-function sessionContext() {
-  // roleCwd: a subdirectory inside a worktree resolves to that worktree's entry; the companion clone resolves to the anchored product primary.
-  const worktrees = productWorktrees();
-  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-  const { role, worktree, hosted, reason: hostedReason } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
-  const classified = classifyWorktrees({ worktrees, worktreesDir: sessionWorktreesDir, config, companionWorktreesDir, companionWorktrees: companionWorktrees() });
-  const companion = describeCompanion(worktree);
-  const delivery = deriveDelivery({ branch: worktree.branch, dirPrefix: worktree.dirPrefix, id: worktree.id, roadmaps: allRoadmaps(null, [companionHalfOf(companion)]), config });
-  return { worktrees, sessionWorktreesDir, role, worktree, hosted, hostedReason, classified, companion, delivery, prBranch: delivery?.branch ?? worktree.branch };
-}
-
-// --- doctor ----------------------------------------------------------------
-
-const lsRemoteArgs = () => ["-C", root, "ls-remote", "--exit-code", "--heads", "origin", config.branches.default];
-
-// The external commands DOCTOR_CHECKS probe, so `dashboard` can run them concurrently first.
-const doctorProbes = () => [["gh", ["--version"]], ["gh", ["auth", "status"]], ["git", lsRemoteArgs()], ["code", ["--version"]]];
-
-const DOCTOR_CHECKS = {
-  node() {
-    const version = process.versions.node;
-    const major = Number.parseInt(version.split(".")[0], 10);
-    return major >= 20
-      ? { status: "ok", detail: `node v${version}`, fallback: null }
-      : { status: "fail", detail: `node v${version} is below the required 20`, fallback: "install Node >= 20 (AGENTS.md); the Agento CLI, both hooks (delivery guard and SessionStart context), and the tests need it" };
-  },
-  "git-remote"() {
-    const url = git(root, "remote", "get-url", "origin");
-    if (!url) return { status: "fail", detail: "no `origin` remote", fallback: "add the remote (`git remote add origin <url>`) or work in a clone; push and PR steps need origin" };
-    const reach = probe("git", lsRemoteArgs());
-    return reach.ok
-      ? { status: "ok", detail: `origin ${url}, ${config.branches.default} reachable`, fallback: null }
-      : { status: "warn", detail: `origin ${url} unreachable: ${reach.detail}`, fallback: "work offline; fetch, push, and PR steps will fail until the network is back — retry them before ending the turn" };
-  },
-  gh() {
-    const version = ghVersion();
-    if (!version.ok) return { status: "fail", detail: version.missing ? "gh CLI not found on PATH" : `gh --version failed: ${version.detail}`, fallback: "install GitHub CLI (https://cli.github.com) — the user installs it; the agent does not" };
-    const auth = probe("gh", ["auth", "status"]);
-    return auth.ok
-      ? { status: "ok", detail: `${version.out}; authenticated`, fallback: null }
-      : { status: "fail", detail: `gh auth status failed: ${auth.detail}`, fallback: "stop; the user runs `gh auth login` in their own terminal, then re-sends the command (policy §1: never run it on their behalf)" };
-  },
-  code() {
-    const version = probe("code", ["--version"]);
-    return version.ok
-      ? { status: "ok", detail: `code ${version.out}`, fallback: null }
-      : { status: "warn", detail: version.missing ? "code CLI not found on PATH" : `code --version failed: ${version.detail}`, fallback: "keep the worktree and print `code --new-window <worktree-path>` for the user to run" };
-  },
-  "worktrees-dir"() {
-    const dir = primaryWorktreesDir();
-    let existing = dir;
-    while (!fs.existsSync(existing) && path.dirname(existing) !== existing) existing = path.dirname(existing);
-    try {
-      fs.accessSync(existing, fs.constants.W_OK);
-      return { status: "ok", detail: existing === dir ? `${dir} writable` : `${dir} absent; ${existing} writable, it will be created`, fallback: null };
-    } catch {
-      return { status: "fail", detail: `${dir} not writable (${existing} denies write)`, fallback: "create the directory with write permission or change worktrees.dir in .github/agento.json" };
-    }
-  },
-  "session-workspace"() {
-    const worktrees = productWorktrees();
-    const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-    const { worktree } = deriveRole({ cwd: roleCwd, worktrees, worktreesDir: sessionWorktreesDir, config, env: process.env, companionWorktreesDir });
-    const workspace = describeWorkspace(worktree, sessionWorktreesDir);
-    if (!workspace) return { status: "ok", detail: "not a managed pair", fallback: null };
-    if (workspace.current) return { status: "ok", detail: `${workspace.path} carries the session auto-approve settings`, fallback: null };
-    return {
-      status: "warn",
-      detail: `${workspace.path} lacks the session auto-approve settings`,
-      fallback: `run node ${path.join(PLUGIN_ROOT, "scripts", "agento.mjs")} workspace ${worktree.dirPrefix} ${worktree.id} --write, then Developer: Reload Window`,
-    };
-  },
-  "artifact-repo"() {
-    if (!artifacts.external) return { status: "ok", detail: "in-repo layout (artifacts.repo unset)", fallback: null };
-    const { name, dir } = artifacts;
-    const fallback = `run \`/agento agento-init\` to create and clone the companion repository ${name} at ${dir}, or correct artifacts.repo in .github/agento.json`;
-    const fail = (detail) => ({ status: "fail", detail, fallback });
-    if (!fs.existsSync(dir)) return fail(`${dir} absent`);
-    const toplevel = git(dir, "rev-parse", "--show-toplevel");
-    if (!toplevel || fs.realpathSync(toplevel) !== fs.realpathSync(dir)) return fail(`${dir} is not a git checkout toplevel (git rev-parse --show-toplevel → ${toplevel || "nothing"})`);
-    const url = git(dir, "remote", "get-url", "origin");
-    if (!url) return fail(`${dir} has no \`origin\` remote`);
-    const branch = config.branches.default;
-    if (!git(dir, "rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`) && !git(dir, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
-      return fail(`${dir} has neither origin/${branch} nor ${branch}`);
-    }
-    const detail = `${dir} (${name}), origin ${url}, ${branch} present`;
-    // Pre-migration leftovers in the product repo are ignored by every reader; say so once.
-    const primaryRoot = productWorktrees()[0]?.path ?? root;
-    const stale = [config.artifacts.features, config.artifacts.issues, config.artifacts.initiatives].filter((rel) => holdsArtifacts(path.join(primaryRoot, rel)));
-    if (stale.length) {
-      return { status: "warn", detail: `${detail}; stale in-repo roots: ${stale.map((r) => `${r}/`).join(", ")}`, fallback: "the in-repo roots are ignored while artifacts.repo is set; move them into the companion (`/agento agento-init --migrate`) or remove them" };
-    }
-    // The companion halves of paired sessions go under <dir>-worktrees (derived, no key).
-    const pairDir = artifacts.worktreesDir;
-    if (fs.existsSync(pairDir)) {
-      try {
-        fs.accessSync(pairDir, fs.constants.W_OK);
-      } catch {
-        return { status: "warn", detail: `${detail}; ${pairDir} not writable`, fallback: `give ${pairDir} write permission (it holds the companion half of every paired session) or remove it so it is recreated` };
-      }
-    }
-    return { status: "ok", detail, fallback: null };
-  },
-  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
-  "model-profile"() {
-    const pluginRoot = path.resolve(options.pluginRoot ?? PLUGIN_ROOT);
-    if (!fs.existsSync(path.join(pluginRoot, ".github", "agents"))) return { status: "ok", detail: `no Agento plugin clone at ${pluginRoot}`, fallback: null };
-    const loaded = loadProfiles();
-    const loadedRoles = loadRoles();
-    const cli = `agento.mjs models --plugin-root ${pluginRoot}`;
-    if (loaded.errors.length) {
-      return { status: "warn", detail: `${loaded.profilesFile.path} has ${loaded.errors.length} error(s), first: ${loaded.errors[0]}`, fallback: `fix the file (\`${cli}\` lists every error) or delete it; Agento runs fine without profiles` };
-    }
-    const state = modelsState(pluginRoot, loaded);
-    const { active, filter, legacySkipWorktree } = state;
-    const apply = `\`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``;
-    const adopt = `\`agento.mjs models adopt --plugin-root ${pluginRoot}\``;
-    const filterIssues = [];
-    if (legacySkipWorktree?.length) {
-      filterIssues.push([`${legacySkipWorktree.length} file(s) still carry legacy skip-worktree pins, so a git pull or merge that touches one stops`, `${adopt} keeps the current pins on the git filter, or ${apply} re-pins a profile`]);
-    } else if (filter && active !== null && !filter.installed) {
-      const missing = [!filter.config && "filter config", !filter.attributes && "attribute block", filter.state !== "ok" && `pin state (${filter.state})`].filter(Boolean).join(", ");
-      filterIssues.push([`pins in ${pluginRoot} are not carried by a healthy git filter (missing: ${missing}), so a pull or commit may touch them`, `${apply} or ${adopt} reinstalls it`]);
-    } else if (filter?.installed && !filter.scriptCurrent) {
-      filterIssues.push([`the git filter's copied script in ${path.dirname(filter.script)} is missing or older than this CLI`, `${apply} or ${adopt} refreshes it`]);
-    }
-    if (filter?.unrecorded.length) {
-      filterIssues.push([`${filter.unrecorded.length} agent/prompt file(s) added since the last apply carry no pin: ${filter.unrecorded.join(", ")}`, `re-run ${apply}`]);
-    }
-    const rolesDetail = `primary: ${active === null ? "none" : active}; secondary: ${loadedRoles.errors.length ? "invalid" : (loadedRoles.secondary ?? "off")}`;
-    const rolesIssue = (() => {
-      if (loadedRoles.errors.length) {
-        return { detail: `${loadedRoles.rolesFile.path} has ${loadedRoles.errors.length} error(s), first: ${loadedRoles.errors[0]}`, fallback: `fix or delete ${loadedRoles.rolesFile.path}, or run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn the secondary role off` };
-      }
-      if (loadedRoles.secondary !== null) {
-        const assigned = loadedRoles.secondary;
-        if (!Object.hasOwn(loaded.profiles, assigned)) {
-          return { detail: `the secondary role names ${JSON.stringify(assigned)}, which is not a profile in ${loaded.profilesFile.path}`, fallback: `run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn it off, or create ${assigned} and assign it with \`agento.mjs models use ${assigned} --role secondary --plugin-root ${pluginRoot}\`` };
-        }
-        const resolved = resolveProfile(loaded, assigned, state.layout);
-        if (resolved.errors.length) {
-          return { detail: `the secondary profile ${assigned} has errors: ${resolved.errors[0]}`, fallback: `fix ${assigned} (\`agento.mjs models show ${assigned} --plugin-root ${pluginRoot}\` lists every error), or run \`agento.mjs models use none --role secondary --plugin-root ${pluginRoot}\` to turn it off` };
-        }
-      }
-      return null;
-    })();
-    if (filterIssues.length) return { status: "warn", detail: `${filterIssues.map(([d]) => d).join("; ")}; ${rolesDetail}`, fallback: filterIssues.map(([, f]) => f).join("; ") };
-    if (rolesIssue) return { status: "warn", detail: `${rolesIssue.detail}; ${rolesDetail}`, fallback: rolesIssue.fallback };
-    if (active === null) return { status: "ok", detail: `no profile applied to ${pluginRoot}; ${rolesDetail}`, fallback: null };
-    if (active !== "custom") {
-      const pins = modelsPins(pluginRoot, loaded.copilotModels);
-      const warns = pinWarnings(pins, loaded.copilotModels);
-      if (warns.byok || warns.unqualified || warns.missingAlias) {
-        const fallbacks = [
-          warns.byok && `pin autopilot at least as high as the highest-tier model it delegates to, then \`agento.mjs models apply <name> --plugin-root ${pluginRoot}\``,
-          warns.unqualified && `qualify each named value as "<picker name> (<vendor>)" in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
-          warns.missingAlias && `add each missing picker name to the top-level copilotModels map in ${loaded.profilesFile.path}, then \`agento.mjs models apply ${active} --plugin-root ${pluginRoot}\``,
-        ];
-        return { status: "warn", detail: `${[warns.byok, warns.unqualified, warns.missingAlias].filter(Boolean).join("; ")}; ${rolesDetail}`, fallback: fallbacks.filter(Boolean).join("; ") };
-      }
-      return { status: "ok", detail: `${active} applied to ${pluginRoot}; ${rolesDetail}`, fallback: null };
-    }
-    return {
-      status: "warn",
-      detail: `model: lines in ${pluginRoot} match no profile in ${loaded.profilesFile.path} (hand-edited, or the profile changed after it was applied); ${rolesDetail}`,
-      fallback: `re-pin with ${apply}, record the current pins with ${adopt}, or unpin with \`agento.mjs models clear --plugin-root ${pluginRoot}\``,
-    };
-  },
-  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
-  "hook-wiring"() {
-    if (!hasAgentoWorkspaceWiring(root)) return { status: "ok", detail: "no Agento workspace-mode hook wiring in this repository", fallback: null };
-    const file = vscodeSettingsPath();
-    let settings;
-    try {
-      settings = parseJsonc(fs.readFileSync(file, "utf8"));
-    } catch (error) {
-      return { status: "ok", detail: `workspace-mode hook wiring present; ${file} unreadable (${error.code ?? error.message}), plugin registration unknown`, fallback: null };
-    }
-    const locations = settings?.["chat.pluginLocations"];
-    const common = gitCommonDir(root);
-    const registered = common && locations && typeof locations === "object" && !Array.isArray(locations)
-      ? Object.entries(locations).filter(([dir, on]) => on === true && gitCommonDir(expandHome(dir)) === common).map(([dir]) => dir)
-      : [];
-    if (!registered.length) return { status: "ok", detail: `workspace-mode hook wiring present; this repository is not registered in chat.pluginLocations (${file})`, fallback: null };
-    return {
-      status: "warn",
-      detail: `${registered.join(", ")} (this repository) is registered in chat.pluginLocations (${file}): plugin-mode and workspace-mode hooks both fire — SessionStart is deduplicated, the delivery guard runs twice; a per-workspace plugin disable is not visible to the CLI`,
-      fallback: "disable the Agento plugin for this workspace (Extensions → Agent Plugins – Installed) in each worktree window, or remove the clone from chat.pluginLocations (docs/install.md)",
-    };
-  },
-  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
-  "harness"() {
-    const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
-    const install = `agento.mjs harness install --plugin-root ${facts.clone}`;
-    if (!facts.hasSkill) return { status: "ok", detail: `no Agento router skill at ${facts.pluginRoot}`, fallback: null };
-    const { state, target } = linkState(facts.link, facts.expected);
-    if (state === "installed") return { status: "ok", detail: `${facts.link} → ${facts.clone}; ${LOCAL_TAKEOVER}`, fallback: null };
-    if (state === "absent") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is missing`, fallback: install };
-    if (state === "foreign") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} resolves to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone} (or keep the other clone's link)` };
-    if (state === "dangling") return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
-    return { status: "fail", detail: `cannot run /agento in any session — ${facts.link} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
-  },
-  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
-  "canvas"() {
-    const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
-    const install = `agento.mjs harness install --plugin-root ${facts.clone}`;
-    if (!facts.hasCanvas) return { status: "ok", detail: `no Mission Control canvas at ${facts.canvasExpected} (this clone predates it)`, fallback: null };
-    const { state, target } = linkState(facts.canvasLink, facts.canvasExpected);
-    if (state === "installed") return { status: "ok", detail: `${facts.canvasLink} → ${facts.clone}; Mission Control canvas installed`, fallback: null };
-    if (state === "absent") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is missing`, fallback: install };
-    if (state === "foreign") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} resolves to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone} (or keep the other clone's canvas)` };
-    if (state === "dangling") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
-    return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
-  },
-};
-
-// VS Code's user settings.json; AGENTO_VSCODE_SETTINGS overrides the platform default.
-function vscodeSettingsPath(env = process.env) {
-  if (env.AGENTO_VSCODE_SETTINGS) return env.AGENTO_VSCODE_SETTINGS;
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Code", "User", "settings.json");
-  return path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "Code", "User", "settings.json");
-}
-
-const expandHome = (dir) => (dir === "~" || dir.startsWith("~/") ? path.join(os.homedir(), dir.slice(1)) : dir);
-
-function gitCommonDir(dir) {
-  const common = git(dir, "rev-parse", "--path-format=absolute", "--git-common-dir");
-  if (!common) return "";
-  try {
-    return fs.realpathSync(common);
-  } catch {
-    return common;
-  }
-}
-
-// JSON with // and /* */ comments and trailing commas, as VS Code writes settings.json.
-function parseJsonc(text) {
-  let out = "";
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (ch === '"') {
-      let j = i + 1;
-      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
-      out += text.slice(i, j + 1);
-      i = j;
-    } else if (ch === "/" && text[i + 1] === "/") {
-      while (i + 1 < text.length && text[i + 1] !== "\n") i += 1;
-    } else if (ch === "/" && text[i + 1] === "*") {
-      const end = text.indexOf("*/", i + 2);
-      i = end === -1 ? text.length : end + 1;
-    } else if (ch === "," && /^\s*[}\]]/.test(text.slice(i + 1).replace(/^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/, ""))) {
-      continue;
-    } else {
-      out += ch;
-    }
-  }
-  return JSON.parse(out);
-}
 
 
-const STATUS_RANK = { ok: 0, warn: 1, fail: 2 };
 
-// Capability vocabulary (delivery-policy §10) in canonical order, each mapped to the
-// doctor checks that prove it. Chat-tool capabilities have no CLI-side check.
-const CAPABILITY_CHECKS = {
-  terminal: ["node", "worktrees-dir", "artifact-repo", "session-workspace"],
-  "ask-questions": [],
-  browser: [],
-  gh: ["gh"],
-  code: ["code"],
-  network: ["git-remote"],
-};
 
-// What each slash command declares on its `Needs:` line; the customizations test
-// keeps this table and the prompt bodies in agreement.
-const COMMAND_NEEDS = {
-  "agento-init": ["terminal", "ask-questions", "gh", "network"],
-  ap: ["terminal", "browser", "gh", "network"],
-  "build-feature": ["terminal", "browser", "gh", "network"],
-  "build-issue": ["terminal", "browser", "gh", "network"],
-  "close-session": ["terminal"],
-  "commit-current-changes": ["terminal", "gh", "network"],
-  continue: ["terminal", "ask-questions", "browser", "gh", "code", "network"],
-  "delivery-status": ["terminal"],
-  doctor: ["terminal"],
-  "extend-copilot": ["terminal"],
-  "finish-freehand": ["terminal", "gh", "network"],
-  "fix-copilot": ["terminal"],
-  "install-skills": ["terminal", "ask-questions", "network"],
-  "mission-control": ["terminal"],
-  models: ["terminal"],
-  "new-feature": ["terminal", "ask-questions", "gh", "network"],
-  "new-initiative": ["terminal", "ask-questions", "gh", "network"],
-  "new-issue": ["terminal", "ask-questions", "gh", "network"],
-  "next-feature": ["terminal"],
-  "quick-fix": ["terminal", "gh", "network"],
-  "review-feature": ["terminal", "browser", "gh", "network"],
-  "review-issue": ["terminal", "browser", "gh", "network"],
-  ship: ["terminal", "gh", "network"],
-  "start-freehand": ["terminal", "code"],
-  "start-session": ["terminal", "code"],
-  "triage-followups": ["terminal", "gh", "network"],
-};
 
-function checksFor(needs) {
-  const ids = new Set(needs.flatMap((n) => CAPABILITY_CHECKS[n]));
-  return Object.keys(DOCTOR_CHECKS).filter((id) => ids.has(id));
-}
-
-// Each check runs at most once per process, so `dashboard` can run the local ones early.
-const doctorResults = new Map();
-
-function runDoctor(ids) {
-  const checks = ids.map((id) => {
-    if (!doctorResults.has(id)) {
-      try {
-        doctorResults.set(id, { id, ...DOCTOR_CHECKS[id]() });
-      } catch (error) {
-        doctorResults.set(id, { id, status: "fail", detail: `check threw: ${error?.message ?? error}`, fallback: "report this as an Agento bug; run the probe by hand" });
-      }
-    }
-    return doctorResults.get(id);
-  });
-  const status = checks.reduce((worst, c) => (STATUS_RANK[c.status] > STATUS_RANK[worst] ? c.status : worst), "ok");
-  return { status, checks };
-}
-
-// The checks that run no external probe (doctorProbes) and so need no network.
-const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness"];
-
-// --- initiatives -----------------------------------------------------------
-
-function mergedAnomalies(features) {
-  // Informational only (plan Decision 3): reflects the last fetch, never changes state or exit code.
-  const merged = new Set(
-    git(root, "branch", "-r", "--merged", `origin/${config.branches.default}`)
-      .split("\n")
-      .map((l) => l.trim().split(" ")[0])
-      .filter(Boolean),
-  );
-  return features
-    .filter((f) => f.roadmap && f.state !== "complete" && merged.has(`origin/${f.branch}`))
-    .map((f) => ({ slug: f.slug, kind: "merged-but-not-complete", branch: f.branch }));
-}
-
-function allBreakdowns() {
-  const base = path.join(artifactsRoot, config.artifacts.initiatives);
-  return [...walkBreakdowns(base)].sort().map((file) => parseBreakdown(file));
-}
-
-function deriveInitiative(breakdown, roadmaps) {
-  const errors = [];
-  const known = new Map();
-  for (const f of breakdown.features) {
-    if (known.has(f.slug)) errors.push(`duplicate feature block "### ${f.slug}"`);
-    else known.set(f.slug, f);
-  }
-  for (const f of breakdown.features) {
-    for (const d of f.requires) if (!known.has(d)) errors.push(`${f.slug}: Requires unknown feature "${d}"`);
-    for (const d of f.recommendedAfter) if (!known.has(d)) errors.push(`${f.slug}: Recommended after unknown feature "${d}"`);
-  }
-  const roadmapBySlug = new Map();
-  for (const r of roadmaps) if (!roadmapBySlug.has(r.slug)) roadmapBySlug.set(r.slug, r);
-  for (const f of known.values()) {
-    const r = roadmapBySlug.get(f.slug);
-    if (!r) continue;
-    if (!r.initiative) errors.push(`${f.slug}: roadmap ${r.roadmap} has no initiative: header (expected "${breakdown.slug}")`);
-    else if (r.initiative !== breakdown.slug) errors.push(`${f.slug}: roadmap ${r.roadmap} names initiative "${r.initiative}", expected "${breakdown.slug}"`);
-  }
-
-  // Kahn's algorithm over Requires: computed wave = 1 + max(wave of requirements).
-  const level = new Map();
-  const indegree = new Map(breakdown.features.map((f) => [f.slug, f.requires.filter((d) => known.has(d)).length]));
-  const dependents = new Map(breakdown.features.map((f) => [f.slug, []]));
-  for (const f of breakdown.features) for (const d of f.requires) if (known.has(d)) dependents.get(d).push(f.slug);
-  const queue = breakdown.features.filter((f) => indegree.get(f.slug) === 0).map((f) => f.slug);
-  for (const slug of queue) level.set(slug, 1);
-  while (queue.length) {
-    const slug = queue.shift();
-    for (const next of dependents.get(slug)) {
-      level.set(next, Math.max(level.get(next) ?? 1, level.get(slug) + 1));
-      indegree.set(next, indegree.get(next) - 1);
-      if (indegree.get(next) === 0) queue.push(next);
-    }
-  }
-  const cyclic = [...indegree.entries()].filter(([, n]) => n > 0).map(([slug]) => slug);
-  if (cyclic.length) errors.push(`dependency cycle among: ${cyclic.join(", ")}`);
-
-  const features = breakdown.features.map((f) => {
-    const roadmap = roadmapBySlug.get(f.slug) ?? null;
-    const state = roadmap ? roadmap.status : "unplanned";
-    // Only `status: complete` satisfies Requires (plan Decision 3).
-    const blockedBy = f.requires.filter((d) => roadmapBySlug.get(d)?.status !== "complete");
-    return {
-      slug: f.slug,
-      state,
-      roadmap: roadmap ? roadmap.roadmap : null,
-      branch: roadmap ? roadmap.branch : `${config.branches.feature}${f.slug}`,
-      artifactPr: roadmap?.artifactPr ?? null,
-      requires: f.requires,
-      recommendedAfter: f.recommendedAfter,
-      wave: f.wave,
-      computedWave: level.get(f.slug) ?? null,
-      order: f.order,
-      blockedBy,
-      ready: state === "unplanned" && blockedBy.length === 0,
-    };
-  });
-
-  const waves = [];
-  for (const f of features) {
-    if (f.computedWave === null) continue;
-    (waves[f.computedWave - 1] ??= []).push(f.slug);
-  }
-  const rank = (f) => [f.wave ?? f.computedWave ?? Number.MAX_SAFE_INTEGER, f.computedWave ?? Number.MAX_SAFE_INTEGER, f.order];
-  const next = features
-    .filter((f) => f.ready)
-    .sort((a, b) => {
-      const [ra, rb] = [rank(a), rank(b)];
-      return ra[0] - rb[0] || ra[1] - rb[1] || ra[2] - rb[2];
-    })[0]?.slug ?? null;
-
-  return {
-    status: errors.length ? "invalid" : "ok",
-    errors,
-    features,
-    waves: waves.map((w) => w ?? []),
-    next,
-    done: features.length > 0 && features.every((f) => f.state === "complete"),
-  };
-}
 
 // --- next ------------------------------------------------------------------
 
-// The ref a delivery branch is judged from: origin/<branch> when fetched, else the
-// local branch (with a warning: no fetch happens here), else HEAD. `g` binds the
-// checkout holding the artifacts (this one's, or a branch layout's companion).
-function refFor(branch, g = agit) {
-  if (branch && g("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`)) return { ref: `origin/${branch}`, warning: null };
-  if (branch && g("rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)) {
-    return { ref: branch, warning: `${branch}: origin/${branch} is absent, so review freshness and roadmap state reflect the local branch as of the last fetch` };
-  }
-  return { ref: "HEAD", warning: null };
-}
 
 // review.md is fresh when its last commit is not older than the last commit that
 // touched anything else on the branch; null when the branch has no review.md.
@@ -930,9 +321,6 @@ function reauthFor(url) {
   return `re-authenticate the credentials for ${url ?? "origin"} (credential helper or SSH key)`;
 }
 
-function capabilityOf(checkId) {
-  return Object.entries(CAPABILITY_CHECKS).find(([, ids]) => ids.includes(checkId))?.[0] ?? checkId;
-}
 
 // Ids already used by a managed plan session in either clone (path on disk,
 // registered worktree, or workspace file), so a generated id never collides.
@@ -3036,101 +2424,7 @@ function parseRoadmapSteps(content) {
   }));
 }
 
-// --- documents -------------------------------------------------------------
 
-const STATUS_ORDER = ["in-progress", "paused", "in-review", "planned", "complete"];
-const byStatusOrder = (a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || a.slug.localeCompare(b.slug);
-
-// What `status` emits. `lookup` as in sessionRecord; `roadmaps` replaces the walk.
-function statusDocument({ typeFilter = null, slugFilter = null, pr: withPr = false, lookup = lookupPullRequest, roadmaps = null } = {}) {
-  const worktrees = productWorktrees();
-  const sessionWorktreesDir = primaryWorktreesDir(worktrees);
-  const items = (roadmaps ?? allRoadmaps(typeFilter, managedHalves(worktrees))).filter((r) => !slugFilter || r.slug === slugFilter);
-  const bySlug = new Map();
-  for (const item of items) bySlug.set(item.slug, [...(bySlug.get(item.slug) ?? []), item.roadmap]);
-  const duplicates = [...bySlug.entries()].filter(([, paths]) => paths.length > 1).map(([slug, paths]) => ({ slug, paths }));
-  items.sort(byStatusOrder);
-  // Additive dashboard fields (lifecycle, ownership, PR state) so renderers never re-derive them.
-  const warnings = [];
-  const layout = checkoutLayout();
-  for (const item of items) {
-    // Complete roadmaps skip the lookup: their PRs are merged history, not dashboard state.
-    const looked = withPr && item.status !== "complete";
-    const { pr, warnings: prWarnings } = looked ? lookup(item.branch) : { pr: null, warnings: [] };
-    const { pr: companionPr, warnings: companionPrWarnings } = looked ? lookupCompanionPullRequest(item.branch, layout, lookup) : { pr: null, warnings: [] };
-    const { lifecycle, warnings: lifecycleWarnings } = deriveLifecycle({ delivery: item, pr, companionPr });
-    const owner = findOwner({ worktrees, worktreesDir: sessionWorktreesDir, branch: item.branch, config });
-    const managedOwner = owner && owner.role !== "primary" && owner.dirPrefix ? { isManaged: true, dirPrefix: owner.dirPrefix, id: owner.id } : null;
-    item.lifecycle = lifecycle;
-    item.owner = owner;
-    item.workspace = managedOwner ? describeWorkspace(managedOwner, sessionWorktreesDir) : null;
-    item.companion = companionOfOwner(owner, layout);
-    const actions = deriveAllowed({ role: owner?.role ?? "primary", lifecycle, delivery: item, worktree: owner });
-    item.allowed = actions.allowed;
-    item.elsewhere = actions.elsewhere;
-    item.pr = pr;
-    item.companionPr = companionPr;
-    warnings.push(...[...prWarnings, ...companionPrWarnings, ...lifecycleWarnings].map((w) => `${item.slug}: ${w}`));
-  }
-  return {
-    status: "ok",
-    root,
-    currentBranch,
-    defaultBranch: config.branches.default,
-    items,
-    duplicates,
-    resumable: items.filter((i) => ["in-progress", "paused", "in-review"].includes(i.status)).map((i) => i.slug),
-    lifecycles: LIFECYCLES,
-    warnings,
-  };
-}
-
-// The roadmaps `initiative` derives from. Same bases as `status`: a member planned on
-// an unmerged delivery branch lives only in its managed half and must not stay
-// "unplanned"/ready here (the Initiatives view would otherwise keep its plan play
-// button, which starts a second session instead of offering build/ap).
-const initiativeRoadmaps = () => allRoadmaps("feature", managedHalves(productWorktrees()));
-
-// What `initiative` emits.
-function initiativeListDocument(roadmaps, breakdowns = allBreakdowns()) {
-  const items = breakdowns.map((b) => {
-    const d = deriveInitiative(b, roadmaps);
-    return {
-      slug: b.slug,
-      dir: b.dir,
-      created: b.created,
-      lastUpdated: b.lastUpdated,
-      total: d.features.length,
-      complete: d.features.filter((f) => f.state === "complete").length,
-      inFlight: d.features.filter((f) => !["unplanned", "complete"].includes(f.state)).length,
-      ready: d.features.filter((f) => f.ready).length,
-      done: d.done,
-      valid: d.status === "ok",
-    };
-  });
-  return { status: "ok", initiativesRoot: config.artifacts.initiatives, items, root, configSource: source };
-}
-
-// What `initiative <slug>` emits.
-function initiativeDetailDocument(slug, roadmaps, breakdowns = allBreakdowns()) {
-  const breakdown = breakdowns.find((b) => b.slug === slug);
-  if (!breakdown) return { status: "missing", message: `No breakdown.md for initiative ${slug} under ${config.artifacts.initiatives}/.`, root, configSource: source };
-  const derived = deriveInitiative(breakdown, roadmaps);
-  return {
-    ...derived,
-    initiative: { slug: breakdown.slug, dir: breakdown.dir, breakdown: breakdown.breakdown, created: breakdown.created, lastUpdated: breakdown.lastUpdated },
-    anomalies: mergedAnomalies(derived.features),
-    root,
-    configSource: source,
-  };
-}
-
-// What `doctor [--for <command>]` emits; `command` must name a COMMAND_NEEDS entry.
-function doctorDocument(command = null) {
-  const needs = command ? COMMAND_NEEDS[command] : null;
-  const { status, checks } = runDoctor(needs ? checksFor(needs) : Object.keys(DOCTOR_CHECKS));
-  return { status, for: needs ? { command, needs } : null, checks, root, configSource: source };
-}
 
 // --- preflight: the §9–§11 opening of every command in one call ---------------
 
@@ -3220,164 +2514,7 @@ function preflightDocument({ command, type, slug, full = false }) {
   };
 }
 
-// --- metrics: git history only, never gh, never network ------------------------
 
-// Fixed diff output whatever the user's git config says (prefixes, colour, external diff, renames).
-const METRICS_PATCH = ["--reverse", "--format=%x00commit %H %cI", "-p", "--unified=0", "--no-color", "--no-ext-diff", "--no-renames", "--src-prefix=a/", "--dst-prefix=b/"];
-const METRICS_MAX_BUFFER = 256 * 1024 * 1024;
-
-// origin/<default>, else <default>, else HEAD — in the clone `g` binds.
-function defaultRefIn(g) {
-  const name = config.branches.default;
-  if (g("rev-parse", "--verify", "--quiet", `refs/remotes/origin/${name}`)) return `origin/${name}`;
-  if (g("rev-parse", "--verify", "--quiet", `refs/heads/${name}`)) return name;
-  return "HEAD";
-}
-
-// The git logs `metrics` reads, as [cwd, args] pairs: one patch log over every
-// roadmap.md/review.md on the artifact default ref, one branch-only patch log per
-// non-complete item whose delivery branch resolves, one first-parent merge log of
-// the product default.
-function metricsPlan(roadmaps) {
-  const artifactRef = defaultRefIn(agit);
-  const productRef = artifacts.external ? defaultRefIn((...args) => git(root, ...args)) : artifactRef;
-  const pathspecs = [config.artifacts.features, config.artifacts.issues].flatMap((r) => [`:(glob)${r}/**/roadmap.md`, `:(glob)${r}/**/review.md`]);
-  const branches = [];
-  for (const record of roadmaps) {
-    if (record.status === "complete" || !record.branch) continue;
-    const { ref } = refFor(record.branch, agit);
-    if (ref === "HEAD") continue;
-    branches.push({ roadmap: record.roadmap, ref, run: [artifactsRoot, ["log", ref, "--not", artifactRef, ...METRICS_PATCH, "--", `${record.dir}/roadmap.md`, `${record.dir}/review.md`]] });
-  }
-  return {
-    ref: { artifacts: artifactRef, product: productRef },
-    artifacts: [artifactsRoot, ["log", artifactRef, ...METRICS_PATCH, "--", ...pathspecs]],
-    branches,
-    product: [root, ["log", "--first-parent", "--merges", productRef, "--format=%H%x09%cI%x09%s"]],
-  };
-}
-
-// A missing ref or a failed log reads as no history (the items then carry warnings).
-function gitLogText(cwd, args) {
-  try {
-    return execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: METRICS_MAX_BUFFER });
-  } catch {
-    return "";
-  }
-}
-
-async function gitLogTextAsync(cwd, args) {
-  try {
-    return (await execAsync("git", ["-C", cwd, ...args], { maxBuffer: METRICS_MAX_BUFFER })).stdout;
-  } catch {
-    return "";
-  }
-}
-
-function readMetricsLogs(plan) {
-  return {
-    artifacts: gitLogText(...plan.artifacts),
-    branches: new Map(plan.branches.map((b) => [b.roadmap, gitLogText(...b.run)])),
-    product: gitLogText(...plan.product),
-  };
-}
-
-async function readMetricsLogsAsync(plan) {
-  const [artifactsText, productText, ...branchTexts] = await Promise.all([plan.artifacts, plan.product, ...plan.branches.map((b) => b.run)].map((run) => gitLogTextAsync(...run)));
-  return { artifacts: artifactsText, branches: new Map(plan.branches.map((b, i) => [b.roadmap, branchTexts[i]])), product: productText };
-}
-
-// What `metrics [<slug>]` emits. `roadmaps` replaces the walk; `plan` and `logs` are
-// the dashboard's injection point (it reads the logs asynchronously beside its PR lookups).
-function metricsDocument({ slugFilter = null, roadmaps = null, now = Date.now(), plan = null, logs = null } = {}) {
-  const records = [...(roadmaps ?? allRoadmaps(null, managedHalves(productWorktrees())))].filter((r) => !slugFilter || r.slug === slugFilter).sort(byStatusOrder);
-  if (slugFilter && !records.length) return { status: "missing", message: `No roadmap for slug ${slugFilter} under ${config.artifacts.features}/ or ${config.artifacts.issues}/.`, root, configSource: source };
-  const planned = plan ?? metricsPlan(records);
-  const read = logs ?? readMetricsLogs(planned);
-  const byDir = parseArtifactLog(read.artifacts);
-  const merged = parseMergeLog(read.product);
-  const items = records.map((record) => {
-    const branch = planned.branches.find((b) => b.roadmap === record.roadmap);
-    const events = [...(byDir.get(record.dir) ?? [])];
-    if (branch) events.push(...(parseArtifactLog(read.branches.get(record.roadmap) ?? "").get(record.dir) ?? []));
-    return deriveMetrics({ record, events, merged, now, ref: branch?.ref ?? planned.ref.artifacts });
-  });
-  return { status: "ok", generatedAt: new Date(now).toISOString(), ref: planned.ref, items, aggregate: aggregateMetrics(items), root, configSource: source };
-}
-
-// What `dashboard` emits: the session, doctor, status (`deliveries`), initiative, and
-// metrics documents from one process. The roadmaps are walked once for deliveries,
-// initiatives, and metrics; every PR lookup (with `pr`) and the doctor's probes run
-// through one bounded pool, and the metrics git logs run beside it, while the local
-// doctor checks and the initiatives are computed. A section that throws becomes
-// { status: "error", message }.
-async function dashboardDocument({ pr: withPr = false } = {}) {
-  const started = performance.now();
-  const attempt = (build) => {
-    try {
-      return { value: build() };
-    } catch (error) {
-      return { error };
-    }
-  };
-  const session = attempt(() => sessionContext());
-  const roadmaps = attempt(() => allRoadmaps(null, managedHalves(productWorktrees())));
-
-  const requests = [];
-  if (withPr) {
-    const layout = checkoutLayout();
-    const branches = [session.value?.prBranch, ...(roadmaps.value ?? []).filter((r) => r.status !== "complete").map((r) => r.branch)];
-    for (const branch of branches) {
-      requests.push({ branch, cwd: root, label: "pr" });
-      if (layout.artifacts.external) requests.push({ branch, cwd: layout.artifactsRoot, label: "companionPr" });
-    }
-  }
-  const timings = {};
-  const section = (name, build) => {
-    const sectionStarted = performance.now();
-    try {
-      return build();
-    } catch (error) {
-      return { status: "error", message: error?.message ?? String(error) };
-    } finally {
-      timings[name] = Math.round(performance.now() - sectionStarted);
-    }
-  };
-  const valueOf = (attempted) => {
-    if (attempted.error) throw attempted.error;
-    return attempted.value;
-  };
-
-  // The lookups wait on `gh --version`; with it cached they spawn on the next turn,
-  // before the synchronous work below blocks the event loop.
-  if (requests.length) await probeAsync("gh", ["--version"]);
-  const prefetch = lookupPullRequests(requests, { probes: doctorProbes() });
-  // The metrics logs (git only) overlap the PR lookups and the synchronous sections below.
-  const metricsPlanned = attempt(() => metricsPlan(valueOf(roadmaps)));
-  const metricsLogs = metricsPlanned.error ? Promise.resolve(null) : readMetricsLogsAsync(metricsPlanned.value);
-  await new Promise((resolve) => setImmediate(resolve));
-  const initiatives = section("initiatives", () => {
-    const features = valueOf(roadmaps).filter((r) => r.type === "feature");
-    const breakdowns = allBreakdowns();
-    const list = initiativeListDocument(features, breakdowns);
-    return { list, details: Object.fromEntries(list.items.map((item) => [item.slug, initiativeDetailDocument(item.slug, features, breakdowns)])) };
-  });
-  runDoctor(LOCAL_DOCTOR_CHECKS);
-  const lookup = prefetchedLookup(await prefetch);
-  const logs = await metricsLogs;
-
-  const document = {
-    status: "ok",
-    session: section("session", () => sessionRecord({ pr: withPr, lookup }, valueOf(session))),
-    doctor: section("doctor", () => doctorDocument()),
-    // statusDocument adds fields to its items; the initiatives read the records unchanged.
-    deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
-    initiatives,
-    metrics: section("metrics", () => metricsDocument({ roadmaps: valueOf(roadmaps), plan: valueOf(metricsPlanned), logs })),
-  };
-  timings.total = Math.round(performance.now() - started);
-  return { ...document, timings, root, configSource: source };
-}
 
 // One module per command family (plan Approach rule 2). Each entry maps a
 // subcommand name to the `scripts/commands/<file>.mjs` module that exports it as
@@ -3392,6 +2529,10 @@ const COMMAND_MODULES = {
   resolve: "resolve",
   find: "resolve",
   ports: "resolve",
+  status: "status",
+  initiative: "status",
+  metrics: "status",
+  dashboard: "status",
 };
 
 if (Object.hasOwn(COMMAND_MODULES, command)) {
@@ -3399,12 +2540,6 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
   await handlers.commands[command]();
 } else {
   switch (command) {
-  case "status": {
-    const typeFilter = rest[0] ? requireType(rest[0]) : null;
-    const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
-    emit(statusDocument({ typeFilter, slugFilter, pr: Boolean(options.pr) }));
-    break;
-  }
 
   case "close-decision": {
     const type = requireType(rest[0]);
@@ -3519,20 +2654,7 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
     break;
   }
 
-  case "initiative": {
-    const slug = rest[0] ? requireSlug(rest[0]) : null;
-    const roadmaps = initiativeRoadmaps();
-    const document = slug ? initiativeDetailDocument(slug, roadmaps) : initiativeListDocument(roadmaps);
-    emit(document, document.status === "ok" ? 0 : 3);
-    break;
-  }
 
-  case "metrics": {
-    if (rest.length > 1) usage(`metrics takes at most one slug, got ${JSON.stringify(rest.slice(1).join(" "))}`);
-    const document = metricsDocument({ slugFilter: rest[0] ? requireSlug(rest[0]) : null });
-    emit(document, document.status === "ok" ? 0 : 3);
-    break;
-  }
 
   case "session": {
     if (rest.length) usage(`session takes no positional arguments, got ${JSON.stringify(rest[0])}`);
@@ -3634,11 +2756,6 @@ if (Object.hasOwn(COMMAND_MODULES, command)) {
     break;
   }
 
-  case "dashboard": {
-    if (rest.length) usage(`dashboard takes no positional arguments, got ${JSON.stringify(rest[0])}`);
-    emit(await dashboardDocument({ pr: Boolean(options.pr) }));
-    break;
-  }
 
   case "next": {
     if (rest.length > 1) usage(`next takes at most one slug, got ${JSON.stringify(rest.slice(1).join(" "))}`);
