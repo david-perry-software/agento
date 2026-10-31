@@ -600,6 +600,10 @@ const releaseRoutes = (extra = {}) => ({
   ...extra,
 });
 
+const publishPrRun = (cwd, env, ...args) => runWith({ cwd, env }, "publish-pr", ...args);
+
+const ciCheck = (name, conclusion) => ({ name, status: conclusion ? "COMPLETED" : "IN_PROGRESS", conclusion });
+
 export {
   DONE_STEPS,
   LATER,
@@ -612,6 +616,7 @@ export {
   baseEnv,
   both,
   byId,
+  ciCheck,
   cli,
   cloneState,
   cloneWithOrigin,
@@ -636,6 +641,7 @@ export {
   pairDelivery,
   prStub,
   publishBranch,
+  publishPrRun,
   refState,
   releaseGh,
   releaseRoutes,
