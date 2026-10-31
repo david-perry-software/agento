@@ -687,8 +687,8 @@ test("/agento agento-init scaffolds the concurrency pointer into the companion",
 });
 
 test("the byproduct cleanup lives in the CLI with --literal-pathspecs; no prompt, agent, or mirror runs git clean by hand (#88 ship-untracked-byproducts)", () => {
-  const cli = fs.readFileSync(path.join(repoRoot, "scripts", "agento.mjs"), "utf8");
-  assert.match(cli, /\["--literal-pathspecs", "clean", "-f", "--", /, "scripts/agento.mjs must spell the literal, non-recursive clean");
+  const cli = fs.readFileSync(path.join(repoRoot, "scripts", "commands", "ship.mjs"), "utf8");
+  assert.match(cli, /\["--literal-pathspecs", "clean", "-f", "--", /, "scripts/commands/ship.mjs must spell the literal, non-recursive clean");
   assert.doesNotMatch(cli, /"clean", "-fd"|"clean", "-fx"|"clean", "-f", "-d"|"clean", "-f", "-x"/, "the CLI never cleans directories or ignored files");
   const offenders = [];
   for (const file of [...promptFiles, ...agentFiles, ...listFiles(commandRel(), ".md")]) {
