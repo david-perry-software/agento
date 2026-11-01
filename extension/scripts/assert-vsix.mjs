@@ -14,6 +14,7 @@ const requiredEntries = [
   "extension/cli/agento-config.mjs",
   "extension/cli/agento.mjs",
   "extension/cli/delivery-roadmap-resolver.mjs",
+  "extension/cli/lib/context.mjs",
   "extension/cli/session-state.mjs",
   "extension/media/agento.svg",
   "extension/out/cliClient.js",
@@ -28,6 +29,11 @@ const requiredEntries = [
 for (const entry of requiredEntries) {
   assert.ok(entrySet.has(entry), `VSIX is missing ${entry}`);
 }
+
+// The VSIX must package at least one command module once Phase 3 has moved the
+// first command family out of the dispatcher (the package step runs in Phase 6).
+const commandEntries = entries.filter((entry) => entry.startsWith("extension/cli/commands/"));
+assert.ok(commandEntries.length >= 1, "VSIX is missing every cli/commands/*.mjs");
 
 const forbiddenEntries = entries.filter(
   (entry) =>
