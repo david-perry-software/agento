@@ -354,7 +354,7 @@ const CAPABILITY_CHECKS = {
 // keeps this table and the prompt bodies in agreement.
 const COMMAND_NEEDS = {
   "agento-init": ["terminal", "ask-questions", "gh", "network"],
-  ap: ["terminal", "browser", "gh", "network"],
+  ap: ["terminal", "gh", "network"],
   "build-feature": ["terminal", "browser", "gh", "network"],
   "build-issue": ["terminal", "browser", "gh", "network"],
   "close-session": ["terminal"],

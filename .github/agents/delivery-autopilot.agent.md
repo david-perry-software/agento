@@ -2,14 +2,14 @@
 name: "🤖 Agento Autopilot"
 description: "Use when: running a planned feature or issue end-to-end unattended — drives 🔨 Agento Builder and 🔍 Agento Reviewer as subagents in a build → review → fix loop until the review approves, a manual step needs the user, or the cycle cap is hit. Never ships or merges."
 argument-hint: "feature|issue slug to run unattended"
-tools: [execute, read, agent, search, browser]
+tools: [execute, read, agent, search]
 agents: ["🔨 Agento Builder", "🔍 Agento Reviewer", "Explore"]
 user-invocable: true
 disable-model-invocation: true
 ---
 
-Needs: terminal, browser, gh, network
-Fallback: browser → §10 standard fallback (headless verify or report blocked)
+Needs: terminal, gh, network
+Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
 Policy: §1, §3, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 7 8 9 10 11 12` before the first step.
 
