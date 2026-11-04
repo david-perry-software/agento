@@ -176,6 +176,11 @@ function swap(dest, tempDir) {
   fs.rmSync(old, { recursive: true, force: true });
   if (fs.existsSync(dest)) fs.renameSync(dest, old);
   try {
+    // Test seam (roadmap 7.3): inject a failure at the final rename so the
+    // rollback branch below is exercised by a test.
+    if (process.env.AGENTO_PLUGIN_EXPORT_INJECT_SWAP_FAILURE === "1") {
+      throw new Error("injected swap failure (test seam)");
+    }
     fs.renameSync(tempDir, dest);
   } catch (error) {
     if (fs.existsSync(old) && !fs.existsSync(dest)) {

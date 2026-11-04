@@ -234,6 +234,36 @@ test("plugin export handles a repository archive larger than the default maxBuff
   fs.rmSync(dest, { recursive: true, force: true });
 });
 
+test("plugin export restores the old destination when the final swap rename fails", () => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "files");
+  git(repo, "push", "-q", "origin", "main");
+
+  const dest = path.join(os.tmpdir(), `agento-swap-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const first = runWith({ cwd: repo }, "plugin", "export", "--source", repo, "--dest", dest);
+  assert.equal(first.code, 0, JSON.stringify(first.json));
+  const before = contentMap(dest);
+
+  // Change the source so a successful re-export would build a different tree.
+  fs.writeFileSync(path.join(repo, "README.md"), "hello v2\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "files v2");
+  git(repo, "push", "-q", "origin", "main");
+
+  const failed = runWith({ cwd: repo, env: { ...baseEnv, AGENTO_PLUGIN_EXPORT_INJECT_SWAP_FAILURE: "1" } }, "plugin", "export", "--source", repo, "--dest", dest);
+  assert.equal(failed.code, 3, JSON.stringify(failed.json));
+  assert.equal(failed.json.status, "refused");
+  assert.match(failed.json.message, /injected swap failure/);
+  assert.deepEqual(contentMap(dest), before, "the old destination is restored byte-identical");
+  const stray = fs.readdirSync(path.dirname(dest)).filter((name) => name.startsWith(`${path.basename(dest)}.agento-`));
+  assert.deepEqual(stray, [], "no temp or old directories are left behind");
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  fs.rmSync(dest, { recursive: true, force: true });
+});
+
 test("plugin export with no --dest refuses when no or several Agento plugin locations are registered", () => {
   const repo = makeRepo();
   const settings = path.join(os.tmpdir(), `agento-settings-${process.pid}-${Math.random().toString(16).slice(2)}.json`);
