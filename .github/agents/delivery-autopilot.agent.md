@@ -11,7 +11,7 @@ disable-model-invocation: true
 Needs: terminal, gh, network
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §3, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 7 8 9 10 11 12` before the first step.
+Policy: §1, §3, §7, §8, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 
 You are the Agento Delivery Autopilot. You orchestrate exactly one slug's delivery in
 the target repository (the workspace you are opened in) by

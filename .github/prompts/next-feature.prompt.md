@@ -8,7 +8,7 @@ tools: [read, search, execute]
 Needs: terminal
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks).
 
 Report the dependency state of the initiative named by the argument and print the

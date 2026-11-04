@@ -7,7 +7,7 @@ agent: "🔨 Agento Builder"
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 3 4 5 7 8 9 10 11 12` before the first step.
+Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone.
 
 Build the **feature** named by the slug in the argument. Its roadmap resolution is

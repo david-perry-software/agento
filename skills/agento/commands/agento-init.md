@@ -6,7 +6,7 @@ argument-hint: "[--force] [--migrate]"
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: Existing files are kept unless `--force`; an existing companion repository or clone is adopted, never recreated or reset. With `--migrate`, roots already moved report nothing to migrate and existing `changes/agento-init` PRs in either repository are resumed, never duplicated.
 
 Initialize the current workspace (the **target repository**, not the Agento clone)

@@ -8,7 +8,7 @@ tools: [read, execute]
 Needs: terminal
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: `apply` of the already-active profile and `clear` on an unpinned clone change nothing (`changed: []`); `init` with the file present reports `created: false`; `list` and `show` are reads.
 
 Manage model profiles: named sets of `model:` pins for the Agento agents and the

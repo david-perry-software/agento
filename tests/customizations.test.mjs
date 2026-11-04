@@ -6,6 +6,9 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { DISPATCH_MODES } from "../scripts/lib/brief.mjs";
+import { baseEnv, cli, git, inRepoDelivery, makeRepo, makeWorktreeRepo, okStubs, restrictedPath } from "../scripts/test-helpers/agento-fixtures.mjs";
+
 // Structural checks for the Copilot customization files. One malformed agent file
 // silently drops every custom agent, and a mistyped agent name silently breaks a
 // prompt or handoff — so these are asserted here rather than discovered in the editor.
@@ -1012,12 +1015,9 @@ function citedSections(body) {
 function declaredSections(body) {
   const policyLines = body.split(/\r?\n/).filter((l) => /^Policy: /.test(l));
   assert.equal(policyLines.length, 1, "expected exactly one Policy: line");
-  const match = policyLines[0].match(/^Policy: ((?:§\d+, )*§\d+) — load once with `node <agento-root>\/scripts\/agento\.mjs policy ([\d ]+)` before the first step\.$/);
+  const match = policyLines[0].match(/^Policy: ((?:§\d+(?:, §\d+)*)?) — loaded by the opening `agento\.mjs brief` call; any other §N on demand with `agento\.mjs policy N`\.$/);
   assert.ok(match, `malformed Policy: line: ${JSON.stringify(policyLines[0])}`);
-  const sigils = match[1].split(", ").map((s) => s.slice(1));
-  const args = match[2].split(" ").filter(Boolean);
-  assert.deepEqual(sigils, args, "the § list must equal the policy arguments, in the same order");
-  return sigils;
+  return match[1] ? match[1].split(", ").map((s) => s.slice(1)) : [];
 }
 
 function expectedSections(body, agentFile) {
@@ -1058,6 +1058,81 @@ test("every agent, prompt, and mirror declares its policy sections on one Policy
   }
 });
 
+test("the router SKILL.md dispatch table equals DISPATCH_MODES", () => {
+  const { body } = splitFrontmatter(rel("skills", "agento", "SKILL.md"));
+  const table = body.match(/\| `agent:` \| Mode \|[\s\S]*?(?=\n## )/)?.[0] ?? "";
+  assert.ok(table, "skills/agento/SKILL.md has no dispatch table");
+  const fromTable = {};
+  for (const row of table.split("\n")) {
+    const cells = row.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length !== 2 || cells[0] === "`agent:`" || cells[0] === "---") continue;
+    const names = [...cells[0].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    const mode = /subagent/.test(cells[1]) ? "subagent" : /as that agent/.test(cells[1]) ? "inline-as-agent" : "inline";
+    if (/missing or `agent`/.test(cells[0])) {
+      assert.equal(mode, "inline");
+      continue;
+    }
+    for (const name of names) fromTable[name] = mode;
+  }
+  assert.deepEqual(fromTable, DISPATCH_MODES, "SKILL.md table must name every DISPATCH_MODES agent with the same mode");
+});
+
+test("brief --json includes exactly the sections each Policy: line declares", () => {
+  const primary = makeRepo({});
+  const nonDefault = makeRepo({});
+  git(nonDefault, "switch", "-q", "-c", "changes/x");
+  const { repo, wt } = makeWorktreeRepo();
+  git(repo, "worktree", "add", "-q", "--detach", path.join(wt, "plan-1"), "origin/main");
+  git(repo, "worktree", "add", "-q", "-b", "changes/fh", path.join(wt, "freehand-1"), "origin/main");
+  const build = inRepoDelivery({ repo, wt }, "widget", { status: "in-progress" }).owner;
+  const env = restrictedPath(okStubs).env;
+
+  const cases = [
+    ["agento-init", null, primary, false],
+    ["delivery-status", null, primary, false],
+    ["doctor", null, primary, false],
+    ["extend-copilot", null, primary, false],
+    ["fix-copilot", null, primary, false],
+    ["install-skills", null, primary, false],
+    ["mission-control", null, primary, false],
+    ["models", null, primary, false],
+    ["next-feature", null, primary, false],
+    ["triage-followups", null, primary, false],
+    ["close-session", null, primary, false],
+    ["ship", null, primary, false],
+    ["new-initiative", null, primary, false],
+    ["quick-fix", null, primary, false],
+    ["start-freehand", null, primary, false],
+    ["start-session", null, primary, false],
+    ["continue", null, primary, false],
+    ["commit-current-changes", null, nonDefault, false],
+    ["new-feature", null, path.join(wt, "plan-1"), false],
+    ["new-issue", null, path.join(wt, "plan-1"), false],
+    ["finish-freehand", null, path.join(wt, "freehand-1"), false],
+    ["ap", "widget", build, false],
+    ["build-feature", "widget", build, true],
+    ["build-issue", "widget", build, true],
+    ["review-feature", "widget", build, true],
+    ["review-issue", "widget", build, true],
+  ];
+  assert.equal(cases.length, 26);
+
+  for (const [command, argument, cwd, asSubagent] of cases) {
+    const args = [command];
+    if (argument) args.push(argument);
+    if (asSubagent) args.push("--as-subagent");
+    const result = spawnSync("node", [cli, "brief", ...args, "--json"], { cwd, encoding: "utf8", env });
+    assert.equal(result.status, 0, `${command}: ${result.stdout}\n${result.stderr}`);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.status, "ok", `${command} should be accepted`);
+
+    const declared = declaredSections(splitFrontmatter(commandRel(`${command}.md`)).body);
+    const included = json.blocks.filter((b) => b.kind === "policy" && b.page !== null).map((b) => b.id);
+    const union = [...new Set([...included, ...json.onDemand.map((s) => s.n)])].sort((a, b) => Number(a) - Number(b));
+    assert.deepEqual(union, declared, `${command}: brief included ∪ on-demand must equal its Policy: line`);
+  }
+});
+
 test("every command carries exactly one Duplicate submission: line matching its idempotency-table row", () => {
   const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
   const tableStart = docs.indexOf("**Idempotency table** — what a duplicate submission does, per command:");
@@ -1091,9 +1166,7 @@ test("every command's declared context stays within the budget (≤ 40,000 each,
     const file = rel(".github", "prompts", `${name}.prompt.md`);
     const { frontmatter, body } = splitFrontmatter(file);
     const meta = parseFrontmatter(frontmatter, path.relative(repoRoot, file));
-    const policyLine = body.split(/\r?\n/).find((l) => /^Policy: /.test(l));
-    const args = policyLine.match(/policy ([\d ]+)`/)[1].split(" ").filter(Boolean);
-    const policyBytes = args.reduce((sum, n) => sum + sectionBytes.get(n), 0);
+    const policyBytes = declaredSections(body).reduce((sum, n) => sum + sectionBytes.get(n), 0);
     const agentFile = meta.agent && meta.agent !== "agent" ? agentByName.get(meta.agent) : null;
     const agentBytes = agentFile ? fs.statSync(agentFile).size : 0;
     const commandBytes = fs.statSync(file).size;

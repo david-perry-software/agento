@@ -7,7 +7,7 @@ agent: "🏛️ Agento Architect"
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §6, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 6 7 9 10 11 12` before the first step.
+Policy: §1, §6, §7, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: An open `changes/initiative-<slug>` PR is resumed; a merged one is rejected naming the existing breakdown.
 
 Create a new **initiative** from the brief in the argument, following the Architect's

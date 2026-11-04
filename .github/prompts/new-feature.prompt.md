@@ -7,7 +7,7 @@ agent: "📋 Agento Planner"
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §2, §4, §5, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 4 5 7 9 10 11 12` before the first step.
+Policy: §1, §2, §4, §5, §7, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: An existing roadmap for the slug enters the Planner resume protocol; no second branch, worktree, or PR. An existing GitHub issue is linked, not duplicated.
 
 Plan a new **feature** from the description in the argument.

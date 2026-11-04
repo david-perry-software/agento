@@ -7,7 +7,7 @@ agent: "agent"
 Needs: terminal, ask-questions, browser, gh, code, network
 Fallback: ask-questions, browser, code → §10 standard fallbacks (the dispatched command's own soft needs apply once it runs)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: Re-derives the transition from git + roadmap state and performs whatever is legal now; never a second worktree, branch, or PR — the dispatched command's own row governs the rest.
 
 Continue the delivery lifecycle from wherever it stands. The Agento CLI derives the

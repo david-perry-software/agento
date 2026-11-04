@@ -7,7 +7,7 @@ agent: "agent"
 Needs: terminal, code
 Fallback: code → §10 standard fallback (keep the worktree; print the open command)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened.
 
 Start an isolated freehand session: a sibling worktree on its own work branch where

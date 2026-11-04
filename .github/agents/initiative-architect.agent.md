@@ -11,7 +11,7 @@ disable-model-invocation: false
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §6, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 6 7 9 10 11 12` before the first step.
+Policy: §1, §6, §7, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 
 You are the Agento Initiative Architect. You turn a brief that is too large for one
 feature into an **initiative**: a `brief.md` that preserves the intake text verbatim

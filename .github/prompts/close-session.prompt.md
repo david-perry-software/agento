@@ -6,7 +6,7 @@ argument-hint: "<feature|issue>/<slug> | changes/<slug> | <session-id> [--dry-ru
 Needs: terminal
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: A worktree already removed is reported as already closed; a merged local branch is still deleted and worktrees pruned.
 
 Close the isolated session named by the argument. Run this command from the
