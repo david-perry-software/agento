@@ -7,7 +7,7 @@ agent: "agent"
 Needs: terminal, gh, network
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: Already-annotated follow-up lines and already-flagged issues are skipped.
 
 Triage delivery follow-ups into the GitHub backlog. This invocation authorizes filing
@@ -20,9 +20,8 @@ session context line `Agento CLI:`).
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's
-duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs preflight
-triage-followups` call (§9–§11): print its `receipt` and then its `preflightLines`
-verbatim, and stop on `status: rejected` (exit 3), writing nothing.
+duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs brief
+triage-followups` call (§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 **Companion mode** (`agento.mjs config` reports `artifactsRoot` different from

@@ -120,6 +120,14 @@ function parseArgs(argv) {
     else if (arg === "--for") {
       options.for = argv[++i];
       if (!options.for || !/^[a-z0-9-]+$/.test(options.for)) usage(`--for takes a command name matching [a-z0-9-]+, got ${JSON.stringify(options.for ?? "")}`);
+    } else if (arg === "--as-subagent") {
+      options.asSubagent = true;
+    } else if (arg === "--json") {
+      options.json = true;
+    } else if (arg === "--page") {
+      const raw = argv[++i];
+      options.page = Number(raw);
+      if (!Number.isInteger(options.page) || options.page < 1) usage(`--page takes a positive integer, got ${JSON.stringify(raw ?? "")}`);
     } else if (arg === "--wait" || arg === "--interval") {
       const value = argv[++i];
       const [min, max] = arg === "--wait" ? [0, 60] : [1, 60];

@@ -7,7 +7,7 @@ agent: "agent"
 Needs: terminal, code
 Fallback: code → §10 standard fallback (keep the worktree; print the open command)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: A registered worktree for the same subject is resumed with `--resume` semantics whether or not the flag was given: HEAD, branch, and files untouched, the window reopened.
 
 Start an isolated freehand session: a sibling worktree on its own work branch where
@@ -25,14 +25,13 @@ slug.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line.
-Open with one `node <agento-root>/scripts/agento.mjs preflight start-freehand` call
-(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
-`status: rejected` (exit 3), writing nothing.
+Open with one `node <agento-root>/scripts/agento.mjs brief start-freehand` call
+(§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 **Preconditions:**
 
-1. The preflight's `window` verdict applies the window check: `role: "primary"` with
+1. The brief's `Session:` block applies the window check: `role: "primary"` with
    `worktree.branch` equal to the configured default branch and a clean checkout;
    otherwise it rejects per §11 with the record's alternatives.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately

@@ -11,7 +11,7 @@ disable-model-invocation: false
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §6, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 6 7 9 10 11 12` before the first step.
+Policy: §1, §6, §7, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 
 You are the Agento Initiative Architect. You turn a brief that is too large for one
 feature into an **initiative**: a `brief.md` that preserves the intake text verbatim
@@ -31,9 +31,10 @@ response with the acceptance receipt and close it with the terminal result line 
 `changes/initiative-<slug>` PR is resumed at its current step, a merged one is
 rejected naming the existing breakdown. Window check per §11: requires role
 `primary` on the default branch, clean. Open with one `node
-<agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11; the CLI path
-is announced in the session context as `Agento CLI:`): print its `receipt` and then
-its `preflightLines` verbatim, and stop on `status: rejected` (exit 3). Read the
+<agento-root>/scripts/agento.mjs brief new-initiative` call (§9–§11; the CLI path is
+announced in the session context as `Agento CLI:`): print its receipt and
+`Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every
+`More:` page before the first step. Read the
 default branch and freehand prefix from `agento.mjs config`
 (`config.branches.default`, `config.branches.freehand`). `main` and
 `changes/` below mean the configured values.
@@ -59,7 +60,7 @@ keeps the single-repo flow below.
 ## Procedure
 
 1. **Require the primary worktree on `main`, clean, and synchronized.** The
-   preflight's `window` verdict applies the window check per §11 (`primary` on the
+   brief's `Session:` block applies the window check per §11 (`primary` on the
    default branch, clean; a managed or `unmanaged` role is rejected with the record's
    alternatives). Then `git fetch origin` and `git status --short --branch` must show
    nothing and zero ahead/behind; otherwise stop and name

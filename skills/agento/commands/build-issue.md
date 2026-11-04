@@ -7,21 +7,17 @@ agent: "🔨 Agento Builder"
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 2 3 4 5 7 8 9 10 11 12` before the first step.
+Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: The Builder resume/audit protocol on the existing branch and roadmap; ticked steps are audited, never redone.
 
-Build the **issue** fix named by the slug in the argument. Its roadmap resolution is
-the `resolve` section of the preflight call below — act on it: `status: ok` gives
-`path` and `branch`; `conflict`, `branch-mismatch`, or `missing` are hard stops —
-report the `message` verbatim.
+Build the **issue** fix named by the slug in the argument. The brief's Delivery block below is its roadmap resolution — a present block gives the header and current step; a `conflict`, `branch-mismatch`, or `missing` block is a hard stop — report its `message` verbatim.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's
-duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs preflight
+duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs brief
 build-issue issue <slug>` call (§9–§11; the CLI path is announced in the session
-context as `Agento CLI:`): print its `receipt` and then its `preflightLines`
-verbatim, and stop on `status: rejected` (exit 3), writing nothing.
+context as `Agento CLI:`): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
 - If the argument is blank, run `agento.mjs status issue`, list each item's slug,

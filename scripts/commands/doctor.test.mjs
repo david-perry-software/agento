@@ -645,21 +645,21 @@ test("unmanaged-window rejections carry window.primary in the brief output", () 
 
 // --- policy -------------------------------------------------------------------
 
-const policyFile = path.join(repoRoot, ".github", "instructions", "delivery-policy.instructions.md");
+const policyDir = path.join(repoRoot, ".github", "instructions", "policy");
 
-function policySlices() {
-  const text = fs.readFileSync(policyFile, "utf8");
-  const heading = /^## (\d+)\. (.+)$/gm;
-  const starts = [];
-  let match;
-  while ((match = heading.exec(text)) !== null) starts.push({ n: match[1], offset: match.index });
-  return { text, starts };
+function policySlice(n) {
+  const file = fs.readdirSync(policyDir).filter((name) => name.startsWith(`${n.padStart(2, "0")}-`));
+  assert.equal(file.length, 1, `expected one policy section file for \u00a7${n}`);
+  return fs.readFileSync(path.join(policyDir, file[0]), "utf8");
 }
 
-function policySlice({ text, starts }, n) {
-  const index = starts.findIndex((s) => s.n === n);
-  const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
-  return text.slice(starts[index].offset, end);
+function policyBody() {
+  return fs
+    .readdirSync(policyDir)
+    .filter((name) => /^\d{2}-.+\.md$/.test(name))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(policyDir, name), "utf8"))
+    .join("");
 }
 
 function runPolicy(repo, ...args) {
@@ -669,8 +669,7 @@ function runPolicy(repo, ...args) {
 
 test("policy prints the requested sections as raw Markdown, ascending and deduplicated", () => {
   const repo = makeRepo({});
-  const slices = policySlices();
-  const expected = `# delivery-policy.instructions.md — sections 1, 9\n\n${policySlice(slices, "1")}${policySlice(slices, "9")}`;
+  const expected = `# delivery-policy.instructions.md — sections 1, 9\n\n${policySlice("1")}${policySlice("9")}`;
   const { code, stdout } = runPolicy(repo, "policy", "1", "9");
   assert.equal(code, 0);
   assert.equal(stdout, expected);
@@ -680,13 +679,12 @@ test("policy prints the requested sections as raw Markdown, ascending and dedupl
 
 test("policy --list returns all 12 sections whose bytes sum to the body size", () => {
   const repo = makeRepo({});
-  const slices = policySlices();
   const { code, json } = run(repo, "policy", "--list");
   assert.equal(code, 0);
   assert.equal(json.sections.length, 12);
   assert.deepEqual(json.sections.map((s) => s.n), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
   assert.equal(json.sections[0].title, "Who does the work");
-  const body = slices.text.slice(slices.starts[0].offset);
+  const body = policyBody();
   assert.equal(json.sections.reduce((sum, s) => sum + s.bytes, 0), Buffer.byteLength(body, "utf8"));
 });
 

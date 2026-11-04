@@ -7,7 +7,7 @@ agent: "agent"
 Needs: terminal, gh, network
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §3, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 3 9 10 11 12` before the first step.
+Policy: §1, §3, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: `status: complete` with unticked post-ship steps resumes at the epilogue; `status: complete`, PR merged, and a managed worktree still owning the branch resumes at teardown; an already-merged PR with no worktree only syncs the default branch and reports it; in companion mode, a code PR merged while the companion PR is still open resumes at the companion merge, then sync, teardown, epilogue; a conflict or a failing required check found at `checks` reopens the roadmap to `in-progress` with an added Builder step and rejects back to the build window, while a policy-blocked merge (`mergeStateStatus: BLOCKED` or a refusal that classifies as blocked) reports `merge-blocked` and does not reopen.
 
 Ship the work named by the slug in the argument. The whole ship — audit, the
@@ -30,11 +30,7 @@ and reports them in `preflight[]`. Window check per §11: requires role `primary
 
 The CLI path is announced in the session context as `Agento CLI:`.
 
-1. `node <agento-root>/scripts/agento.mjs preflight ship <slug>` — print its
-   `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-   (exit 3). Its `resolve` section gives the delivery `type` (`feature` or `issue`);
-   a `conflict`, `branch-mismatch`, or `missing` resolution is reported verbatim with
-   the §9 rejected receipt; stop.
+1. `node <agento-root>/scripts/agento.mjs brief ship <slug>` — print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step. Its Delivery block shows the roadmap `branch` — `feature/<slug>` or `issue/<slug>` — which gives the delivery `type`; a `conflict`, `branch-mismatch`, or `missing` Delivery block is reported verbatim; stop.
 2. `node <agento-root>/scripts/agento.mjs ship <type> <slug>` — the audit call. It
    never writes to any repository (the one exception: an issue PR body missing its
    `Fixes #<n>` line is completed through the GitHub API and reported in

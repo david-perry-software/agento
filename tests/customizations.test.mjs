@@ -6,6 +6,9 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { DISPATCH_MODES } from "../scripts/lib/brief.mjs";
+import { baseEnv, cli, git, inRepoDelivery, makeRepo, makeWorktreeRepo, okStubs, restrictedPath } from "../scripts/test-helpers/agento-fixtures.mjs";
+
 // Structural checks for the Copilot customization files. One malformed agent file
 // silently drops every custom agent, and a mistyped agent name silently breaks a
 // prompt or handoff — so these are asserted here rather than discovered in the editor.
@@ -13,6 +16,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const rel = (...parts) => path.join(repoRoot, ...parts);
 const commandRel = (...parts) => rel("skills", "agento", "commands", ...parts);
+
+function policySectionsJson() {
+  return JSON.parse(execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8" }));
+}
+
+function policySection(n) {
+  return execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", String(n)], { cwd: repoRoot, encoding: "utf8" });
+}
 
 function listFiles(dir, suffix) {
   return fs
@@ -210,9 +221,10 @@ test("the router dispatch content names every agent exactly once with the decide
   for (const name of SUBAGENT_AGENT_FILES.map((f) => agents.get(rel(".github", "agents", f)).name)) {
     assert.ok(subagentRow.includes(name), `subagent row must name ${name}`);
   }
-  for (const token of ["models pins", "task", "runSubagent", "copilotModel", "subagentModel", "Agento CLI:", "realpath"]) {
+  for (const token of ["brief <name> <argument>", "task", "runSubagent", "copilotModel", "subagentModel", "Agento CLI:", "realpath"]) {
     assert.ok(body.includes(token), `skills/agento/SKILL.md must name ${JSON.stringify(token)}`);
   }
+  assert.ok(!body.includes("models pins"), "skills/agento/SKILL.md must not run `models pins` (the brief prints the pin)");
   assert.ok(
     body.includes("receipt line must be printed verbatim as visible text"),
     "skills/agento/SKILL.md must require the dispatched command's §9 receipt line printed verbatim before any question or other output",
@@ -239,8 +251,7 @@ test("relative links inside agents, prompts, instructions, and skills resolve", 
 });
 
 test("policy section references (§N) point at sections that exist", () => {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
+  const sections = new Set(policySectionsJson().sections.map((s) => s.n));
   assert.ok(sections.size >= 12, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
@@ -329,7 +340,7 @@ test("status: paused is reserved for the user; the Autopilot resumes session bre
   // Policy §3 "Pause kinds": a Builder stopping for session length keeps
   // `in-progress`; `paused` carries a `(manual)` or `blocked:` marker in next-step,
   // and the Autopilot only stops on that marker — never on a bare `paused`.
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  const policy = policySection(3);
   assert.match(policy, /\*\*Pause kinds\.\*\*/, "delivery-policy §3 must define the pause kinds");
   assert.match(policy, /session break/, "delivery-policy §3 must name the session break");
   const builder = splitFrontmatter(rel(".github", "agents", "delivery-builder.agent.md")).body;
@@ -385,7 +396,7 @@ test("ship is one agento.mjs ship call with no hand-run fallback procedure", () 
   const prompt = rel(".github", "prompts", "ship.prompt.md");
   const body = splitFrontmatter(prompt).body;
   assert.equal(fs.readFileSync(commandRel("ship.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "skills/agento/commands/ship.md must mirror the prompt byte for byte");
-  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs preflight ship <slug>/);
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs brief ship <slug>/);
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs ship <type> <slug>/);
   assert.match(body, /--confirm <confirmToken>/, "the confirmation reaches the CLI as --confirm <token>");
   for (const [pattern, why] of [
@@ -636,8 +647,7 @@ test("every agent tools: entry is a GitHub primary alias or an explicit VS Code-
 });
 
 test("ask-questions clarification always offers a §10 recommended choice (#90 planner-ask-questions-tool)", () => {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m)?.[1] ?? "";
+  const section = policySection(10);
   const paragraph = section.match(/\*\*Recommended choice\.\*\*[\s\S]*?(?=\n\n|$)/)?.[0];
   assert.ok(paragraph, "delivery-policy §10 must define a **Recommended choice.** paragraph");
   assert.match(paragraph, /`recommended: true`/, "§10 recommended choice must set recommended: true in the question tool");
@@ -726,15 +736,15 @@ const HAND_RUN_OPENING = [
   [/rev-parse --short HEAD/, "git rev-parse --short HEAD"],
 ];
 
-test("every command opens with one agento.mjs preflight <name> call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
+test("every command opens with one agento.mjs brief <name> call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
   for (const file of promptFiles) {
     const name = path.basename(file, ".prompt.md");
     const label = path.relative(repoRoot, file);
     const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
-    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs preflight ${name}\\b`), `${label}: never runs agento.mjs preflight ${name}`);
-    const others = [...body.matchAll(/agento\.mjs preflight ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name);
-    assert.deepEqual(others, [], `${label}: runs preflight for another command`);
-    assert.match(body, /`receipt`[^.]*`preflightLines`/, `${label}: must print the preflight's receipt and preflightLines`);
+    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs brief ${name}\\b`), `${label}: never runs agento.mjs brief ${name}`);
+    const others = [...body.matchAll(/agento\.mjs brief ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name);
+    assert.deepEqual(others, [], `${label}: runs brief for another command`);
+    assert.match(body, /print its receipt and `Preflight:` lines verbatim/, `${label}: must print the brief's receipt and Preflight: lines`);
     for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
   }
 });
@@ -749,16 +759,26 @@ const AGENT_COMMANDS = {
   "initiative-architect": "new-initiative",
 };
 
-test("every agent opens with one agento.mjs preflight call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
+test("every agent opens with one agento.mjs brief call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
   assert.deepEqual(agentFiles.map((file) => path.basename(file, ".agent.md")), Object.keys(AGENT_COMMANDS).sort(), "AGENT_COMMANDS must list every agent");
   for (const file of agentFiles) {
     const label = path.relative(repoRoot, file);
     const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
     const command = AGENT_COMMANDS[path.basename(file, ".agent.md")];
     const stem = command.replace(/-(?:feature|issue)$/, "-<type>");
-    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs preflight (?:${command}|${stem})(?![\\\\w-])`), `${label}: never runs agento.mjs preflight ${command}`);
-    assert.match(body, /`receipt`[^.]*`preflightLines`/, `${label}: must print the preflight's receipt and preflightLines`);
+    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs brief (?:${command}|${stem})(?![\\\\w-])`), `${label}: never runs agento.mjs brief ${command}`);
+    assert.match(body, /print its receipt and `Preflight:` lines verbatim/, `${label}: must print the brief's receipt and Preflight: lines`);
     for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
+  }
+});
+
+test("no agent, prompt, mirror, or router opens with preflight or reads a file under <agento-root>", () => {
+  const files = [...agentFiles, ...promptFiles, ...commandNames.map((name) => commandRel(`${name}.md`)), skillFile];
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body;
+    assert.doesNotMatch(body, /agento\.mjs preflight/, `${label}: still opens with agento.mjs preflight`);
+    assert.doesNotMatch(body, /Read `?<agento-root>/, `${label}: tells the model to Read a file under <agento-root>`);
   }
 });
 
@@ -843,7 +863,7 @@ test("the policy file is the only place the shared rules are spelled out", () =>
       assert.doesNotMatch(text, canary, `${path.relative(repoRoot, file)} restates a policy rule (${canary}); link delivery-policy.instructions.md instead`);
     }
   }
-  assert.match(fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8"), /delete\s+them, never commit them/, "policy §7 lost its clean-handoff rule");
+  assert.match(policySection(7), /delete\s+them, never commit them/, "policy §7 lost its clean-handoff rule");
   // The ship prompt owns its teardown pause wording (ship-audit-first); nothing else
   // in the customization set restates it.
   const teardownPause = /paused at teardown/;
@@ -865,7 +885,7 @@ test("the moved receipts/preflight/window reference lives in docs/architecture.m
     "**Declaration contract.**",
     "**`Policy:` line contract.**",
     "**When `doctor` runs.**",
-    "1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`",
+    "1. Run `node <agento-root>/scripts/agento.mjs brief <command> <argument>`",
   ]) {
     assert.ok(docs.includes(phrase), `docs/architecture.md lost the moved reference block: ${JSON.stringify(phrase)}`);
   }
@@ -1006,12 +1026,9 @@ function citedSections(body) {
 function declaredSections(body) {
   const policyLines = body.split(/\r?\n/).filter((l) => /^Policy: /.test(l));
   assert.equal(policyLines.length, 1, "expected exactly one Policy: line");
-  const match = policyLines[0].match(/^Policy: ((?:§\d+, )*§\d+) — load once with `node <agento-root>\/scripts\/agento\.mjs policy ([\d ]+)` before the first step\.$/);
+  const match = policyLines[0].match(/^Policy: ((?:§\d+(?:, §\d+)*)?) — loaded by the opening `agento\.mjs brief` call; any other §N on demand with `agento\.mjs policy N`\.$/);
   assert.ok(match, `malformed Policy: line: ${JSON.stringify(policyLines[0])}`);
-  const sigils = match[1].split(", ").map((s) => s.slice(1));
-  const args = match[2].split(" ").filter(Boolean);
-  assert.deepEqual(sigils, args, "the § list must equal the policy arguments, in the same order");
-  return sigils;
+  return match[1] ? match[1].split(", ").map((s) => s.slice(1)) : [];
 }
 
 function expectedSections(body, agentFile) {
@@ -1052,6 +1069,81 @@ test("every agent, prompt, and mirror declares its policy sections on one Policy
   }
 });
 
+test("the router SKILL.md dispatch table equals DISPATCH_MODES", () => {
+  const { body } = splitFrontmatter(rel("skills", "agento", "SKILL.md"));
+  const table = body.match(/\| `agent:` \| Mode \|[\s\S]*?(?=\n## )/)?.[0] ?? "";
+  assert.ok(table, "skills/agento/SKILL.md has no dispatch table");
+  const fromTable = {};
+  for (const row of table.split("\n")) {
+    const cells = row.split("|").map((c) => c.trim()).filter(Boolean);
+    if (cells.length !== 2 || cells[0] === "`agent:`" || cells[0] === "---") continue;
+    const names = [...cells[0].matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    const mode = /subagent/.test(cells[1]) ? "subagent" : /as that agent/.test(cells[1]) ? "inline-as-agent" : "inline";
+    if (/missing or `agent`/.test(cells[0])) {
+      assert.equal(mode, "inline");
+      continue;
+    }
+    for (const name of names) fromTable[name] = mode;
+  }
+  assert.deepEqual(fromTable, DISPATCH_MODES, "SKILL.md table must name every DISPATCH_MODES agent with the same mode");
+});
+
+test("brief --json includes exactly the sections each Policy: line declares", () => {
+  const primary = makeRepo({});
+  const nonDefault = makeRepo({});
+  git(nonDefault, "switch", "-q", "-c", "changes/x");
+  const { repo, wt } = makeWorktreeRepo();
+  git(repo, "worktree", "add", "-q", "--detach", path.join(wt, "plan-1"), "origin/main");
+  git(repo, "worktree", "add", "-q", "-b", "changes/fh", path.join(wt, "freehand-1"), "origin/main");
+  const build = inRepoDelivery({ repo, wt }, "widget", { status: "in-progress" }).owner;
+  const env = restrictedPath(okStubs).env;
+
+  const cases = [
+    ["agento-init", null, primary, false],
+    ["delivery-status", null, primary, false],
+    ["doctor", null, primary, false],
+    ["extend-copilot", null, primary, false],
+    ["fix-copilot", null, primary, false],
+    ["install-skills", null, primary, false],
+    ["mission-control", null, primary, false],
+    ["models", null, primary, false],
+    ["next-feature", null, primary, false],
+    ["triage-followups", null, primary, false],
+    ["close-session", null, primary, false],
+    ["ship", null, primary, false],
+    ["new-initiative", null, primary, false],
+    ["quick-fix", null, primary, false],
+    ["start-freehand", null, primary, false],
+    ["start-session", null, primary, false],
+    ["continue", null, primary, false],
+    ["commit-current-changes", null, nonDefault, false],
+    ["new-feature", null, path.join(wt, "plan-1"), false],
+    ["new-issue", null, path.join(wt, "plan-1"), false],
+    ["finish-freehand", null, path.join(wt, "freehand-1"), false],
+    ["ap", "widget", build, false],
+    ["build-feature", "widget", build, true],
+    ["build-issue", "widget", build, true],
+    ["review-feature", "widget", build, true],
+    ["review-issue", "widget", build, true],
+  ];
+  assert.equal(cases.length, 26);
+
+  for (const [command, argument, cwd, asSubagent] of cases) {
+    const args = [command];
+    if (argument) args.push(argument);
+    if (asSubagent) args.push("--as-subagent");
+    const result = spawnSync("node", [cli, "brief", ...args, "--json"], { cwd, encoding: "utf8", env });
+    assert.equal(result.status, 0, `${command}: ${result.stdout}\n${result.stderr}`);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.status, "ok", `${command} should be accepted`);
+
+    const declared = declaredSections(splitFrontmatter(commandRel(`${command}.md`)).body);
+    const included = json.blocks.filter((b) => b.kind === "policy" && b.page !== null).map((b) => b.id);
+    const union = [...new Set([...included, ...json.onDemand.map((s) => s.n)])].sort((a, b) => Number(a) - Number(b));
+    assert.deepEqual(union, declared, `${command}: brief included ∪ on-demand must equal its Policy: line`);
+  }
+});
+
 test("every command carries exactly one Duplicate submission: line matching its idempotency-table row", () => {
   const docs = fs.readFileSync(rel("docs", "architecture.md"), "utf8");
   const tableStart = docs.indexOf("**Idempotency table** — what a duplicate submission does, per command:");
@@ -1085,9 +1177,7 @@ test("every command's declared context stays within the budget (≤ 40,000 each,
     const file = rel(".github", "prompts", `${name}.prompt.md`);
     const { frontmatter, body } = splitFrontmatter(file);
     const meta = parseFrontmatter(frontmatter, path.relative(repoRoot, file));
-    const policyLine = body.split(/\r?\n/).find((l) => /^Policy: /.test(l));
-    const args = policyLine.match(/policy ([\d ]+)`/)[1].split(" ").filter(Boolean);
-    const policyBytes = args.reduce((sum, n) => sum + sectionBytes.get(n), 0);
+    const policyBytes = declaredSections(body).reduce((sum, n) => sum + sectionBytes.get(n), 0);
     const agentFile = meta.agent && meta.agent !== "agent" ? agentByName.get(meta.agent) : null;
     const agentBytes = agentFile ? fs.statSync(agentFile).size : 0;
     const commandBytes = fs.statSync(file).size;
@@ -1225,4 +1315,26 @@ test("the Autopilot pins subagent models via models pins and stops on a tier ref
   assert.match(autopilot, /`copilotModel` as the `task` tool's `model`/, "Autopilot must pass copilotModel as the task tool's model");
   assert.match(autopilot, /Tier refusal halts the run/, "Autopilot must stop on a tier refusal");
   assert.match(autopilot, /pin `autopilot` at least as high as the\s+highest-tier model/, "Autopilot must name the tier-refusal fix");
+});
+
+test("every file under the customization roots is ≤ 20,000 bytes", () => {
+  const roots = [rel(".github", "agents"), rel(".github", "prompts"), rel(".github", "instructions"), rel("skills", "agento")];
+  const walk = (dir) => {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const child = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...walk(child));
+      else if (entry.isFile()) out.push(child);
+    }
+    return out;
+  };
+  let checked = 0;
+  for (const root of roots) {
+    for (const file of walk(root)) {
+      const size = fs.statSync(file).size;
+      assert.ok(size <= 20000, `${path.relative(repoRoot, file)} is ${size} bytes (≤ 20,000)`);
+      checked += 1;
+    }
+  }
+  assert.ok(checked > 50, `expected many customization files, checked ${checked}`);
 });

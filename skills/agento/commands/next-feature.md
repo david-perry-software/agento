@@ -8,7 +8,7 @@ tools: [read, search, execute]
 Needs: terminal
 Fallback: none — every need is hard
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: Read-only; a duplicate is a fresh read (for `doctor`, a fresh run of the checks).
 
 Report the dependency state of the initiative named by the argument and print the
@@ -19,9 +19,7 @@ orchestration stays explicit in the primary window.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line. Open with one `node
-<agento-root>/scripts/agento.mjs preflight next-feature` call (§9–§11): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-(exit 3). Window check per §11: requires role
+<agento-root>/scripts/agento.mjs brief next-feature` call (§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step. Window check per §11: requires role
 `any` (read-only / not window-sensitive).
 
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs initiative <slug>` (the

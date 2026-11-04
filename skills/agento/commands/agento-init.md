@@ -6,7 +6,7 @@ argument-hint: "[--force] [--migrate]"
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: Existing files are kept unless `--force`; an existing companion repository or clone is adopted, never recreated or reset. With `--migrate`, roots already moved report nothing to migrate and existing `changes/agento-init` PRs in either repository are resumed, never duplicated.
 
 Initialize the current workspace (the **target repository**, not the Agento clone)
@@ -23,9 +23,8 @@ clone. `--migrate` additionally moves a pre-existing in-repo artifact tree
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line.
-Open with one `node <agento-root>/scripts/agento.mjs preflight agento-init` call
-(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
-`status: rejected` (exit 3), writing nothing. `<agento-root>` comes from the session context line
+Open with one `node <agento-root>/scripts/agento.mjs brief agento-init` call
+(§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step. `<agento-root>` comes from the session context line
 `Agento CLI: node <agento-root>/scripts/agento.mjs` (fallback: the user-level
 `chat.pluginLocations` setting — it is machine-scoped, so only user settings carry it).
 Window check per §11: requires role `any` (read-only / not window-sensitive).
@@ -34,8 +33,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 1. **Product repository.** Confirm the workspace root is a git repository, is
    **not** the Agento plugin clone itself (no `.claude-plugin/plugin.json` with
-   `"name": "agento"`), and is the **primary checkout**: the preflight's `session`
-   section must report `worktree.isPrimary: true`.
+   `"name": "agento"`), and is the **primary checkout**: the brief's `Session:` block must report `role: primary`.
    The companion is cloned to `../<name>` relative to the primary checkout (that is
    where every `agento.mjs` reader resolves it); running from a managed worktree
    would put the clone in the worktrees directory, so stop and name the primary
@@ -114,30 +112,11 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    (missing admin scope, or a private repository on a plan without rulesets) is
    recorded as a gap in the report, never retried with `--admin`.
 
-6. **Product config.** Create `.github/agento.json` with the snippet below if absent
-   (`--force` rewrites it), setting `branches.default` to `<default>` and
-   `artifacts.repo.name` to `<name>`. Do **not** create `features/`, `issues/`, or
-   `initiatives/` in the product repository: the roots live in the companion.
-
-   ```json
-   {
-     "artifacts": {
-       "features": "features",
-       "issues": "issues",
-       "initiatives": "initiatives",
-       "repo": { "name": "<name>", "dir": null }
-     },
-     "worktrees": { "dir": null, "autoApprove": null },
-     "branches": {
-       "default": "main",
-       "feature": "feature/",
-       "issue": "issue/",
-       "freehand": "changes/",
-       "postShip": "post-ship/"
-     },
-     "checks": { "releaseWorkflow": null }
-   }
-   ```
+6. **Product config.** Create `.github/agento.json` from
+   `<agento-root>/templates/agento.json` if absent (`--force` rewrites it), filling
+   `branches.default` with `<default>` and `artifacts.repo.name` with `<name>`. Do
+   **not** create `features/`, `issues/`, or `initiatives/` in the product
+   repository: the roots live in the companion.
 
   `worktrees.dir: null` means "a sibling directory named `<repo-name>-worktrees/`".
   `worktrees.autoApprove: null` keeps the default `true`, so managed session
@@ -148,7 +127,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
   override; every key is optional.
 
 7. **AGENTS.md.** Create or append to the target repository's `AGENTS.md` an
-   `## Agento` section using the template below (`<agento-root>/templates/AGENTS-section.md`).
+   `## Agento` section from `<agento-root>/templates/AGENTS-section.md`.
    Fill the owner and companion placeholders from steps 1–2 and the remaining
    placeholders from the project's actual files (package.json scripts, README,
    existing tooling); ask the user for anything you cannot infer, with the
@@ -156,46 +135,6 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    AGENTS.md already has an
    `## Agento` section, leave it alone unless `--force` was given.
 
-   ```markdown
-   ## Agento
-
-   Delivery work in this repository is driven by the Agento plugin (slash commands
-   /agento start-session, /agento new-initiative, /agento next-feature, /agento new-feature, /agento new-issue,
-   /agento build-feature, /agento build-issue, /agento review-feature, /agento review-issue, /agento ap, /agento ship,
-   /agento continue, /agento close-session, /agento start-freehand, /agento finish-freehand, /agento doctor; /agento ship audits
-   a finished build in place and tears its worktree down, /agento close-session is for
-   plan and freehand sessions and abandoned builds). Artifacts live in the companion
-   repository `<owner>/<companion>` cloned at `../<companion>` —
-   `features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
-   `initiatives/YYYY/MM/<slug>/` there; configuration is this repository's
-   `.github/agento.json`.
-   Commands are always written `/agento <name>`; a bare `/<name>` or a `.prompt`/`.md`
-   suffix is read as the canonical command and proceeds without confirmation.
-
-   ### Commands
-
-   - Install: `<install command>`
-   - Test: `<test command>`
-   - Typecheck: `<typecheck command, or "none">`
-   - Lint: `<lint command, or "none">`
-   - Full verification: `<what /agento ship should expect to be green>`
-
-   ### Verification strategy
-
-   <How user-visible behavior is verified locally: dev server command, ports, e2e
-   runner. Whether a deployment preview system exists and when it may be used.>
-
-   ### Shared resources
-
-   <Staging backends, machine-wide local services, fixed ports that collide across
-   concurrent sessions — or "none".>
-
-   ### Skills
-
-   | Domain | Skill |
-   |---|---|
-   | <domain> | <skill name or "none installed"> |
-   ```
 
 8. **CI poller.** Copy Agento's bounded CI poller into the project at
    `scripts/wait-for-checks.sh` and `chmod +x` it. Source it from the local Agento

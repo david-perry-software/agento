@@ -7,7 +7,7 @@ agent: "🏛️ Agento Architect"
 Needs: terminal, ask-questions, gh, network
 Fallback: ask-questions → §10 standard fallback (numbered questions in chat)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §6, §7, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 6 7 9 10 11 12` before the first step.
+Policy: §1, §6, §7, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: An open `changes/initiative-<slug>` PR is resumed; a merged one is rejected naming the existing breakdown.
 
 Create a new **initiative** from the brief in the argument, following the Architect's
@@ -19,12 +19,10 @@ directly above the result line per §12; a duplicate submission follows this com
 duplicate-submission line (an open `changes/initiative-<slug>` PR is resumed from step 7; a
 merged one is rejected naming the existing breakdown), which takes precedence over
 the slug reservation in step 5. Open with one
-`node <agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11): print
-its `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-(exit 3), writing nothing.
+`node <agento-root>/scripts/agento.mjs brief new-initiative` call (§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `primary` on the default branch, clean.
 
-1. The preflight's `window` verdict applies the window check (`role: "primary"`,
+1. The brief's `Session:` block applies the window check (`role: "primary"`,
    `worktree.branch` = `main`, a clean checkout; otherwise it rejects per §11 with the
    record's alternatives), then require
    the tree clean and synchronized.
