@@ -759,15 +759,15 @@ const AGENT_COMMANDS = {
   "initiative-architect": "new-initiative",
 };
 
-test("every agent opens with one agento.mjs preflight call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
+test("every agent opens with one agento.mjs brief call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
   assert.deepEqual(agentFiles.map((file) => path.basename(file, ".agent.md")), Object.keys(AGENT_COMMANDS).sort(), "AGENT_COMMANDS must list every agent");
   for (const file of agentFiles) {
     const label = path.relative(repoRoot, file);
     const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
     const command = AGENT_COMMANDS[path.basename(file, ".agent.md")];
     const stem = command.replace(/-(?:feature|issue)$/, "-<type>");
-    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs preflight (?:${command}|${stem})(?![\\\\w-])`), `${label}: never runs agento.mjs preflight ${command}`);
-    assert.match(body, /`receipt`[^.]*`preflightLines`/, `${label}: must print the preflight's receipt and preflightLines`);
+    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs brief (?:${command}|${stem})(?![\\\\w-])`), `${label}: never runs agento.mjs brief ${command}`);
+    assert.match(body, /print its receipt and `Preflight:` lines verbatim/, `${label}: must print the brief's receipt and Preflight: lines`);
     for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
   }
 });

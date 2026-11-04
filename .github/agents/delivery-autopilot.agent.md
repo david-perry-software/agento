@@ -53,11 +53,11 @@ being run.
 
 ## Preflight
 
-1. Open with one `node <agento-root>/scripts/agento.mjs preflight ap <slug>` call
+1. Open with one `node <agento-root>/scripts/agento.mjs brief ap <slug>` call
    (§9–§11; the slug as given — `<type>/<slug>` or bare; its path is in the session
-   context line `Agento CLI:`): print its `receipt` and then its `preflightLines`
-   verbatim, stop on `status: rejected` (exit 3), and stop on a `resolve.status`
-   other than `ok`.
+   context line `Agento CLI:`): print its receipt and `Preflight:` lines verbatim,
+   stop on `status: rejected` (exit 3), and read every `More:` page before the first
+   step.
    When the invocation names no slug (the Reviewer's "Continue unattended" handoff),
    the slug is the session record's `delivery.slug`.
    `git fetch origin` and confirm from the session record that `worktree.branch` is

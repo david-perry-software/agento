@@ -46,10 +46,11 @@ mode. Never modify source code, configuration, or other directories.
 ## Procedure
 
 1. **Require isolation.** Before asking questions, open with one `node
-   <agento-root>/scripts/agento.mjs preflight new-<type>` call (§9–§11; `<type>
-   <slug>` appended when resuming a promoted planning worktree): print its `receipt`
-   and then its `preflightLines` verbatim, and stop on `status: rejected` (exit 3).
-   The preflight's window check enforces the planning-worktree requirement per §11 —
+   <agento-root>/scripts/agento.mjs brief new-<type>` call (§9–§11; `<type> <slug>`
+   appended when resuming a promoted planning worktree): print its receipt and
+   `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every
+   `More:` page before the first step. The brief's window check enforces the
+   planning-worktree requirement per §11 —
    a managed worktree (`dirPrefix: "plan"`), role `plan`, or `build` only when this
    worktree was already promoted onto the slug's branch — and its rejected receipt
    carries the record's alternatives. Start from a synchronized `main`.

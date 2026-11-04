@@ -31,9 +31,10 @@ response with the acceptance receipt and close it with the terminal result line 
 `changes/initiative-<slug>` PR is resumed at its current step, a merged one is
 rejected naming the existing breakdown. Window check per §11: requires role
 `primary` on the default branch, clean. Open with one `node
-<agento-root>/scripts/agento.mjs preflight new-initiative` call (§9–§11; the CLI path
-is announced in the session context as `Agento CLI:`): print its `receipt` and then
-its `preflightLines` verbatim, and stop on `status: rejected` (exit 3). Read the
+<agento-root>/scripts/agento.mjs brief new-initiative` call (§9–§11; the CLI path is
+announced in the session context as `Agento CLI:`): print its receipt and
+`Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every
+`More:` page before the first step. Read the
 default branch and freehand prefix from `agento.mjs config`
 (`config.branches.default`, `config.branches.freehand`). `main` and
 `changes/` below mean the configured values.
