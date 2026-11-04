@@ -493,6 +493,32 @@ then run **Developer: Reload Window**. The timeout warning clears once the serve
 is gone and the last 60 min hold no timeout; older timeouts from a removed server
 are reported in the check's `detail` at `ok`.
 
+## Trimming per-call context
+
+The Builder (and its `build-feature`/`build-issue` commands) keeps its per-start
+policy load small. Its `Policy:` line is `§1, §2, §3, §6, §7, §9, §10, §11, §12` —
+down from `§1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12`. The three sections the
+Builder reaches only once each are no longer declared: §4 (post-ship exception), §5
+(lint baseline gate), and §8 (cross-window handoff) are on-demand pointers written
+at their point of use as `` `agento.mjs policy N` `` — a pointer names a section
+without declaring it, so it never enlarges the `Policy:` line. §6 (shell hygiene) is
+now included. The declared policy sections total 15,297 B versus the previous
+17,736 B (−2,439 B per Builder start).
+
+The Autopilot pin stays `Claude Opus 5.5 (copilot)` — a strong Copilot model at
+least as high as the Builder and Reviewer it delegates to; its turns are few and
+short, so the per-call cost stays small. Switch it with `agento.mjs models use
+<profile>` (or edit the profile's `autopilot` entry); `agento.mjs models pins`
+reports the current pin.
+
+VS Code syncs the Python/Pylance customizations into every workspace, including
+non-Python ones where they only add noise. To turn them off in a non-Python
+workspace: open the Agent Customizations editor (**Chat: Open Customizations**),
+select **Plugins**, open the Python/Pylance plugin, and choose **Disable
+(Workspace)** — or use the Extensions view → **Agent Plugins – Installed** → context
+menu. The check: in a fresh session in that workspace the plugin's skills no longer
+appear under **Chat: Configure Skills** (or in the `/` menu).
+
 ## Reproduce
 
 From the repository root, on Node ≥ 20:
