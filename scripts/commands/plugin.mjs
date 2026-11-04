@@ -7,8 +7,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { config, emit, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
-import { loadProfiles, modelsState } from "../lib/models.mjs";
+import { loadProfiles, modelsState, modelTargetFiles } from "../lib/models.mjs";
 import { classifyLocation, expandHome, pluginLocations } from "../lib/plugin.mjs";
+import { handoffModelLines, parseModelValue, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 
 const refuse = (message, extra = {}) => emit({ status: "refused", message, ...extra }, 3);
 const refusal = (message, data) => Object.assign(new Error(message), { data });
@@ -114,6 +115,52 @@ function droppedIgnoredBytes(dest) {
   return total;
 }
 
+// Parse the value of a `model: <value>` line (the shape `handoffModelLines` and
+// `renderModel` use), matching `parseModelValue`'s scalar/list handling.
+function parseModelLineValue(line) {
+  if (line === null) return null;
+  const raw = line.slice(line.indexOf(":") + 1).trim();
+  if (raw === "") return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw.replace(/^["']|["']$/g, "");
+  }
+}
+
+// Carry the old destination's model pins (top-level `model:` line and handoff
+// `model:` lines, read from the working tree so a filter-applied clone and an
+// earlier export both work) into the freshly built tree. Files with no prior pin
+// are listed under `unpinned`; `fallback` names the `models apply` to pin them.
+function carryPins(oldDest, newTree) {
+  const newFiles = modelTargetFiles(newTree).files;
+  const oldFiles = new Set(modelTargetFiles(oldDest).files);
+  const carriedPins = [];
+  const unpinned = [];
+  for (const file of newFiles) {
+    const newPath = path.join(newTree, file);
+    let newText = fs.readFileSync(newPath, "utf8");
+    if (!oldFiles.has(file)) {
+      unpinned.push(file);
+      continue;
+    }
+    const oldText = fs.readFileSync(path.join(oldDest, file), "utf8");
+    if (readModel(oldText) === null) {
+      unpinned.push(file);
+      continue;
+    }
+    const top = parseModelValue(oldText);
+    const handoffs = handoffModelLines(oldText).map((item) => ({ target: item.target, value: parseModelLineValue(item.line) }));
+    newText = setModel(newText, top);
+    newText = setHandoffModels(newText, handoffs);
+    fs.writeFileSync(newPath, newText);
+    carriedPins.push(file);
+  }
+  const oldState = fs.existsSync(oldDest) ? modelsState(oldDest, loadProfiles()) : null;
+  const activeName = oldState?.active && oldState.active !== "custom" ? oldState.active : "<name>";
+  return { carriedPins, unpinned, fallback: `models apply ${activeName} --plugin-root <dest>` };
+}
+
 // Atomically move the temp tree onto `dest`: old -> `<dest>.agento-old-<pid>`,
 // temp -> `dest`, then delete the old tree. A failure before the swap leaves
 // `dest` byte-identical.
@@ -153,15 +200,25 @@ function runExport() {
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.mkdirSync(tempDir, { recursive: true });
     archiveInto(source, commit, tempDir);
+    const carry = carryPins(dest, tempDir);
     const remote = gitTry(source, "remote", "get-url", "origin");
     const exportedAt = new Date().toISOString();
     fs.writeFileSync(
       path.join(tempDir, ".agento-export.json"),
-      JSON.stringify({ source: { remote: remote.ok ? remote.stdout : null, ref, commit }, exportedAt, carriedPins: [] }, null, 2) + "\n",
+      JSON.stringify({ source: { remote: remote.ok ? remote.stdout : null, ref, commit }, exportedAt, carriedPins: carry.carriedPins }, null, 2) + "\n",
     );
     swap(dest, tempDir);
     tempDir = null;
-    emit({ status: "ok", dest, source: { remote: remote.ok ? remote.stdout : null, ref, commit }, exportedAt, carriedPins: [], droppedIgnoredBytes: safety.droppedIgnoredBytes });
+    emit({
+      status: "ok",
+      dest,
+      source: { remote: remote.ok ? remote.stdout : null, ref, commit },
+      exportedAt,
+      carriedPins: carry.carriedPins,
+      unpinned: carry.unpinned,
+      fallback: carry.fallback,
+      droppedIgnoredBytes: safety.droppedIgnoredBytes,
+    });
   } catch (error) {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     refuse(`plugin export: ${error.message}`, error.data ?? {});

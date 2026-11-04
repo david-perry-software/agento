@@ -13,6 +13,7 @@ import {
   snapshotDirName,
   vscodeSettingsPath,
 } from "../lib/plugin.mjs";
+import { handoffModelLines, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 import { baseEnv, git, makeRepo, runWith } from "../test-helpers/agento-fixtures.mjs";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "agento-plugin-"));
@@ -346,4 +347,109 @@ test("plugin export destination safety: a non-empty non-export/non-clone destina
 
   fs.rmSync(path.dirname(source), { recursive: true, force: true });
   fs.rmSync(plain, { recursive: true, force: true });
+});
+
+// --- plugin export model-pin carry-over (roadmap step 2.4) ---
+
+const PLANNER = "---\nname: planner\ndescription: Plans.\nhandoffs:\n  - label: Build\n    agent: builder\n    prompt: build\n    send: true\n---\n# Planner\n\nPlans.\n";
+const BUILDER = "---\nname: builder\ndescription: Builds.\n---\n# Builder\n\nBuilds.\n";
+const REVIEWER = "---\nname: reviewer\ndescription: Reviews.\n---\n# Reviewer\n\nReviews.\n";
+
+const makePluginTemplate = (agents) => {
+  const repo = makeRepo();
+  fs.mkdirSync(path.join(repo, ".claude-plugin"), { recursive: true });
+  fs.writeFileSync(path.join(repo, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+  fs.mkdirSync(path.join(repo, ".github", "agents"), { recursive: true });
+  fs.mkdirSync(path.join(repo, ".github", "prompts"), { recursive: true });
+  for (const [name, content] of Object.entries(agents)) fs.writeFileSync(path.join(repo, ".github", "agents", `${name}.agent.md`), content);
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "template");
+  git(repo, "push", "-q", "origin", "main");
+  return repo;
+};
+
+const cloneOf = (source) => {
+  const dest = path.join(os.tmpdir(), `agento-carry-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  execFileSync("git", ["clone", "-q", git(source, "remote", "get-url", "origin"), dest], { stdio: "ignore" });
+  execFileSync("git", ["-C", dest, "config", "user.email", "test@example.com"], { stdio: "ignore" });
+  execFileSync("git", ["-C", dest, "config", "user.name", "Test"], { stdio: "ignore" });
+  return dest;
+};
+
+const pinProfile = (env) => {
+  fs.mkdirSync(env.AGENTO_CONFIG_HOME, { recursive: true });
+  fs.writeFileSync(path.join(env.AGENTO_CONFIG_HOME, "model-profiles.json"), JSON.stringify({ profiles: { a: { default: "M (copilot)" } } }));
+};
+
+const applyPins = (root, files) => {
+  for (const name of files) {
+    const p = path.join(root, ".github", "agents", `${name}.agent.md`);
+    let text = fs.readFileSync(p, "utf8");
+    text = setModel(text, "M (copilot)");
+    if (name === "planner") text = setHandoffModels(text, [{ target: "builder", value: "M (copilot)" }]);
+    fs.writeFileSync(p, text);
+  }
+};
+
+test("plugin export carries model pins from a clone and re-export carries them from an export; active profile stays the same", () => {
+  const template = makePluginTemplate({ planner: PLANNER, builder: BUILDER });
+  const oldDest = cloneOf(template);
+  const home = path.join(os.tmpdir(), `agento-home-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
+  pinProfile(env);
+  applyPins(oldDest, ["planner", "builder"]);
+
+  const before = runWith({ cwd: template, env }, "models", "list", "--plugin-root", oldDest);
+  assert.equal(before.code, 0, JSON.stringify(before.json));
+  assert.equal(before.json.active, "a");
+
+  const exp = runWith({ cwd: template, env }, "plugin", "export", "--source", template, "--dest", oldDest, "--replace-clone");
+  assert.equal(exp.code, 0, JSON.stringify(exp.json));
+  assert.deepEqual(exp.json.carriedPins.sort(), [".github/agents/builder.agent.md", ".github/agents/planner.agent.md"]);
+  assert.deepEqual(exp.json.unpinned, []);
+  assert.match(exp.json.fallback, /models apply a --plugin-root/);
+
+  const plannerText = fs.readFileSync(path.join(oldDest, ".github", "agents", "planner.agent.md"), "utf8");
+  assert.match(readModel(plannerText), /M \(copilot\)/);
+  assert.deepEqual(handoffModelLines(plannerText).map((h) => h.line), ["model: \"M (copilot)\""]);
+  assert.match(readModel(fs.readFileSync(path.join(oldDest, ".github", "agents", "builder.agent.md"), "utf8")), /M \(copilot\)/);
+
+  const after = runWith({ cwd: template, env }, "models", "list", "--plugin-root", oldDest);
+  assert.equal(after.code, 0, JSON.stringify(after.json));
+  assert.equal(after.json.active, "a");
+
+  // Re-export over an export: no --replace-clone needed, pins carry again.
+  const re = runWith({ cwd: template, env }, "plugin", "export", "--source", template, "--dest", oldDest);
+  assert.equal(re.code, 0, JSON.stringify(re.json));
+  assert.deepEqual(re.json.carriedPins.sort(), [".github/agents/builder.agent.md", ".github/agents/planner.agent.md"]);
+  const afterRe = runWith({ cwd: template, env }, "models", "list", "--plugin-root", oldDest);
+  assert.equal(afterRe.json.active, "a");
+
+  fs.rmSync(path.dirname(template), { recursive: true, force: true });
+  fs.rmSync(oldDest, { recursive: true, force: true });
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("plugin export lists files with no prior pin under unpinned", () => {
+  const template = makePluginTemplate({ planner: PLANNER, builder: BUILDER });
+  const oldDest = cloneOf(template);
+  // A new agent added to the release after the clone was made.
+  fs.writeFileSync(path.join(template, ".github", "agents", "reviewer.agent.md"), REVIEWER);
+  git(template, "add", "-A");
+  git(template, "commit", "-q", "-m", "add reviewer");
+  git(template, "push", "-q", "origin", "main");
+
+  const home = path.join(os.tmpdir(), `agento-home-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const env = { ...baseEnv, AGENTO_CONFIG_HOME: home };
+  pinProfile(env);
+  applyPins(oldDest, ["planner", "builder"]);
+
+  const exp = runWith({ cwd: template, env }, "plugin", "export", "--source", template, "--dest", oldDest, "--replace-clone");
+  assert.equal(exp.code, 0, JSON.stringify(exp.json));
+  assert.deepEqual(exp.json.unpinned, [".github/agents/reviewer.agent.md"]);
+  assert.deepEqual(exp.json.carriedPins.sort(), [".github/agents/builder.agent.md", ".github/agents/planner.agent.md"]);
+
+  fs.rmSync(path.dirname(template), { recursive: true, force: true });
+  fs.rmSync(oldDest, { recursive: true, force: true });
+  fs.rmSync(home, { recursive: true, force: true });
 });
