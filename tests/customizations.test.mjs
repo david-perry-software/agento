@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { DISPATCH_MODES } from "../scripts/lib/brief.mjs";
+import { BRIEF_POLICY_PRIORITY, DISPATCH_MODES } from "../scripts/lib/brief.mjs";
 import { baseEnv, cli, git, inRepoDelivery, makeRepo, makeWorktreeRepo, okStubs, restrictedPath } from "../scripts/test-helpers/agento-fixtures.mjs";
 
 // Structural checks for the Copilot customization files. One malformed agent file
@@ -1066,6 +1066,46 @@ test("every agent, prompt, and mirror declares its policy sections on one Policy
     const expected = expectedSections(body, agentFile);
     assert.deepEqual(declared, expected, `${label}: declared set must equal {1,9,10,11,12} ∪ cited${agentFile ? " ∪ agent-cited" : ""}`);
     for (const n of declared) assert.ok(knownSections.has(n), `${label}: declares §${n}, which policy --list does not know`);
+  }
+});
+
+test("every `agento.mjs policy N` pointer names a section policy --list knows", () => {
+  const list = JSON.parse(execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8" }));
+  const knownSections = new Set(list.sections.map((s) => s.n));
+
+  const files = [...agentFiles, ...promptFiles, ...commandNames.map((name) => commandRel(`${name}.md`))];
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body;
+    for (const [, n] of body.matchAll(/`agento\.mjs policy (\d+)`/g)) {
+      assert.ok(knownSections.has(n), `${label}: \`agento.mjs policy ${n}\` names a section policy --list does not know`);
+    }
+  }
+});
+
+test("the Builder and its build commands declare exactly §1, §2, §3, §6, §7, §9, §10, §11, §12", () => {
+  const files = [
+    rel(".github", "agents", "delivery-builder.agent.md"),
+    rel(".github", "prompts", "build-feature.prompt.md"),
+    rel(".github", "prompts", "build-issue.prompt.md"),
+    commandRel("build-feature.md"),
+    commandRel("build-issue.md"),
+  ];
+  const expected = ["1", "2", "3", "6", "7", "9", "10", "11", "12"];
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const declared = declaredSections(splitFrontmatter(file).body);
+    assert.deepEqual(declared, expected, `${label}: Policy: set must be exactly ${expected.join(", ")}`);
+  }
+});
+
+test("every BRIEF_POLICY_PRIORITY entry is a permutation of its agent's declared Policy: set", () => {
+  for (const [name, priority] of Object.entries(BRIEF_POLICY_PRIORITY)) {
+    const file = agentByName.get(name);
+    assert.ok(file, `BRIEF_POLICY_PRIORITY names ${name}, which has no agent file`);
+    const declared = declaredSections(splitFrontmatter(file).body);
+    const sorted = [...priority].sort((a, b) => Number(a) - Number(b));
+    assert.deepEqual(sorted, declared, `${name}: priority ${JSON.stringify(priority)} must be a permutation of the declared Policy: set`);
   }
 });
 

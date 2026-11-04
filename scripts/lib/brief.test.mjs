@@ -106,7 +106,7 @@ test("paginateBrief's footer lists every continuation page", () => {
 });
 
 test("paginateBrief honours the role's policy priority order", () => {
-  const policy = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12].map((n) => policyBlock(n, 600));
+  const policy = [1, 2, 3, 6, 7, 9, 10, 11, 12].map((n) => policyBlock(n, 600));
   const result = paginateBrief({
     blocks: [
       { kind: "receipt", id: "receipt", text: receipt },

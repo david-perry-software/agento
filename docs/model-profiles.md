@@ -30,7 +30,8 @@ placeholders).
       "agents": {
         "planner": "Claude Opus 4.5 (copilot)",
         "reviewer": ["Claude Opus 4.5 (copilot)", "GPT-5 (copilot)"],
-        "architect": "Claude Opus 4.5 (copilot)"
+        "architect": "Claude Opus 4.5 (copilot)",
+        "autopilot": "Claude Opus 5.5 (copilot)"
       },
       "prompts": {
         "delivery-status": "GPT-5 mini (copilot)"
@@ -235,6 +236,12 @@ list`/`show`/`apply`/`pins` report a `warnings[]` entry naming the pins and the 
 succeeds. `agento.mjs doctor`'s `model-profile` check returns `warn` with the same
 detail when the applied pins trigger it. Unqualified names give no tier warning
 because the vendor is unknown.
+
+**Autopilot model.** Keep the Autopilot pinned to a strong Copilot model at least as
+high as the models it delegates to (its Builder and Reviewer) — its turns are few and
+short, so the per-call cost stays small. Switch it with `agento.mjs models use
+<profile>` or by editing the profile's `autopilot` entry; `agento.mjs models pins`
+reports the current pin.
 
 The vendor-suffix warning: a value without a `(vendor)` suffix gets one
 `warnings[]` entry, `model values without a (vendor) suffix: …`, naming each
