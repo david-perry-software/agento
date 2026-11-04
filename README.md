@@ -113,7 +113,11 @@ VS Code settings (user-level so it applies to every project):
 "chat.pluginLocations": { "~/code/agento": true }
 ```
 
-Update with `git pull`.
+Update with `git pull`. To run VS Code from a slim export instead, keep the clone
+as the source and register an export — `node ~/code/agento/scripts/agento.mjs
+plugin export --dest ~/code/agento-export` — then point `chat.pluginLocations` at
+`~/code/agento-export`; `plugin export` replaces `git pull` and carries the model
+pins over, and `plugin prune-snapshots` reclaims the space of old staged snapshots.
 
 **B — install from source**
 Command Palette → *Chat: Install Plugin From Source* →

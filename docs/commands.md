@@ -429,12 +429,12 @@ modified in 24 h, tail-reading 16 MB per `events.jsonl`, and missing data yields
 zeros, never a throw),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
 `code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile`,
-`hook-wiring`, `harness`, `canvas`, `mcp-servers`, `turn-stalls` — each
+`hook-wiring`, `harness`, `canvas`, `mcp-servers`, `turn-stalls`, `plugin-snapshots` — each
 `{ id, status, detail, fallback }` with `status` ∈ `ok | warn | fail`;
 `artifact-repo` also warns when the companion's `<dir>-worktrees` directory exists
 but is not writable; `--for` runs only the checks the named command's `Needs:` line
 requires and echoes them as `for.needs`; `model-profile`, `hook-wiring`, `harness`,
-`canvas`, `mcp-servers`, and `turn-stalls` are informational, never part of a `--for`
+`canvas`, `mcp-servers`, `turn-stalls`, and `plugin-snapshots` are informational, never part of a `--for`
 run: `model-profile` is `ok` with no plugin clone at `--plugin-root`, nothing pinned,
 or a named profile applied, `warn` on an invalid profiles file, `custom` pins, the
 BYOK tier conflict, or unqualified pins; `hook-wiring` is `warn` when the clone is
@@ -444,8 +444,10 @@ install` or `install --force` fallback; `mcp-servers` warns on any wildcard or
 remote MCP server in `~/.copilot/mcp-config.json` or `<root>/.vscode/mcp.json` and on
 MCP timeouts from a still-configured server or in the last 60 min, `ok` with no
 servers configured; `turn-stalls` warns on the current Copilot session's stalled
-turns or slow subagent start-ups, `ok` with no Copilot session data — both warn at
-most, never `fail`),
+turns or slow subagent start-ups, `ok` with no Copilot session data; `plugin-snapshots`
+warns on a missing `chat.pluginLocations` directory, an Agento location that is a
+git clone or whose newest snapshot exceeds 10 MB, and stale staged snapshots, `ok`
+for a single small snapshot of an export — all warn at most, never `fail`),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
 preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
@@ -524,6 +526,26 @@ current pins byte-identically; `apply` and `adopt` refuse a linked worktree
 and any BYOK tier warning; `show`, `apply`, and `pins` also warn once about model values
 without a `(vendor)` suffix, and `apply` still exits 0; `init` copies `templates/model-profiles.json` only when the
 file is absent),
+`plugin <export|snapshots|prune-snapshots> [--dest <dir>] [--ref <ref>] [--source <clone>] [--replace-clone] [--dry-run]`
+(VS Code's staged plugin snapshots, shared with the `plugin-snapshots` doctor check.
+`plugin export` builds a clean plugin tree from `git archive` of the CLI checkout's
+`origin/<default branch>` (or `--ref`), fetches first, writes `.agento-export.json`
+(`source { remote, ref, commit }`, `exportedAt`, `carriedPins`), carries the old
+destination's model pins into the new tree (`readModel`/`setModel` and
+`handoffModelLines`/`setHandoffModels`), lists files with no prior pin under
+`unpinned` (fallback `models apply <name> --plugin-root <dest>`), and swaps the tree
+onto `--dest` atomically; the source is the CLI's own checkout or `--source`, and a
+non-git root naming `--source` is refused; without `--dest` the single enabled
+`chat.pluginLocations` entry that is an Agento plugin is used (refused, listing
+candidates, when none or several); a non-empty destination is refused unless it is
+an earlier export or — only with `--replace-clone` — an Agento git clone with no
+changes beyond model pins, no untracked non-ignored files, no commits missing from
+every remote, and no stash entries, and the output reports the dropped ignored bytes.
+`snapshots` reports the location's staged snapshots (count, per-snapshot bytes,
+newest nonce, total); `prune-snapshots` deletes every hex-named snapshot of the
+location except the newest and the one containing the running CLI, never touching
+`cache.json`, other locations, or non-hex names, reports freed bytes and the reload
+advice, and `--dry-run` reports without deleting),
 `harness <status|install|uninstall> [--plugin-root <dir>] [--force]`
 (the router-skill link management, with the pure link helpers in
 `scripts/harness.mjs`: every verb reports `{ status, verb, link, expected, state,

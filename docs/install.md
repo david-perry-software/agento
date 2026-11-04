@@ -31,6 +31,21 @@ value is ignored):
 "chat.pluginLocations": { "~/code/agento": true }
 ```
 
+The clone stays the source; to run VS Code from a slim export instead of the clone
+itself, build one and register it:
+
+```bash
+node ~/code/agento/scripts/agento.mjs plugin export --dest ~/code/agento-export
+```
+
+```jsonc
+"chat.pluginLocations": { "~/code/agento-export": true }
+```
+
+The export carries the clone's model pins over and drops `node_modules` and `.git`;
+update it with `plugin export` instead of `git pull` (see
+[Updating](#updating)), and keep VSIX builds in the clone.
+
 When developing Agento inside its own clone, do **not** register that clone here: the
 workspace-mode hooks in `.github/hooks/` already guard the clone and every worktree,
 and they are the only wiring whose `./scripts/hooks/…` paths resolve inside a
@@ -166,7 +181,13 @@ command refuses while open delivery PRs exist unless you accept.
 
 ## Updating
 
-`chat.pluginLocations` clones update with a normal `git pull`. Plugins installed
+`chat.pluginLocations` clones update with a normal `git pull`. An export registered
+instead of a clone updates with `plugin export` (re-run it from the clone, e.g.
+`node ~/code/agento/scripts/agento.mjs plugin export --dest ~/code/agento-export`) —
+the export replaces `git pull` for the staged copy and carries the model pins over.
+Old staged snapshots keep their disk until pruned: `agento.mjs plugin
+prune-snapshots --dest <dir>` reclaims the space. VSIX builds still run in the
+clone, never in the export. Plugins installed
 from source update via **Extensions: Check for Extension Updates** or
 `copilot plugin update agento`.
 
