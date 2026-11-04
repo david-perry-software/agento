@@ -112,6 +112,12 @@ function parseArgs(argv) {
       if (!options.bodyFile || options.bodyFile.startsWith("--")) usage("--body-file takes a file path or - (stdin)");
     }
     else if (arg === "--merge") options.merge = true;
+    else if (arg === "--replace-clone") options.replaceClone = true;
+    else if (arg === "--dest" || arg === "--ref" || arg === "--source") {
+      const value = argv[++i];
+      if (!value || value.startsWith("--")) usage(`${arg} takes a value`);
+      options[arg.slice(2)] = value;
+    }
     else if (arg === "--dir" || arg === "--branch" || arg === "--title") {
       const value = argv[++i];
       if (!value || value.startsWith("--")) usage(`${arg} takes a value`);

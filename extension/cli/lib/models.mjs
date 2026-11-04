@@ -590,6 +590,7 @@ export {
   writeProfiles,
   writeRoles,
   resolveProfile,
+  modelTargetFiles,
   modelsState,
   modelsReport,
   currentWindowRole,
