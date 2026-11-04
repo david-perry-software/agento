@@ -2877,12 +2877,35 @@
     "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
     "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
   },
+  "stalls": {
+    "status": "ok",
+    "generatedAt": "2026-10-23T21:28:24.197Z",
+    "thresholdSeconds": 40,
+    "current": {
+      "sessionId": "135f7c19-bdca-450a-b9e5-395a0beef905",
+      "stalledTurns": 10,
+      "slowStartups": 1,
+      "stalledSeconds": 600,
+      "stalledMinutes": 10
+    },
+    "window": {
+      "sessions": 1,
+      "stalledTurns": 10,
+      "slowStartups": 1,
+      "stalledSeconds": 600,
+      "stalledMinutes": 10
+    },
+    "summary": "10 stalled turns (~10 min) — check `agento.mjs doctor`",
+    "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",
+    "configSource": "/home/user/DP/agento-worktrees/plan-20261023-204459/.github/agento.json"
+  },
   "timings": {
     "initiatives": 112,
     "session": 18,
     "doctor": 4,
     "deliveries": 88,
     "metrics": 16,
+    "stalls": 3,
     "total": 965
   },
   "root": "/home/user/DP/agento-worktrees/plan-20261023-204459",

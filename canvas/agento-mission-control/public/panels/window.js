@@ -20,6 +20,7 @@ function render(state) {
     <div class="mc-window-title">
       <strong class="mc-window-kind">${escapeHtml(summary.label)}</strong>
       ${summary.hosted ? '<span class="mc-window-tag">hosted</span>' : ""}
+      ${state.stalls ? `<span class="mc-window-tag mc-window-tag-warn" title="${escapeHtml(state.stalls.summary)}">Stalls</span>` : ""}
       <span class="mc-window-purpose">${escapeHtml(summary.purpose)}</span>
     </div>
     ${details ? `<div class="mc-window-details">${details}</div>` : ""}`;
