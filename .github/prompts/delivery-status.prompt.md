@@ -29,7 +29,10 @@ duplicate-submission line. Open with one `node
    every `warnings[]` entry verbatim. When `companion` is not `null`, add a
    `Companion` line with `companion.path`, `companion.branch` (or `detached`),
    `dirty`/`ahead`, and show `companionPr` beside `pr` (number, draft/ready, state);
-   in the in-repo layout `companionPr` is `null` and the line is omitted.
+   in the in-repo layout `companionPr` is `null` and the line is omitted. Then run
+   `node <agento-root>/scripts/agento.mjs stalls`; when its `summary` is not `null`,
+   print the `summary` verbatim as a **Stalls** line at the end of the Session
+   section.
 2. Run `node <agento-root>/scripts/agento.mjs status [feature|issue] [slug]`,
    passing the argument as the filter. Its JSON gives every roadmap's `slug`, `dir`,
    `type`, `status`, `branch`, `lastUpdated`, `nextStep`, `steps` (ticked/total),
