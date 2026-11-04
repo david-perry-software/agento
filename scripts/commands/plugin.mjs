@@ -7,7 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { config, emit, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
-import { expandHome, pluginLocations } from "../lib/plugin.mjs";
+import { loadProfiles, modelsState } from "../lib/models.mjs";
+import { classifyLocation, expandHome, pluginLocations } from "../lib/plugin.mjs";
 
 const refuse = (message, extra = {}) => emit({ status: "refused", message, ...extra }, 3);
 const refusal = (message, data) => Object.assign(new Error(message), { data });
@@ -60,6 +61,59 @@ function archiveInto(source, commit, tempDir) {
   }
 }
 
+// The destination safety rules (roadmap step 2.3). A missing or empty destination
+// is always fine; a non-empty destination must be an earlier export, or — only
+// with `--replace-clone` — an Agento git clone with no changes beyond model pins,
+// no untracked non-ignored files, no commits missing from every remote, and no
+// stash entries. Returns the ignored bytes that the export will drop.
+function checkDestination(dest) {
+  let stat;
+  try {
+    stat = fs.lstatSync(dest);
+  } catch {
+    return { droppedIgnoredBytes: 0 };
+  }
+  if (!stat.isDirectory()) throw refusal(`destination ${dest} exists and is not a directory`);
+  if (fs.readdirSync(dest).length === 0) return { droppedIgnoredBytes: 0 };
+  const kind = classifyLocation(dest);
+  if (kind === "export") return { droppedIgnoredBytes: 0 };
+  if (kind === "clone") {
+    if (!options.replaceClone) throw refusal(`destination ${dest} is an Agento git clone; pass --replace-clone to replace it with an export`);
+    const blockers = cloneBlockers(dest);
+    if (blockers.length) throw refusal(`destination ${dest} is a clone with ${blockers.join("; ")}`, { blockers });
+    return { droppedIgnoredBytes: droppedIgnoredBytes(dest) };
+  }
+  throw refusal(`destination ${dest} is non-empty and is neither an earlier export nor (with --replace-clone) an Agento git clone`, { kind });
+}
+
+function cloneBlockers(dest) {
+  const blockers = [];
+  const state = modelsState(dest, loadProfiles());
+  if (state.dirtyBeyondModel.length) blockers.push(`changes beyond model pins in ${state.dirtyBeyondModel.join(", ")}`);
+  const untracked = gitTry(dest, "status", "--porcelain", "--untracked-files=all");
+  const untrackedFiles = untracked.ok ? untracked.stdout.split("\n").filter((line) => line.startsWith("??")).map((line) => line.slice(3).trim()) : [];
+  if (untrackedFiles.length) blockers.push(`untracked non-ignored files: ${untrackedFiles.join(", ")}`);
+  const missing = gitTry(dest, "log", "--branches", "--not", "--remotes", "--oneline");
+  if (missing.ok && missing.stdout.trim()) blockers.push(`commits missing from every remote (${missing.stdout.split("\n")[0]})`);
+  const stash = gitTry(dest, "stash", "list");
+  if (stash.ok && stash.stdout.trim()) blockers.push("stash entries");
+  return blockers;
+}
+
+function droppedIgnoredBytes(dest) {
+  const list = gitTry(dest, "ls-files", "--others", "--ignored", "--exclude-standard", "-z");
+  if (!list.ok) return 0;
+  let total = 0;
+  for (const rel of list.stdout.split("\0").filter(Boolean)) {
+    try {
+      total += fs.lstatSync(path.join(dest, rel)).size;
+    } catch {
+      // already gone
+    }
+  }
+  return total;
+}
+
 // Atomically move the temp tree onto `dest`: old -> `<dest>.agento-old-<pid>`,
 // temp -> `dest`, then delete the old tree. A failure before the swap leaves
 // `dest` byte-identical.
@@ -93,6 +147,7 @@ function runExport() {
     if (!rev.ok || !rev.stdout) throw refusal(`ref ${ref} does not resolve to a commit in ${source}`, { source });
     const commit = rev.stdout;
     const dest = resolveDest();
+    const safety = checkDestination(dest);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     tempDir = `${dest}.agento-export-${process.pid}`;
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -106,7 +161,7 @@ function runExport() {
     );
     swap(dest, tempDir);
     tempDir = null;
-    emit({ status: "ok", dest, source: { remote: remote.ok ? remote.stdout : null, ref, commit }, exportedAt, carriedPins: [] });
+    emit({ status: "ok", dest, source: { remote: remote.ok ? remote.stdout : null, ref, commit }, exportedAt, carriedPins: [], droppedIgnoredBytes: safety.droppedIgnoredBytes });
   } catch (error) {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     refuse(`plugin export: ${error.message}`, error.data ?? {});

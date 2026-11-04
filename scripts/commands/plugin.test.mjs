@@ -241,3 +241,109 @@ test("plugin export with no --dest refuses when no or several Agento plugin loca
   fs.rmSync(clone1, { recursive: true, force: true });
   fs.rmSync(clone2, { recursive: true, force: true });
 });
+
+// --- plugin export destination safety (roadmap step 2.3) ---
+
+const AGENT_FILE = "---\nname: planner\ndescription: Plans features.\nmodel: claude-sonnet-5\n---\n# Planner\n\nPlans.\n";
+
+const makeAgentoClone = () => {
+  const repo = makeRepo();
+  fs.mkdirSync(path.join(repo, ".claude-plugin"), { recursive: true });
+  fs.writeFileSync(path.join(repo, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+  fs.mkdirSync(path.join(repo, ".github", "agents"), { recursive: true });
+  fs.writeFileSync(path.join(repo, ".github", "agents", "planner.agent.md"), AGENT_FILE);
+  fs.writeFileSync(path.join(repo, "README.md"), "clone\n");
+  fs.writeFileSync(path.join(repo, ".gitignore"), "node_modules/\nextension/node_modules/\n");
+  fs.mkdirSync(path.join(repo, "node_modules", "dep"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "node_modules", "dep", "a.js"), "ignored\n");
+  fs.mkdirSync(path.join(repo, "extension", "node_modules"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "extension", "node_modules", "z.js"), "ignored ext\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "agento clone");
+  git(repo, "push", "-q", "origin", "main");
+  return repo;
+};
+
+const makeRelease = () => {
+  const repo = makeRepo();
+  fs.mkdirSync(path.join(repo, ".claude-plugin"), { recursive: true });
+  fs.writeFileSync(path.join(repo, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+  fs.writeFileSync(path.join(repo, "release.txt"), "v1\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "release");
+  git(repo, "push", "-q", "origin", "main");
+  return repo;
+};
+
+test("plugin export destination safety: clone needs --replace-clone; clean clone with ignored bytes is replaced", () => {
+  const source = makeRelease();
+  const clone = makeAgentoClone();
+
+  const without = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", clone);
+  assert.equal(without.code, 3, JSON.stringify(without.json));
+  assert.match(without.json.message, /--replace-clone/);
+
+  const replaced = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", clone, "--replace-clone");
+  assert.equal(replaced.code, 0, JSON.stringify(replaced.json));
+  assert.ok(replaced.json.droppedIgnoredBytes > 0, "ignored node_modules bytes are reported as dropped");
+  assert.ok(fs.existsSync(path.join(clone, "release.txt")), "clone was replaced by the export");
+  assert.ok(!fs.existsSync(path.join(clone, "node_modules")), "ignored node_modules dropped");
+  assert.ok(!fs.existsSync(path.join(clone, ".git")), "no .git in the export");
+
+  fs.rmSync(path.dirname(source), { recursive: true, force: true });
+  fs.rmSync(path.dirname(clone), { recursive: true, force: true });
+});
+
+test("plugin export destination safety: clone changes beyond pins, untracked files, local commits, and stashes are each refused", () => {
+  const source = makeRelease();
+
+  // Changes beyond model pins (description edited, model line untouched).
+  const dirty = makeAgentoClone();
+  fs.writeFileSync(path.join(dirty, ".github", "agents", "planner.agent.md"), AGENT_FILE.replace("Plans features.", "Plans features differently."));
+  const dirtyRun = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", dirty, "--replace-clone");
+  assert.equal(dirtyRun.code, 3, JSON.stringify(dirtyRun.json));
+  assert.match(dirtyRun.json.message, /changes beyond model pins/);
+
+  // Untracked non-ignored file.
+  const untracked = makeAgentoClone();
+  fs.writeFileSync(path.join(untracked, "scratch.txt"), "not ignored\n");
+  const untrackedRun = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", untracked, "--replace-clone");
+  assert.equal(untrackedRun.code, 3, JSON.stringify(untrackedRun.json));
+  assert.match(untrackedRun.json.message, /untracked non-ignored files/);
+
+  // A commit missing from every remote.
+  const local = makeAgentoClone();
+  fs.writeFileSync(path.join(local, "local.txt"), "local only\n");
+  git(local, "add", "-A");
+  git(local, "commit", "-q", "-m", "local only");
+  const localRun = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", local, "--replace-clone");
+  assert.equal(localRun.code, 3, JSON.stringify(localRun.json));
+  assert.match(localRun.json.message, /commits missing from every remote/);
+
+  // Stash entries.
+  const stashed = makeAgentoClone();
+  fs.writeFileSync(path.join(stashed, "README.md"), "clone (stashed edit)\n");
+  git(stashed, "stash", "push", "-q", "-m", "wip");
+  const stashRun = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", stashed, "--replace-clone");
+  assert.equal(stashRun.code, 3, JSON.stringify(stashRun.json));
+  assert.match(stashRun.json.message, /stash entries/);
+
+  fs.rmSync(path.dirname(source), { recursive: true, force: true });
+  fs.rmSync(path.dirname(dirty), { recursive: true, force: true });
+  fs.rmSync(path.dirname(untracked), { recursive: true, force: true });
+  fs.rmSync(path.dirname(local), { recursive: true, force: true });
+  fs.rmSync(path.dirname(stashed), { recursive: true, force: true });
+});
+
+test("plugin export destination safety: a non-empty non-export/non-clone destination is refused", () => {
+  const source = makeRelease();
+  const plain = path.join(os.tmpdir(), `agento-plain-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  fs.mkdirSync(plain);
+  fs.writeFileSync(path.join(plain, "file.txt"), "occupied\n");
+  const run = runWith({ cwd: source }, "plugin", "export", "--source", source, "--dest", plain);
+  assert.equal(run.code, 3, JSON.stringify(run.json));
+  assert.match(run.json.message, /neither an earlier export nor/);
+
+  fs.rmSync(path.dirname(source), { recursive: true, force: true });
+  fs.rmSync(plain, { recursive: true, force: true });
+});

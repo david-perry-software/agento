@@ -91,7 +91,10 @@ function isAgentoClone(p) {
   }
 }
 
-function classifyLocation(expanded) {
+// Classify an expanded plugin-location path: `missing` (directory gone), `export`
+// (has `.agento-export.json`), `clone` (git checkout whose `.claude-plugin/plugin.json`
+// is Agento's), or `other`.
+export function classifyLocation(expanded) {
   if (!fs.existsSync(expanded)) return "missing";
   if (fs.existsSync(path.join(expanded, ".agento-export.json"))) return "export";
   if (isAgentoClone(expanded)) return "clone";
