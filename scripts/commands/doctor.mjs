@@ -1,34 +1,12 @@
 // The `policy`, `doctor`, and `preflight` subcommands and their document
 // builders, moved unchanged from the legacy switch in `scripts/agento.mjs`.
 
-import fs from "node:fs";
-import path from "node:path";
-
 import { WINDOW_ROLES, windowVerdict } from "../session-state.mjs";
 import { config, emit, emitRaw, git, options, PLUGIN_ROOT, rest, root, source, usage } from "../lib/context.mjs";
 import { capabilityOf, COMMAND_NEEDS, doctorDocument } from "../lib/doctor.mjs";
+import { policySections } from "../lib/policy.mjs";
 import { configDocument, requireSlug, requireType, resolveDocument } from "../lib/resolve.mjs";
 import { sessionRecord } from "../lib/session.mjs";
-
-// Parses `<root>/.github/instructions/delivery-policy.instructions.md` into its
-// `## N.` sections. Each entry carries the section number (the heading's digits),
-// the heading title, the section's byte length, and its raw Markdown (heading line
-// through the line before the next heading, or EOF for the last section).
-function policySections(root) {
-  const file = path.join(root, ".github", "instructions", "delivery-policy.instructions.md");
-  const text = fs.readFileSync(file, "utf8");
-  const heading = /^## (\d+)\. (.+)$/gm;
-  const starts = [];
-  let match;
-  while ((match = heading.exec(text)) !== null) {
-    starts.push({ n: match[1], title: match[2].trim(), offset: match.index });
-  }
-  return starts.map((section, index) => {
-    const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
-    const raw = text.slice(section.offset, end);
-    return { n: section.n, title: section.title, bytes: Buffer.byteLength(raw, "utf8"), raw };
-  });
-}
 
 // §9 operation ID `<command>:<subject>:<short-sha>`: the slug when one was passed;
 // else the managed session id; else the branch; else, detached and unmanaged, HEAD.
