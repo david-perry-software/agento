@@ -4,7 +4,6 @@
 // dashboard, start-session, and ship all share it.
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { hasAgentoWorkspaceWiring } from "../agento-config.mjs";
@@ -27,6 +26,7 @@ import {
   source,
 } from "./context.mjs";
 import { loadProfiles, loadRoles, modelsPins, modelsState, pinWarnings, resolveProfile } from "./models.mjs";
+import { expandHome, vscodeSettingsPath } from "./plugin.mjs";
 import { ghVersion, probe } from "./probe.mjs";
 import { holdsArtifacts } from "./records.mjs";
 import { describeWorkspace, managedHalves } from "./session.mjs";
@@ -292,15 +292,6 @@ const DOCTOR_CHECKS = {
 };
 
 const hhmmZ = (at) => `${new Date(at).toISOString().slice(11, 16)}Z`;
-
-// VS Code's user settings.json; AGENTO_VSCODE_SETTINGS overrides the platform default.
-function vscodeSettingsPath(env = process.env) {
-  if (env.AGENTO_VSCODE_SETTINGS) return env.AGENTO_VSCODE_SETTINGS;
-  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Code", "User", "settings.json");
-  return path.join(env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "Code", "User", "settings.json");
-}
-
-const expandHome = (dir) => (dir === "~" || dir.startsWith("~/") ? path.join(os.homedir(), dir.slice(1)) : dir);
 
 function gitCommonDir(dir) {
   const common = git(dir, "rev-parse", "--path-format=absolute", "--git-common-dir");
