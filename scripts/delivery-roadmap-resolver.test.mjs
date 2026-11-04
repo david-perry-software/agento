@@ -7,6 +7,7 @@ import test from "node:test";
 import { defaultConfig } from "./agento-config.mjs";
 import {
   closeBuildSessionDecision,
+  currentStep,
   evaluateShipPreflight,
   findLocalRoadmaps,
   resolveRoadmapArtifact,
@@ -413,4 +414,78 @@ test("artifactsRoot walks the companion checkout and ignores roadmaps under root
   assert.equal(ship.resolutionSource, "remote");
   const close = closeBuildSessionDecision({ type: "feature", slug: "widget", rootDir: root, artifactsRoot: docs, currentBranch: "main", git: remote, config, worktreeList: `worktree ${root}\nbranch refs/heads/main\n` });
   assert.equal(close.reason, "remote-roadmap-only");
+});
+
+// --- currentStep --------------------------------------------------------------
+
+test("currentStep returns the first unticked step of a planned roadmap", () => {
+  const content = [
+    "status: planned",
+    "branch: feature/widget",
+    "",
+    "## Phase 1: Core",
+    "",
+    "- [ ] 1.1 Add the widget — verify: node --test scripts/widget.test.mjs passes",
+    "- [ ] 1.2 Document the widget — verify: node --test tests/docs.test.mjs passes",
+  ].join("\n");
+  const step = currentStep(content);
+  assert.equal(step.id, "1.1");
+  assert.match(step.line, /^- \[ \] 1\.1 Add the widget/);
+  assert.equal(step.verify, "node --test scripts/widget.test.mjs passes");
+  assert.equal(step.manual, false);
+  assert.equal(step.postShip, false);
+});
+
+test("currentStep skips ticked steps and returns the first remaining one mid-way", () => {
+  const content = [
+    "- [x] 1.1 Add the widget — verify: node --test scripts/widget.test.mjs passes",
+    "- [ ] 1.2 Document the widget — verify: node --test tests/docs.test.mjs passes",
+    "- [ ] 2.1 Ship the widget — verify: node scripts/agento.mjs ship widget",
+  ].join("\n");
+  const step = currentStep(content);
+  assert.equal(step.id, "1.2");
+  assert.equal(step.verify, "node --test tests/docs.test.mjs passes");
+});
+
+test("currentStep returns null when every step is ticked", () => {
+  const content = [
+    "- [x] 1.1 Add the widget — verify: node --test scripts/widget.test.mjs passes",
+    "- [x] 2.1 ~Obsolete step~ (obsolete: folded into 1.1)",
+  ].join("\n");
+  assert.equal(currentStep(content), null);
+});
+
+test("currentStep reports the manual and post-ship markers", () => {
+  const manual = currentStep("- [ ] 3.1 (manual) Approve the deploy — verify: user screenshot");
+  assert.equal(manual.id, "3.1");
+  assert.equal(manual.manual, true);
+  assert.equal(manual.postShip, false);
+
+  const postShip = currentStep("- [ ] 4.1 (manual, post-ship) Verify on staging — verify: user screenshot");
+  assert.equal(postShip.manual, true);
+  assert.equal(postShip.postShip, true);
+});
+
+test("currentStep treats an added step as a normal unticked step", () => {
+  const step = currentStep("- [ ] 2.3 (added 2026-11-04) New work discovered — verify: node --test tests/extra.test.mjs passes");
+  assert.equal(step.id, "2.3");
+  assert.equal(step.manual, false);
+  assert.equal(step.postShip, false);
+  assert.match(step.line, /\(added 2026-11-04\)/);
+});
+
+test("currentStep carries a multi-line step's verify text from a continuation line", () => {
+  const content = [
+    "- [x] 1.1 Move the helper to a new module",
+    "- [ ] 1.2 Split the policy file into",
+    "  `.github/instructions/policy/NN-<kebab-title>.md` (12 files, each starting",
+    "  with its heading, text moved byte for byte) — verify: `node --test",
+    "  scripts/lib/policy.test.mjs` passes",
+    "## Phase 2: Brief",
+  ].join("\n");
+  const step = currentStep(content);
+  assert.equal(step.id, "1.2");
+  assert.match(step.line, /Split the policy file into/);
+  assert.match(step.line, /scripts\/lib\/policy\.test\.mjs` passes/);
+  assert.equal(step.verify, "`node --test scripts/lib/policy.test.mjs` passes");
 });
