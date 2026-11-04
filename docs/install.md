@@ -185,9 +185,10 @@ command refuses while open delivery PRs exist unless you accept.
 instead of a clone updates with `plugin export` (re-run it from the clone, e.g.
 `node ~/code/agento/scripts/agento.mjs plugin export --dest ~/code/agento-export`) —
 the export replaces `git pull` for the staged copy and carries the model pins over.
-Old staged snapshots keep their disk until pruned: `agento.mjs plugin
-prune-snapshots --dest <dir>` reclaims the space. VSIX builds still run in the
-clone, never in the export. Plugins installed
+Old staged snapshots keep their disk until pruned: reload any open VS Code windows
+first, then `agento.mjs plugin prune-snapshots --dest <dir>` reclaims the space
+(it skips snapshots that open windows are still running their hooks from). VSIX
+builds still run in the clone, never in the export. Plugins installed
 from source update via **Extensions: Check for Extension Updates** or
 `copilot plugin update agento`.
 

@@ -8,7 +8,9 @@ import test from "node:test";
 import {
   agentPluginsDir,
   expandHome,
+  inUseSnapshots,
   listSnapshots,
+  planPrune,
   pluginLocations,
   snapshotDirName,
   snapshotsToPrune,
@@ -447,7 +449,7 @@ test("plugin export carries model pins from a clone and re-export carries them f
 
 // --- plugin snapshots and prune-snapshots (roadmap step 3.1) ---
 
-test("snapshotsToPrune keeps the newest and the snapshot containing the running CLI", () => {
+test("snapshotsToPrune keeps the newest, the running CLI, and in-use snapshots", () => {
   const snapshots = [
     { nonce: "1", path: "/ap/file-x/1" },
     { nonce: "2", path: "/ap/file-x/2" },
@@ -457,6 +459,56 @@ test("snapshotsToPrune keeps the newest and the snapshot containing the running 
   const running = snapshotsToPrune(snapshots, "/ap/file-x/1/nested/cli");
   assert.deepEqual(running.keep.map((p) => p.split("/").pop()).sort(), ["1", "3"]);
   assert.deepEqual(running.remove.map((s) => s.nonce), ["2"]);
+  assert.deepEqual(running.inUse, []);
+
+  const inUse = snapshotsToPrune(snapshots, "/somewhere/else", ["/ap/file-x/2/nested/hook"]);
+  assert.deepEqual(inUse.keep.map((p) => p.split("/").pop()).sort(), ["2", "3"]);
+  assert.deepEqual(inUse.remove.map((s) => s.nonce), ["1"]);
+  assert.deepEqual(inUse.inUse.map((p) => p.split("/").pop()), ["2"]);
+
+  // An in-use path that is already kept as the newest is not re-listed as inUse.
+  const newestInUse = snapshotsToPrune(snapshots, "/somewhere/else", ["/ap/file-x/3/nested/hook"]);
+  assert.deepEqual(newestInUse.inUse, []);
+  assert.deepEqual(newestInUse.remove.map((s) => s.nonce), ["1", "2"]);
+});
+
+test("inUseSnapshots maps referenced process paths to the snapshots containing them; null when unavailable", () => {
+  const snapshots = [
+    { nonce: "1", path: "/ap/file-x/1" },
+    { nonce: "2", path: "/ap/file-x/2" },
+  ];
+  const inUse = inUseSnapshots(snapshots, {
+    scan: () => new Set(["/ap/file-x/2/scripts/hooks/session-context.sh", "/unrelated", "/ap/file-x/9"]),
+  });
+  assert.deepEqual(inUse, ["/ap/file-x/2"]);
+  assert.equal(inUseSnapshots(snapshots, { scan: () => null }), null);
+});
+
+test("planPrune blocks deletion without in-use detection unless forced; dry run is allowed", () => {
+  const snapshots = [
+    { nonce: "1", path: "/ap/file-x/1" },
+    { nonce: "2", path: "/ap/file-x/2" },
+    { nonce: "3", path: "/ap/file-x/3" },
+  ];
+  const blocked = planPrune(snapshots, "/elsewhere", null);
+  assert.equal(blocked.blocked, true);
+  assert.equal(blocked.available, false);
+  assert.match(blocked.reason, /detection is unavailable/);
+
+  const dry = planPrune(snapshots, "/elsewhere", null, { dryRun: true });
+  assert.equal(dry.blocked, false);
+  assert.equal(dry.available, false);
+  assert.deepEqual(dry.remove.map((s) => s.nonce), ["1", "2"]);
+
+  const forced = planPrune(snapshots, "/elsewhere", null, { force: true });
+  assert.equal(forced.blocked, false);
+  assert.equal(forced.forced, true);
+  assert.deepEqual(forced.remove.map((s) => s.nonce), ["1", "2"]);
+
+  const detected = planPrune(snapshots, "/elsewhere", ["/ap/file-x/2/nested"]);
+  assert.equal(detected.available, true);
+  assert.deepEqual(detected.remove.map((s) => s.nonce), ["1"]);
+  assert.deepEqual(detected.inUse.map((p) => p.split("/").pop()), ["2"]);
 });
 
 test("plugin snapshots and prune-snapshots on a fixture agentPlugins tree", () => {
@@ -489,6 +541,8 @@ test("plugin snapshots and prune-snapshots on a fixture agentPlugins tree", () =
   const dry = runWith({ cwd: repo, env }, "plugin", "prune-snapshots", "--dest", "/home/david/DP/agento-plugin", "--dry-run");
   assert.equal(dry.code, 0, JSON.stringify(dry.json));
   assert.equal(dry.json.dryRun, true);
+  assert.equal(dry.json.inUseDetection, true);
+  assert.deepEqual(dry.json.inUse, []);
   assert.deepEqual(dry.json.removed, []);
   assert.deepEqual(dry.json.wouldRemove.sort(), ["1a14d7020a8", "1a16a70f607"]);
   assert.ok(dry.json.freedBytes > 0);

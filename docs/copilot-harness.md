@@ -101,9 +101,12 @@ Evidence lives in the companion repository under
   `file-` + its path with `/` replaced by `-` and the leading `/` dropped, and each
   snapshot is a hex-named subdirectory whose nonce is the hex millisecond mtime of
   the location directory (`cache.json` records each `{ uri, nonce }`). Snapshots
-  accumulate until `agento.mjs plugin prune-snapshots` deletes all but the newest
-  (and the one the running CLI is in); `agento.mjs doctor`'s `plugin-snapshots`
-  check warns while stale snapshots remain.
+  accumulate until `agento.mjs plugin prune-snapshots` deletes all but the newest,
+  the one the running CLI is in, and any snapshot an open VS Code window's hooks
+  still run from (prune detects in-use snapshots from running processes' `cwd`/
+  `cmdline`/`environ` under `/proc`; where detection is unavailable — non-Linux —
+  it requires `--force`, so reload open VS Code windows first); `agento.mjs
+  doctor`'s `plugin-snapshots` check warns while stale snapshots remain.
 
 ## Agents and models
 

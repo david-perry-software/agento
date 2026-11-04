@@ -543,9 +543,13 @@ changes beyond model pins, no untracked non-ignored files, no commits missing fr
 every remote, and no stash entries, and the output reports the dropped ignored bytes.
 `snapshots` reports the location's staged snapshots (count, per-snapshot bytes,
 newest nonce, total); `prune-snapshots` deletes every hex-named snapshot of the
-location except the newest and the one containing the running CLI, never touching
-`cache.json`, other locations, or non-hex names, reports freed bytes and the reload
-advice, and `--dry-run` reports without deleting),
+location except the newest, the one containing the running CLI, and any snapshot a
+running process still references (an open VS Code window's plugin hooks run from
+the snapshot that window loaded), never touching `cache.json`, other locations, or
+non-hex names, reports the skipped in-use snapshots plus freed bytes and the
+reload-advice, `--dry-run` reports without deleting, and where in-use detection is
+unavailable (non-Linux) deletion requires `--force` — reload open VS Code windows
+first),
 `harness <status|install|uninstall> [--plugin-root <dir>] [--force]`
 (the router-skill link management, with the pure link helpers in
 `scripts/harness.mjs`: every verb reports `{ status, verb, link, expected, state,

@@ -317,7 +317,7 @@ const DOCTOR_CHECKS = {
         if (snapshots.length > 1) {
           const staleBytes = snapshots.slice(0, -1).reduce((sum, snapshot) => sum + snapshot.bytes, 0);
           warnings.push(`${snapshots.length - 1} stale snapshot(s) (${humanSize(staleBytes)}) of ${entry.path}`);
-          fallbacks.push(`agento.mjs plugin prune-snapshots --dest ${entry.path}`);
+          fallbacks.push(`reload any open VS Code windows first, then agento.mjs plugin prune-snapshots --dest ${entry.path}`);
         }
       }
       if (warnings.length) return asWarn(warnings.join("; "), [...new Set(fallbacks)].join("; ") || null);
