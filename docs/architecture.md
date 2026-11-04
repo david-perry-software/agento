@@ -61,12 +61,13 @@ flowchart TD
   secrets, git musts, the receipt one-liner, and the canonical spelling and redirect
   rule for slash commands: `/agento <name>`; old forms are read as the canonical
   command and proceed without confirmation) and **ai-skills** (the skills-first
-  policy). The **delivery policy** (`delivery-policy.instructions.md`) is loaded on
+  policy). The **delivery policy** (`delivery-policy.instructions.md`, an index over
+  one file per section under `.github/instructions/policy/NN-*.md`) is loaded on
   demand: every agent and command declares the sections it loads on a `Policy: §…`
-  line and loads exactly those with `node <agento-root>/scripts/agento.mjs policy
-  <N>…` (an uncited section loads on demand with `agento.mjs policy N`), and it
-  auto-attaches only while Agento's own agents, prompts, commands, and instructions
-  are edited. It is the
+  line; the opening `agento.mjs brief` call prints those that fit, and any other
+  cited section loads on demand with `agento.mjs policy N`. It auto-attaches only
+  while Agento's own agents, prompts, commands, and instructions are edited. It is
+  the
   single source for the rules every role shares — who does the work, verification
   targets, manual/post-ship steps and evidence, the lint gate, shell hygiene, git
   rules, the cross-window handoff, and execution receipts with per-command
@@ -75,8 +76,8 @@ flowchart TD
   + roadmap state), capability preflight (§10: every command and agent declares
   `Needs:`/`Fallback:`; `agento.mjs doctor --for <name>` runs before the first write
   of any command needing `gh`, `code`, or `network`; the opening
-  `agento.mjs preflight <command>` prints a brief document, `--full` returning the
-  whole record), and the window check (§11: every
+  `agento.mjs brief <command> <argument>` runs that preflight in process and prints
+  the startup document, every page within 7 KB), and the window check (§11: every
   command names the `role` it requires and checks it against `agento.mjs session` — a
   mismatch is a `rejected` receipt with the record's alternatives; the roles table
   itself lives in the CLI), and command presentation (§12: every `/agento …`
@@ -265,22 +266,22 @@ command, and `tests/customizations.test.mjs` fails on any disagreement.
 
 **`Policy:` line contract.** In addition to the `Needs:`/`Fallback:` lines, every prompt and agent opens its body with exactly one `Policy:` line naming the delivery-policy sections the file loads:
 
-    Policy: §1, §9, §10, §11, §12 — load once with `node <agento-root>/scripts/agento.mjs policy 1 9 10 11 12` before the first step.
+    Policy: §1, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 
-The declared set is the baseline {1, 9, 10, 11, 12} ∪ every §N the file cites, plus the agent's cited sections for a command dispatched to that agent — listed in ascending order, with the same numbers as the `policy` arguments. `agento.mjs policy N…` prints them, and `tests/customizations.test.mjs` fails on any disagreement.
+The declared set is the baseline {1, 9, 10, 11, 12} ∪ every §N the file cites, plus the agent's cited sections for a command dispatched to that agent — listed in ascending order. The opening `agento.mjs brief` prints the sections that fit (in the role's priority order) and lists the rest as on-demand `policy N` pointers; `tests/customizations.test.mjs` fails on any disagreement with the declared set.
 
 **When `doctor` runs.** Every command opens with `node
-<agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`, which runs the
+<agento-root>/scripts/agento.mjs brief <command> <argument>`, which runs the
 `doctor --for <command>` checks in process before the first write. Overall `fail` →
 `status: rejected` (exit 3) with the §9 preflight rejection receipt quoting the
 failing check's `detail` and `fallback`; `warn` → `status: ok` (exit 0) with one
-`Preflight:` line per warning check in `preflightLines`, then proceed. `doctor --for
+`Preflight:` line per warning check, then proceed. `doctor --for
 <command>` stays available standalone; `/agento doctor` runs the full `doctor` after
-its own preflight; `doctor` reports and never repairs (no installs, no logins — §1).
+its own brief; `doctor` reports and never repairs (no installs, no logins — §1).
 
 ### §11 Window check
 
-1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`
+1. Run `node <agento-root>/scripts/agento.mjs brief <command> <argument>`
    (the SessionStart hook's `Session:` line is a hint; the CLI call is the check).
    Its `session` section is the session record (`agento.mjs session` returns the same
    document) and its `window` section the verdict (`role`, `required`, `match`,

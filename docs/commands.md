@@ -457,6 +457,17 @@ slugRoles }, match, reason, allowed, elsewhere }` from the CLI's `WINDOW_ROLES` 
 `preflightLines` the §9 receipt and preflight lines ready to print; a window mismatch
 or a hard doctor `fail` is `status: "rejected"` with the rejected receipt, exit 3;
 warn checks become `preflightLines`, exit 0),
+`brief <command> [<argument>] [--as-subagent] [--page N] [--json]` (the startup
+document every command opens with — `preflight` in process, then the receipt and
+`Preflight:` lines, the `Session:` block, the `Delivery:` block (roadmap header,
+ticked/total, and current step when the argument is a slug), the command body, the
+agent body for inline-as-agent commands, the declared policy sections in the role's
+priority order, and a `More:` / `On demand:` footer, every page ≤ 7,000 bytes;
+without `--as-subagent`, a subagent-dispatched command prints only its `Dispatch:`
+block (agent, `copilotModel`/`subagentModel`, prompt) and runs no preflight;
+`--page N` reprints page N under a `Brief page N/M for <opId>` header; `--json`
+emits `{ status, command, dispatch, opId, receipt, preflightLines, session, delivery,
+blocks, pages, onDemand }`; exit 0 accepted, 1 usage or unknown command, 3 rejected),
 `dashboard [--pr] [--plugin-root <dir>]` (everything the VS Code extension renders
 in one process: `{ status: "ok", session, doctor, deliveries, initiatives: { list,
 details: { <slug>: … } }, metrics, stalls, timings, root, configSource }`, where
@@ -675,13 +686,16 @@ when a soft need is absent). Hard needs (`terminal`; `gh` and `network` for anyt
 that pushes or touches GitHub) missing produce a rejection receipt naming the
 fallback instead of a half-started command; soft needs (`ask-questions`, `browser`,
 `code`) missing add one `Preflight:` line and the command proceeds with
-the standard fallback. Every command opens with one `agento.mjs preflight <name>`
-call that runs the `doctor --for <name>` checks with the window check and the slug
-resolution, printing a **brief** document by default — `preflight <name> --full`
-returns the whole session record — and `/agento doctor` runs the
-same checks on demand and only reports — installs and logins stay with the user.
-Each command and agent also declares its policy sections on a `Policy: §…` line and
-loads exactly those with `agento.mjs policy <N>…` before its first step.
+the standard fallback. Every command opens with one `agento.mjs brief <name>
+<argument>` call that runs the `doctor --for <name>` checks with the window check and
+the slug resolution, then prints the startup document — receipt and `Preflight:`
+lines, session, delivery (roadmap header and current step), command and agent bodies,
+and the declared policy sections, every page ≤ 7,000 bytes with a `More:` footer for
+any continuation page — and `/agento doctor` runs the same checks on demand and only
+reports — installs and logins stay with the user.
+Each command and agent also declares its policy sections on a `Policy: §…` line; the
+brief prints those that fit and lists the rest as on-demand `agento.mjs policy N`
+pointers.
 
 ## The standard flow
 

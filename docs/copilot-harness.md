@@ -309,8 +309,14 @@ registers no `commands`, so the router skill is the only `/agento` path in every
 session — Copilot and Local both resolve through it.
 
 The skill parses the command name from the arguments, applies the canonical
-spelling redirect rule, reads `skills/agento/commands/<name>.md`, and dispatches
-by that file's
+spelling redirect rule, and runs `node <agento-root>/scripts/agento.mjs brief
+<name> <argument>` — one host-approved bash call that prints the receipt,
+`Preflight:` lines, session, delivery (roadmap header and current step), command and
+agent bodies, and the declared policy sections, every page ≤ 7,000 bytes. A
+subagent-dispatched command prints only a `Dispatch:` block (agent, pin, prompt);
+otherwise the router follows the printed bodies. The router never reads a file under
+`<agento-root>` and never runs `models pins` or `policy` itself — the brief carries
+all of it — and it dispatches by the command file's
 `agent:` frontmatter:
 
 | `agent:` | Mode |
@@ -318,6 +324,12 @@ by that file's
 | missing or `agent` | inline |
 | `📋 Agento Planner`, `🏛️ Agento Architect`, `🛠️ Agento Mechanic`, `🤖 Agento Autopilot` | inline, as that agent |
 | `🔨 Agento Builder`, `🔍 Agento Reviewer` | subagent |
+
+The 7,000-byte page budget leaves headroom under the harness's measured ≈ 8 KB
+offload threshold: bash output over roughly 8 KB is saved to a file instead of shown
+inline, so a brief page that stayed under 7 KB stays inline in one call (measured
+2026-11-04 during the `startup-brief-command` plan: 7,500 B inline, 8.3 KB and up
+offloaded).
 
 Phase 2 live results (2026-10-17), with the skill linked to
 `~/.copilot/skills/agento` and `disable-model-invocation: true`:

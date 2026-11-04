@@ -885,7 +885,7 @@ test("the moved receipts/preflight/window reference lives in docs/architecture.m
     "**Declaration contract.**",
     "**`Policy:` line contract.**",
     "**When `doctor` runs.**",
-    "1. Run `node <agento-root>/scripts/agento.mjs preflight <command> [<type> <slug>]`",
+    "1. Run `node <agento-root>/scripts/agento.mjs brief <command> <argument>`",
   ]) {
     assert.ok(docs.includes(phrase), `docs/architecture.md lost the moved reference block: ${JSON.stringify(phrase)}`);
   }
