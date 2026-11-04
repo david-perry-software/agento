@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 import { normalize } from "./snapshot.mjs";
 import { ROLE_COLORS } from "./public/roles.js";
-import { WINDOW_KINDS, windowSummary } from "./public/window.js";
+import { stallsTag, WINDOW_KINDS, windowSummary } from "./public/window.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(fs.readFileSync(path.join(here, "fixtures", "dashboard.json"), "utf8"));
@@ -48,6 +48,18 @@ test("a freehand window names its session id; a primary window with no delivery 
 
   const primary = windowSummary({ role: "primary", lifecycle: "no-delivery", worktree: { path: "/repo", branch: "main" }, delivery: null });
   assert.deepEqual(primary.details.map((d) => d.label), ["Branch", "Worktree"]);
+});
+
+test("the stall tag renders the warn span with the summary as title, and nothing when absent", () => {
+  const { stalls } = normalize(fixture);
+  const html = stallsTag(stalls);
+  assert.ok(html.includes('class="mc-window-tag mc-window-tag-warn"'));
+  assert.ok(html.includes(`title="${stalls.summary}"`));
+  assert.ok(html.includes(">Stalls</span>"));
+  assert.equal(stallsTag(null), "");
+  assert.equal(stallsTag(undefined), "");
+  assert.equal(stallsTag({ summary: null }), "");
+  assert.equal(stallsTag({ summary: "" }), "");
 });
 
 test("detached, hosted, unmanaged, and unknown windows", () => {
