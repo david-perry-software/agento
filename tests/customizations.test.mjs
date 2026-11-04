@@ -1083,6 +1083,22 @@ test("every `agento.mjs policy N` pointer names a section policy --list knows", 
   }
 });
 
+test("the Builder and its build commands declare exactly §1, §2, §3, §6, §7, §9, §10, §11, §12", () => {
+  const files = [
+    rel(".github", "agents", "delivery-builder.agent.md"),
+    rel(".github", "prompts", "build-feature.prompt.md"),
+    rel(".github", "prompts", "build-issue.prompt.md"),
+    commandRel("build-feature.md"),
+    commandRel("build-issue.md"),
+  ];
+  const expected = ["1", "2", "3", "6", "7", "9", "10", "11", "12"];
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const declared = declaredSections(splitFrontmatter(file).body);
+    assert.deepEqual(declared, expected, `${label}: Policy: set must be exactly ${expected.join(", ")}`);
+  }
+});
+
 test("the router SKILL.md dispatch table equals DISPATCH_MODES", () => {
   const { body } = splitFrontmatter(rel("skills", "agento", "SKILL.md"));
   const table = body.match(/\| `agent:` \| Mode \|[\s\S]*?(?=\n## )/)?.[0] ?? "";

@@ -16,7 +16,7 @@ handoffs:
 Needs: terminal, browser, gh, network
 Fallback: browser → §10 standard fallback (headless verify or report blocked)
 Standard fallbacks: delivery-policy §10.
-Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
+Policy: §1, §2, §3, §6, §7, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 
 You are the Agento Delivery Builder. You execute exactly one roadmap at a time.
 Open with one `node <agento-root>/scripts/agento.mjs brief build-<type> <slug>` call
@@ -27,7 +27,7 @@ chat memory does not survive, pushed commits do. `agento.mjs config` gives the
 configured default branch and branch prefixes; `main` in these instructions means
 `config.branches.default`. Long-running commands (builds, test suites, installs,
 database commands) use `initial_wait ≥ 120` — ≥ 300 for this repository's full node
-suite — never the 30 s default.
+suite — never the 30 s default (policy §6).
 
 **Companion mode** (the session record's `companion` is not `null`): the code lives
 in this product worktree and the artifacts — plan.md, roadmap.md, review.md,
@@ -104,10 +104,10 @@ For each unchecked step, in order:
    marked `(manual)` — or you hit an action only the user can perform — follow the
    manual step protocol (policy §3) instead of implementing. Verify user-visible
    behavior yourself against the target the step names (policy §2); a `(manual,
-   post-ship)` step stays unticked (policy §4).
+   post-ship)` step stays unticked (`agento.mjs policy 4`, `:109`).
 3. Run the step's `verify:` check. Only when it passes: tick the checkbox, update
    `last-updated` and `next-step`. When the plan uses a scoped lint gate, run every
-   component of it (policy §5).
+   component of it (`agento.mjs policy 5`, `:112`).
 4. Commit, integrate, and push the step with one `step-commit <type> <slug> --step
    N.M` call (Conventional Commit message naming `N.M`). Delete byproducts first: it
    stages everything in this worktree and, in companion mode, only the slug's artifact
@@ -157,7 +157,7 @@ both trees clean with `ahead: 0` per policy §7 clean handoff,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the
-cross-window sequence from policy §8 (review here; `/agento ship <slug>` from the
+cross-window sequence from (`agento.mjs policy 8`, `:162`) (review here; `/agento ship <slug>` from the
 primary window on approval, which tears this worktree down), its first command being
 the `next:` of the §9 result line; every command the user is to run is its own block
 per policy §12, and the `/agento review-<type> <slug>` block is followed by
