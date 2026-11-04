@@ -8,7 +8,7 @@ import path from "node:path";
 
 import { config, emit, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
 import { loadProfiles, modelsState, modelTargetFiles } from "../lib/models.mjs";
-import { classifyLocation, detectInUse, expandHome, humanSize, listSnapshots, planPrune, pluginLocations, snapshotDirName } from "../lib/plugin.mjs";
+import { allocatedBytes, classifyLocation, detectInUse, expandHome, humanSize, listSnapshots, planPrune, pluginLocations, snapshotDirName } from "../lib/plugin.mjs";
 import { handoffModelLines, parseModelValue, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 
 const refuse = (message, extra = {}) => emit({ status: "refused", message, ...extra }, 3);
@@ -114,7 +114,7 @@ function droppedIgnoredBytes(dest) {
   let total = 0;
   for (const rel of list.stdout.split("\0").filter(Boolean)) {
     try {
-      total += fs.lstatSync(path.join(dest, rel)).size;
+      total += allocatedBytes(path.join(dest, rel));
     } catch {
       // already gone
     }

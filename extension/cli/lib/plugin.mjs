@@ -43,7 +43,7 @@ const HEX_NAME = /^[0-9a-f]+$/i;
 
 // Allocated bytes of a path (du-style `st_blocks * 512`), so totals line up with
 // `du -sh`; on filesystems that report zero blocks fall back to apparent size.
-function allocatedBytes(p) {
+export function allocatedBytes(p) {
   const stat = fs.lstatSync(p);
   const bytes = stat.blocks > 0 ? stat.blocks * 512 : stat.size;
   if (!stat.isDirectory()) return bytes;

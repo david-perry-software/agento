@@ -935,6 +935,32 @@ test("doctor plugin-snapshots warns on a missing location, a clone, a >10 MB sna
   fs.rmSync(path.dirname(repo), { recursive: true, force: true });
 });
 
+test("doctor plugin-snapshots dedupes the export fallback for a > 10 MB clone", () => {
+  const repo = makeRepo();
+  const settings = path.join(path.dirname(repo), "vscode-settings.json");
+  const agents = path.join(path.dirname(repo), "agentPlugins");
+  const cloneLoc = path.join(path.dirname(repo), "clone-plugin");
+  fs.mkdirSync(path.join(cloneLoc, ".claude-plugin"), { recursive: true });
+  fs.writeFileSync(path.join(cloneLoc, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+  execFileSync("git", ["-C", cloneLoc, "init", "-q", "-b", "main"]);
+  const dirOf = (loc) => `file-${loc.replace(/^\//, "").replace(/\//g, "-")}`;
+  const locationDir = path.join(agents, dirOf(cloneLoc));
+  fs.mkdirSync(path.join(locationDir, "bbbbbbbb"), { recursive: true });
+  fs.writeFileSync(path.join(locationDir, "bbbbbbbb", "big"), Buffer.alloc(11 * 1024 * 1024));
+
+  const env = { ...restrictedPath(okStubs).env, AGENTO_VSCODE_SETTINGS: settings, AGENTO_VSCODE_AGENT_PLUGINS: agents };
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [cloneLoc]: true } }));
+  const check = byId(runWith({ cwd: repo, env }, "doctor").json)["plugin-snapshots"];
+
+  assert.equal(check.status, "warn");
+  assert.match(check.detail, /is an Agento git clone/);
+  assert.match(check.detail, /> 10 MB/);
+  // The clone and > 10 MB warnings collapse to a single --replace-clone fallback.
+  assert.equal(check.fallback, `agento.mjs plugin export --dest ${cloneLoc} --replace-clone`);
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+});
+
 test("doctor plugin-snapshots warns when the newest snapshot's hook scripts are not executable", () => {
   const repo = makeRepo();
   const settings = path.join(path.dirname(repo), "vscode-settings.json");

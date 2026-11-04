@@ -312,7 +312,9 @@ const DOCTOR_CHECKS = {
         }
         if (newest && newest.bytes > 10 * 1024 * 1024) {
           warnings.push(`newest snapshot of ${entry.path} is ${humanSize(newest.bytes)} (> 10 MB)`);
-          fallbacks.push(`agento.mjs plugin export --dest ${entry.path}`);
+          // A clone's export fallback must carry --replace-clone too, so the two
+          // warnings a > 10 MB clone gets collapse to one fallback (Finding 6).
+          fallbacks.push(`agento.mjs plugin export --dest ${entry.path}${entry.kind === "clone" ? " --replace-clone" : ""}`);
         }
         if (newest) {
           const notExec = nonExecutableHookScripts(newest.path);
