@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { agit, emit, emitRaw, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
-import { preflightDocument } from "./doctor.mjs";
+import { preflightDocument } from "../lib/preflight.mjs";
 import { BRIEF_BUDGET, dispatchMode, paginateBrief } from "../lib/brief.mjs";
 import { currentStep } from "../delivery-roadmap-resolver.mjs";
 import { policySections } from "../lib/policy.mjs";
