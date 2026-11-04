@@ -41,12 +41,12 @@ test("policySections reads every ## N. section with the pinned raw bytes", () =>
   }
 });
 
-test("policyIndex reports the section source file for policy --list and brief", () => {
+test("policyIndex reports each section's per-section source file", () => {
   const index = policyIndex(repoRoot);
   assert.equal(index.length, 12);
   for (const entry of index) {
     assert.deepEqual(Object.keys(entry).sort(), ["bytes", "file", "n", "title"]);
-    assert.equal(entry.file, path.join(".github", "instructions", "delivery-policy.instructions.md"));
+    assert.match(entry.file, /^\.github\/instructions\/policy\/\d{2}-.+\.md$/);
     assert.ok(entry.bytes > 0);
     assert.match(entry.title, /.+/);
   }

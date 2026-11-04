@@ -7,35 +7,47 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// Parses `<root>/.github/instructions/delivery-policy.instructions.md` into its
-// `## N.` sections. Each entry carries the section number (the heading's digits),
-// the heading title, the section's byte length, and its raw Markdown (heading line
-// through the line before the next heading, or EOF for the last section).
+// Lists the per-section files under `.github/instructions/policy/` in numeric order.
+// Each file starts with its `## N. Title` heading and holds exactly the bytes the
+// old monolithic file carried for that section, so `policy N` output is unchanged.
+function policyFiles(root) {
+  const dir = path.join(root, ".github", "instructions", "policy");
+  return fs
+    .readdirSync(dir)
+    .filter((name) => /^\d{2}-.+\.md$/.test(name))
+    .sort()
+    .map((name) => path.join(dir, name));
+}
+
+// Reads the per-section files into `## N.` sections. Each entry carries the section
+// number (the heading's digits), the heading title, the section's byte length, and
+// its raw Markdown — the full file content, byte for byte.
 function policySections(root) {
-  const file = path.join(root, ".github", "instructions", "delivery-policy.instructions.md");
-  const text = fs.readFileSync(file, "utf8");
-  const heading = /^## (\d+)\. (.+)$/gm;
-  const starts = [];
-  let match;
-  while ((match = heading.exec(text)) !== null) {
-    starts.push({ n: match[1], title: match[2].trim(), offset: match.index });
-  }
-  return starts.map((section, index) => {
-    const end = index + 1 < starts.length ? starts[index + 1].offset : text.length;
-    const raw = text.slice(section.offset, end);
-    return { n: section.n, title: section.title, bytes: Buffer.byteLength(raw, "utf8"), raw };
+  const heading = /^## (\d+)\. (.+)$/;
+  return policyFiles(root).map((file) => {
+    const raw = fs.readFileSync(file, "utf8");
+    const first = raw.split(/\r?\n/, 1)[0];
+    const match = first.match(heading);
+    if (!match) throw new Error(`${file}: first line must be a "## N. Title" heading`);
+    return { n: match[1], title: match[2].trim(), bytes: Buffer.byteLength(raw, "utf8"), raw };
   });
 }
 
 // The same sections as index entries — `n`, `title`, `bytes`, and the source file
 // under `.github/instructions/` — for `policy --list` and the `brief` footer.
 function policyIndex(root) {
-  return policySections(root).map(({ n, title, bytes }) => ({
-    n,
-    title,
-    bytes,
-    file: path.join(".github", "instructions", "delivery-policy.instructions.md"),
-  }));
+  return policyFiles(root).map((file) => {
+    const raw = fs.readFileSync(file, "utf8");
+    const first = raw.split(/\r?\n/, 1)[0];
+    const match = first.match(/^## (\d+)\. (.+)$/);
+    if (!match) throw new Error(`${file}: first line must be a "## N. Title" heading`);
+    return {
+      n: match[1],
+      title: match[2].trim(),
+      bytes: Buffer.byteLength(raw, "utf8"),
+      file: path.join(".github", "instructions", "policy", path.basename(file)),
+    };
+  });
 }
 
 export { policySections, policyIndex };

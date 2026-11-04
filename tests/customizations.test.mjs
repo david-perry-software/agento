@@ -14,6 +14,14 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const rel = (...parts) => path.join(repoRoot, ...parts);
 const commandRel = (...parts) => rel("skills", "agento", "commands", ...parts);
 
+function policySectionsJson() {
+  return JSON.parse(execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8" }));
+}
+
+function policySection(n) {
+  return execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", String(n)], { cwd: repoRoot, encoding: "utf8" });
+}
+
 function listFiles(dir, suffix) {
   return fs
     .readdirSync(dir)
@@ -239,8 +247,7 @@ test("relative links inside agents, prompts, instructions, and skills resolve", 
 });
 
 test("policy section references (§N) point at sections that exist", () => {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const sections = new Set([...policy.matchAll(/^## (\d+)\. /gm)].map((m) => m[1]));
+  const sections = new Set(policySectionsJson().sections.map((s) => s.n));
   assert.ok(sections.size >= 12, "policy file lost sections");
   for (const file of [...agentFiles, ...promptFiles, ...instructionFiles]) {
     const text = fs.readFileSync(file, "utf8");
@@ -329,7 +336,7 @@ test("status: paused is reserved for the user; the Autopilot resumes session bre
   // Policy §3 "Pause kinds": a Builder stopping for session length keeps
   // `in-progress`; `paused` carries a `(manual)` or `blocked:` marker in next-step,
   // and the Autopilot only stops on that marker — never on a bare `paused`.
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
+  const policy = policySection(3);
   assert.match(policy, /\*\*Pause kinds\.\*\*/, "delivery-policy §3 must define the pause kinds");
   assert.match(policy, /session break/, "delivery-policy §3 must name the session break");
   const builder = splitFrontmatter(rel(".github", "agents", "delivery-builder.agent.md")).body;
@@ -636,8 +643,7 @@ test("every agent tools: entry is a GitHub primary alias or an explicit VS Code-
 });
 
 test("ask-questions clarification always offers a §10 recommended choice (#90 planner-ask-questions-tool)", () => {
-  const policy = fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8");
-  const section = policy.match(/^## 10\. Capability preflight\r?\n([\s\S]*?)(?=^## |$(?![\r\n]))/m)?.[1] ?? "";
+  const section = policySection(10);
   const paragraph = section.match(/\*\*Recommended choice\.\*\*[\s\S]*?(?=\n\n|$)/)?.[0];
   assert.ok(paragraph, "delivery-policy §10 must define a **Recommended choice.** paragraph");
   assert.match(paragraph, /`recommended: true`/, "§10 recommended choice must set recommended: true in the question tool");
@@ -843,7 +849,7 @@ test("the policy file is the only place the shared rules are spelled out", () =>
       assert.doesNotMatch(text, canary, `${path.relative(repoRoot, file)} restates a policy rule (${canary}); link delivery-policy.instructions.md instead`);
     }
   }
-  assert.match(fs.readFileSync(rel(".github", "instructions", "delivery-policy.instructions.md"), "utf8"), /delete\s+them, never commit them/, "policy §7 lost its clean-handoff rule");
+  assert.match(policySection(7), /delete\s+them, never commit them/, "policy §7 lost its clean-handoff rule");
   // The ship prompt owns its teardown pause wording (ship-audit-first); nothing else
   // in the customization set restates it.
   const teardownPause = /paused at teardown/;
