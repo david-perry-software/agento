@@ -106,7 +106,13 @@ Evidence lives in the companion repository under
   still run from (prune detects in-use snapshots from running processes' `cwd`/
   `cmdline`/`environ` under `/proc`; where detection is unavailable — non-Linux —
   it requires `--force`, so reload open VS Code windows first); `agento.mjs
-  doctor`'s `plugin-snapshots` check warns while stale snapshots remain.
+  doctor`'s `plugin-snapshots` check warns while stale snapshots remain. VS Code's
+  staged copy also drops the `+x` bit on `scripts/hooks/*.sh` (`git ls-files -s`
+  tracks them mode 100755 and `plugin export` preserves 100755, so the export is
+  fine; only the staged snapshot loses it); VS Code runs the hooks through a shell
+  so the plugin still works, and `doctor` warns when the newest snapshot's hook
+  scripts are not executable — reload the window so it re-stages, or `chmod +x`
+  them inside the snapshot.
 
 ## Agents and models
 

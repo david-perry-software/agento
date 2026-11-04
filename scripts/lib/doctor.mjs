@@ -26,7 +26,7 @@ import {
   source,
 } from "./context.mjs";
 import { loadProfiles, loadRoles, modelsPins, modelsState, pinWarnings, resolveProfile } from "./models.mjs";
-import { expandHome, humanSize, listSnapshots, pluginLocations, vscodeSettingsPath } from "./plugin.mjs";
+import { expandHome, humanSize, listSnapshots, nonExecutableHookScripts, pluginLocations, vscodeSettingsPath } from "./plugin.mjs";
 import { ghVersion, probe } from "./probe.mjs";
 import { holdsArtifacts } from "./records.mjs";
 import { describeWorkspace, managedHalves } from "./session.mjs";
@@ -313,6 +313,13 @@ const DOCTOR_CHECKS = {
         if (newest && newest.bytes > 10 * 1024 * 1024) {
           warnings.push(`newest snapshot of ${entry.path} is ${humanSize(newest.bytes)} (> 10 MB)`);
           fallbacks.push(`agento.mjs plugin export --dest ${entry.path}`);
+        }
+        if (newest) {
+          const notExec = nonExecutableHookScripts(newest.path);
+          if (notExec.length) {
+            warnings.push(`newest snapshot of ${entry.path} has non-executable hook script(s) (${notExec.join(", ")}) — VS Code drops the +x bit when staging`);
+            fallbacks.push(`reload the open VS Code window so it re-stages the snapshot, or chmod +x ${notExec.join(" ")} inside ${newest.path}`);
+          }
         }
         if (snapshots.length > 1) {
           const staleBytes = snapshots.slice(0, -1).reduce((sum, snapshot) => sum + snapshot.bytes, 0);

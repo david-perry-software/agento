@@ -217,6 +217,30 @@ export function planPrune(snapshots, pluginRoot, detection, { force = false, dry
   return { available, forced: !available && Boolean(force), blocked: false, reason: null, keep, remove, inUse };
 }
 
+// The plugin's executable hook scripts, relative to the plugin root. VS Code
+// stages a full copy but drops the +x bit on shell scripts, so doctor warns when
+// these are missing their executable bit in the newest snapshot.
+export const HOOK_SCRIPTS = [
+  "scripts/hooks/delivery-guard.sh",
+  "scripts/hooks/replay-guard.sh",
+  "scripts/hooks/session-context.sh",
+];
+
+// The hook scripts under `snapshotPath` that exist but are not executable by
+// anyone (mode has no 0o111 bit). Missing scripts are not flagged here — the
+// `harness` doctor check owns hook-wiring completeness.
+export function nonExecutableHookScripts(snapshotPath) {
+  const notExecutable = [];
+  for (const rel of HOOK_SCRIPTS) {
+    try {
+      if (!(fs.statSync(path.join(snapshotPath, rel)).mode & 0o111)) notExecutable.push(rel);
+    } catch {
+      // missing — out of scope for the executable-bit check
+    }
+  }
+  return notExecutable;
+}
+
 // Classify an expanded plugin-location path: `missing` (directory gone), `export`
 // (has `.agento-export.json`), `clone` (git checkout whose `.claude-plugin/plugin.json`
 // is Agento's), or `other`.

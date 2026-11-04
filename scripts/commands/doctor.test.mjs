@@ -934,3 +934,37 @@ test("doctor plugin-snapshots warns on a missing location, a clone, a >10 MB sna
 
   fs.rmSync(path.dirname(repo), { recursive: true, force: true });
 });
+
+test("doctor plugin-snapshots warns when the newest snapshot's hook scripts are not executable", () => {
+  const repo = makeRepo();
+  const settings = path.join(path.dirname(repo), "vscode-settings.json");
+  const agents = path.join(path.dirname(repo), "agentPlugins");
+  const exportLoc = path.join(path.dirname(repo), "export-plugin");
+  fs.mkdirSync(exportLoc, { recursive: true });
+  fs.writeFileSync(path.join(exportLoc, ".agento-export.json"), "{}");
+  const dirOf = (loc) => `file-${loc.replace(/^\//, "").replace(/\//g, "-")}`;
+  const exportDir = path.join(agents, dirOf(exportLoc));
+  const hooksDir = path.join(exportDir, "cccccccc", "scripts", "hooks");
+  fs.mkdirSync(hooksDir, { recursive: true });
+  for (const rel of ["delivery-guard.sh", "replay-guard.sh", "session-context.sh"]) {
+    fs.writeFileSync(path.join(hooksDir, rel), "#!/bin/sh\n", { mode: 0o644 });
+  }
+  const env = { ...restrictedPath(okStubs).env, AGENTO_VSCODE_SETTINGS: settings, AGENTO_VSCODE_AGENT_PLUGINS: agents };
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [exportLoc]: true } }));
+  const check = () => byId(runWith({ cwd: repo, env }, "doctor").json)["plugin-snapshots"];
+
+  const warned = check();
+  assert.equal(warned.status, "warn");
+  assert.match(warned.detail, /non-executable hook script/);
+  assert.match(warned.detail, /delivery-guard\.sh/);
+  assert.match(warned.fallback, /reload the open VS Code window/);
+
+  for (const rel of ["delivery-guard.sh", "replay-guard.sh", "session-context.sh"]) {
+    fs.chmodSync(path.join(hooksDir, rel), 0o755);
+  }
+  const ok = check();
+  assert.equal(ok.status, "ok");
+  assert.match(ok.detail, /slim/);
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+});
