@@ -7,6 +7,7 @@ import test from "node:test";
 
 import {
   agentPluginsDir,
+  detectInUse,
   expandHome,
   inUseSnapshots,
   listSnapshots,
@@ -15,6 +16,7 @@ import {
   snapshotDirName,
   snapshotsToPrune,
   vscodeSettingsPath,
+  windowPinnedSnapshots,
 } from "../lib/plugin.mjs";
 import { handoffModelLines, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 import { baseEnv, git, makeRepo, runWith } from "../test-helpers/agento-fixtures.mjs";
@@ -509,6 +511,53 @@ test("planPrune blocks deletion without in-use detection unless forced; dry run 
   assert.equal(detected.available, true);
   assert.deepEqual(detected.remove.map((s) => s.nonce), ["1"]);
   assert.deepEqual(detected.inUse.map((p) => p.split("/").pop()), ["2"]);
+});
+
+// --- window-anchored in-use detection (roadmap step 7.1) ---
+
+test("windowPinnedSnapshots pins the newest snapshot whose nonce is at or before each VS Code process start", () => {
+  const snapshots = [
+    { nonce: "1a14d7020a8", path: "/ap/file-x/1a14d7020a8" },
+    { nonce: "1a16a70f607", path: "/ap/file-x/1a16a70f607" },
+    { nonce: "1a18e5b18c2", path: "/ap/file-x/1a18e5b18c2" },
+  ];
+  const starts = [
+    { pid: 10, comm: "code", kind: "window", startMs: parseInt("1a16a70f607", 16) + 5000 }, // after B, before C -> B
+    { pid: 11, comm: "code", kind: "extensionHost", startMs: parseInt("1a18e5b18c2", 16) + 1 }, // after C -> C
+    { pid: 12, comm: "code", kind: "process", startMs: parseInt("1a14d7020a8", 16) - 1 }, // before A -> nothing
+  ];
+  const pinned = windowPinnedSnapshots(snapshots, { scan: () => starts });
+  assert.deepEqual(
+    pinned.map((entry) => [entry.pid, entry.nonce]),
+    [
+      [10, "1a16a70f607"],
+      [11, "1a18e5b18c2"],
+    ],
+  );
+  assert.equal(windowPinnedSnapshots(snapshots, { scan: () => null }), null);
+  assert.deepEqual(windowPinnedSnapshots([], { scan: () => starts }), []);
+});
+
+test("detectInUse combines the path scan and the window anchor; available only when the process list is readable", () => {
+  const snapshots = [
+    { nonce: "1a14d7020a8", path: "/ap/file-x/1a14d7020a8" },
+    { nonce: "1a18e5b18c2", path: "/ap/file-x/1a18e5b18c2" },
+  ];
+  const startMs = parseInt("1a18e5b18c2", 16) + 1;
+  const windows = [{ pid: 10, comm: "code", kind: "window", startMs }];
+  const result = detectInUse(snapshots, {
+    scan: () => new Set(["/ap/file-x/1a14d7020a8/scripts/hooks/session-context.sh"]),
+    windowScan: () => windows,
+  });
+  assert.equal(result.available, true);
+  assert.deepEqual(result.inUse.sort(), ["/ap/file-x/1a14d7020a8", "/ap/file-x/1a18e5b18c2"]);
+  assert.deepEqual(Object.keys(result.usedBy), ["/ap/file-x/1a18e5b18c2"]);
+  assert.deepEqual(result.usedBy["/ap/file-x/1a18e5b18c2"], [{ pid: 10, comm: "code", kind: "window", startMs }]);
+
+  const unavailable = detectInUse(snapshots, { scan: () => null, windowScan: () => null });
+  assert.equal(unavailable.available, false);
+  assert.deepEqual(unavailable.inUse, []);
+  assert.deepEqual(unavailable.usedBy, {});
 });
 
 test("plugin snapshots and prune-snapshots on a fixture agentPlugins tree", () => {
