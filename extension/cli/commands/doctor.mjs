@@ -94,6 +94,8 @@ function preflightDocument({ command, type, slug, full = false }) {
   };
 }
 
+export { preflightDocument };
+
 export const commands = {
   policy() {
     const sections = policySections(PLUGIN_ROOT);

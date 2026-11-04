@@ -6,6 +6,43 @@ import { findOwner, parseWorktreeList } from "./session-state.mjs";
 
 const ACCEPTED_AT_SHIP = "## Follow-ups (accepted at ship)";
 
+// A roadmap step starts at `- [ ] N.M …` (an optional `(manual)`,
+// `(manual, post-ship)`, or `(added <date>)` marker follows the id); continuation
+// lines are everything up to the next step or `## ` heading.
+const STEP_START = /^- \[( |x)\] (\d+\.\d+)(?: \((manual(?:, post-ship)?|added [^)]+)\))?([^\n]*)$/;
+
+// The first unticked step of a roadmap, or null when every step is ticked. Each
+// entry carries the step id, the full step text (`line`, continuation lines
+// included), the `verify:` check, and the manual / post-ship markers. Obsolete
+// `~…~` steps count as ticked.
+export function currentStep(content) {
+  const lines = content.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const start = lines[i].match(STEP_START);
+    if (!start) continue;
+    const done = start[1] === "x";
+    const marker = start[3] ?? null;
+    const collected = [lines[i]];
+    while (i + 1 < lines.length) {
+      const nextLine = lines[i + 1];
+      if (/^## /.test(nextLine) || STEP_START.test(nextLine)) break;
+      collected.push(nextLine);
+      i += 1;
+    }
+    const text = collected.join("\n").trim();
+    if (done || /~[^~\n]+~/.test(text)) continue; // ticked, or obsolete and therefore done
+    const verifyMatch = text.match(/ — verify: ([\s\S]*)$/);
+    return {
+      id: start[2],
+      line: text,
+      verify: verifyMatch ? verifyMatch[1].replace(/\s+/g, " ").trim() : null,
+      manual: marker === "manual" || marker === "manual, post-ship",
+      postShip: marker === "manual, post-ship",
+    };
+  }
+  return null;
+}
+
 function setRoadmapHeader(text, key, value) {
   const line = new RegExp(`(^|\\n)${key}:[^\\n]*`);
   return line.test(text) ? text.replace(line, `$1${key}: ${value}`) : text.replace(/(^|\n)(status:[^\n]*)/, `$1$2\n${key}: ${value}`);
