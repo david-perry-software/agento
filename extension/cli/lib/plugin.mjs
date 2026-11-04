@@ -103,17 +103,142 @@ export function humanSize(bytes) {
   return gib < 10 ? `${gib.toFixed(1)}G` : `${Math.ceil(gib)}G`;
 }
 
+// Reference paths from running processes, for in-use snapshot detection. Linux:
+// read /proc/<pid>/{cwd,exe,cmdline,environ}; the current process's plugin-root
+// env vars are the strongest signal and are added even when /proc hides an
+// environ entry. Returns a Set of paths, or null when the platform cannot
+// enumerate processes (non-Linux).
+export function defaultProcessScan(procDir = "/proc") {
+  if (process.platform !== "linux") return null;
+  const referenced = new Set();
+  const add = (p) => {
+    if (typeof p === "string" && p.startsWith("/")) referenced.add(p);
+  };
+  let pids = [];
+  try {
+    pids = fs.readdirSync(procDir).filter((name) => /^[0-9]+$/.test(name));
+  } catch {
+    return null;
+  }
+  for (const pid of pids) {
+    for (const file of ["cwd", "exe"]) {
+      try {
+        add(fs.readlinkSync(path.join(procDir, pid, file)));
+      } catch {
+        // the process exited, or the link is unreadable
+      }
+    }
+    try {
+      for (const arg of fs.readFileSync(path.join(procDir, pid, "cmdline"), "utf8").split("\0")) add(arg);
+    } catch {
+      // cmdline unreadable
+    }
+    try {
+      for (const entry of fs.readFileSync(path.join(procDir, pid, "environ"), "utf8").split("\0")) {
+        const eq = entry.indexOf("=");
+        add(eq >= 0 ? entry.slice(eq + 1) : entry);
+      }
+    } catch {
+      // environ unreadable
+    }
+  }
+  for (const key of ["CLAUDE_PLUGIN_ROOT", "PLUGIN_ROOT", "COPILOT_PLUGIN_ROOT"]) add(process.env[key]);
+  return referenced;
+}
+
+// The snapshots that running processes reference (their cwd, exe, cmdline args,
+// or environ values fall inside a snapshot): the paths, or null when detection is
+// unavailable. `scan` is injectable for tests.
+export function inUseSnapshots(snapshots, { scan = defaultProcessScan } = {}) {
+  const referenced = scan();
+  if (referenced === null) return null;
+  const inUse = [];
+  for (const snapshot of snapshots) {
+    const prefix = `${snapshot.path}${path.sep}`;
+    for (const p of referenced) {
+      if (p === snapshot.path || p.startsWith(prefix)) {
+        inUse.push(snapshot.path);
+        break;
+      }
+    }
+  }
+  return inUse;
+}
+
+const contains = (dir, snapshotPath) => dir === snapshotPath || dir.startsWith(`${snapshotPath}${path.sep}`);
+
 // Which snapshots prune keeps and which it deletes: always the newest (largest
 // nonce), plus the snapshot the running CLI lives in (so a session running from a
-// staged copy is never unlinked underneath itself). Pure: the caller performs the
-// deletion.
-export function snapshotsToPrune(snapshots, pluginRoot) {
-  if (!snapshots.length) return { keep: [], remove: [] };
-  const keep = new Set([snapshots[snapshots.length - 1].path]);
+// staged copy is never unlinked underneath itself), plus any snapshot a running
+// process still references (an open VS Code window's plugin hooks run from the
+// snapshot that window loaded). Pure: the caller performs the deletion. `inUse`
+// is an array of paths (or snapshot paths) to keep; the returned `inUse` names
+// the snapshots kept only because they are in use.
+export function snapshotsToPrune(snapshots, pluginRoot, inUse = []) {
+  if (!snapshots.length) return { keep: [], remove: [], inUse: [] };
+  const newest = snapshots[snapshots.length - 1].path;
+  const keep = new Set([newest]);
   for (const snapshot of snapshots) {
-    if (snapshot.path === pluginRoot || pluginRoot.startsWith(`${snapshot.path}${path.sep}`)) keep.add(snapshot.path);
+    if (contains(pluginRoot, snapshot.path)) keep.add(snapshot.path);
   }
-  return { keep: [...keep], remove: snapshots.filter((snapshot) => !keep.has(snapshot.path)) };
+  for (const dir of inUse) {
+    for (const snapshot of snapshots) {
+      if (contains(dir, snapshot.path)) keep.add(snapshot.path);
+    }
+  }
+  const keptForUse = snapshots.filter(
+    (snapshot) => keep.has(snapshot.path) && snapshot.path !== newest && !contains(pluginRoot, snapshot.path),
+  );
+  return {
+    keep: [...keep],
+    remove: snapshots.filter((snapshot) => !keep.has(snapshot.path)),
+    inUse: keptForUse.map((snapshot) => snapshot.path),
+  };
+}
+
+// The pure prune decision: `detection` is what `inUseSnapshots` returned (an
+// array of paths, or null when unavailable). Deletion without detection is
+// blocked unless `force` is set (the safe default on non-Linux); a dry run is
+// always allowed and reports what a forced run would remove.
+export function planPrune(snapshots, pluginRoot, detection, { force = false, dryRun = false } = {}) {
+  const available = detection !== null;
+  if (!available && !dryRun && !force) {
+    return {
+      available,
+      forced: false,
+      blocked: true,
+      reason: "in-use snapshot detection is unavailable on this platform; reload any open VS Code windows and re-run, or pass --force to prune without detection",
+      keep: [],
+      remove: [],
+      inUse: [],
+    };
+  }
+  const { keep, remove, inUse } = snapshotsToPrune(snapshots, pluginRoot, available ? detection : []);
+  return { available, forced: !available && Boolean(force), blocked: false, reason: null, keep, remove, inUse };
+}
+
+// The plugin's executable hook scripts, relative to the plugin root. VS Code
+// stages a full copy but drops the +x bit on shell scripts, so doctor warns when
+// these are missing their executable bit in the newest snapshot.
+export const HOOK_SCRIPTS = [
+  "scripts/hooks/delivery-guard.sh",
+  "scripts/hooks/replay-guard.sh",
+  "scripts/hooks/session-context.sh",
+];
+
+// The hook scripts under `snapshotPath` that exist but are not executable by
+// anyone (mode has no 0o111 bit). Missing scripts are not flagged here — the
+// `harness` doctor check owns hook-wiring completeness.
+export function nonExecutableHookScripts(snapshotPath) {
+  const notExecutable = [];
+  for (const rel of HOOK_SCRIPTS) {
+    try {
+      if (!(fs.statSync(path.join(snapshotPath, rel)).mode & 0o111)) notExecutable.push(rel);
+    } catch {
+      // missing — out of scope for the executable-bit check
+    }
+  }
+  return notExecutable;
 }
 
 // Classify an expanded plugin-location path: `missing` (directory gone), `export`

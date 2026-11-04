@@ -8,7 +8,7 @@ import path from "node:path";
 
 import { config, emit, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
 import { loadProfiles, modelsState, modelTargetFiles } from "../lib/models.mjs";
-import { classifyLocation, expandHome, humanSize, listSnapshots, pluginLocations, snapshotDirName, snapshotsToPrune } from "../lib/plugin.mjs";
+import { classifyLocation, expandHome, humanSize, inUseSnapshots, listSnapshots, planPrune, pluginLocations, snapshotDirName } from "../lib/plugin.mjs";
 import { handoffModelLines, parseModelValue, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 
 const refuse = (message, extra = {}) => emit({ status: "refused", message, ...extra }, 3);
@@ -257,11 +257,19 @@ function runPruneSnapshots() {
   try {
     const dest = resolveDest();
     const snapshots = listSnapshots(dest);
-    const { keep, remove } = snapshotsToPrune(snapshots, PLUGIN_ROOT);
-    const freed = remove.reduce((sum, snapshot) => sum + snapshot.bytes, 0);
+    const plan = planPrune(snapshots, PLUGIN_ROOT, inUseSnapshots(snapshots), { force: options.force, dryRun: options.dryRun });
+    if (plan.blocked) {
+      return refuse(`plugin prune-snapshots: ${plan.reason}`, {
+        dest,
+        locationDir: snapshotDirName(dest),
+        dryRun: false,
+        inUseDetection: false,
+      });
+    }
+    const freed = plan.remove.reduce((sum, snapshot) => sum + snapshot.bytes, 0);
     const removed = [];
     if (!options.dryRun) {
-      for (const snapshot of remove) {
+      for (const snapshot of plan.remove) {
         fs.rmSync(snapshot.path, { recursive: true, force: true });
         removed.push(snapshot.nonce);
       }
@@ -271,12 +279,17 @@ function runPruneSnapshots() {
       dest,
       locationDir: snapshotDirName(dest),
       dryRun: Boolean(options.dryRun),
-      kept: keep.map((p) => path.basename(p)),
+      inUseDetection: plan.available,
+      forced: plan.forced,
+      kept: plan.keep.map((p) => path.basename(p)),
+      inUse: plan.inUse.map((p) => path.basename(p)),
       removed,
-      wouldRemove: options.dryRun ? remove.map((snapshot) => snapshot.nonce) : [],
+      wouldRemove: options.dryRun ? plan.remove.map((snapshot) => snapshot.nonce) : [],
       freedBytes: freed,
       freedSize: humanSize(freed),
-      advice: "reload any open VS Code windows so they stop running from the deleted snapshots",
+      advice: plan.available
+        ? "reload any open VS Code windows so they stop running from the skipped in-use snapshots, then re-run to reclaim them"
+        : "in-use snapshot detection is unavailable on this platform; reload any open VS Code windows before pruning (a forced run deletes all but the newest and the running CLI)",
     });
   } catch (error) {
     refuse(`plugin prune-snapshots: ${error.message}`, error.data ?? {});
