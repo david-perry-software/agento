@@ -526,7 +526,7 @@ current pins byte-identically; `apply` and `adopt` refuse a linked worktree
 and any BYOK tier warning; `show`, `apply`, and `pins` also warn once about model values
 without a `(vendor)` suffix, and `apply` still exits 0; `init` copies `templates/model-profiles.json` only when the
 file is absent),
-`plugin <export|snapshots|prune-snapshots> [--dest <dir>] [--ref <ref>] [--source <clone>] [--replace-clone] [--dry-run]`
+`plugin <export|snapshots|prune-snapshots> [--dest <dir>] [--ref <ref>] [--source <clone>] [--replace-clone] [--dry-run] [--force]`
 (VS Code's staged plugin snapshots, shared with the `plugin-snapshots` doctor check.
 `plugin export` builds a clean plugin tree from `git archive` of the CLI checkout's
 `origin/<default branch>` (or `--ref`), fetches first, writes `.agento-export.json`
@@ -544,8 +544,10 @@ every remote, and no stash entries, and the output reports the dropped ignored b
 `snapshots` reports the location's staged snapshots (count, per-snapshot bytes,
 newest nonce, total); `prune-snapshots` deletes every hex-named snapshot of the
 location except the newest, the one containing the running CLI, and any snapshot a
-running process still references (an open VS Code window's plugin hooks run from
-the snapshot that window loaded), never touching `cache.json`, other locations, or
+running VS Code window's hooks still run from — detected by anchoring each
+running VS Code window/extension-host process's start time to the newest snapshot
+whose nonce (hex millisecond mtime) is ≤ that start, with a `/proc` path scan as a
+secondary signal — never touching `cache.json`, other locations, or
 non-hex names, reports the skipped in-use snapshots plus freed bytes and the
 reload-advice, `--dry-run` reports without deleting, and where in-use detection is
 unavailable (non-Linux) deletion requires `--force` — reload open VS Code windows
