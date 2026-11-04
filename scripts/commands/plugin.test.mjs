@@ -13,6 +13,7 @@ import {
   snapshotDirName,
   vscodeSettingsPath,
 } from "../lib/plugin.mjs";
+import { baseEnv, git, makeRepo, runWith } from "../test-helpers/agento-fixtures.mjs";
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "agento-plugin-"));
 
@@ -131,4 +132,112 @@ test("pluginLocations returns [] for unreadable or empty settings", () => {
   fs.writeFileSync(settings, JSON.stringify({ "editor.tabSize": 2 }));
   assert.deepEqual(pluginLocations({ AGENTO_VSCODE_SETTINGS: settings }), []);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// --- plugin export (roadmap step 2.2) ---
+
+const walk = (root) => {
+  const out = [];
+  const visit = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(full);
+      else out.push(path.relative(root, full));
+    }
+  };
+  visit(root);
+  return out.sort();
+};
+
+const contentMap = (dir) => {
+  const map = {};
+  for (const rel of walk(dir)) map[rel] = fs.readFileSync(path.join(dir, rel), "utf8");
+  return map;
+};
+
+test("plugin export builds a tracked-only tree, re-exports, and refuses a bad ref and a non-git source", () => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  fs.writeFileSync(path.join(repo, ".gitignore"), "node_modules/\n");
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src", "index.js"), "module.exports = 1;\n");
+  fs.mkdirSync(path.join(repo, "node_modules"));
+  fs.writeFileSync(path.join(repo, "node_modules", "dep.js"), "ignored\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "files");
+  git(repo, "push", "-q", "origin", "main");
+
+  const dest = path.join(os.tmpdir(), `agento-export-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const first = runWith({ cwd: repo }, "plugin", "export", "--source", repo, "--dest", dest);
+  assert.equal(first.code, 0, JSON.stringify(first.json));
+  assert.equal(first.json.status, "ok");
+  assert.equal(first.json.source.commit, git(repo, "rev-parse", "origin/main"));
+
+  const expected = [...git(repo, "ls-tree", "-r", "--name-only", "origin/main").split("\n").filter(Boolean), ".agento-export.json"].sort();
+  assert.deepEqual(walk(dest), expected);
+  assert.ok(!fs.existsSync(path.join(dest, ".git")), "no .git in the export");
+  assert.ok(!fs.existsSync(path.join(dest, "node_modules")), "no node_modules in the export");
+  const stamp = JSON.parse(fs.readFileSync(path.join(dest, ".agento-export.json"), "utf8"));
+  assert.equal(stamp.source.commit, git(repo, "rev-parse", "origin/main"));
+  assert.equal(stamp.source.ref, "origin/main");
+  assert.ok(Array.isArray(stamp.carriedPins));
+
+  // Re-export over an earlier export replaces it.
+  fs.writeFileSync(path.join(repo, "src", "index.js"), "module.exports = 2;\n");
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "files v2");
+  git(repo, "push", "-q", "origin", "main");
+  const second = runWith({ cwd: repo }, "plugin", "export", "--source", repo, "--dest", dest);
+  assert.equal(second.code, 0, JSON.stringify(second.json));
+  assert.equal(fs.readFileSync(path.join(dest, "src", "index.js"), "utf8"), "module.exports = 2;\n");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dest, ".agento-export.json"), "utf8")).source.commit, git(repo, "rev-parse", "origin/main"));
+
+  // A bad ref is refused before the swap: dest byte-identical, no temp dirs.
+  const before = contentMap(dest);
+  const bad = runWith({ cwd: repo }, "plugin", "export", "--source", repo, "--dest", dest, "--ref", "origin/nope");
+  assert.equal(bad.code, 3, JSON.stringify(bad.json));
+  assert.equal(bad.json.status, "refused");
+  assert.deepEqual(contentMap(dest), before);
+  const stray = fs.readdirSync(path.dirname(dest)).filter((n) => n.startsWith(`${path.basename(dest)}.agento-`));
+  assert.deepEqual(stray, []);
+
+  // A staged snapshot (non-git) as source is refused.
+  const snapshot = path.join(os.tmpdir(), `agento-snapshot-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  fs.mkdirSync(snapshot);
+  fs.writeFileSync(path.join(snapshot, "file.txt"), "staged\n");
+  const staged = runWith({ cwd: repo }, "plugin", "export", "--source", snapshot, "--dest", `${dest}-2`);
+  assert.equal(staged.code, 3, JSON.stringify(staged.json));
+  assert.match(staged.json.message, /not a git checkout/);
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  fs.rmSync(dest, { recursive: true, force: true });
+  fs.rmSync(snapshot, { recursive: true, force: true });
+});
+
+test("plugin export with no --dest refuses when no or several Agento plugin locations are registered", () => {
+  const repo = makeRepo();
+  const settings = path.join(os.tmpdir(), `agento-settings-${process.pid}-${Math.random().toString(16).slice(2)}.json`);
+  const clone1 = path.join(os.tmpdir(), `agento-loc1-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const clone2 = path.join(os.tmpdir(), `agento-loc2-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  for (const c of [clone1, clone2]) {
+    fs.mkdirSync(path.join(c, ".claude-plugin"), { recursive: true });
+    fs.writeFileSync(path.join(c, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+    execFileSync("git", ["-C", c, "init", "-q"], { stdio: "ignore" });
+  }
+
+  fs.writeFileSync(settings, JSON.stringify({}));
+  const none = runWith({ cwd: repo, env: { ...baseEnv, AGENTO_VSCODE_SETTINGS: settings } }, "plugin", "export", "--source", repo);
+  assert.equal(none.code, 3, JSON.stringify(none.json));
+  assert.equal(none.json.status, "refused");
+
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [clone1]: true, [clone2]: true } }));
+  const several = runWith({ cwd: repo, env: { ...baseEnv, AGENTO_VSCODE_SETTINGS: settings } }, "plugin", "export", "--source", repo);
+  assert.equal(several.code, 3, JSON.stringify(several.json));
+  assert.equal(several.json.status, "refused");
+  assert.deepEqual(several.json.candidates.sort(), [clone1, clone2].sort());
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  fs.rmSync(settings, { force: true });
+  fs.rmSync(clone1, { recursive: true, force: true });
+  fs.rmSync(clone2, { recursive: true, force: true });
 });
