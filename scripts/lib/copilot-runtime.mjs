@@ -217,7 +217,7 @@ export function readMcpTimeouts({ hours = 24, home = copilotHome(), now = Date.n
       continue;
     }
     if (mtimeMs < cutoff) continue;
-    for (const [server, entry] of countMcpTimeouts(tailText(file, TAIL_BYTES))) {
+    for (const [server, entry] of countMcpTimeouts(tailText(file, TAIL_BYTES), { since: cutoff })) {
       const previous = merged.get(server) ?? { count: 0, lastAt: null };
       previous.count += entry.count;
       if (previous.lastAt === null || Date.parse(entry.lastAt) > Date.parse(previous.lastAt)) previous.lastAt = entry.lastAt;

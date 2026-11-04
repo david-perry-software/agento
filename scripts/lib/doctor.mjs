@@ -11,7 +11,7 @@ import { hasAgentoWorkspaceWiring } from "../agento-config.mjs";
 import { linkState } from "../harness.mjs";
 import { deriveRole } from "../session-state.mjs";
 import { deriveStalls } from "../delivery-metrics.mjs";
-import { copilotHome, readMcpConfigs, readMcpTimeouts, readSessions } from "./copilot-runtime.mjs";
+import { readMcpConfigs, readMcpTimeouts, readSessions } from "./copilot-runtime.mjs";
 import { harnessFacts, LOCAL_TAKEOVER } from "./copilot.mjs";
 import {
   artifacts,

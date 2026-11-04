@@ -16,7 +16,7 @@ const configWithSecrets = JSON.stringify({
       args: ["mcp"],
       tools: ["*"],
       env: { RAILWAY_TOKEN: "secret-token-value" },
-      headers: { Authorization: "Bearer secret-header-value" },
+      headers: { Authorization: "secret-header-value" },
     },
     github: {
       type: "http",
@@ -204,4 +204,22 @@ test("readMcpTimeouts: merges counts across log files modified within 24 h", () 
     ["github", { count: 1, lastAt: "2026-11-03T11:30:00.000Z" }],
   ]);
   assert.equal(readMcpTimeouts({ home: path.join(home, "missing"), now: NOW }).size, 0);
+});
+
+test("readMcpTimeouts: counts only lines timestamped within 24 h even in a freshly modified log", () => {
+  const home = fixtureHome();
+  const logs = path.join(home, "logs");
+  fs.mkdirSync(logs, { recursive: true });
+  const oldLine = "2026-11-02T10:00:00.000Z [WARNING] Failed to refresh persisted MCP tools for railway; continuing with cached tools: MCP request timed out after 60000 ms";
+  const freshLine = "2026-11-03T11:00:00.000Z [WARNING] Failed to refresh persisted MCP tools for railway; continuing with cached tools: MCP request timed out after 60000 ms";
+  // One log file with a fresh mtime (inside the window) holding both a line older
+  // than 24 h and a line inside it; the 24 h `since` filter must count only 1.
+  const file = path.join(logs, "process-3.log");
+  fs.writeFileSync(file, `${oldLine}\n${freshLine}\n`);
+  fs.utimesSync(file, new Date(NOW - 1000), new Date(NOW - 1000));
+
+  const counted = readMcpTimeouts({ home, now: NOW });
+  assert.deepEqual([...counted.entries()], [
+    ["railway", { count: 1, lastAt: "2026-11-03T11:00:00.000Z" }],
+  ]);
 });

@@ -132,8 +132,8 @@ test("doctor mcp-servers and turn-stalls warn on fixture data and stay ok when a
   fs.writeFileSync(path.join(home, "mcp-config.json"), JSON.stringify({ mcpServers: { railway: { type: "local", command: "railway", args: [], tools: ["*"] }, narrow: { type: "local", command: "node", args: [], tools: ["read"] } } }));
   fs.mkdirSync(path.join(home, "logs"), { recursive: true });
   const logFile = path.join(home, "logs", "process-1.log");
-  fs.writeFileSync(logFile, "2026-11-01T00:00:00.000Z [WARNING] Failed to refresh persisted MCP tools for narrow; continuing with cached tools: MCP request timed out after 60000 ms\n");
   const t = new Date(Date.now() - 60 * 1000);
+  fs.writeFileSync(logFile, `${t.toISOString()} [WARNING] Failed to refresh persisted MCP tools for narrow; continuing with cached tools: MCP request timed out after 60000 ms\n`);
   fs.utimesSync(logFile, t, t);
   const warned = check();
   assert.equal(warned["mcp-servers"].status, "warn");
