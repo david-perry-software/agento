@@ -8,7 +8,7 @@ import path from "node:path";
 
 import { config, emit, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
 import { loadProfiles, modelsState, modelTargetFiles } from "../lib/models.mjs";
-import { agentPluginsDir, classifyLocation, expandHome, listSnapshots, pluginLocations, snapshotDirName, snapshotsToPrune } from "../lib/plugin.mjs";
+import { classifyLocation, expandHome, humanSize, listSnapshots, pluginLocations, snapshotDirName, snapshotsToPrune } from "../lib/plugin.mjs";
 import { handoffModelLines, parseModelValue, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 
 const refuse = (message, extra = {}) => emit({ status: "refused", message, ...extra }, 3);
@@ -229,18 +229,6 @@ function runExport() {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     refuse(`plugin export: ${error.message}`, error.data ?? {});
   }
-}
-
-// du -h's human form of an allocated byte count: integer for >= 10 of a unit,
-// one decimal below 10, K/M/G powers of 1024.
-function humanSize(bytes) {
-  if (bytes < 1024) return `${bytes}`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return kib < 10 ? `${kib.toFixed(1)}K` : `${Math.ceil(kib)}K`;
-  const mib = kib / 1024;
-  if (mib < 1024) return mib < 10 ? `${mib.toFixed(1)}M` : `${Math.ceil(mib)}M`;
-  const gib = mib / 1024;
-  return gib < 10 ? `${gib.toFixed(1)}G` : `${Math.ceil(gib)}G`;
 }
 
 function runSnapshots() {

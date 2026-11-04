@@ -26,7 +26,7 @@ import {
   source,
 } from "./context.mjs";
 import { loadProfiles, loadRoles, modelsPins, modelsState, pinWarnings, resolveProfile } from "./models.mjs";
-import { expandHome, vscodeSettingsPath } from "./plugin.mjs";
+import { expandHome, humanSize, listSnapshots, pluginLocations, vscodeSettingsPath } from "./plugin.mjs";
 import { ghVersion, probe } from "./probe.mjs";
 import { holdsArtifacts } from "./records.mjs";
 import { describeWorkspace, managedHalves } from "./session.mjs";
@@ -289,6 +289,43 @@ const DOCTOR_CHECKS = {
       return asWarn(`turn-stalls check failed: ${error?.message ?? error}`);
     }
   },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  // Warn at most, never fail; every error is caught to `warn`.
+  "plugin-snapshots"() {
+    const asWarn = (detail, fallback) => ({ status: "warn", detail, fallback });
+    try {
+      const locations = pluginLocations();
+      const warnings = [];
+      const fallbacks = [];
+      for (const entry of locations) {
+        if (entry.kind === "missing") {
+          warnings.push(`${entry.dir} is enabled in chat.pluginLocations but its directory does not exist`);
+          fallbacks.push(`remove ${JSON.stringify(entry.dir)} from chat.pluginLocations in VS Code user settings`);
+          continue;
+        }
+        if (entry.kind !== "clone" && entry.kind !== "export") continue;
+        const snapshots = listSnapshots(entry.path);
+        const newest = snapshots[snapshots.length - 1];
+        if (entry.kind === "clone") {
+          warnings.push(`${entry.path} is an Agento git clone, not an export`);
+          fallbacks.push(`agento.mjs plugin export --dest ${entry.path} --replace-clone`);
+        }
+        if (newest && newest.bytes > 10 * 1024 * 1024) {
+          warnings.push(`newest snapshot of ${entry.path} is ${humanSize(newest.bytes)} (> 10 MB)`);
+          fallbacks.push(`agento.mjs plugin export --dest ${entry.path}`);
+        }
+        if (snapshots.length > 1) {
+          const staleBytes = snapshots.slice(0, -1).reduce((sum, snapshot) => sum + snapshot.bytes, 0);
+          warnings.push(`${snapshots.length - 1} stale snapshot(s) (${humanSize(staleBytes)}) of ${entry.path}`);
+          fallbacks.push(`agento.mjs plugin prune-snapshots --dest ${entry.path}`);
+        }
+      }
+      if (warnings.length) return asWarn(warnings.join("; "), [...new Set(fallbacks)].join("; ") || null);
+      return { status: "ok", detail: "plugin snapshots are slim", fallback: null };
+    } catch (error) {
+      return asWarn(`plugin-snapshots check failed: ${error?.message ?? error}`, null);
+    }
+  },
 };
 
 const hhmmZ = (at) => `${new Date(at).toISOString().slice(11, 16)}Z`;
@@ -396,7 +433,7 @@ function runDoctor(ids) {
 }
 
 // The checks that run no external probe (doctorProbes) and so need no network.
-const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "mcp-servers", "turn-stalls"];
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "mcp-servers", "turn-stalls", "plugin-snapshots"];
 function capabilityOf(checkId) {
   return Object.entries(CAPABILITY_CHECKS).find(([, ids]) => ids.includes(checkId))?.[0] ?? checkId;
 }
