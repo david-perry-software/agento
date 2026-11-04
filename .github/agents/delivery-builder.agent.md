@@ -104,10 +104,10 @@ For each unchecked step, in order:
    marked `(manual)` — or you hit an action only the user can perform — follow the
    manual step protocol (policy §3) instead of implementing. Verify user-visible
    behavior yourself against the target the step names (policy §2); a `(manual,
-   post-ship)` step stays unticked (`agento.mjs policy 4`, `:109`).
+   post-ship)` step stays unticked (`agento.mjs policy 4`).
 3. Run the step's `verify:` check. Only when it passes: tick the checkbox, update
    `last-updated` and `next-step`. When the plan uses a scoped lint gate, run every
-   component of it (`agento.mjs policy 5`, `:112`).
+   component of it (`agento.mjs policy 5`).
 4. Commit, integrate, and push the step with one `step-commit <type> <slug> --step
    N.M` call (Conventional Commit message naming `N.M`). Delete byproducts first: it
    stages everything in this worktree and, in companion mode, only the slug's artifact
@@ -157,7 +157,7 @@ both trees clean with `ahead: 0` per policy §7 clean handoff,
 and hand off to the Reviewer. For issues, also write plan.md `## Resolution` (root
 cause, what changed, proof the exposing test passes) and ensure the PR body contains
 `Fixes #<github-issue>` from the roadmap header. End the completion report with the
-cross-window sequence from (`agento.mjs policy 8`, `:162`) (review here; `/agento ship <slug>` from the
+cross-window sequence (`agento.mjs policy 8`) (review here; `/agento ship <slug>` from the
 primary window on approval, which tears this worktree down), its first command being
 the `next:` of the §9 result line; every command the user is to run is its own block
 per policy §12, and the `/agento review-<type> <slug>` block is followed by
