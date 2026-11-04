@@ -10,7 +10,8 @@
       "agents": {
         "planner": "<strong model: picker name (vendor)>",
         "reviewer": "<strong model: picker name (vendor)>",
-        "architect": "<strong model: picker name (vendor)>"
+        "architect": "<strong model: picker name (vendor)>",
+        "autopilot": "<strong model: picker name (vendor)>"
       }
     }
   }
