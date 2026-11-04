@@ -92,7 +92,7 @@ test("doctor artifact-repo warns when the companion worktrees dir exists but is 
   assert.equal(check().status, "ok");
 });
 
-test("doctor reports thirteen checks and includes session-workspace, model-profile, hook-wiring, harness, canvas, mcp-servers, and turn-stalls", () => {
+test("doctor reports fourteen checks and includes session-workspace, model-profile, hook-wiring, harness, canvas, mcp-servers, turn-stalls, and plugin-snapshots", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   // --plugin-root: the model-profile check must not read the (possibly pinned) clone running the suite.
@@ -100,7 +100,7 @@ test("doctor reports thirteen checks and includes session-workspace, model-profi
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "canvas", "mcp-servers", "turn-stalls"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "canvas", "mcp-servers", "turn-stalls", "plugin-snapshots"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -114,6 +114,7 @@ test("doctor reports thirteen checks and includes session-workspace, model-profi
   assert.equal(checks["session-workspace"].detail, "not a managed pair");
   assert.equal(checks["mcp-servers"].detail, "no MCP servers configured");
   assert.equal(checks["turn-stalls"].detail, "no Copilot session data");
+  assert.equal(checks["plugin-snapshots"].detail, "plugin snapshots are slim");
 });
 
 test("doctor mcp-servers and turn-stalls warn on fixture data and stay ok when absent, never fail", () => {
@@ -306,7 +307,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");
@@ -872,4 +873,124 @@ test("doctor hook-wiring: ok without wiring, unregistered, false, or unreadable 
   assert.equal(unreadable.status, "ok");
   assert.match(unreadable.detail, /unreadable \(ENOENT\), plugin registration unknown$/);
   assert.equal(unreadable.fallback, null);
+});
+
+test("doctor plugin-snapshots warns on a missing location, a clone, a >10 MB snapshot, and stale snapshots; ok for a slim export; never run by --for", () => {
+  const repo = makeRepo();
+  const settings = path.join(path.dirname(repo), "vscode-settings.json");
+  const agents = path.join(path.dirname(repo), "agentPlugins");
+  const cloneLoc = path.join(path.dirname(repo), "clone-plugin");
+  const exportLoc = path.join(path.dirname(repo), "export-plugin");
+  const missingLoc = path.join(path.dirname(repo), "missing-plugin");
+  fs.mkdirSync(path.join(cloneLoc, ".claude-plugin"), { recursive: true });
+  fs.writeFileSync(path.join(cloneLoc, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+  execFileSync("git", ["-C", cloneLoc, "init", "-q", "-b", "main"]);
+  fs.mkdirSync(exportLoc, { recursive: true });
+  fs.writeFileSync(path.join(exportLoc, ".agento-export.json"), "{}");
+  const dirOf = (loc) => `file-${loc.replace(/^\//, "").replace(/\//g, "-")}`;
+  const locationDir = path.join(agents, dirOf(cloneLoc));
+  const exportDir = path.join(agents, dirOf(exportLoc));
+  // The clone has two snapshots (one stale); the export has one small snapshot.
+  fs.mkdirSync(path.join(locationDir, "aaaaaaaa"), { recursive: true });
+  fs.mkdirSync(path.join(locationDir, "bbbbbbbb"), { recursive: true });
+  fs.writeFileSync(path.join(locationDir, "aaaaaaaa", "f"), "x".repeat(2048));
+  fs.writeFileSync(path.join(locationDir, "bbbbbbbb", "f"), "y".repeat(2048));
+  fs.mkdirSync(path.join(exportDir, "cccccccc"), { recursive: true });
+  fs.writeFileSync(path.join(exportDir, "cccccccc", "f"), "z".repeat(2048));
+
+  const env = { ...restrictedPath(okStubs).env, AGENTO_VSCODE_SETTINGS: settings, AGENTO_VSCODE_AGENT_PLUGINS: agents };
+  const check = () => byId(runWith({ cwd: repo, env }, "doctor").json)["plugin-snapshots"];
+  const plugin = (entries) => {
+    fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": entries }));
+  };
+
+  plugin({ [cloneLoc]: true });
+  const clone = check();
+  assert.equal(clone.status, "warn");
+  assert.match(clone.detail, /is an Agento git clone/);
+  assert.match(clone.detail, /1 stale snapshot/);
+  assert.match(clone.fallback, /plugin export --dest .* --replace-clone/);
+
+  plugin({ [exportLoc]: true });
+  const exportCheck = check();
+  assert.equal(exportCheck.status, "ok");
+  assert.match(exportCheck.detail, /slim/);
+
+  // A > 10 MB newest snapshot warns even for an export.
+  fs.writeFileSync(path.join(exportDir, "cccccccc", "big"), Buffer.alloc(11 * 1024 * 1024));
+  const big = check();
+  assert.equal(big.status, "warn");
+  assert.match(big.detail, /> 10 MB/);
+  assert.match(big.fallback, /plugin export --dest/);
+
+  plugin({ [missingLoc]: true });
+  const missing = check();
+  assert.equal(missing.status, "warn");
+  assert.match(missing.detail, /directory does not exist/);
+  assert.match(missing.fallback, /remove .* from chat\.pluginLocations/);
+
+  const forModels = runWith({ cwd: repo, env }, "doctor", "--for", "models").json;
+  assert.ok(!forModels.checks.some((c) => c.id === "plugin-snapshots"), "--for never runs plugin-snapshots");
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+});
+
+test("doctor plugin-snapshots dedupes the export fallback for a > 10 MB clone", () => {
+  const repo = makeRepo();
+  const settings = path.join(path.dirname(repo), "vscode-settings.json");
+  const agents = path.join(path.dirname(repo), "agentPlugins");
+  const cloneLoc = path.join(path.dirname(repo), "clone-plugin");
+  fs.mkdirSync(path.join(cloneLoc, ".claude-plugin"), { recursive: true });
+  fs.writeFileSync(path.join(cloneLoc, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "agento" }));
+  execFileSync("git", ["-C", cloneLoc, "init", "-q", "-b", "main"]);
+  const dirOf = (loc) => `file-${loc.replace(/^\//, "").replace(/\//g, "-")}`;
+  const locationDir = path.join(agents, dirOf(cloneLoc));
+  fs.mkdirSync(path.join(locationDir, "bbbbbbbb"), { recursive: true });
+  fs.writeFileSync(path.join(locationDir, "bbbbbbbb", "big"), Buffer.alloc(11 * 1024 * 1024));
+
+  const env = { ...restrictedPath(okStubs).env, AGENTO_VSCODE_SETTINGS: settings, AGENTO_VSCODE_AGENT_PLUGINS: agents };
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [cloneLoc]: true } }));
+  const check = byId(runWith({ cwd: repo, env }, "doctor").json)["plugin-snapshots"];
+
+  assert.equal(check.status, "warn");
+  assert.match(check.detail, /is an Agento git clone/);
+  assert.match(check.detail, /> 10 MB/);
+  // The clone and > 10 MB warnings collapse to a single --replace-clone fallback.
+  assert.equal(check.fallback, `agento.mjs plugin export --dest ${cloneLoc} --replace-clone`);
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+});
+
+test("doctor plugin-snapshots warns when the newest snapshot's hook scripts are not executable", () => {
+  const repo = makeRepo();
+  const settings = path.join(path.dirname(repo), "vscode-settings.json");
+  const agents = path.join(path.dirname(repo), "agentPlugins");
+  const exportLoc = path.join(path.dirname(repo), "export-plugin");
+  fs.mkdirSync(exportLoc, { recursive: true });
+  fs.writeFileSync(path.join(exportLoc, ".agento-export.json"), "{}");
+  const dirOf = (loc) => `file-${loc.replace(/^\//, "").replace(/\//g, "-")}`;
+  const exportDir = path.join(agents, dirOf(exportLoc));
+  const hooksDir = path.join(exportDir, "cccccccc", "scripts", "hooks");
+  fs.mkdirSync(hooksDir, { recursive: true });
+  for (const rel of ["delivery-guard.sh", "replay-guard.sh", "session-context.sh"]) {
+    fs.writeFileSync(path.join(hooksDir, rel), "#!/bin/sh\n", { mode: 0o644 });
+  }
+  const env = { ...restrictedPath(okStubs).env, AGENTO_VSCODE_SETTINGS: settings, AGENTO_VSCODE_AGENT_PLUGINS: agents };
+  fs.writeFileSync(settings, JSON.stringify({ "chat.pluginLocations": { [exportLoc]: true } }));
+  const check = () => byId(runWith({ cwd: repo, env }, "doctor").json)["plugin-snapshots"];
+
+  const warned = check();
+  assert.equal(warned.status, "warn");
+  assert.match(warned.detail, /non-executable hook script/);
+  assert.match(warned.detail, /delivery-guard\.sh/);
+  assert.match(warned.fallback, /reload the open VS Code window/);
+
+  for (const rel of ["delivery-guard.sh", "replay-guard.sh", "session-context.sh"]) {
+    fs.chmodSync(path.join(hooksDir, rel), 0o755);
+  }
+  const ok = check();
+  assert.equal(ok.status, "ok");
+  assert.match(ok.detail, /slim/);
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
 });

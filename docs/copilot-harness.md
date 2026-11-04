@@ -95,6 +95,27 @@ Evidence lives in the companion repository under
   through with no approval. Under **Manual permissions** the card appears and a
   Skip leaves nothing created. Local honors the `ask` even under Allow all. Filed
   as [#123](https://github.com/david-perry-software/agento/issues/123).
+- **VS Code stages a full copy of the plugin per snapshot, and never deletes
+  them.** The plugin runs from a staged copy under `~/.config/Code/agentPlugins/`,
+  not from the `chat.pluginLocations` directory. A `file://` location is stored as
+  `file-` + its path with `/` replaced by `-` and the leading `/` dropped, and each
+  snapshot is a hex-named subdirectory whose nonce is the hex millisecond mtime of
+  the location directory (`cache.json` records each `{ uri, nonce }`). Snapshots
+  accumulate until `agento.mjs plugin prune-snapshots` deletes all but the newest,
+  the one the running CLI is in, and any snapshot an open VS Code window's hooks
+  still run from (prune detects in-use snapshots by anchoring each running VS Code
+  window/extension-host process's start time to the newest snapshot whose nonce —
+  the hex millisecond mtime — is ≤ that start, with a `/proc` `cwd`/`cmdline`/
+  `environ` path scan as a secondary signal; where detection is unavailable —
+  non-Linux — it requires `--force`, so reload open VS Code windows first); `agento.mjs
+  doctor`'s `plugin-snapshots` check warns while stale snapshots remain. VS Code's
+  staged copy also drops the `+x` bit on `scripts/hooks/*.sh` (`git ls-files -s`
+  tracks them mode 100755 and `plugin export` preserves 100755, so the export is
+  fine; only the staged snapshot loses it); `hooks/hooks.json` therefore invokes
+  each hook as `bash ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/<hook>.sh`, so a hook runs
+  even from a fresh snapshot whose scripts lost the `+x` bit, and `doctor` warns
+  when the newest snapshot's hook scripts are not executable — reload the window
+  so it re-stages, or `chmod +x` them inside the snapshot.
 
 ## Agents and models
 

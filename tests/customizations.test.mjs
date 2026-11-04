@@ -1280,8 +1280,11 @@ test("command mirrors use suffix-less command names and hook wiring points at ex
     }
   };
   checkHooks(rel(plugin.hooks.replace(/^\.\//, "")), (cmd) => {
-    assert.match(cmd, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `plugin hook must use the compatible root token: ${cmd}`);
-    return rel(cmd.replace("${CLAUDE_PLUGIN_ROOT}/", ""));
+    // Mode-independent: hooks run as `bash ${CLAUDE_PLUGIN_ROOT}/…` so a staged
+    // snapshot whose scripts lost the +x bit still works.
+    const body = cmd.replace(/^bash\s+/, "");
+    assert.match(body, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `plugin hook must use the compatible root token: ${cmd}`);
+    return rel(body.replace("${CLAUDE_PLUGIN_ROOT}/", ""));
   });
   for (const file of listFiles(rel(".github", "hooks"), ".json")) {
     checkHooks(file, (cmd) => rel(cmd.replace(/^\.\//, "")));
@@ -1324,8 +1327,10 @@ test("plugin layout is Claude format so VS Code expands ${CLAUDE_PLUGIN_ROOT} (#
   const commands = Object.values(wiring.hooks).flat().map((entry) => entry.command);
   assert.ok(commands.length > 0, "hooks/hooks.json wires no hooks");
   for (const cmd of commands) {
-    assert.match(cmd, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `hook command must start with \${CLAUDE_PLUGIN_ROOT}/: ${cmd}`);
-    const script = cmd.replace("${CLAUDE_PLUGIN_ROOT}", repoRoot);
+    // `bash <path>` keeps hooks working when VS Code's staged copy drops +x.
+    const body = cmd.replace(/^bash\s+/, "");
+    assert.match(body, /^\$\{CLAUDE_PLUGIN_ROOT\}\//, `hook command must start with \${CLAUDE_PLUGIN_ROOT}/: ${cmd}`);
+    const script = body.replace("${CLAUDE_PLUGIN_ROOT}", repoRoot);
     assert.ok(fs.existsSync(script), `${cmd} does not resolve under the plugin root`);
     assert.ok(fs.statSync(script).isFile() && fs.statSync(script).mode & 0o111, `${script} is not an executable file`);
   }

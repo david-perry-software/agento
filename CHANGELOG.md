@@ -2,6 +2,14 @@
 
 ## 0.16.0
 
+- **Added.** A `plugin` command family for VS Code's staged plugin snapshots:
+  `plugin export` builds a slim plugin tree (a `git archive` of
+  `origin/<default branch>` plus `.agento-export.json`, with the clone's model pins
+  carried over and a `--replace-clone` safety gate), `plugin snapshots` lists the
+  staged snapshots, and `plugin prune-snapshots` deletes every stale one (newest
+  and the running CLI's snapshot excepted). A new informational `plugin-snapshots`
+  doctor check warns on a missing plugin location, a clone-registered or > 10 MB
+  snapshot, and stale snapshots.
 - **Added.** Session stall diagnostics: `agento.mjs doctor` gains `mcp-servers`
   and `turn-stalls` checks, `agento.mjs stalls` reports the current session's
   stalled turns and a 24 h window, and `/agento delivery-status`, the Session &

@@ -36,6 +36,7 @@
 //   node scripts/agento.mjs stalls                      (the current Copilot session's stalled turns and the 24 h window: { status, generatedAt, thresholdSeconds, current, window, summary, root, configSource })
 //   node scripts/agento.mjs migrate <companion-checkout> [--apply]   (move in-repo artifact roots into the companion; dry run without --apply)
 //   node scripts/agento.mjs models <verb> [--plugin-root <dir>]   (model profiles in ~/.config/agento/model-profiles.json; read: list | pins [--role primary|secondary] | resolve <command> [--role primary|secondary] | show <name>; write: create <name> [--from <src>] [--description <text>] | update <name> [--dry-run] | rename <old> <new> | delete <name> [--force] | alias set <picker> <id> | alias remove <picker> | apply <name> | adopt | clear | use <name|none> --role primary|secondary | init; write verbs accept --expect <sha256> and report profilesFile.hash)
+//   node scripts/agento.mjs plugin <export|snapshots|prune-snapshots> [--dest <dir>] [--dry-run] [--ref <ref>] [--source <clone>] [--replace-clone] [--force]   (export a clean plugin tree, list or prune VS Code's staged plugin snapshots; JSON like the other commands; exit 0 ok, 1 usage, 3 refused/failed)
 //   node scripts/agento.mjs harness <status|install|uninstall> [--plugin-root <dir>] [--force]   (create/report/remove the ~/.copilot/skills/agento link to the router skill; --force replaces a foreign or dangling link on install only)
 //   node scripts/agento.mjs release <merge-sha> [--wait N] [--interval N]   (deploy-wait verdict for checks.releaseWorkflow; exit 0 done, 2 pending/dispatch-required, 3 gh/auth, 4 failed/no-run)
 //
@@ -52,6 +53,7 @@ const COMMAND_MODULES = {
   migrate: "migrate",
   harness: "harness",
   models: "models",
+  plugin: "plugin",
   config: "resolve",
   resolve: "resolve",
   find: "resolve",

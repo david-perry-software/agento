@@ -332,6 +332,13 @@ With `required=true` a missing or broken filter makes git refuse the operation, 
 pin can never reach a commit. Needs git ≥ 2.31 (`apply` and `adopt` refuse older
 versions with `status: "git-too-old"`) and `node` on git's `PATH`.
 
+An export built with `plugin export` has no git filter: the pin lines live directly
+in the exported files, and every re-export carries them over from the previous
+destination — `plugin export` reads the old tree's `model:` and handoff pins and
+writes them into the new tree, listing any file with no prior pin under `unpinned`
+(fallback `models apply <name> --plugin-root <dest>`). `models apply <name>
+--plugin-root <dest>` pins a fresh export.
+
 ## Updating the clone
 
 A `git pull`, merge, `switch`, or `stash` in a pinned clone needs no extra step: git
