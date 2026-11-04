@@ -27,7 +27,7 @@ export const DEFAULT_POLICY_PRIORITY = ["1", "2", "3", "4", "5", "6", "7", "8", 
 // tight. Each list is a permutation of that role's declared set; sections not
 // declared by the command are skipped. Inline commands use numeric order.
 export const BRIEF_POLICY_PRIORITY = {
-  "🔨 Agento Builder": ["9", "7", "1", "2", "3", "5", "11", "10", "12", "8", "4"],
+  "🔨 Agento Builder": ["9", "7", "1", "2", "3", "6", "11", "10", "12"],
   "🔍 Agento Reviewer": ["9", "7", "2", "1", "5", "3", "11", "10", "12", "8", "4"],
   "📋 Agento Planner": ["9", "7", "1", "2", "5", "10", "11", "12", "4"],
   "🤖 Agento Autopilot": ["9", "7", "1", "3", "8", "11", "10", "12"],
