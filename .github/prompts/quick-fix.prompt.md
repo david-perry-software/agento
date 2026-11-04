@@ -26,10 +26,8 @@ means the configured default.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line. Open with one
-`node <agento-root>/scripts/agento.mjs preflight quick-fix` call (§9–§11; the CLI
-path is announced in the session context as `Agento CLI:`): print its `receipt` and
-then its `preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing
-nothing.
+`node <agento-root>/scripts/agento.mjs brief quick-fix` call (§9–§11; the CLI
+path is announced in the session context as `Agento CLI:`): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 ## Refuse when the change does not fit
@@ -48,7 +46,7 @@ named command is emitted as its own block per policy §12 (one block per command
 
 ## Steps
 
-1. The preflight's `window` verdict applies the window check: `role: "primary"` with
+1. The brief's `Session:` block applies the window check: `role: "primary"` with
    `worktree.branch` equal to `main` and a clean checkout, otherwise it rejects per §11
    with the record's alternatives. Then require clean and synchronized: `git fetch
    origin` then `git status --short --branch` shows nothing and zero ahead/behind.

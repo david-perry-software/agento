@@ -16,10 +16,9 @@ creating one GitHub issue with `gh issue create` (unless importing an existing o
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line.
-Open with one `node <agento-root>/scripts/agento.mjs preflight new-issue` call
+Open with one `node <agento-root>/scripts/agento.mjs brief new-issue` call
 (§9–§11), with `issue <slug>` appended when resuming a promoted planning worktree:
-print its `receipt` and then its `preflightLines` verbatim, and stop on `status:
-rejected` (exit 3), writing nothing.
+print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 
 The argument takes three forms — detect which applies:

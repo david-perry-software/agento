@@ -18,9 +18,7 @@ reports and never repairs (policy §1); the user performs every fix themselves.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line. Open with one `node
-<agento-root>/scripts/agento.mjs preflight doctor` call (§9–§11): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-(exit 3).
+<agento-root>/scripts/agento.mjs brief doctor` call (§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 1. Run the Agento CLI: `node <agento-root>/scripts/agento.mjs doctor` (the CLI path

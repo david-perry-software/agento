@@ -396,7 +396,7 @@ test("ship is one agento.mjs ship call with no hand-run fallback procedure", () 
   const prompt = rel(".github", "prompts", "ship.prompt.md");
   const body = splitFrontmatter(prompt).body;
   assert.equal(fs.readFileSync(commandRel("ship.md"), "utf8"), fs.readFileSync(prompt, "utf8"), "skills/agento/commands/ship.md must mirror the prompt byte for byte");
-  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs preflight ship <slug>/);
+  assert.match(body, /node <agento-root>\/scripts\/agento\.mjs brief ship <slug>/);
   assert.match(body, /node <agento-root>\/scripts\/agento\.mjs ship <type> <slug>/);
   assert.match(body, /--confirm <confirmToken>/, "the confirmation reaches the CLI as --confirm <token>");
   for (const [pattern, why] of [
@@ -736,15 +736,15 @@ const HAND_RUN_OPENING = [
   [/rev-parse --short HEAD/, "git rev-parse --short HEAD"],
 ];
 
-test("every command opens with one agento.mjs preflight <name> call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
+test("every command opens with one agento.mjs brief <name> call and no hand-run session, doctor --for, resolve, or rev-parse", () => {
   for (const file of promptFiles) {
     const name = path.basename(file, ".prompt.md");
     const label = path.relative(repoRoot, file);
     const body = splitFrontmatter(file).body.replace(/\s+/g, " ");
-    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs preflight ${name}\\b`), `${label}: never runs agento.mjs preflight ${name}`);
-    const others = [...body.matchAll(/agento\.mjs preflight ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name);
-    assert.deepEqual(others, [], `${label}: runs preflight for another command`);
-    assert.match(body, /`receipt`[^.]*`preflightLines`/, `${label}: must print the preflight's receipt and preflightLines`);
+    assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs brief ${name}\\b`), `${label}: never runs agento.mjs brief ${name}`);
+    const others = [...body.matchAll(/agento\.mjs brief ([a-z0-9-]+)/g)].map((m) => m[1]).filter((n) => n !== name);
+    assert.deepEqual(others, [], `${label}: runs brief for another command`);
+    assert.match(body, /print its receipt and `Preflight:` lines verbatim/, `${label}: must print the brief's receipt and Preflight: lines`);
     for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
   }
 });
@@ -769,6 +769,16 @@ test("every agent opens with one agento.mjs brief call and no hand-run session, 
     assert.match(body, new RegExp(`node <agento-root>/scripts/agento\\.mjs brief (?:${command}|${stem})(?![\\\\w-])`), `${label}: never runs agento.mjs brief ${command}`);
     assert.match(body, /print its receipt and `Preflight:` lines verbatim/, `${label}: must print the brief's receipt and Preflight: lines`);
     for (const [pattern, what] of HAND_RUN_OPENING) assert.doesNotMatch(body, pattern, `${label}: still runs ${what} by hand`);
+  }
+});
+
+test("no agent, prompt, mirror, or router opens with preflight or reads a file under <agento-root>", () => {
+  const files = [...agentFiles, ...promptFiles, ...commandNames.map((name) => commandRel(`${name}.md`)), skillFile];
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body;
+    assert.doesNotMatch(body, /agento\.mjs preflight/, `${label}: still opens with agento.mjs preflight`);
+    assert.doesNotMatch(body, /Read `?<agento-root>/, `${label}: tells the model to Read a file under <agento-root>`);
   }
 });
 

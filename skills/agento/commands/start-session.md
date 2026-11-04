@@ -22,9 +22,7 @@ it needs a terminal.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12. Open with one `node
-<agento-root>/scripts/agento.mjs preflight start-session` call (§9–§11): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-(exit 3), writing nothing.
+<agento-root>/scripts/agento.mjs brief start-session` call (§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 ## One call

@@ -30,11 +30,7 @@ and reports them in `preflight[]`. Window check per §11: requires role `primary
 
 The CLI path is announced in the session context as `Agento CLI:`.
 
-1. `node <agento-root>/scripts/agento.mjs preflight ship <slug>` — print its
-   `receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-   (exit 3). Its `resolve` section gives the delivery `type` (`feature` or `issue`);
-   a `conflict`, `branch-mismatch`, or `missing` resolution is reported verbatim with
-   the §9 rejected receipt; stop.
+1. `node <agento-root>/scripts/agento.mjs brief ship <slug>` — print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step. Its Delivery block shows the roadmap `branch` — `feature/<slug>` or `issue/<slug>` — which gives the delivery `type`; a `conflict`, `branch-mismatch`, or `missing` Delivery block is reported verbatim; stop.
 2. `node <agento-root>/scripts/agento.mjs ship <type> <slug>` — the audit call. It
    never writes to any repository (the one exception: an issue PR body missing its
    `Fixes #<n>` line is completed through the GitHub API and reported in

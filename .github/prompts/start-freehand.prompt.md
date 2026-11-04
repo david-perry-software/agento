@@ -25,14 +25,13 @@ slug.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line.
-Open with one `node <agento-root>/scripts/agento.mjs preflight start-freehand` call
-(§9–§11): print its `receipt` and then its `preflightLines` verbatim, and stop on
-`status: rejected` (exit 3), writing nothing.
+Open with one `node <agento-root>/scripts/agento.mjs brief start-freehand` call
+(§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `primary` on the default branch, clean.
 
 **Preconditions:**
 
-1. The preflight's `window` verdict applies the window check: `role: "primary"` with
+1. The brief's `Session:` block applies the window check: `role: "primary"` with
    `worktree.branch` equal to the configured default branch and a clean checkout;
    otherwise it rejects per §11 with the record's alternatives.
 2. Run `git fetch origin`. Authentication or authorization failures halt immediately

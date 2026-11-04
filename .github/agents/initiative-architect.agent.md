@@ -60,7 +60,7 @@ keeps the single-repo flow below.
 ## Procedure
 
 1. **Require the primary worktree on `main`, clean, and synchronized.** The
-   preflight's `window` verdict applies the window check per §11 (`primary` on the
+   brief's `Session:` block applies the window check per §11 (`primary` on the
    default branch, clean; a managed or `unmanaged` role is rejected with the record's
    alternatives). Then `git fetch origin` and `git status --short --branch` must show
    nothing and zero ahead/behind; otherwise stop and name

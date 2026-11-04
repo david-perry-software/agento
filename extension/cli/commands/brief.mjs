@@ -108,10 +108,14 @@ function roadmapContent(resolve) {
 }
 
 function deliveryDocument(resolve) {
+  if (!resolve) return null;
+  if (resolve.status !== "ok") return { status: resolve.status, message: resolve.message ?? null, header: null, ticked: 0, total: 0, currentStep: null, artifactDir: null };
   const content = roadmapContent(resolve);
-  if (!content) return null;
+  if (!content) return { status: "missing", message: "roadmap resolved but its content could not be read", header: null, ticked: 0, total: 0, currentStep: null, artifactDir: path.posix.dirname(resolve.path) };
   const steps = [...content.matchAll(/^- \[( |x)\] \d+\.\d+/gm)];
   return {
+    status: "ok",
+    message: null,
     content,
     header: {
       status: header(content, "status"),
@@ -139,6 +143,7 @@ function sessionBlock(preflight) {
 
 function deliveryBlock(doc) {
   if (!doc) return null;
+  if (doc.status !== "ok") return `Delivery: ${doc.status}${doc.message ? ` — ${doc.message}` : ""}`;
   const lines = [
     "Delivery:",
     `- artifact dir: ${doc.artifactDir}`,
@@ -234,12 +239,9 @@ export const commands = {
         preflightLines: preflight.preflightLines,
         session: preflight.session,
         delivery: delivery
-          ? {
-              header: delivery.header,
-              ticked: delivery.ticked,
-              total: delivery.total,
-              currentStep: delivery.currentStep,
-            }
+          ? delivery.status === "ok"
+            ? { status: "ok", header: delivery.header, ticked: delivery.ticked, total: delivery.total, currentStep: delivery.currentStep }
+            : { status: delivery.status, message: delivery.message, header: null, ticked: 0, total: 0, currentStep: null }
           : null,
         blocks: blocks.map((b) => ({
           kind: b.kind,

@@ -23,9 +23,8 @@ dispatched command's prompt and agent files are the only procedure.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line. Open with one `node
-<agento-root>/scripts/agento.mjs preflight continue [<slug>]` call (§9–§11), the slug
-argument appended verbatim when one was given: print its `receipt` and then its
-`preflightLines` verbatim, and stop on `status: rejected` (exit 3), writing nothing;
+<agento-root>/scripts/agento.mjs brief continue [<slug>]` call (§9–§11), the slug
+argument appended verbatim when one was given: print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step;
 the needs above are the union of what the dispatched commands declare.
 Window check per §11: requires role `primary`, `plan`, or `build` (in `build` or
 `plan`, a slug argument must equal the record's `delivery.slug`; `freehand` and
@@ -33,8 +32,8 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
 
 ## Procedure
 
-1. **Session.** The preflight's `session` section is the record and its `window`
-   verdict the window check above (from `role`, `worktree`, and `delivery`). Never
+1. **Session.** The brief's `Session:` block is the record and its `role` the
+   window check above (from `role`, `worktree`, and `delivery`). Never
    inspect worktrees yourself; the record is the only source.
 2. **Derive.** Run `node <agento-root>/scripts/agento.mjs next` — with the slug
    argument appended verbatim when one was given — and read `status`, `next`,
@@ -57,7 +56,7 @@ Window check per §11: requires role `primary`, `plan`, or `build` (in `build` o
      and, when non-null, `dispatch.agent` (the agent file whose `name:` the prompt's
      `agent:` frontmatter selects). Carry that command out exactly as those files
      say, with `next.args` as its arguments, applying the agent file's rules verbatim
-     — its resume protocol, its own `preflight` call, its own window
+     — its resume protocol, its own `brief` call, its own window
      check, its evidence and hand-off rules. Nothing in this command overrides them.
      For `start-session`, `next.args` may be empty (plan mode) or
      `<type>/<slug> [--resume]` (build mode); when `next.then` is set, that command

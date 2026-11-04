@@ -10,18 +10,14 @@ Standard fallbacks: delivery-policy §10.
 Policy: §1, §2, §3, §4, §5, §7, §8, §9, §10, §11, §12 — loaded by the opening `agento.mjs brief` call; any other §N on demand with `agento.mjs policy N`.
 Duplicate submission: A fresh verdict overwrites review.md; no second PR comment thread.
 
-Review the **feature** named by the slug in the argument. Its roadmap resolution is
-the `resolve` section of the preflight call below; stop on any `status` other than
-`ok`.
+Review the **feature** named by the slug in the argument. The brief's Delivery block below is its roadmap resolution; a `conflict`, `branch-mismatch`, or `missing` block is a hard stop — report its `message` verbatim.
 
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's
 duplicate-submission line.
-Open with one `node <agento-root>/scripts/agento.mjs preflight review-feature feature
-<slug>` call (§9–§11; path in the session context line `Agento CLI:`): print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-(exit 3), writing nothing.
+Open with one `node <agento-root>/scripts/agento.mjs brief review-feature feature
+<slug>` call (§9–§11; path in the session context line `Agento CLI:`): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `build` with `delivery.slug` equal to the argument.
 
 Follow your full procedure: confirm from the session record that `worktree.branch` is

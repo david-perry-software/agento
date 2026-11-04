@@ -15,9 +15,8 @@ Fix the customization-system bug described in the argument.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9, its `next:` command repeated in its own block
 directly above the result line per §12; a duplicate submission follows this command's
-duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs preflight
-fix-copilot` call (§9–§11): print its `receipt` and then its `preflightLines`
-verbatim, and stop on `status: rejected` (exit 3), writing nothing.
+duplicate-submission line. Open with one `node <agento-root>/scripts/agento.mjs brief
+fix-copilot` call (§9–§11): print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `any` (read-only / not window-sensitive).
 
 Follow your full diagnosis protocol: reproduce the symptom, check the usual suspects

@@ -15,10 +15,8 @@ Plan a new **feature** from the description in the argument.
 Open with the acceptance receipt and close with the terminal result line per
 delivery-policy.instructions.md §9; a duplicate submission follows this command's
 duplicate-submission line. Open with one
-`node <agento-root>/scripts/agento.mjs preflight new-feature` call (§9–§11), with
-`feature <slug>` appended when resuming a promoted planning worktree: print its
-`receipt` and then its `preflightLines` verbatim, and stop on `status: rejected`
-(exit 3), writing nothing.
+`node <agento-root>/scripts/agento.mjs brief new-feature` call (§9–§11), with
+`feature <slug>` appended when resuming a promoted planning worktree: print its receipt and `Preflight:` lines verbatim, stop on `status: rejected` (exit 3), and read every `More:` page before the first step.
 Window check per §11: requires role `plan` — or `build` when resuming this slug's promoted planning worktree.
 
 **Initiative member intake.** When the whole argument has the form
