@@ -112,30 +112,11 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    (missing admin scope, or a private repository on a plan without rulesets) is
    recorded as a gap in the report, never retried with `--admin`.
 
-6. **Product config.** Create `.github/agento.json` with the snippet below if absent
-   (`--force` rewrites it), setting `branches.default` to `<default>` and
-   `artifacts.repo.name` to `<name>`. Do **not** create `features/`, `issues/`, or
-   `initiatives/` in the product repository: the roots live in the companion.
-
-   ```json
-   {
-     "artifacts": {
-       "features": "features",
-       "issues": "issues",
-       "initiatives": "initiatives",
-       "repo": { "name": "<name>", "dir": null }
-     },
-     "worktrees": { "dir": null, "autoApprove": null },
-     "branches": {
-       "default": "main",
-       "feature": "feature/",
-       "issue": "issue/",
-       "freehand": "changes/",
-       "postShip": "post-ship/"
-     },
-     "checks": { "releaseWorkflow": null }
-   }
-   ```
+6. **Product config.** Create `.github/agento.json` from
+   `<agento-root>/templates/agento.json` if absent (`--force` rewrites it), filling
+   `branches.default` with `<default>` and `artifacts.repo.name` with `<name>`. Do
+   **not** create `features/`, `issues/`, or `initiatives/` in the product
+   repository: the roots live in the companion.
 
   `worktrees.dir: null` means "a sibling directory named `<repo-name>-worktrees/`".
   `worktrees.autoApprove: null` keeps the default `true`, so managed session
@@ -146,7 +127,7 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
   override; every key is optional.
 
 7. **AGENTS.md.** Create or append to the target repository's `AGENTS.md` an
-   `## Agento` section using the template below (`<agento-root>/templates/AGENTS-section.md`).
+   `## Agento` section from `<agento-root>/templates/AGENTS-section.md`.
    Fill the owner and companion placeholders from steps 1–2 and the remaining
    placeholders from the project's actual files (package.json scripts, README,
    existing tooling); ask the user for anything you cannot infer, with the
@@ -154,46 +135,6 @@ Window check per §11: requires role `any` (read-only / not window-sensitive).
    AGENTS.md already has an
    `## Agento` section, leave it alone unless `--force` was given.
 
-   ```markdown
-   ## Agento
-
-   Delivery work in this repository is driven by the Agento plugin (slash commands
-   /agento start-session, /agento new-initiative, /agento next-feature, /agento new-feature, /agento new-issue,
-   /agento build-feature, /agento build-issue, /agento review-feature, /agento review-issue, /agento ap, /agento ship,
-   /agento continue, /agento close-session, /agento start-freehand, /agento finish-freehand, /agento doctor; /agento ship audits
-   a finished build in place and tears its worktree down, /agento close-session is for
-   plan and freehand sessions and abandoned builds). Artifacts live in the companion
-   repository `<owner>/<companion>` cloned at `../<companion>` —
-   `features/YYYY/MM/<slug>/`, `issues/YYYY/MM/<slug>/`, and
-   `initiatives/YYYY/MM/<slug>/` there; configuration is this repository's
-   `.github/agento.json`.
-   Commands are always written `/agento <name>`; a bare `/<name>` or a `.prompt`/`.md`
-   suffix is read as the canonical command and proceeds without confirmation.
-
-   ### Commands
-
-   - Install: `<install command>`
-   - Test: `<test command>`
-   - Typecheck: `<typecheck command, or "none">`
-   - Lint: `<lint command, or "none">`
-   - Full verification: `<what /agento ship should expect to be green>`
-
-   ### Verification strategy
-
-   <How user-visible behavior is verified locally: dev server command, ports, e2e
-   runner. Whether a deployment preview system exists and when it may be used.>
-
-   ### Shared resources
-
-   <Staging backends, machine-wide local services, fixed ports that collide across
-   concurrent sessions — or "none".>
-
-   ### Skills
-
-   | Domain | Skill |
-   |---|---|
-   | <domain> | <skill name or "none installed"> |
-   ```
 
 8. **CI poller.** Copy Agento's bounded CI poller into the project at
    `scripts/wait-for-checks.sh` and `chmod +x` it. Source it from the local Agento

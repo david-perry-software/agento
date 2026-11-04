@@ -1316,3 +1316,25 @@ test("the Autopilot pins subagent models via models pins and stops on a tier ref
   assert.match(autopilot, /Tier refusal halts the run/, "Autopilot must stop on a tier refusal");
   assert.match(autopilot, /pin `autopilot` at least as high as the\s+highest-tier model/, "Autopilot must name the tier-refusal fix");
 });
+
+test("every file under the customization roots is ≤ 20,000 bytes", () => {
+  const roots = [rel(".github", "agents"), rel(".github", "prompts"), rel(".github", "instructions"), rel("skills", "agento")];
+  const walk = (dir) => {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const child = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...walk(child));
+      else if (entry.isFile()) out.push(child);
+    }
+    return out;
+  };
+  let checked = 0;
+  for (const root of roots) {
+    for (const file of walk(root)) {
+      const size = fs.statSync(file).size;
+      assert.ok(size <= 20000, `${path.relative(repoRoot, file)} is ${size} bytes (≤ 20,000)`);
+      checked += 1;
+    }
+  }
+  assert.ok(checked > 50, `expected many customization files, checked ${checked}`);
+});

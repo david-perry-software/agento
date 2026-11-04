@@ -19,6 +19,7 @@ load any other cited §N on demand with `agento.mjs policy N`.
   delivery PR.
 - **Receipts (§9).** Every `/agento` command response opens with one receipt line and
   closes with one result line naming the next command.
+- **Never `view` under `<agento-root>`.** Command, agent, and policy text comes from `brief` and `policy`; files inside the current workspace are unaffected.
 
 ## Command spelling
 
