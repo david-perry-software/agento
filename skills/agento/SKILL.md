@@ -8,8 +8,8 @@ disable-model-invocation: true
 
 # Agento command router
 
-Routes `/agento <name> [args]` in every session (Copilot and Local) to the
-command file `skills/agento/commands/<name>.md` and runs it inline or through its
+Routes `/agento <name> [args]` in every session (Copilot and Local) to its command
+body through the Agento CLI's `brief` subcommand, and runs it inline or through its
 custom agent. Follow the steps below in order.
 
 ## 1. Parse
@@ -35,16 +35,21 @@ user-level link `~/.copilot/skills/agento` points at `<clone>/skills/agento`, so
 the clone is the real path of the skill directory's parent's parent. Confirm
 `<agento-root>/skills/agento/commands/` exists.
 
-## 4. Resolve
+## 4. Run the brief
 
-Read `<agento-root>/skills/agento/commands/<name>.md`. If it is missing, reply
-with the valid names — the basenames of
-`<agento-root>/skills/agento/commands/*.md`, each printed as
-`/agento <name>` — and stop. Never guess a closest match.
+Run `node <agento-root>/scripts/agento.mjs brief <name> <argument>` — one
+host-approved bash call. It prints the receipt and `Preflight:` lines, the session,
+the delivery (roadmap header and current step when the argument is a slug), the
+command body (and the agent body when one applies), the declared policy sections, and
+a `More:` / `On demand:` footer, every page within 7 KB. On exit 1, relay the
+valid-name list it printed — the `/agento <name>` for every command — and stop.
+Never guess a closest match. Read every `More:` page (`… brief … --page N`) before the
+first step.
 
 ## 5. Dispatch
 
-The command file's `agent:` frontmatter decides how it runs:
+A `Dispatch:` block — or its absence — decides how the brief is followed. The command
+file's `agent:` frontmatter produced it; the table stays as documentation:
 
 | `agent:` | Mode |
 | --- | --- |
@@ -52,26 +57,20 @@ The command file's `agent:` frontmatter decides how it runs:
 | `📋 Agento Planner`, `🏛️ Agento Architect`, `🛠️ Agento Mechanic`, `🤖 Agento Autopilot` | inline, as that agent |
 | `🔨 Agento Builder`, `🔍 Agento Reviewer` | subagent |
 
-- **Inline** (missing or `agent`): follow the command file's body as this turn's
-  instructions, with the argument as its argument.
-- **Inline, as that agent**: first read the agent's `.github/agents/*.agent.md`
-  (matched by its `name:`) and follow its body as the operating rules, then the
-  command body. Where the agent needs `ask-questions` or `browser` and the tool is
-  absent, its §10 fallback applies (numbered questions in chat; headless verify).
-- **Subagent**: run `node <agento-root>/scripts/agento.mjs models pins` — it
-  resolves the current window role's profile (the secondary profile in plan, build,
-  and freehand windows; the clone's file pins otherwise), so the call stays as
-  written, without `--role` — and take the agent's pin (`builder` / `reviewer`), and
-  invoke the agent with the subagent tool available — `task` (Copilot) with
-  `copilotModel` as its `model`, or `runSubagent` (Local) with `subagentModel` as its
-  `model`, omitting the model when it is `null` — passing the command body and the
-  argument. Relay the subagent's final message verbatim, including its receipt and
-  result lines and its command blocks.
+- **`Dispatch:` block present** (`subagent`): invoke the named agent with the
+  subagent tool — `task` (Copilot) with the printed `copilotModel` as its `model`, or
+  `runSubagent` (Local) with the printed `subagentModel` as its `model`, omitting the
+  model when it is `null` — passing the printed `Prompt:` and the argument. Relay the
+  subagent's final message verbatim, including its receipt and result lines and its
+  command blocks.
+- **No `Dispatch:` block** (`inline` or `inline, as that agent`): follow the printed
+  command body (and agent body, when printed) as this turn's instructions, with the
+  argument as its argument. Where the agent needs `ask-questions` or `browser` and the
+  tool is absent, its §10 fallback applies (numbered questions in chat; headless
+  verify).
 
-Every mode loads the dispatched command's `Policy:` line: run the command it names
-before the command's first step. For agent-dispatched commands that line is a
-superset of the agent's own, so one load suffices; a subagent receives the command
-body — including the line — and runs it itself.
+Never `view` a file under `<agento-root>`: command, agent, and policy text comes from
+`brief` and `policy`; files inside the current workspace are unaffected.
 
 Whichever mode applies, the dispatched command's §9 receipt line must be printed verbatim as visible text, before any question or other output.
 

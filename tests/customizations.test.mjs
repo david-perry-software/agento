@@ -221,9 +221,10 @@ test("the router dispatch content names every agent exactly once with the decide
   for (const name of SUBAGENT_AGENT_FILES.map((f) => agents.get(rel(".github", "agents", f)).name)) {
     assert.ok(subagentRow.includes(name), `subagent row must name ${name}`);
   }
-  for (const token of ["models pins", "task", "runSubagent", "copilotModel", "subagentModel", "Agento CLI:", "realpath"]) {
+  for (const token of ["brief <name> <argument>", "task", "runSubagent", "copilotModel", "subagentModel", "Agento CLI:", "realpath"]) {
     assert.ok(body.includes(token), `skills/agento/SKILL.md must name ${JSON.stringify(token)}`);
   }
+  assert.ok(!body.includes("models pins"), "skills/agento/SKILL.md must not run `models pins` (the brief prints the pin)");
   assert.ok(
     body.includes("receipt line must be printed verbatim as visible text"),
     "skills/agento/SKILL.md must require the dispatched command's §9 receipt line printed verbatim before any question or other output",
