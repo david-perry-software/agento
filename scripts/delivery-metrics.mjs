@@ -295,6 +295,9 @@ export function parseCopilotEvents(text) {
   return { sessionId, turnGaps, subagentStartups };
 }
 
+export const STALL_THRESHOLD_SECONDS = 40;
+export const SLOW_STARTUP_SECONDS = 60;
+
 const sessionStalls = (session, { thresholdSeconds, slowStartupSeconds }) => {
   const turnGaps = (session?.turnGaps ?? []).filter((g) => g.seconds >= thresholdSeconds);
   const subagentStartups = (session?.subagentStartups ?? []).filter((s) => s.seconds >= slowStartupSeconds);
@@ -311,7 +314,7 @@ const sessionStalls = (session, { thresholdSeconds, slowStartupSeconds }) => {
 // Aggregates parsed Copilot sessions (parseCopilotEvents results, each optionally
 // carrying `at` — the session's newest event timestamp — for the window filter) into
 // the current session, the 24 h window across sessions, and the human summary.
-export function deriveStalls(sessions, { thresholdSeconds = 40, slowStartupSeconds = 60, now = Date.now(), windowHours = 24, currentSessionId = null } = {}) {
+export function deriveStalls(sessions, { thresholdSeconds = STALL_THRESHOLD_SECONDS, slowStartupSeconds = SLOW_STARTUP_SECONDS, now = Date.now(), windowHours = 24, currentSessionId } = {}) {
   const nowMs = now instanceof Date ? now.getTime() : typeof now === "string" ? Date.parse(now) : now;
   const list = Array.isArray(sessions) ? sessions : [];
   const cutoff = nowMs - windowHours * 3600 * 1000;

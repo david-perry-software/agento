@@ -528,12 +528,14 @@ function assertDashboardMatches(cwd, env, { pr }) {
   const sub = (...args) => runWith({ cwd, env }, ...args).json;
   const dash = runWith({ cwd, env }, "dashboard", ...flag);
   assert.equal(dash.code, 0);
-  assert.deepEqual(Object.keys(dash.json), ["status", "session", "doctor", "deliveries", "initiatives", "metrics", "timings", "root", "configSource"]);
+  assert.deepEqual(Object.keys(dash.json), ["status", "session", "doctor", "deliveries", "initiatives", "metrics", "stalls", "timings", "root", "configSource"]);
   assert.equal(dash.json.status, "ok");
-  for (const key of ["session", "doctor", "deliveries", "initiatives", "metrics", "total"]) assert.equal(typeof dash.json.timings[key], "number", key);
+  for (const key of ["session", "doctor", "deliveries", "initiatives", "metrics", "stalls", "total"]) assert.equal(typeof dash.json.timings[key], "number", key);
   assert.deepEqual(dash.json.session, sub("session", ...flag));
   assert.deepEqual(dash.json.doctor, sub("doctor"));
   assert.deepEqual(dash.json.deliveries, sub("status", ...flag));
+  const stableStalls = ({ generatedAt, ...rest }) => rest;
+  assert.deepEqual(stableStalls(dash.json.stalls), stableStalls(sub("stalls")));
   assert.deepEqual(stableMetrics(dash.json.metrics), stableMetrics(sub("metrics")));
   assert.deepEqual(dash.json.metrics.items.map((i) => i.roadmap), dash.json.deliveries.items.map((i) => i.roadmap));
   const list = sub("initiative");

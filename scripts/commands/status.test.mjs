@@ -602,6 +602,56 @@ test("dashboard sections deep-equal session, doctor, status, initiative, and met
   assert.ok(run(makeRepo(), "nope").json.usage.some((line) => line.includes("agento.mjs dashboard [--pr] [--plugin-root <dir>]")));
 });
 
+test("stalls prints the documented shape, a fixture current session, and the dashboard stalls section", () => {
+  const { build } = makeDashboardRepo({ companion: false });
+  const base = restrictedPath(okStubs).env;
+
+  // No Copilot data: current null, window zeros, summary null.
+  const empty = runWith({ cwd: build, env: base }, "stalls");
+  assert.equal(empty.code, 0);
+  assert.equal(empty.json.status, "ok");
+  assert.equal(typeof empty.json.generatedAt, "string");
+  assert.equal(empty.json.thresholdSeconds, 40);
+  assert.deepEqual(empty.json.current, null);
+  assert.deepEqual(empty.json.window, { sessions: 0, stalledTurns: 0, slowStartups: 0, stalledSeconds: 0, stalledMinutes: 0 });
+  assert.equal(empty.json.summary, null);
+
+  // A fixture COPILOT_HOME with a 60 s gap in the current session.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-home-"));
+  const sessionDir = path.join(home, "session-state", "sess-1");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(path.join(sessionDir, "workspace.yaml"), `id: sess-1\ncwd: ${build}\ngit_root: ${build}\nrepository: x/y\n`);
+  const line = (type, data, timestamp) => JSON.stringify({ type, data, id: "i", timestamp, parentId: "p" });
+  const eventsFile = path.join(sessionDir, "events.jsonl");
+  fs.writeFileSync(
+    eventsFile,
+    [
+      line("session.start", { sessionId: "sess-1" }, "2026-11-03T10:00:00.000Z"),
+      line("tool.execution_complete", { toolCallId: "t", turnId: "0" }, "2026-11-03T10:01:00.000Z"),
+      line("assistant.turn_end", { turnId: "0" }, "2026-11-03T10:02:00.000Z"),
+    ].join("\n") + "\n",
+  );
+  const t = new Date(Date.now() - 60 * 1000);
+  fs.utimesSync(eventsFile, t, t);
+  const env = { ...base, AGENTO_COPILOT_HOME: home };
+  const stalled = runWith({ cwd: build, env }, "stalls");
+  assert.equal(stalled.code, 0);
+  assert.equal(stalled.json.current.sessionId, "sess-1");
+  assert.equal(stalled.json.current.stalledTurns, 1);
+  assert.equal(stalled.json.current.stalledMinutes, 1);
+  assert.equal(stalled.json.summary, "1 stalled turns (~1 min) — check `agento.mjs doctor`");
+  assert.equal(stalled.json.window.stalledTurns, 1);
+
+  // The dashboard carries the same document (up to generatedAt) and a timings.stalls entry.
+  const dash = runWith({ cwd: build, env }, "dashboard");
+  assert.equal(dash.code, 0);
+  const { generatedAt: _dashAt, ...dashStalls } = dash.json.stalls;
+  const { generatedAt: _cmdAt, ...cmdStalls } = stalled.json;
+  assert.deepEqual(dashStalls, cmdStalls);
+  assert.equal(typeof dash.json.timings.stalls, "number");
+  assert.ok(run(build, "nope").json.usage.some((line) => line.includes("agento.mjs stalls")));
+});
+
 test("dashboard runs no gh pr view without --pr; with --pr one gh --version and one pr view per distinct (clone, branch)", () => {
   for (const companion of [false, true]) {
     const { repo, docs, build } = makeDashboardRepo({ companion });
