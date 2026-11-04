@@ -8,7 +8,7 @@ import path from "node:path";
 
 import { config, emit, options, PLUGIN_ROOT, rest, usage } from "../lib/context.mjs";
 import { loadProfiles, modelsState, modelTargetFiles } from "../lib/models.mjs";
-import { classifyLocation, expandHome, pluginLocations } from "../lib/plugin.mjs";
+import { agentPluginsDir, classifyLocation, expandHome, listSnapshots, pluginLocations, snapshotDirName, snapshotsToPrune } from "../lib/plugin.mjs";
 import { handoffModelLines, parseModelValue, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
 
 const refuse = (message, extra = {}) => emit({ status: "refused", message, ...extra }, 3);
@@ -38,12 +38,18 @@ function resolveSourceRoot() {
   return root.stdout;
 }
 
-function resolveDest() {
-  if (options.dest !== undefined) return expandHome(options.dest);
+// The single enabled Agento plugin location (an export or a clone) from
+// `chat.pluginLocations`; refused with the candidates listed when there are none
+// or several.
+function resolveAgentoLocation() {
   const candidates = pluginLocations().filter((entry) => entry.kind === "export" || entry.kind === "clone");
-  if (candidates.length === 0) throw refusal("no --dest and no enabled chat.pluginLocations entry is an Agento plugin (an export or a clone); pass --dest <dir>");
-  if (candidates.length > 1) throw refusal("no --dest and several enabled chat.pluginLocations entries are Agento plugins; pass --dest <dir>", { candidates: candidates.map((entry) => entry.path) });
+  if (candidates.length === 0) throw refusal("no enabled chat.pluginLocations entry is an Agento plugin (an export or a clone); pass --dest <dir>");
+  if (candidates.length > 1) throw refusal("several enabled chat.pluginLocations entries are Agento plugins; pass --dest <dir>", { candidates: candidates.map((entry) => entry.path) });
   return candidates[0].path;
+}
+
+function resolveDest() {
+  return options.dest !== undefined ? expandHome(options.dest) : resolveAgentoLocation();
 }
 
 // `git archive <commit>` piped into the temp tree — exactly the tracked files of
@@ -225,14 +231,67 @@ function runExport() {
   }
 }
 
-// Implemented in roadmap step 3.1.
-function runSnapshots() {
-  emit({ status: "ok", subcommand: "snapshots", stage: "registered" });
+// du -h's human form of an allocated byte count: integer for >= 10 of a unit,
+// one decimal below 10, K/M/G powers of 1024.
+function humanSize(bytes) {
+  if (bytes < 1024) return `${bytes}`;
+  const kib = bytes / 1024;
+  if (kib < 1024) return kib < 10 ? `${kib.toFixed(1)}K` : `${Math.ceil(kib)}K`;
+  const mib = kib / 1024;
+  if (mib < 1024) return mib < 10 ? `${mib.toFixed(1)}M` : `${Math.ceil(mib)}M`;
+  const gib = mib / 1024;
+  return gib < 10 ? `${gib.toFixed(1)}G` : `${Math.ceil(gib)}G`;
 }
 
-// Implemented in roadmap step 3.1.
+function runSnapshots() {
+  try {
+    const dest = resolveDest();
+    const snapshots = listSnapshots(dest);
+    const newest = snapshots.length ? snapshots[snapshots.length - 1].nonce : null;
+    const total = snapshots.reduce((sum, snapshot) => sum + snapshot.bytes, 0);
+    emit({
+      status: "ok",
+      dest,
+      locationDir: snapshotDirName(dest),
+      count: snapshots.length,
+      snapshots: snapshots.map((snapshot) => ({ ...snapshot, size: humanSize(snapshot.bytes) })),
+      newest,
+      total,
+      totalSize: humanSize(total),
+    });
+  } catch (error) {
+    refuse(`plugin snapshots: ${error.message}`, error.data ?? {});
+  }
+}
+
 function runPruneSnapshots() {
-  emit({ status: "ok", subcommand: "prune-snapshots", stage: "registered" });
+  try {
+    const dest = resolveDest();
+    const snapshots = listSnapshots(dest);
+    const { keep, remove } = snapshotsToPrune(snapshots, PLUGIN_ROOT);
+    const freed = remove.reduce((sum, snapshot) => sum + snapshot.bytes, 0);
+    const removed = [];
+    if (!options.dryRun) {
+      for (const snapshot of remove) {
+        fs.rmSync(snapshot.path, { recursive: true, force: true });
+        removed.push(snapshot.nonce);
+      }
+    }
+    emit({
+      status: "ok",
+      dest,
+      locationDir: snapshotDirName(dest),
+      dryRun: Boolean(options.dryRun),
+      kept: keep.map((p) => path.basename(p)),
+      removed,
+      wouldRemove: options.dryRun ? remove.map((snapshot) => snapshot.nonce) : [],
+      freedBytes: freed,
+      freedSize: humanSize(freed),
+      advice: "reload any open VS Code windows so they stop running from the deleted snapshots",
+    });
+  } catch (error) {
+    refuse(`plugin prune-snapshots: ${error.message}`, error.data ?? {});
+  }
 }
 
 const SUBCOMMANDS = {

@@ -11,6 +11,7 @@ import {
   listSnapshots,
   pluginLocations,
   snapshotDirName,
+  snapshotsToPrune,
   vscodeSettingsPath,
 } from "../lib/plugin.mjs";
 import { handoffModelLines, readModel, setHandoffModels, setModel } from "../model-profiles.mjs";
@@ -428,6 +429,71 @@ test("plugin export carries model pins from a clone and re-export carries them f
   fs.rmSync(path.dirname(template), { recursive: true, force: true });
   fs.rmSync(oldDest, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+// --- plugin snapshots and prune-snapshots (roadmap step 3.1) ---
+
+test("snapshotsToPrune keeps the newest and the snapshot containing the running CLI", () => {
+  const snapshots = [
+    { nonce: "1", path: "/ap/file-x/1" },
+    { nonce: "2", path: "/ap/file-x/2" },
+    { nonce: "3", path: "/ap/file-x/3" },
+  ];
+  assert.deepEqual(snapshotsToPrune(snapshots, "/somewhere/else").remove, snapshots.slice(0, 2));
+  const running = snapshotsToPrune(snapshots, "/ap/file-x/1/nested/cli");
+  assert.deepEqual(running.keep.map((p) => p.split("/").pop()).sort(), ["1", "3"]);
+  assert.deepEqual(running.remove.map((s) => s.nonce), ["2"]);
+});
+
+test("plugin snapshots and prune-snapshots on a fixture agentPlugins tree", () => {
+  const repo = makeRepo();
+  const root = tmp();
+  const agents = path.join(root, "agentPlugins");
+  const locationDir = path.join(agents, "file-home-david-DP-agento-plugin");
+  const otherDir = path.join(agents, "file-somewhere-else");
+  fs.mkdirSync(otherDir, { recursive: true });
+  fs.writeFileSync(path.join(otherDir, "keep.txt"), "other location\n");
+  fs.writeFileSync(path.join(agents, "cache.json"), "[]");
+  const write = (nonce, text) => {
+    fs.mkdirSync(path.join(locationDir, nonce), { recursive: true });
+    fs.writeFileSync(path.join(locationDir, nonce, "file.txt"), text);
+  };
+  write("1a14d7020a8", "old".repeat(2048));
+  write("1a16a70f607", "middle".repeat(2048));
+  write("1a18e5b18c2", "newest".repeat(2048));
+  fs.mkdirSync(path.join(locationDir, "not-hex"), { recursive: true });
+  fs.writeFileSync(path.join(locationDir, "not-hex", "keep.txt"), "non-hex\n");
+  const env = { ...baseEnv, AGENTO_VSCODE_AGENT_PLUGINS: agents };
+
+  const list = runWith({ cwd: repo, env }, "plugin", "snapshots", "--dest", "/home/david/DP/agento-plugin");
+  assert.equal(list.code, 0, JSON.stringify(list.json));
+  assert.equal(list.json.count, 3);
+  assert.equal(list.json.newest, "1a18e5b18c2");
+  assert.deepEqual(list.json.snapshots.map((s) => s.nonce), ["1a14d7020a8", "1a16a70f607", "1a18e5b18c2"]);
+  assert.ok(list.json.total > 0);
+
+  const dry = runWith({ cwd: repo, env }, "plugin", "prune-snapshots", "--dest", "/home/david/DP/agento-plugin", "--dry-run");
+  assert.equal(dry.code, 0, JSON.stringify(dry.json));
+  assert.equal(dry.json.dryRun, true);
+  assert.deepEqual(dry.json.removed, []);
+  assert.deepEqual(dry.json.wouldRemove.sort(), ["1a14d7020a8", "1a16a70f607"]);
+  assert.ok(dry.json.freedBytes > 0);
+  assert.ok(fs.existsSync(path.join(locationDir, "1a14d7020a8")), "dry-run deletes nothing");
+
+  const prune = runWith({ cwd: repo, env }, "plugin", "prune-snapshots", "--dest", "/home/david/DP/agento-plugin");
+  assert.equal(prune.code, 0, JSON.stringify(prune.json));
+  assert.deepEqual(prune.json.removed.sort(), ["1a14d7020a8", "1a16a70f607"]);
+  assert.ok(fs.existsSync(path.join(locationDir, "1a18e5b18c2")), "newest kept");
+  assert.ok(fs.existsSync(path.join(locationDir, "not-hex", "keep.txt")), "non-hex name untouched");
+  assert.ok(fs.existsSync(path.join(agents, "cache.json")), "cache.json untouched");
+  assert.ok(fs.existsSync(path.join(otherDir, "keep.txt")), "other location untouched");
+
+  const after = runWith({ cwd: repo, env }, "plugin", "snapshots", "--dest", "/home/david/DP/agento-plugin");
+  assert.equal(after.json.count, 1);
+  assert.equal(after.json.newest, "1a18e5b18c2");
+
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  fs.rmSync(root, { recursive: true, force: true });
 });
 
 test("plugin export lists files with no prior pin under unpinned", () => {

@@ -91,6 +91,19 @@ function isAgentoClone(p) {
   }
 }
 
+// Which snapshots prune keeps and which it deletes: always the newest (largest
+// nonce), plus the snapshot the running CLI lives in (so a session running from a
+// staged copy is never unlinked underneath itself). Pure: the caller performs the
+// deletion.
+export function snapshotsToPrune(snapshots, pluginRoot) {
+  if (!snapshots.length) return { keep: [], remove: [] };
+  const keep = new Set([snapshots[snapshots.length - 1].path]);
+  for (const snapshot of snapshots) {
+    if (snapshot.path === pluginRoot || pluginRoot.startsWith(`${snapshot.path}${path.sep}`)) keep.add(snapshot.path);
+  }
+  return { keep: [...keep], remove: snapshots.filter((snapshot) => !keep.has(snapshot.path)) };
+}
+
 // Classify an expanded plugin-location path: `missing` (directory gone), `export`
 // (has `.agento-export.json`), `clone` (git checkout whose `.claude-plugin/plugin.json`
 // is Agento's), or `other`.
