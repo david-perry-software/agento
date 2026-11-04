@@ -92,7 +92,7 @@ test("doctor artifact-repo warns when the companion worktrees dir exists but is 
   assert.equal(check().status, "ok");
 });
 
-test("doctor reports eleven checks and includes session-workspace, model-profile, hook-wiring, harness, and canvas", () => {
+test("doctor reports thirteen checks and includes session-workspace, model-profile, hook-wiring, harness, canvas, mcp-servers, and turn-stalls", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   // --plugin-root: the model-profile check must not read the (possibly pinned) clone running the suite.
@@ -100,7 +100,7 @@ test("doctor reports eleven checks and includes session-workspace, model-profile
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "canvas"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "canvas", "mcp-servers", "turn-stalls"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -112,6 +112,58 @@ test("doctor reports eleven checks and includes session-workspace, model-profile
   assert.match(checks["worktrees-dir"].detail, /project-worktrees absent; .* writable, it will be created/);
   assert.equal(checks["artifact-repo"].detail, "in-repo layout (artifacts.repo unset)");
   assert.equal(checks["session-workspace"].detail, "not a managed pair");
+  assert.equal(checks["mcp-servers"].detail, "no MCP servers configured");
+  assert.equal(checks["turn-stalls"].detail, "no Copilot session data");
+});
+
+test("doctor mcp-servers and turn-stalls warn on fixture data and stay ok when absent, never fail", () => {
+  const repo = makeRepo();
+  const { env } = restrictedPath(okStubs);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-home-"));
+  env.AGENTO_COPILOT_HOME = home;
+  const check = (extraEnv = {}) => byId(runWith({ cwd: repo, env: { ...env, ...extraEnv } }, "doctor", "--plugin-root", repo).json);
+
+  // Empty fixture home: both checks ok.
+  const empty = check();
+  assert.equal(empty["mcp-servers"].status, "ok");
+  assert.equal(empty["turn-stalls"].status, "ok");
+
+  // A wildcard server and a timeout from a still-configured server both warn.
+  fs.writeFileSync(path.join(home, "mcp-config.json"), JSON.stringify({ mcpServers: { railway: { type: "local", command: "railway", args: [], tools: ["*"] }, narrow: { type: "local", command: "node", args: [], tools: ["read"] } } }));
+  fs.mkdirSync(path.join(home, "logs"), { recursive: true });
+  const logFile = path.join(home, "logs", "process-1.log");
+  fs.writeFileSync(logFile, "2026-11-01T00:00:00.000Z [WARNING] Failed to refresh persisted MCP tools for narrow; continuing with cached tools: MCP request timed out after 60000 ms\n");
+  const t = new Date(Date.now() - 60 * 1000);
+  fs.utimesSync(logFile, t, t);
+  const warned = check();
+  assert.equal(warned["mcp-servers"].status, "warn");
+  assert.match(warned["mcp-servers"].detail, /railway \(user mcp-config\.json\): tools \["\*"\] exposes every tool/);
+  assert.match(warned["mcp-servers"].detail, /narrow timed out 1× in 24 h/);
+  assert.match(warned["mcp-servers"].fallback, /edit the MCP config/);
+
+  // A current session with a 60 s gap and a slow subagent start-up warns.
+  const sessionDir = path.join(home, "session-state", "sess-1");
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(path.join(sessionDir, "workspace.yaml"), `id: sess-1\ncwd: ${repo}\ngit_root: ${repo}\nrepository: x/y\n`);
+  const line = (type, data, timestamp, extra = {}) => JSON.stringify({ type, data, id: "i", timestamp, parentId: "p", ...extra });
+  fs.writeFileSync(
+    path.join(sessionDir, "events.jsonl"),
+    [
+      line("session.start", { sessionId: "sess-1" }, "2026-11-03T10:00:00.000Z"),
+      line("tool.execution_complete", { toolCallId: "t", turnId: "0" }, "2026-11-03T10:01:00.000Z"),
+      line("assistant.turn_end", { turnId: "0" }, "2026-11-03T10:02:00.000Z"),
+      line("subagent.started", { toolCallId: "s", agentName: "explore" }, "2026-11-03T10:03:00.000Z", { agentId: "agent-1" }),
+      line("subagent.configured", { multiTurn: true }, "2026-11-03T10:13:00.000Z", { agentId: "agent-1" }),
+    ].join("\n") + "\n",
+  );
+  const eventsFile = path.join(sessionDir, "events.jsonl");
+  fs.utimesSync(eventsFile, t, t);
+  const stalls = check();
+  assert.equal(stalls["turn-stalls"].status, "warn");
+  assert.match(stalls["turn-stalls"].detail, /1 stalled turns \(~1 min\) in session sess-1/);
+  assert.match(stalls["turn-stalls"].detail, /1 slow subagent start-up\(s\) in session sess-1/);
+  assert.match(stalls["turn-stalls"].detail, /24 h: 1 across 1 session/);
+  assert.match(stalls["turn-stalls"].fallback, /agento\.mjs stalls/);
 });
 
 test("doctor model-profile names both roles and warns on a dangling or invalid secondary", () => {
@@ -254,7 +306,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");

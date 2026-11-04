@@ -90,7 +90,8 @@ test("countMcpTimeouts: empty or malformed input yields an empty map", () => {
 
 // --- Readers over a fixture COPILOT_HOME tree ------------------------------
 
-test("copilotHome: honours $COPILOT_HOME and falls back to ~/.copilot", () => {
+test("copilotHome: honours $AGENTO_COPILOT_HOME, then $COPILOT_HOME, then ~/.copilot", () => {
+  assert.equal(copilotHome({ AGENTO_COPILOT_HOME: "/fixture/override", COPILOT_HOME: "/fixture/home" }), "/fixture/override");
   assert.equal(copilotHome({ COPILOT_HOME: "/fixture/home" }), "/fixture/home");
   assert.equal(copilotHome({ COPILOT_HOME: "" }), path.join(os.homedir(), ".copilot"));
   assert.equal(copilotHome({}), path.join(os.homedir(), ".copilot"));

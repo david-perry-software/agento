@@ -89,6 +89,8 @@ baseEnv.AGENTO_VSCODE_USER_DIR = path.join(baseEnv.AGENTO_CONFIG_HOME, "vscode-u
 baseEnv.AGENTO_COPILOT_SKILLS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-skills-"));
 // Never touch the real ~/.copilot/extensions (harness canvas link).
 baseEnv.AGENTO_COPILOT_EXTENSIONS_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "agento-extensions-"));
+// Never read the real ~/.copilot (doctor mcp-servers/turn-stalls, stalls command).
+baseEnv.AGENTO_COPILOT_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "agento-copilot-home-"));
 
 function runWith({ cwd, env, input }, ...args) {
   const result = spawnSync("node", [cli, ...args], { cwd, encoding: "utf8", env: env ?? baseEnv, input: input ?? undefined });

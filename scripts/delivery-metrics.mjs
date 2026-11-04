@@ -322,7 +322,13 @@ export function deriveStalls(sessions, { thresholdSeconds = 40, slowStartupSecon
     return Number.isNaN(ms) || ms >= cutoff;
   });
   const opts = { thresholdSeconds, slowStartupSeconds };
-  const current = list.find((session) => session?.sessionId === currentSessionId) ?? list[0] ?? null;
+  // `currentSessionId` omitted → the first (newest) session; explicitly passed
+  // (including null) → an exact match or null, so a checkout with no Copilot
+  // session reports `current: null` rather than another repo's session.
+  const current =
+    currentSessionId === undefined
+      ? (list[0] ?? null)
+      : (list.find((session) => session?.sessionId === currentSessionId) ?? null);
   const currentStats = current ? sessionStalls(current, opts) : null;
   const windowedStats = windowed.map((session) => sessionStalls(session, opts));
   const window = {

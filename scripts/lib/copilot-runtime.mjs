@@ -73,8 +73,11 @@ export function countMcpTimeouts(text, { since = null } = {}) {
 
 // --- Bounded readers -------------------------------------------------------
 
-// The Copilot home directory: `$COPILOT_HOME` when non-empty, else `~/.copilot`.
+// The Copilot home directory: `$AGENTO_COPILOT_HOME` (test override), then
+// `$COPILOT_HOME` when non-empty, else `~/.copilot`.
 export function copilotHome(env = process.env) {
+  const override = env.AGENTO_COPILOT_HOME;
+  if (typeof override === "string" && override.length > 0) return override;
   const home = env.COPILOT_HOME;
   if (typeof home === "string" && home.length > 0) return home;
   return path.join(os.homedir(), ".copilot");
