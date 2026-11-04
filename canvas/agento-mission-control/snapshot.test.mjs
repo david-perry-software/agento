@@ -138,3 +138,20 @@ test("diff emits member-unblocked when a blockedBy member clears", () => {
 test("diff of identical snapshots is empty", () => {
   assert.deepEqual(diff(snapshot, normalize(structuredClone(fixture))), []);
 });
+
+test("stalls surface as { summary, stalledTurns, stalledMinutes } or null", () => {
+  assert.deepEqual(snapshot.stalls, {
+    summary: "10 stalled turns (~10 min) — check `agento.mjs doctor`",
+    stalledTurns: 10,
+    stalledMinutes: 10,
+  });
+  assert.equal(normalize({}).stalls, null);
+  assert.equal(normalize({ stalls: { status: "error", message: "boom" } }).stalls, null);
+  assert.equal(normalize({ stalls: { status: "ok", summary: null, current: { stalledTurns: 10, stalledMinutes: 10 } } }).stalls, null);
+  assert.equal(normalize({ stalls: { status: "ok", summary: "x", current: { stalledTurns: "ten", stalledMinutes: 10 } } }).stalls, null);
+  assert.deepEqual(normalize({ stalls: { status: "ok", summary: "1 stalled turn", current: { stalledTurns: 1, stalledMinutes: 1 } } }).stalls, {
+    summary: "1 stalled turn",
+    stalledTurns: 1,
+    stalledMinutes: 1,
+  });
+});

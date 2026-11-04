@@ -154,6 +154,35 @@ test("session doctor model rejects malformed required response fields", () => {
   }
 });
 
+test("session doctor model parses the stalls section tolerantly", () => {
+  const stalls = {
+    status: "ok",
+    generatedAt: "2026-11-03T00:00:00Z",
+    thresholdSeconds: 40,
+    current: { sessionId: "s", stalledTurns: 10, slowStartups: 1, stalledSeconds: 600, stalledMinutes: 10 },
+    window: { sessions: 1, stalledTurns: 10, slowStartups: 1, stalledSeconds: 600, stalledMinutes: 10 },
+    summary: "10 stalled turns (~10 min) — check `agento.mjs doctor`",
+  };
+
+  const ready = createSessionDoctorModel(session, doctor, status, stalls);
+  assert.equal(ready.kind, "ready");
+  if (ready.kind !== "ready") {
+    return;
+  }
+  assert.deepEqual(ready.stalls, { summary: "10 stalled turns (~10 min) — check `agento.mjs doctor`", stalledTurns: 10, stalledMinutes: 10 });
+
+  // Absent, null summary (no stalls), and malformed sections all yield no row.
+  assert.equal(createSessionDoctorModel(session, doctor, status).kind, "ready");
+  const absent = createSessionDoctorModel(session, doctor, status, null);
+  assert.equal(absent.kind === "ready" && absent.stalls, null);
+  const noSummary = createSessionDoctorModel(session, doctor, status, { ...stalls, summary: null });
+  assert.equal(noSummary.kind === "ready" && noSummary.stalls, null);
+  const malformed = createSessionDoctorModel(session, doctor, status, { status: "ok", current: { stalledTurns: "ten" }, summary: "x" });
+  assert.equal(malformed.kind === "ready" && malformed.stalls, null);
+  const errorSection = createSessionDoctorModel(session, doctor, status, new Error("stalls failed"));
+  assert.equal(errorSection.kind === "ready" && errorSection.stalls, null);
+});
+
 test("session doctor model returns an explicit transport error", () => {
   assert.deepEqual(createSessionDoctorError(new Error("exit 3")), {
     kind: "error",

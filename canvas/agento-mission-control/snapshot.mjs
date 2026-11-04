@@ -196,6 +196,17 @@ function ownerByPath(deliveries) {
   return map;
 }
 
+// The optional `stalls` dashboard section: absent, errored, or malformed → null.
+function stallsView(stalls) {
+  const summary = stalls?.summary;
+  const current = stalls?.current;
+  if (typeof summary !== "string" || summary.length === 0 || !current || typeof current !== "object") return null;
+  const stalledTurns = current.stalledTurns;
+  const stalledMinutes = current.stalledMinutes;
+  if (typeof stalledTurns !== "number" || !Number.isFinite(stalledTurns) || typeof stalledMinutes !== "number" || !Number.isFinite(stalledMinutes)) return null;
+  return { summary, stalledTurns, stalledMinutes };
+}
+
 export function normalize(dashboard) {
   const deliveries = Array.isArray(dashboard?.deliveries?.items) ? dashboard.deliveries.items : [];
   const cards = deliveries.map(cardFor);
@@ -214,6 +225,7 @@ export function normalize(dashboard) {
     worktrees,
     allowed,
     session: sessionView(dashboard?.session),
+    stalls: stallsView(dashboard?.stalls),
   };
 }
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.0
+
+- **Added.** Session stall diagnostics: `agento.mjs doctor` gains `mcp-servers`
+  and `turn-stalls` checks, `agento.mjs stalls` reports the current session's
+  stalled turns and a 24 h window, and `/agento delivery-status`, the Session &
+  Doctor view, and the Mission Control window banner each surface a **Stalls**
+  line/tag when the current session has stalled turns. The Autopilot no longer
+  lists `browser` among its tools or needs.
+
 ## 0.15.0
 
 - **Added.** Lean per-command context. Each agent and command declares the

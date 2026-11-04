@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "./delivery-metrics.mjs";
+import { aggregateMetrics, deriveMetrics, deriveStalls, parseArtifactLog, parseCopilotEvents, parseMergeLog } from "./delivery-metrics.mjs";
 
 const DIR = "features/2026/10/x";
 
@@ -237,4 +237,96 @@ test("aggregate medians: odd and even sample counts, open intervals excluded, nu
   assert.deepEqual(even.count, 3);
   assert.deepEqual(even.complete, 2);
   assert.deepEqual(aggregateMetrics([]), { count: 0, complete: 0, median: { plannedSeconds: null, buildSeconds: null, reviewSeconds: null, cycleSeconds: null, pauseSeconds: null, reviewRounds: null, postShipLatencySeconds: null } });
+});
+
+// One `events.jsonl` line, as observed: `{ type, data, id, timestamp, parentId }`
+// with a top-level `agentId` on subagent events.
+let eventSeq = 0;
+const copilotEvent = (type, data, timestamp, { agentId } = {}) =>
+  JSON.stringify({ type, data, id: `e${++eventSeq}`, timestamp, parentId: "parent", ...(agentId ? { agentId } : {}) });
+
+const iso = (at) => (typeof at === "number" ? new Date(at).toISOString() : new Date(Date.parse(at)).toISOString());
+
+// 10 turn gaps of 60 s, 475 of 2 s, one 402 s subagent start-up, unknown/bad lines,
+// and a truncated first line — the `10097e97`-shaped fixture from plan.md Research.
+function copilotFixture() {
+  const start = Date.parse("2026-11-03T00:00:00Z");
+  const lines = [];
+  // A 16 MB tail read starts mid-line: the first fragment fails to parse and is skipped.
+  lines.push('{"type":"session.sta');
+  lines.push(copilotEvent("session.start", { sessionId: "10097e97-aac0-4897-95bb-4432f84f8603", copilotVersion: "1.0.0" }, iso(start)));
+  let t = start + 1000;
+  for (let i = 0; i < 10; i += 1) {
+    lines.push(copilotEvent("tool.execution_complete", { toolCallId: `t${i}`, turnId: String(i) }, iso(t)));
+    lines.push(copilotEvent("assistant.turn_end", { turnId: String(i) }, iso(t + 60000)));
+    t += 120000;
+  }
+  for (let i = 0; i < 475; i += 1) {
+    lines.push(copilotEvent("tool.execution_complete", { toolCallId: `q${i}`, turnId: String(i) }, iso(t)));
+    lines.push(copilotEvent("assistant.turn_end", { turnId: String(i) }, iso(t + 2000)));
+    t += 3000;
+  }
+  lines.push("not a json line at all");
+  lines.push(copilotEvent("session.warning", { message: "unknown type is ignored" }, iso(t)));
+  lines.push(copilotEvent("subagent.started", { toolCallId: "s1", agentName: "general-purpose", agentDisplayName: "builder-round1" }, iso(t), { agentId: "agent-1" }));
+  lines.push(copilotEvent("subagent.started", { toolCallId: "s2", agentName: "explore", agentDisplayName: "explorer" }, iso(t + 1000), { agentId: "agent-2" }));
+  lines.push(copilotEvent("subagent.configured", { model: "deepseek/deepseek-v4-pro", contextTier: "long_context", multiTurn: true }, iso(t + 402300), { agentId: "agent-1" }));
+  lines.push(copilotEvent("subagent.configured", { model: "deepseek/deepseek-v4-pro", contextTier: "long_context", multiTurn: true }, iso(t + 1200), { agentId: "agent-2" }));
+  return lines.join("\n");
+}
+
+test("parseCopilotEvents: 485 turn gaps (10 ≥ 40 s), one 402 s start-up, bad and unknown lines skipped", () => {
+  const parsed = parseCopilotEvents(copilotFixture());
+  assert.equal(parsed.sessionId, "10097e97-aac0-4897-95bb-4432f84f8603");
+  assert.equal(parsed.turnGaps.length, 485);
+  assert.equal(parsed.turnGaps.filter((g) => g.seconds >= 40).length, 10);
+  assert.equal(parsed.turnGaps.filter((g) => g.seconds >= 40).every((g) => g.seconds === 60), true);
+  assert.equal(parsed.subagentStartups.length, 2);
+  assert.equal(parsed.subagentStartups[0].seconds, 402);
+  assert.equal(parsed.subagentStartups[0].agentName, "general-purpose");
+  assert.equal(parsed.subagentStartups[1].seconds, 0);
+  assert.equal(parsed.subagentStartups[1].agentName, "explore");
+  assert.ok(!Number.isNaN(Date.parse(parsed.subagentStartups[0].at)));
+  // A `subagent.configured` with no matching started event is ignored.
+  assert.equal(parseCopilotEvents(copilotEvent("subagent.configured", { multiTurn: true }, iso(Date.now()))).subagentStartups.length, 0);
+});
+
+test("deriveStalls: current, 24 h window, and summary from the observed fixture", () => {
+  const parsed = parseCopilotEvents(copilotFixture());
+  parsed.at = "2026-11-03T23:59:00Z";
+  const stalls = deriveStalls([parsed], { now: "2026-11-04T00:00:00Z", currentSessionId: parsed.sessionId });
+  assert.deepEqual(stalls.current, {
+    sessionId: "10097e97-aac0-4897-95bb-4432f84f8603",
+    stalledTurns: 10,
+    slowStartups: 1,
+    stalledSeconds: 600,
+    stalledMinutes: 10,
+  });
+  assert.deepEqual(stalls.window, { sessions: 1, stalledTurns: 10, slowStartups: 1, stalledSeconds: 600, stalledMinutes: 10 });
+  assert.equal(stalls.summary, "10 stalled turns (~10 min) — check `agento.mjs doctor`");
+});
+
+test("deriveStalls: no sessions or no stalls yields a null summary and zero window", () => {
+  const empty = deriveStalls([], { now: "2026-11-04T00:00:00Z" });
+  assert.deepEqual(empty.current, null);
+  assert.deepEqual(empty.window, { sessions: 0, stalledTurns: 0, slowStartups: 0, stalledSeconds: 0, stalledMinutes: 0 });
+  assert.equal(empty.summary, null);
+  const clean = parseCopilotEvents(copilotEvent("session.start", { sessionId: "s" }, "2026-11-03T00:00:00Z") + "\n" + copilotEvent("tool.execution_complete", { toolCallId: "t" }, "2026-11-03T00:01:00Z") + "\n" + copilotEvent("assistant.turn_end", { turnId: "0" }, "2026-11-03T00:01:02Z"));
+  clean.at = "2026-11-03T23:59:00Z";
+  const stalls = deriveStalls([clean], { now: "2026-11-04T00:00:00Z" });
+  assert.equal(stalls.current.stalledTurns, 0);
+  assert.equal(stalls.current.slowStartups, 0);
+  assert.equal(stalls.summary, null);
+});
+
+test("deriveStalls: sessions outside the window are excluded and slow start-ups count separately", () => {
+  const old = parseCopilotEvents(
+    copilotEvent("session.start", { sessionId: "old" }, "2026-11-02T00:00:00Z") + "\n" + copilotEvent("tool.execution_complete", { toolCallId: "t" }, "2026-11-02T00:01:00Z") + "\n" + copilotEvent("assistant.turn_end", { turnId: "0" }, "2026-11-02T00:02:00Z"),
+  );
+  old.at = "2026-11-02T00:02:00Z";
+  const fresh = parseCopilotEvents(copilotEvent("session.start", { sessionId: "fresh" }, "2026-11-03T23:00:00Z"));
+  fresh.at = "2026-11-03T23:00:00Z";
+  const stalls = deriveStalls([old, fresh], { now: "2026-11-04T00:00:00Z", currentSessionId: "fresh" });
+  assert.deepEqual(stalls.window, { sessions: 1, stalledTurns: 0, slowStartups: 0, stalledSeconds: 0, stalledMinutes: 0 });
+  assert.equal(stalls.current.sessionId, "fresh");
 });

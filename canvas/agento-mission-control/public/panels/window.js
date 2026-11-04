@@ -3,7 +3,9 @@
 // same role colors the extension paints window title bars with.
 
 import { escapeHtml, registerPanel, roleColor } from "/app.js";
-import { windowSummary } from "/window.js";
+import { stallsTag, windowSummary } from "/window.js";
+
+export { stallsTag };
 
 function render(state) {
   const summary = windowSummary(state.session);
@@ -20,6 +22,7 @@ function render(state) {
     <div class="mc-window-title">
       <strong class="mc-window-kind">${escapeHtml(summary.label)}</strong>
       ${summary.hosted ? '<span class="mc-window-tag">hosted</span>' : ""}
+      ${stallsTag(state.stalls)}
       <span class="mc-window-purpose">${escapeHtml(summary.purpose)}</span>
     </div>
     ${details ? `<div class="mc-window-details">${details}</div>` : ""}`;

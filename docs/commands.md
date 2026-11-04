@@ -413,19 +413,39 @@ rewritten history collapses transitions into one commit, so phases read as zero 
 transition`, `no merge commit names <branch>`; timestamps are committer dates in UTC,
 `YYYY-MM-DDTHH:MM:SSZ`, whatever the committer's offset or git version; an
 unknown slug is `status: "missing"`, exit 3),
+`stalls` (the Copilot-session stall view, local-only and never `gh`:
+`{ status: "ok", generatedAt, thresholdSeconds, current, window, summary, root,
+configSource }`, where `current` is `{ sessionId, stalledTurns, slowStartups,
+stalledSeconds, stalledMinutes }` for this checkout's newest session whose
+`workspace.yaml` `cwd` equals the CLI root — or `null` when none exists — `window`
+is the 24 h total `{ sessions, stalledTurns, slowStartups, stalledSeconds,
+stalledMinutes }` across the sessions of this clone's product worktrees and
+companion halves, and `summary` is `"<N> stalled turns (~<M> min) — check
+\`agento.mjs doctor\`"` when `current.stalledTurns > 0`, else `null`; a turn gap is
+`tool.execution_complete` → the next `assistant.turn_end` and a slow start-up is
+`subagent.started` → `subagent.configured` paired by `agentId`; the thresholds are
+40 s for a stalled turn and 60 s for a slow start-up; reads at most 50 sessions
+modified in 24 h, tail-reading 16 MB per `events.jsonl`, and missing data yields
+zeros, never a throw),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
 `code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile`,
-`hook-wiring`, `harness` — each `{ id, status, detail, fallback }` with
-`status` ∈ `ok | warn | fail`; `artifact-repo` also warns when the companion's
-`<dir>-worktrees` directory exists but is not writable; `--for` runs only the checks
-the named command's `Needs:` line requires and echoes them as `for.needs`;
-`model-profile`, `hook-wiring`, and `harness` are informational, never part of a
-`--for` run: `model-profile` is `ok` with no plugin clone at `--plugin-root`,
-nothing pinned, or a named profile applied, `warn` on an invalid profiles file,
-`custom` pins, the BYOK tier conflict, or unqualified pins; `hook-wiring` is `warn`
-when the clone is also registered in `chat.pluginLocations`; `harness` is `ok` when
-the `~/.copilot/skills/agento` link is `installed`, `fail` otherwise with a
-`harness install` or `install --force` fallback),
+`hook-wiring`, `harness`, `canvas`, `mcp-servers`, `turn-stalls` — each
+`{ id, status, detail, fallback }` with `status` ∈ `ok | warn | fail`;
+`artifact-repo` also warns when the companion's `<dir>-worktrees` directory exists
+but is not writable; `--for` runs only the checks the named command's `Needs:` line
+requires and echoes them as `for.needs`; `model-profile`, `hook-wiring`, `harness`,
+`canvas`, `mcp-servers`, and `turn-stalls` are informational, never part of a `--for`
+run: `model-profile` is `ok` with no plugin clone at `--plugin-root`, nothing pinned,
+or a named profile applied, `warn` on an invalid profiles file, `custom` pins, the
+BYOK tier conflict, or unqualified pins; `hook-wiring` is `warn` when the clone is
+also registered in `chat.pluginLocations`; `harness` is `ok` when the
+`~/.copilot/skills/agento` link is `installed`, `fail` otherwise with a `harness
+install` or `install --force` fallback; `mcp-servers` warns on any wildcard or
+remote MCP server in `~/.copilot/mcp-config.json` or `<root>/.vscode/mcp.json` and on
+MCP timeouts from a still-configured server or in the last 60 min, `ok` with no
+servers configured; `turn-stalls` warns on the current Copilot session's stalled
+turns or slow subagent start-ups, `ok` with no Copilot session data — both warn at
+most, never `fail`),
 `preflight <command> [<type> <slug> | <type>/<slug> | <slug>]` (the opening of every
 `/agento` command in one call: `{ status, command, opId, subject, receipt,
 preflightLines, session, window, doctor, resolve, config, root, configSource }`, where
@@ -439,13 +459,14 @@ or a hard doctor `fail` is `status: "rejected"` with the rejected receipt, exit 
 warn checks become `preflightLines`, exit 0),
 `dashboard [--pr] [--plugin-root <dir>]` (everything the VS Code extension renders
 in one process: `{ status: "ok", session, doctor, deliveries, initiatives: { list,
-details: { <slug>: … } }, metrics, timings, root, configSource }`, where `session` is
-`session [--pr]`, `doctor` is `doctor [--plugin-root <dir>]` with every check,
-`deliveries` is `status [--pr]`, `initiatives.list` is `initiative`, each
-`initiatives.details[<slug>]` is `initiative <slug>`, and `metrics` is `metrics` —
-each what that subcommand prints in the same state (`metrics` up to `generatedAt`
-and the seconds of open intervals, which follow the clock); `timings` gives `session`,
-`doctor`, `deliveries`, `initiatives`, `metrics`, and `total` in milliseconds; the
+details: { <slug>: … } }, metrics, stalls, timings, root, configSource }`, where
+`session` is `session [--pr]`, `doctor` is `doctor [--plugin-root <dir>]` with every
+check, `deliveries` is `status [--pr]`, `initiatives.list` is `initiative`, each
+`initiatives.details[<slug>]` is `initiative <slug>`, `metrics` is `metrics`, and
+`stalls` is `stalls` — each what that subcommand prints in the same state (`metrics`
+up to `generatedAt` and the seconds of open intervals, which follow the clock);
+`timings` gives `session`, `doctor`, `deliveries`, `initiatives`, `metrics`,
+`stalls`, and `total` in milliseconds; the
 worktree list is read once per clone, the roadmaps are walked once for `deliveries`,
 `initiatives`, and `metrics`, the doctor's network probes plus — with `--pr` only —
 one `gh pr view` per distinct `(clone, branch)` run concurrently, at most four

@@ -142,10 +142,13 @@ runs no scripts, and its only link is the Session & Doctor focus command.
 
 The Session & Doctor view shows the current window role, worktree, branch,
 lifecycle, generated workspace, companion checkout and sync state, CLI warnings,
-and every environment check returned by `agento.mjs doctor`. Doctor findings are
-read-only; use the displayed fallback to repair the environment. That includes
-the doctor `harness` check (the router link state): Session & Doctor shows its
-fallback text but offers no install action — create the link with
+and every environment check returned by `agento.mjs doctor`. When the dashboard's
+`stalls` section reports stalled turns for the current Copilot session, a
+warning **Stalls** row appears in the Session group with the `agento.mjs stalls`
+summary; an absent, errored, or malformed `stalls` section shows no row. Doctor
+findings are read-only; use the displayed fallback to repair the environment. That
+includes the doctor `harness` check (the router link state): Session & Doctor shows
+its fallback text but offers no install action — create the link with
 `agento.mjs harness install` (see [install.md](install.md)).
 
 The status bar summarizes the same snapshot as `Agento: <role> · <N> active`.
@@ -319,7 +322,9 @@ worktrees in role colors), and a **live activity feed**. Each panel is its own p
 picked from the tab bar and addressable by hash (`#/board`, `#/graph`, `#/timeline`,
 `#/worktrees`, `#/feed`); a banner across the top names the current window — primary,
 plan, build, freehand, or not an Agento window — in its `agento.role.*` color with
-its branch, delivery or freehand session, and worktree path. The Deliveries page
+its branch, delivery or freehand session, and worktree path, plus a warning
+**Stalls** tag when the dashboard's `stalls` section reports stalled turns. The
+Deliveries page
 holds the board and the Shipped
 Deliveries list, each collapsible from its heading row or its Hide/Show button (the
 choice is remembered). Every delivery slug — on a card, in the shipped list, on an

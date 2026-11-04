@@ -389,7 +389,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
       async () => {
         const root = pluginRoot();
         const result = await client.run(["dashboard", "--pr", ...(root ? ["--plugin-root", root] : [])], folder.uri.fsPath);
-        const { session, doctor, deliveries: status, initiatives: initiativeSection, metrics, timings } = splitDashboardDocument(result.json);
+        const { session, doctor, deliveries: status, initiatives: initiativeSection, metrics, stalls, timings } = splitDashboardDocument(result.json);
         const artifactRoot = roadmapRoots.get(folder.uri.fsPath) ?? folder.uri.fsPath;
         // Session & Doctor reads the session, doctor, and status documents; it errors only when one of them did.
         const sessionDoctorError = [session, doctor, status].find((value) => value instanceof Error);
@@ -398,7 +398,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Extens
             model: status instanceof Error ? createDeliveryTreeError(status) : createDeliveryTreeModel(status, metrics === null ? null : createTimelineRows(metrics)),
             roadmapRoot: artifactRoot,
           },
-          sessionDoctor: sessionDoctorError ? createSessionDoctorError(sessionDoctorError) : createSessionDoctorModel(session, doctor, status),
+          sessionDoctor: sessionDoctorError ? createSessionDoctorError(sessionDoctorError) : createSessionDoctorModel(session, doctor, status, stalls),
           gate: session instanceof Error ? CLOSED_GATE : windowGate(session),
           initiatives: {
             model: initiativeSection instanceof Error

@@ -39,3 +39,24 @@ export function windowSummary(session) {
     details,
   };
 }
+
+// Escape untrusted text before interpolating it into an HTML attribute (same
+// five characters as public/app.js `escapeHtml`, kept local so this module stays
+// DOM-free and importable from node:test).
+const escapeHtmlValue = (value) =>
+  String(value).replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+
+// The banner's warning tag for the current session's stall summary, or "" when
+// there is nothing to show. `stalls` is the normalized `dashboard.stalls` view
+// (`{ summary, stalledTurns, stalledMinutes } | null`).
+export function stallsTag(stalls) {
+  const summary = stalls?.summary;
+  if (typeof summary !== "string" || summary.length === 0) return "";
+  return `<span class="mc-window-tag mc-window-tag-warn" title="${escapeHtmlValue(summary)}">Stalls</span>`;
+}
