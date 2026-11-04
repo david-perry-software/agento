@@ -57,9 +57,10 @@ function resolveDest() {
 function archiveInto(source, commit, tempDir) {
   let tarBuffer;
   try {
-    tarBuffer = execFileSync("git", ["-C", source, "archive", commit], { stdio: ["ignore", "pipe", "pipe"] });
+    // The repo archive routinely exceeds the 1 MB execFileSync default maxBuffer.
+    tarBuffer = execFileSync("git", ["-C", source, "archive", commit], { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 });
   } catch (error) {
-    throw new Error(`git archive ${commit} failed: ${(error?.stderr ?? error?.message ?? "").toString().trim()}`);
+    throw new Error(`git archive ${commit} failed: ${(error?.stderr || error?.message || "").toString().trim()}`);
   }
   try {
     execFileSync("tar", ["-xf", "-", "-C", tempDir], { input: tarBuffer, stdio: ["pipe", "ignore", "pipe"] });

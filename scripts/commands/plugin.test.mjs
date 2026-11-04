@@ -216,6 +216,20 @@ test("plugin export builds a tracked-only tree, re-exports, and refuses a bad re
   fs.rmSync(snapshot, { recursive: true, force: true });
 });
 
+test("plugin export handles a repository archive larger than the default maxBuffer", () => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, "big.bin"), Buffer.alloc(2 * 1024 * 1024));
+  git(repo, "add", "-A");
+  git(repo, "commit", "-q", "-m", "big file");
+  git(repo, "push", "-q", "origin", "main");
+  const dest = path.join(os.tmpdir(), `agento-big-${process.pid}-${Math.random().toString(16).slice(2)}`);
+  const result = runWith({ cwd: repo }, "plugin", "export", "--source", repo, "--dest", dest);
+  assert.equal(result.code, 0, JSON.stringify(result.json));
+  assert.equal(fs.statSync(path.join(dest, "big.bin")).size, 2 * 1024 * 1024);
+  fs.rmSync(path.dirname(repo), { recursive: true, force: true });
+  fs.rmSync(dest, { recursive: true, force: true });
+});
+
 test("plugin export with no --dest refuses when no or several Agento plugin locations are registered", () => {
   const repo = makeRepo();
   const settings = path.join(os.tmpdir(), `agento-settings-${process.pid}-${Math.random().toString(16).slice(2)}.json`);
