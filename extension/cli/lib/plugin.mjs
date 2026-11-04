@@ -165,6 +165,129 @@ export function inUseSnapshots(snapshots, { scan = defaultProcessScan } = {}) {
   return inUse;
 }
 
+// --- Window-anchored in-use detection (roadmap step 7.1) ---
+// VS Code runs each hook as a short-lived `/bin/sh -c` child, so between hooks no
+// process holds the snapshot path and a pure `/proc` path scan finds nothing. The
+// reliable signal is each running VS Code process's start time: a window (or its
+// renderer/extension-host child, restarted on reload) loaded the newest snapshot
+// whose nonce — the hex millisecond mtime of the location directory — is ≤ its
+// start time.
+
+// USER_HZ for `/proc/<pid>/stat` `starttime` (clock ticks since boot) is fixed at
+// 100 in the userspace export, so start epoch ms = btime*1000 + starttime*10.
+const USER_HZ = 100;
+
+function bootTimeMs(procDir = "/proc") {
+  try {
+    const match = fs.readFileSync(path.join(procDir, "stat"), "utf8").match(/^btime\s+(\d+)/m);
+    if (!match) return null;
+    return Number(match[1]) * 1000;
+  } catch {
+    return null;
+  }
+}
+
+function processStartMs(procDir, pid, bootMs) {
+  try {
+    const stat = fs.readFileSync(path.join(procDir, pid, "stat"), "utf8");
+    // Field 22 (starttime) follows `pid (comm) state`; comm may contain spaces and
+    // parens, so split from the last `)` instead of on whitespace.
+    const rest = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const starttime = Number(rest[19]);
+    return bootMs + (starttime * 1000) / USER_HZ;
+  } catch {
+    return null;
+  }
+}
+
+// Running VS Code windows and their children: [{ pid, comm, kind, startMs }] where
+// `kind` is "window" (the main process, no --type=), "extensionHost", or "process"
+// (renderer/utility/…). null when the process list is unreadable (non-Linux, or
+// /proc unavailable).
+export function vsCodeWindowStarts(procDir = "/proc") {
+  if (process.platform !== "linux") return null;
+  const bootMs = bootTimeMs(procDir);
+  if (bootMs === null) return null;
+  let pids = [];
+  try {
+    pids = fs.readdirSync(procDir).filter((name) => /^[0-9]+$/.test(name));
+  } catch {
+    return null;
+  }
+  const starts = [];
+  for (const pid of pids) {
+    let comm;
+    try {
+      comm = fs.readFileSync(path.join(procDir, pid, "comm"), "utf8").trim();
+    } catch {
+      continue;
+    }
+    if (!/^code(-insiders|-oss|-exploration)?$/.test(comm)) continue;
+    const startMs = processStartMs(procDir, pid, bootMs);
+    if (startMs === null) continue;
+    let cmdline = "";
+    try {
+      cmdline = fs.readFileSync(path.join(procDir, pid, "cmdline"), "utf8").replace(/\0/g, " ");
+    } catch {
+      // unreadable cmdline — classify by comm alone (window)
+    }
+    const kind = cmdline.includes("--type=extensionHost") ? "extensionHost" : cmdline.includes("--type=") ? "process" : "window";
+    starts.push({ pid: Number(pid), comm, kind, startMs });
+  }
+  return starts;
+}
+
+// The snapshot each running VS Code process loaded: the newest snapshot whose
+// nonce (hex ms) is ≤ the process start time. `scan` is injectable for tests.
+// Returns null when the process list is unreadable.
+export function windowPinnedSnapshots(snapshots, { scan = vsCodeWindowStarts } = {}) {
+  if (!snapshots.length) return [];
+  const starts = scan();
+  if (starts === null) return null;
+  const pinned = [];
+  for (const proc of starts) {
+    let best = null;
+    for (const snapshot of snapshots) {
+      const nonceMs = parseInt(snapshot.nonce, 16);
+      if (nonceMs <= proc.startMs && (best === null || nonceMs > best.nonceMs)) best = { snapshot, nonceMs };
+    }
+    if (best) pinned.push({ pid: proc.pid, comm: proc.comm, kind: proc.kind, startMs: proc.startMs, nonce: best.snapshot.nonce, path: best.snapshot.path });
+  }
+  return pinned;
+}
+
+// Combined in-use detection: the `/proc` path scan (processes referencing a
+// snapshot path, kept as a secondary signal) plus the window start-time anchor.
+// `available` is true only when the VS Code process list was readable; `inUse` is
+// the union of snapshot paths to keep; `usedBy` maps each window-pinned snapshot
+// path to the processes that pin it. Both scans are injectable for tests.
+export function detectInUse(snapshots, { scan = defaultProcessScan, windowScan = vsCodeWindowStarts } = {}) {
+  const windows = windowScan();
+  const available = windows !== null;
+  const inUseSet = new Set();
+  const referenced = scan();
+  if (referenced !== null) {
+    for (const snapshot of snapshots) {
+      const prefix = `${snapshot.path}${path.sep}`;
+      for (const p of referenced) {
+        if (p === snapshot.path || p.startsWith(prefix)) {
+          inUseSet.add(snapshot.path);
+          break;
+        }
+      }
+    }
+  }
+  const usedBy = {};
+  const pinned = windows === null ? null : windowPinnedSnapshots(snapshots, { scan: () => windows });
+  if (pinned) {
+    for (const entry of pinned) {
+      inUseSet.add(entry.path);
+      (usedBy[entry.path] ??= []).push({ pid: entry.pid, comm: entry.comm, kind: entry.kind, startMs: entry.startMs });
+    }
+  }
+  return { available, inUse: [...inUseSet], usedBy };
+}
+
 const contains = (dir, snapshotPath) => dir === snapshotPath || dir.startsWith(`${snapshotPath}${path.sep}`);
 
 // Which snapshots prune keeps and which it deletes: always the newest (largest

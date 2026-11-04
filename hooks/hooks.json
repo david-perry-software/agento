@@ -3,14 +3,14 @@
     "SessionStart": [
       {
         "type": "command",
-        "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/session-context.sh",
+        "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/session-context.sh",
         "timeout": 10
       }
     ],
     "PreToolUse": [
       {
         "type": "command",
-        "command": "${CLAUDE_PLUGIN_ROOT}/scripts/hooks/delivery-guard.sh",
+        "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/hooks/delivery-guard.sh",
         "timeout": 15
       }
     ]
