@@ -270,6 +270,8 @@ command, and `tests/customizations.test.mjs` fails on any disagreement.
 
 The declared set is the baseline {1, 9, 10, 11, 12} ∪ every §N the file cites, plus the agent's cited sections for a command dispatched to that agent — listed in ascending order. The opening `agento.mjs brief` prints the sections that fit (in the role's priority order) and lists the rest as on-demand `policy N` pointers; `tests/customizations.test.mjs` fails on any disagreement with the declared set.
 
+A body may also point at a single section on demand with the pointer form `` `agento.mjs policy N` `` (for example `` `agento.mjs policy 4` ``). Pointers are not citations: the declared set counts `§N` only, so a pointer never adds its section to the `Policy:` line. The pointer's `N` must still name a section `policy --list` knows; `tests/customizations.test.mjs` fails on any pointer to an unknown section.
+
 **When `doctor` runs.** Every command opens with `node
 <agento-root>/scripts/agento.mjs brief <command> <argument>`, which runs the
 `doctor --for <command>` checks in process before the first write. Overall `fail` →

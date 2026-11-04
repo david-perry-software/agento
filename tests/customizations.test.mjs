@@ -1069,6 +1069,20 @@ test("every agent, prompt, and mirror declares its policy sections on one Policy
   }
 });
 
+test("every `agento.mjs policy N` pointer names a section policy --list knows", () => {
+  const list = JSON.parse(execFileSync(process.execPath, [rel("scripts", "agento.mjs"), "policy", "--list"], { cwd: repoRoot, encoding: "utf8" }));
+  const knownSections = new Set(list.sections.map((s) => s.n));
+
+  const files = [...agentFiles, ...promptFiles, ...commandNames.map((name) => commandRel(`${name}.md`))];
+  for (const file of files) {
+    const label = path.relative(repoRoot, file);
+    const body = splitFrontmatter(file).body;
+    for (const [, n] of body.matchAll(/`agento\.mjs policy (\d+)`/g)) {
+      assert.ok(knownSections.has(n), `${label}: \`agento.mjs policy ${n}\` names a section policy --list does not know`);
+    }
+  }
+});
+
 test("the router SKILL.md dispatch table equals DISPATCH_MODES", () => {
   const { body } = splitFrontmatter(rel("skills", "agento", "SKILL.md"));
   const table = body.match(/\| `agent:` \| Mode \|[\s\S]*?(?=\n## )/)?.[0] ?? "";
