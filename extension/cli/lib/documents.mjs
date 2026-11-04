@@ -5,7 +5,8 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 
-import { aggregateMetrics, deriveMetrics, parseArtifactLog, parseMergeLog } from "../delivery-metrics.mjs";
+import { aggregateMetrics, deriveMetrics, deriveStalls, parseArtifactLog, parseMergeLog, STALL_THRESHOLD_SECONDS } from "../delivery-metrics.mjs";
+import { readSessions } from "./copilot-runtime.mjs";
 import { deriveAllowed, deriveLifecycle, findOwner, LIFECYCLES } from "../session-state.mjs";
 import {
   agit,
@@ -310,6 +311,26 @@ function metricsDocument({ slugFilter = null, roadmaps = null, now = Date.now(),
   });
   return { status: "ok", generatedAt: new Date(now).toISOString(), ref: planned.ref, items, aggregate: aggregateMetrics(items), root, configSource: source };
 }
+
+// What `stalls` emits: the current Copilot session's stalled turns, the 24 h window
+// across this clone's sessions, and the human summary. Missing data yields zeros,
+// never a throw.
+function stallsDocument({ now = Date.now() } = {}) {
+  const worktrees = productWorktrees();
+  const roots = [...worktrees.map((w) => w.path), ...managedHalves(worktrees)];
+  const { current, sessions } = readSessions({ roots, root });
+  const stalls = deriveStalls(sessions, { currentSessionId: current?.sessionId ?? null, now });
+  return {
+    status: "ok",
+    generatedAt: new Date(now).toISOString(),
+    thresholdSeconds: STALL_THRESHOLD_SECONDS,
+    current: stalls.current,
+    window: stalls.window,
+    summary: stalls.summary,
+    root,
+    configSource: source,
+  };
+}
 // What `dashboard` emits: the session, doctor, status (`deliveries`), initiative, and
 // metrics documents from one process. The roadmaps are walked once for deliveries,
 // initiatives, and metrics; every PR lookup (with `pr`) and the doctor's probes run
@@ -379,6 +400,7 @@ async function dashboardDocument({ pr: withPr = false } = {}) {
     deliveries: section("deliveries", () => statusDocument({ pr: withPr, lookup, roadmaps: valueOf(roadmaps).map((r) => ({ ...r })) })),
     initiatives,
     metrics: section("metrics", () => metricsDocument({ roadmaps: valueOf(roadmaps), plan: valueOf(metricsPlanned), logs })),
+    stalls: section("stalls", () => stallsDocument()),
   };
   timings.total = Math.round(performance.now() - started);
   return { ...document, timings, root, configSource: source };
@@ -394,5 +416,6 @@ export {
   mergedAnomalies,
   refFor,
   metricsDocument,
+  stallsDocument,
   dashboardDocument,
 };

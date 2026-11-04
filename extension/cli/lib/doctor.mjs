@@ -10,6 +10,8 @@ import path from "node:path";
 import { hasAgentoWorkspaceWiring } from "../agento-config.mjs";
 import { linkState } from "../harness.mjs";
 import { deriveRole } from "../session-state.mjs";
+import { deriveStalls } from "../delivery-metrics.mjs";
+import { copilotHome, readMcpConfigs, readMcpTimeouts, readSessions } from "./copilot-runtime.mjs";
 import { harnessFacts, LOCAL_TAKEOVER } from "./copilot.mjs";
 import {
   artifacts,
@@ -27,7 +29,7 @@ import {
 import { loadProfiles, loadRoles, modelsPins, modelsState, pinWarnings, resolveProfile } from "./models.mjs";
 import { ghVersion, probe } from "./probe.mjs";
 import { holdsArtifacts } from "./records.mjs";
-import { describeWorkspace } from "./session.mjs";
+import { describeWorkspace, managedHalves } from "./session.mjs";
 
 // --- doctor ----------------------------------------------------------------
 
@@ -233,7 +235,63 @@ const DOCTOR_CHECKS = {
     if (state === "dangling") return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is a dangling symlink to ${target}`, fallback: `agento.mjs harness install --force --plugin-root ${facts.clone}` };
     return { status: "warn", detail: `Mission Control canvas link ${facts.canvasLink} is a real directory or file, not a symlink`, fallback: `move it away, then ${install}` };
   },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  // Warn at most, never fail; every error is caught to `warn`.
+  "mcp-servers"() {
+    const fallback = "edit the MCP config (~/.copilot/mcp-config.json and/or <root>/.vscode/mcp.json) to remove the server or narrow its `tools`";
+    const asWarn = (detail) => ({ status: "warn", detail, fallback });
+    try {
+      const configured = readMcpConfigs({ root });
+      const timeouts = readMcpTimeouts({ hours: 24 });
+      const names = new Set(configured.map((server) => server.name));
+      const warnings = [];
+      for (const server of configured) {
+        if (server.wildcard) warnings.push(`${server.name} (${server.source}): tools ["*"] exposes every tool — counts against the 128-tool cap`);
+        else if (server.remote) warnings.push(`${server.name} (${server.source}): remote MCP server — network round-trips can stall turns`);
+      }
+      const now = Date.now();
+      const staleTimeoutDetail = [];
+      for (const [server, entry] of timeouts) {
+        const recent = Date.parse(entry.lastAt) >= now - 60 * 60 * 1000;
+        if (names.has(server) || recent) {
+          warnings.push(`${server} timed out ${entry.count}× in 24 h (last ${hhmmZ(entry.lastAt)}) — each timeout stalls a turn ~60 s`);
+        } else {
+          staleTimeoutDetail.push(`${server} timed out ${entry.count}× in 24 h (last ${hhmmZ(entry.lastAt)})`);
+        }
+      }
+      if (warnings.length) return asWarn(warnings.join("; "));
+      const serverList = configured.length ? configured.map((server) => `${server.name} (${server.source})`).join(", ") : "no MCP servers configured";
+      return { status: "ok", detail: staleTimeoutDetail.length ? `${serverList}; ${staleTimeoutDetail.join("; ")}` : serverList, fallback: null };
+    } catch (error) {
+      return asWarn(`mcp-servers check failed: ${error?.message ?? error}`);
+    }
+  },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  // Warn at most, never fail; every error is caught to `warn`.
+  "turn-stalls"() {
+    const fallback = "run `agento.mjs stalls` for the current session's stalled turns; see docs/copilot-harness.md";
+    const asWarn = (detail) => ({ status: "warn", detail, fallback });
+    try {
+      const worktrees = productWorktrees();
+      const roots = [...worktrees.map((w) => w.path), ...managedHalves(worktrees)];
+      const { current, sessions } = readSessions({ roots, root });
+      if (!current) return { status: "ok", detail: "no Copilot session data", fallback: null };
+      const stalls = deriveStalls(sessions, { currentSessionId: current.sessionId });
+      const id8 = current.sessionId.slice(0, 8);
+      if (stalls.current.stalledTurns === 0 && stalls.current.slowStartups === 0) {
+        return { status: "ok", detail: `0 stalled turns in session ${id8}`, fallback: null };
+      }
+      const parts = [];
+      if (stalls.current.stalledTurns > 0) parts.push(`${stalls.current.stalledTurns} stalled turns (~${stalls.current.stalledMinutes} min) in session ${id8}`);
+      if (stalls.current.slowStartups > 0) parts.push(`${stalls.current.slowStartups} slow subagent start-up(s) in session ${id8}`);
+      return asWarn(`${parts.join("; ")}; 24 h: ${stalls.window.stalledTurns} across ${stalls.window.sessions} session(s)`);
+    } catch (error) {
+      return asWarn(`turn-stalls check failed: ${error?.message ?? error}`);
+    }
+  },
 };
+
+const hhmmZ = (at) => `${new Date(at).toISOString().slice(11, 16)}Z`;
 
 // VS Code's user settings.json; AGENTO_VSCODE_SETTINGS overrides the platform default.
 function vscodeSettingsPath(env = process.env) {
@@ -296,7 +354,7 @@ const CAPABILITY_CHECKS = {
 // keeps this table and the prompt bodies in agreement.
 const COMMAND_NEEDS = {
   "agento-init": ["terminal", "ask-questions", "gh", "network"],
-  ap: ["terminal", "browser", "gh", "network"],
+  ap: ["terminal", "gh", "network"],
   "build-feature": ["terminal", "browser", "gh", "network"],
   "build-issue": ["terminal", "browser", "gh", "network"],
   "close-session": ["terminal"],
@@ -347,7 +405,7 @@ function runDoctor(ids) {
 }
 
 // The checks that run no external probe (doctorProbes) and so need no network.
-const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness"];
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "mcp-servers", "turn-stalls"];
 function capabilityOf(checkId) {
   return Object.entries(CAPABILITY_CHECKS).find(([, ids]) => ids.includes(checkId))?.[0] ?? checkId;
 }

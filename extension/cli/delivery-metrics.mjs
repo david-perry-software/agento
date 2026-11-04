@@ -251,3 +251,99 @@ export function aggregateMetrics(items) {
     },
   };
 }
+
+// `events.jsonl` (or a 16 MB tail of it): one JSON object per line —
+// `{ type, data, id, timestamp, parentId }` with a top-level `agentId` on subagent
+// events. Pure over supplied text: unparseable lines and unknown types are ignored,
+// and a truncated first line (a tail read starts mid-line) is tolerated. A turn gap
+// runs from each `tool.execution_complete` to the next `assistant.turn_end`; a
+// subagent start-up runs from `subagent.started` to `subagent.configured`, paired by
+// `agentId`.
+export function parseCopilotEvents(text) {
+  const turnGaps = [];
+  const subagentStartups = [];
+  let sessionId = null;
+  let pendingToolCompletions = [];
+  const started = new Map(); // agentId -> { at, agentName }
+  for (const line of String(text ?? "").split("\n")) {
+    if (!line.trim()) continue;
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue; // truncated or malformed line
+    }
+    const raw = event?.timestamp;
+    if (!raw || Number.isNaN(Date.parse(raw))) continue;
+    const at = canonicalTime(raw);
+    const type = event?.type;
+    if (type === "session.start" && event.data?.sessionId) {
+      sessionId = event.data.sessionId;
+    } else if (type === "tool.execution_complete") {
+      pendingToolCompletions.push(at);
+    } else if (type === "assistant.turn_end") {
+      for (const from of pendingToolCompletions) turnGaps.push({ at: from, seconds: seconds(from, at) });
+      pendingToolCompletions = [];
+    } else if (type === "subagent.started" && event.agentId) {
+      started.set(event.agentId, { at, agentName: event.data?.agentName ?? null });
+    } else if (type === "subagent.configured" && event.agentId && started.has(event.agentId)) {
+      const start = started.get(event.agentId);
+      started.delete(event.agentId);
+      subagentStartups.push({ at: start.at, seconds: seconds(start.at, at), agentName: start.agentName });
+    }
+  }
+  return { sessionId, turnGaps, subagentStartups };
+}
+
+export const STALL_THRESHOLD_SECONDS = 40;
+export const SLOW_STARTUP_SECONDS = 60;
+
+const sessionStalls = (session, { thresholdSeconds, slowStartupSeconds }) => {
+  const turnGaps = (session?.turnGaps ?? []).filter((g) => g.seconds >= thresholdSeconds);
+  const subagentStartups = (session?.subagentStartups ?? []).filter((s) => s.seconds >= slowStartupSeconds);
+  const stalledSeconds = turnGaps.reduce((sum, g) => sum + g.seconds, 0);
+  return {
+    sessionId: session?.sessionId ?? null,
+    stalledTurns: turnGaps.length,
+    slowStartups: subagentStartups.length,
+    stalledSeconds,
+    stalledMinutes: Math.round(stalledSeconds / 60),
+  };
+};
+
+// Aggregates parsed Copilot sessions (parseCopilotEvents results, each optionally
+// carrying `at` — the session's newest event timestamp — for the window filter) into
+// the current session, the 24 h window across sessions, and the human summary.
+export function deriveStalls(sessions, { thresholdSeconds = STALL_THRESHOLD_SECONDS, slowStartupSeconds = SLOW_STARTUP_SECONDS, now = Date.now(), windowHours = 24, currentSessionId } = {}) {
+  const nowMs = now instanceof Date ? now.getTime() : typeof now === "string" ? Date.parse(now) : now;
+  const list = Array.isArray(sessions) ? sessions : [];
+  const cutoff = nowMs - windowHours * 3600 * 1000;
+  const windowed = list.filter((session) => {
+    const at = session?.at;
+    if (!at) return true; // caller already filtered by mtime
+    const ms = Date.parse(at);
+    return Number.isNaN(ms) || ms >= cutoff;
+  });
+  const opts = { thresholdSeconds, slowStartupSeconds };
+  // `currentSessionId` omitted → the first (newest) session; explicitly passed
+  // (including null) → an exact match or null, so a checkout with no Copilot
+  // session reports `current: null` rather than another repo's session.
+  const current =
+    currentSessionId === undefined
+      ? (list[0] ?? null)
+      : (list.find((session) => session?.sessionId === currentSessionId) ?? null);
+  const currentStats = current ? sessionStalls(current, opts) : null;
+  const windowedStats = windowed.map((session) => sessionStalls(session, opts));
+  const window = {
+    sessions: windowedStats.length,
+    stalledTurns: windowedStats.reduce((n, s) => n + s.stalledTurns, 0),
+    slowStartups: windowedStats.reduce((n, s) => n + s.slowStartups, 0),
+    stalledSeconds: windowedStats.reduce((n, s) => n + s.stalledSeconds, 0),
+    stalledMinutes: windowedStats.reduce((n, s) => n + s.stalledMinutes, 0),
+  };
+  const summary =
+    currentStats && currentStats.stalledTurns > 0
+      ? `${currentStats.stalledTurns} stalled turns (~${currentStats.stalledMinutes} min) — check \`agento.mjs doctor\``
+      : null;
+  return { current: currentStats, window, summary };
+}

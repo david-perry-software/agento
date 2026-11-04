@@ -25,6 +25,12 @@ export interface DoctorCheck {
   fallback: string | null;
 }
 
+export interface StallsSummary {
+  summary: string;
+  stalledTurns: number;
+  stalledMinutes: number;
+}
+
 export interface StatusBarStyle {
   color?: string;
   background?: "warning" | "error";
@@ -38,6 +44,7 @@ export type SessionDoctorModel =
       warnings: string[];
       checks: DoctorCheck[];
       actions: CommandAction[];
+      stalls: StallsSummary | null;
       statusBarText: string;
       statusBarStyle: StatusBarStyle;
     }
@@ -134,6 +141,25 @@ function parseCompanion(session: UnknownRecord): CompanionSummary | null {
   };
 }
 
+// The optional `stalls` dashboard section: absent, errored, or malformed → null
+// (no Stalls row), so an older CLI or a section failure never breaks the view.
+function parseStalls(stalls: unknown): StallsSummary | null {
+  if (!isRecord(stalls)) {
+    return null;
+  }
+  const summary = stalls.summary;
+  const current = stalls.current;
+  if (typeof summary !== "string" || summary.length === 0 || !isRecord(current)) {
+    return null;
+  }
+  const stalledTurns = current.stalledTurns;
+  const stalledMinutes = current.stalledMinutes;
+  if (typeof stalledTurns !== "number" || !Number.isFinite(stalledTurns) || typeof stalledMinutes !== "number" || !Number.isFinite(stalledMinutes)) {
+    return null;
+  }
+  return { summary, stalledTurns, stalledMinutes };
+}
+
 function parseChecks(doctor: UnknownRecord): DoctorCheck[] {
   if (!Array.isArray(doctor.checks)) {
     throw new Error("checks must be an array");
@@ -163,6 +189,7 @@ export function createSessionDoctorModel(
   sessionValue: unknown,
   doctorValue: unknown,
   statusValue: unknown,
+  stallsValue: unknown = null,
 ): SessionDoctorModel {
   try {
     if (!isRecord(sessionValue) || sessionValue.status !== "ok") {
@@ -201,6 +228,7 @@ export function createSessionDoctorModel(
       warnings: [...sessionValue.warnings],
       checks: parseChecks(doctorValue),
       actions: projectCommandActions(sessionValue),
+      stalls: parseStalls(stallsValue),
       statusBarText: `Agento: ${role} · ${statusValue.resumable.length} active`,
       statusBarStyle: statusBarStyle(lifecycle, doctorValue.status),
     };

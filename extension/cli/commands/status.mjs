@@ -2,7 +2,7 @@
 // unchanged from the legacy switch in `scripts/agento.mjs`.
 
 import { emit, options, rest, usage } from "../lib/context.mjs";
-import { dashboardDocument, initiativeDetailDocument, initiativeListDocument, initiativeRoadmaps, metricsDocument, statusDocument } from "../lib/documents.mjs";
+import { dashboardDocument, initiativeDetailDocument, initiativeListDocument, initiativeRoadmaps, metricsDocument, stallsDocument, statusDocument } from "../lib/documents.mjs";
 import { requireSlug, requireType } from "../lib/resolve.mjs";
 
 export const commands = {
@@ -10,6 +10,10 @@ export const commands = {
     const typeFilter = rest[0] ? requireType(rest[0]) : null;
     const slugFilter = rest[1] ? requireSlug(rest[1]) : null;
     emit(statusDocument({ typeFilter, slugFilter, pr: Boolean(options.pr) }));
+  },
+  stalls() {
+    if (rest.length) usage(`stalls takes no positional arguments, got ${JSON.stringify(rest[0])}`);
+    emit(stallsDocument());
   },
   initiative() {
     const slug = rest[0] ? requireSlug(rest[0]) : null;

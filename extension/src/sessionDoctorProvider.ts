@@ -101,6 +101,9 @@ export class SessionDoctorProvider implements vscode.TreeDataProvider<SessionDoc
         this.row("Branch", this.model.session.branch),
         this.row("Lifecycle", this.model.session.lifecycle, undefined, lifecycle.color ? lifecycle : undefined),
         this.row("Workspace", this.model.session.workspace),
+        ...(this.model.stalls
+          ? [this.row("Stalls", this.model.stalls.summary, this.model.stalls.summary, healthStyle("warn"))]
+          : []),
       ];
     }
     if (element.id === "companion") {
