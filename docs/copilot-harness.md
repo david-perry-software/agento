@@ -437,6 +437,50 @@ and UI state persist across open/close of the view; the private store lives unde
 `COPILOT_HOME` rule), keyed by a hash of the primary clone path so every window of
 a repo shares one history.
 
+## Known stall sources
+
+A Copilot session can spend most of a long build waiting, not working. The one
+observed on this machine is an MCP server whose `tools/list` never answers; this
+section records the mechanism and the signatures so a future session can find it
+in a minute instead of a night.
+
+**Mechanism.** When a session starts — and again when the tool catalog refreshes —
+the runtime calls `tools/list` on every configured MCP server. A server that does
+not answer holds that call open until the client's 60 s timeout, and an agent that
+then waits on a tool from that server stalls its turn by the same amount, turn
+after turn. A server configured with `"tools": ["*"]` exposes every tool it
+eventually lists, counting all of them against the session's 128-tool cap; the
+"128 tools … not provided" warning is VS Code UI only, never present in
+`session.warning` or `events.jsonl`.
+
+**Signatures.**
+
+- In `~/.copilot/logs/process-*.log`, both line shapes carry `MCP request timed
+  out after 60000 ms` (sometimes `59999`): `Failed to refresh persisted MCP tools
+  for <server>; continuing with cached tools: …` and `Failed to list MCP tools;
+  … {"server":"<server>","error":"MCP request timed out after …"}`.
+- In a session's `events.jsonl`, a stalled turn is a `tool.execution_complete`
+  followed 40–54 s later by the next `assistant.turn_end` (the observed session
+  had 485 gaps, 10 ≥ 40 s, max 60.1 s). A subagent start-up stall is a
+  `subagent.started` → `subagent.configured` pair, matched by `agentId`; the first
+  BYOK subagent in the observed session took 402 s (later ones 0.2–0.3 s).
+- Observed runtime: `copilotVersion` `1.0.95-0.unstable.r38345923974.g3754b70` in
+  the session's `session.start` event.
+
+**Reading the state.** `agento.mjs doctor` reports two informational checks:
+`mcp-servers` (warns on wildcard/remote servers and on timeouts from a
+still-configured server or in the last 60 min) and `turn-stalls` (warns on the
+current session's stalled turns or slow subagent start-ups). `agento.mjs stalls`
+prints the current session and the 24 h window, and the same summary appears in
+`/agento delivery-status`, the Session & Doctor view, and the Mission Control
+window banner.
+
+**The fix.** Remove the offending server or narrow its `tools` list in
+`~/.copilot/mcp-config.json` (or `<root>/.vscode/mcp.json` for a workspace server),
+then run **Developer: Reload Window**. The timeout warning clears once the server
+is gone and the last 60 min hold no timeout; older timeouts from a removed server
+are reported in the check's `detail` at `ok`.
+
 ## Reproduce
 
 From the repository root, on Node ≥ 20:
