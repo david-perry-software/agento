@@ -10,13 +10,18 @@ import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
 const tmp = (prefix) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 const noCode = () => "";
 
-// A fake /proc: each entry is [pid, cwd, comm|null]; comm null leaves the file out.
+// A fake /proc: each entry is [pid, cwd, comm|null, cmdline?, environ?]; comm null
+// leaves the file out; cmdline (array) and environ (object) are written NUL-separated.
 function fakeProc(entries) {
   const dir = tmp("agento-proc-");
-  for (const [pid, cwd, comm] of entries) {
+  for (const [pid, cwd, comm, cmdline, environ] of entries) {
     fs.mkdirSync(path.join(dir, pid));
     fs.symlinkSync(cwd, path.join(dir, pid, "cwd"));
     if (comm !== null) fs.writeFileSync(path.join(dir, pid, "comm"), `${comm}\n`);
+    if (cmdline !== undefined) fs.writeFileSync(path.join(dir, pid, "cmdline"), cmdline.join("\0"));
+    if (environ !== undefined) {
+      fs.writeFileSync(path.join(dir, pid, "environ"), Object.entries(environ).map(([key, value]) => `${key}=${value}`).join("\0"));
+    }
   }
   fs.mkdirSync(path.join(dir, "self"));
   return dir;
@@ -49,6 +54,23 @@ test("findOccupants: at most three PIDs, then 'and N more processes'", () => {
 test("findOccupants: no occupants is an empty details list", () => {
   const procDir = fakeProc([["301", "/elsewhere", "bash"]]);
   assert.deepEqual(findOccupants(TARGET, { procDir, codeStatus: noCode }), { processes: [], folderWindow: false, workspaceWindow: false, details: [] });
+});
+
+test("findOccupants names an orphaned Copilot SDK extension host instead of an anonymous (code) (#143 sdk-host-blocks-teardown)", () => {
+  const procDir = fakeProc([
+    ["402", TARGET, "sh"],
+    ["403", TARGET, "sh"],
+    ["404", TARGET, "sh"],
+    ["405", TARGET, "sh"],
+    ["401", TARGET, "code",
+      ["/usr/share/code/code", "/x/copilot-sdk-linux-x64/preloads/extension_bootstrap.mjs"],
+      { SESSION_ID: "e927bde1-9912-4cab-bb3c-7a245a38e240", EXTENSION_PATH: "/home/u/.copilot/extensions/agento-mission-control/extension.mjs", COPILOT_EXTENSION_PARENT_PID: "999", GITHUB_TOKEN: "planted-secret-must-not-appear" },
+    ],
+  ]);
+  const result = findOccupants(TARGET, { procDir, codeStatus: noCode });
+  assert.equal(result.details[0], "PID 401 (Copilot SDK extension host: agento-mission-control, session e927bde1)");
+  assert.deepEqual(result.sdkHosts, [{ pid: 401, sessionId: "e927bde1-9912-4cab-bb3c-7a245a38e240", extensionPath: "/home/u/.copilot/extensions/agento-mission-control/extension.mjs", extension: "agento-mission-control", parentPid: 999 }]);
+  assert.ok(!JSON.stringify(result).includes("planted-secret"));
 });
 
 test("findOccupants: code --status Folder line names the target's basename", () => {
