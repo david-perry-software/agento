@@ -20,6 +20,38 @@ export function defaultCodeStatus() {
   }
 }
 
+// Only these keys are ever read from a host's /proc/<pid>/environ; every other
+// key and value is discarded so a planted secret can never leak into a result.
+const HOST_ENV_KEYS = ["SESSION_ID", "EXTENSION_PATH", "COPILOT_EXTENSION_PARENT_PID"];
+
+function readCmdline(procDir, pid) {
+  try {
+    return fs.readFileSync(path.join(procDir, pid, "cmdline"), "utf8").split("\0").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// A Copilot SDK extension host is detected by its command line, not `comm`: the
+// same runtime host may run as `code` or `node`.
+const isExtensionHost = (cmdline) => cmdline.some((arg) => path.basename(arg) === "extension_bootstrap.mjs");
+
+function readHostEnviron(procDir, pid) {
+  const environ = {};
+  try {
+    const raw = fs.readFileSync(path.join(procDir, pid, "environ"), "utf8");
+    for (const entry of raw.split("\0")) {
+      const eq = entry.indexOf("=");
+      if (eq === -1) continue;
+      const key = entry.slice(0, eq);
+      if (HOST_ENV_KEYS.includes(key)) environ[key] = entry.slice(eq + 1);
+    }
+  } catch {
+    // the process exited or its environ is not ours to read
+  }
+  return environ;
+}
+
 function scanProcesses(procDir, target) {
   const prefix = target + path.sep;
   const found = [];
@@ -35,7 +67,8 @@ function scanProcesses(procDir, target) {
       const cwd = fs.readlinkSync(path.join(procDir, name, "cwd"));
       if (cwd !== target && !cwd.startsWith(prefix)) continue;
       const comm = fs.readFileSync(path.join(procDir, name, "comm"), "utf8").trim().replace(/[^A-Za-z0-9_.+-]/g, "?");
-      found.push(`PID ${name} (${comm})`);
+      const host = isExtensionHost(readCmdline(procDir, name));
+      found.push({ pid: Number(name), comm, host, environ: host ? readHostEnviron(procDir, name) : null });
     } catch {
       // the process exited or is not ours to read
     }
@@ -43,11 +76,17 @@ function scanProcesses(procDir, target) {
   return found;
 }
 
+// True only for Agento's own Mission Control extension host (last two path
+// segments `agento-mission-control/extension.mjs`).
+export function isMissionControlHost(host) {
+  return path.basename(path.dirname(host.extensionPath)) === "agento-mission-control" && path.basename(host.extensionPath) === "extension.mjs";
+}
+
 const allMatches = (text, regex) => [...text.matchAll(regex)].map((m) => m[1]);
 
 export function findOccupants(target, { procDir, platform = process.platform, codeStatus = defaultCodeStatus } = {}) {
   const resolved = path.resolve(target);
-  const processes = procDir || platform === "linux" ? scanProcesses(procDir ?? "/proc", resolved) : [];
+  const scanned = procDir || platform === "linux" ? scanProcesses(procDir ?? "/proc", resolved) : [];
   let status = "";
   try {
     status = codeStatus() ?? "";
@@ -59,9 +98,31 @@ export function findOccupants(target, { procDir, platform = process.platform, co
   // A pair's <name>.code-workspace window shows as `Window (… <name> (Workspace) …)`
   // (observed) or `Workspace (<name>)` (expected form); both halves share <name>.
   const workspaceWindow = [...allMatches(status, /^\|\s+Workspace \(([^)]+)\)/gm), ...allMatches(status, /^\|\s+Window \(.*?(\S+) \(Workspace\)/gm)].includes(name);
-  const details = processes.slice(0, 3);
-  if (processes.length > 3) details.push(`and ${processes.length - 3} more processes`);
+  const sdkHosts = [];
+  const hostLabels = [];
+  const otherLabels = [];
+  for (const proc of scanned) {
+    if (proc.host) {
+      const extensionPath = proc.environ.EXTENSION_PATH ?? "";
+      const host = {
+        pid: proc.pid,
+        sessionId: proc.environ.SESSION_ID ?? "",
+        extensionPath,
+        extension: extensionPath ? path.basename(path.dirname(extensionPath)) : "unknown",
+        parentPid: proc.environ.COPILOT_EXTENSION_PARENT_PID !== undefined ? Number(proc.environ.COPILOT_EXTENSION_PARENT_PID) : null,
+      };
+      sdkHosts.push(host);
+      hostLabels.push(`PID ${proc.pid} (Copilot SDK extension host: ${host.extension}, session ${host.sessionId.slice(0, 8)})`);
+    } else {
+      otherLabels.push(`PID ${proc.pid} (${proc.comm})`);
+    }
+  }
+  const processes = [...hostLabels, ...otherLabels];
+  const details = [...hostLabels, ...otherLabels.slice(0, 3)];
+  if (otherLabels.length > 3) details.push(`and ${otherLabels.length - 3} more processes`);
   if (folderWindow) details.push("a matching VS Code folder");
   if (workspaceWindow) details.push("a matching VS Code workspace window");
-  return { processes, folderWindow, workspaceWindow, details };
+  const result = { processes, folderWindow, workspaceWindow, details };
+  if (sdkHosts.length) result.sdkHosts = sdkHosts;
+  return result;
 }

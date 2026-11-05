@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { defaultCodeStatus, findOccupants } from "./worktree-occupants.mjs";
+import { defaultCodeStatus, findOccupants, isMissionControlHost } from "./worktree-occupants.mjs";
 
 const tmp = (prefix) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 const noCode = () => "";
@@ -71,6 +71,50 @@ test("findOccupants names an orphaned Copilot SDK extension host instead of an a
   assert.equal(result.details[0], "PID 401 (Copilot SDK extension host: agento-mission-control, session e927bde1)");
   assert.deepEqual(result.sdkHosts, [{ pid: 401, sessionId: "e927bde1-9912-4cab-bb3c-7a245a38e240", extensionPath: "/home/u/.copilot/extensions/agento-mission-control/extension.mjs", extension: "agento-mission-control", parentPid: 999 }]);
   assert.ok(!JSON.stringify(result).includes("planted-secret"));
+});
+
+test("findOccupants: a host running as node (comm node) is still classified as an SDK host", () => {
+  const procDir = fakeProc([
+    ["501", TARGET, "node", ["/usr/bin/node", "/x/preloads/extension_bootstrap.mjs"], { SESSION_ID: "abc12345-session", EXTENSION_PATH: "/e/agento-mission-control/extension.mjs", COPILOT_EXTENSION_PARENT_PID: "7" }],
+  ]);
+  const result = findOccupants(TARGET, { procDir, codeStatus: noCode });
+  assert.deepEqual(result.sdkHosts, [{ pid: 501, sessionId: "abc12345-session", extensionPath: "/e/agento-mission-control/extension.mjs", extension: "agento-mission-control", parentPid: 7 }]);
+  assert.equal(result.details[0], "PID 501 (Copilot SDK extension host: agento-mission-control, session abc12345)");
+});
+
+test("findOccupants: an SDK host without EXTENSION_PATH is labelled extension unknown", () => {
+  const procDir = fakeProc([
+    ["502", TARGET, "code", ["/usr/share/code/code", "/x/preloads/extension_bootstrap.mjs"], { SESSION_ID: "xyz98765-session", COPILOT_EXTENSION_PARENT_PID: "8" }],
+  ]);
+  const result = findOccupants(TARGET, { procDir, codeStatus: noCode });
+  assert.deepEqual(result.sdkHosts, [{ pid: 502, sessionId: "xyz98765-session", extensionPath: "", extension: "unknown", parentPid: 8 }]);
+  assert.equal(result.details[0], "PID 502 (Copilot SDK extension host: unknown, session xyz98765)");
+});
+
+test("findOccupants: a non-host process's environ is never read (a planted token never appears)", () => {
+  const procDir = fakeProc([
+    ["503", TARGET, "bash", ["/bin/bash"], { GITHUB_TOKEN: "planted-secret-must-not-appear" }],
+  ]);
+  const result = findOccupants(TARGET, { procDir, codeStatus: noCode });
+  assert.equal(result.sdkHosts, undefined);
+  assert.deepEqual(result.processes, ["PID 503 (bash)"]);
+  assert.ok(!JSON.stringify(result).includes("planted-secret"));
+});
+
+test("findOccupants: an SDK host outside the target is ignored", () => {
+  const procDir = fakeProc([
+    ["504", "/elsewhere", "code", ["/usr/share/code/code", "/x/preloads/extension_bootstrap.mjs"], { SESSION_ID: "outside-session", EXTENSION_PATH: "/e/agento-mission-control/extension.mjs", COPILOT_EXTENSION_PARENT_PID: "9" }],
+  ]);
+  const result = findOccupants(TARGET, { procDir, codeStatus: noCode });
+  assert.equal(result.sdkHosts, undefined);
+  assert.deepEqual(result.processes, []);
+});
+
+test("isMissionControlHost: true only for the agento-mission-control extension path", () => {
+  assert.equal(isMissionControlHost({ extensionPath: "/home/u/.copilot/extensions/agento-mission-control/extension.mjs" }), true);
+  assert.equal(isMissionControlHost({ extensionPath: "/home/u/.copilot/extensions/other-ext/extension.mjs" }), false);
+  assert.equal(isMissionControlHost({ extensionPath: "/home/u/.copilot/extensions/agento-mission-control/not-extension.mjs" }), false);
+  assert.equal(isMissionControlHost({ extensionPath: "" }), false);
 });
 
 test("findOccupants: code --status Folder line names the target's basename", () => {
