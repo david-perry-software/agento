@@ -281,6 +281,7 @@ function closeSession() {
     workspace: null,
     branches: { product: null, companion: null },
     occupants: { product: [], companion: [] },
+    stoppedHosts: { product: [], companion: [] },
     dirty: { product: [], companion: [] },
     next: [],
     reason: null,
@@ -454,6 +455,7 @@ function closeSession() {
     dryRun,
   });
   out.occupants = removal.occupants;
+  out.stoppedHosts = removal.stoppedHosts;
   out.warnings.push(...removal.warnings);
   out.applied = removal.applied;
   if (removal.status === "blocked") finish({ status: "blocked", reason: removal.reason, message: removal.message });
