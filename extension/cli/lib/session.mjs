@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
-import { findOccupants, defaultCodeStatus } from "../worktree-occupants.mjs";
+import { defaultCodeStatus, findOccupants, sdkHostLabel, stopOrphanSdkHosts } from "../worktree-occupants.mjs";
 
 import {
   classifyWorktrees,
@@ -218,6 +218,9 @@ function removeSessionPair({ halves, workspace = null, branches = { product: nul
     half: null,
     applied: false,
     occupants: { product: [], companion: [] },
+    stoppedHosts: { product: [], companion: [] },
+    stopped: { product: [], companion: [] },
+    killHosts: { product: [], companion: [] },
     product: halves.find((h) => h.label === "product")?.half ?? null,
     companion: halves.find((h) => h.label === "companion")?.half ?? null,
     workspace,
@@ -225,13 +228,21 @@ function removeSessionPair({ halves, workspace = null, branches = { product: nul
     warnings: [],
   };
   for (const { label, half } of halves) {
-    if (half.registered && half.onDisk) out.occupants[label] = findOccupants(half.path, { codeStatus }).details;
+    if (!half.registered || !half.onDisk) continue;
+    const pass = stopOrphanSdkHosts(half.path, { codeStatus, dryRun });
+    out.stoppedHosts[label].push(...pass.stopped.map(sdkHostLabel));
+    out.stopped[label].push(...pass.stopped);
+    if (dryRun) out.stoppedHosts[label].push(...pass.skipped.filter((s) => s.reason === "would-stop").map((s) => sdkHostLabel(s.host)));
+    out.killHosts[label].push(...pass.skipped.filter((s) => s.reason === "foreign-extension" || s.reason === "still-running").map((s) => s.host.pid));
+    out.occupants[label] = findOccupants(half.path, { codeStatus }).details;
   }
   const occupied = halves.filter(({ label }) => out.occupants[label].length);
   if (occupied.length) {
     const summary = occupied.map(({ label, half }) => `${label} half ${half.path}: ${out.occupants[label].join(", ")}`).join("; ");
+    const killPids = [...out.killHosts.product, ...out.killHosts.companion];
+    const killSentence = killPids.length ? ` Stop the orphaned Copilot SDK extension hosts with: kill ${killPids.join(" ")}.` : "";
     if (!ignoreOccupants) {
-      return { ...out, status: "blocked", reason: "occupied", half: occupied[0].label, message: `Active worktree occupants detected - ${summary}. Close their terminals or VS Code window before removal, or re-send with --ignore-occupants.` };
+      return { ...out, status: "blocked", reason: "occupied", half: occupied[0].label, message: `Active worktree occupants detected - ${summary}. Close their terminals or VS Code window before removal, or re-send with --ignore-occupants.${killSentence}` };
     }
     out.warnings.push(`occupants: ignored (--ignore-occupants) - ${summary}`);
   }

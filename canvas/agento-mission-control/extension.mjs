@@ -11,10 +11,13 @@
 
 import { createCanvas, CanvasError, joinSession } from "@github/copilot-sdk/extension";
 
-import { defineMissionControl } from "./canvas.mjs";
+import { defineMissionControl, leaveSessionCwd } from "./canvas.mjs";
 
 let session;
 try {
+  // Record the session's start cwd, then leave it so this host never pins the
+  // worktree it was started in; the canvas keeps running there via fallbackCwd.
+  const fallbackCwd = leaveSessionCwd();
   session = await joinSession({
     // Explicitly opt out of remote sessions so resume stays local (see above).
     remoteSession: "off",
@@ -22,6 +25,7 @@ try {
       defineMissionControl({
         createCanvas,
         CanvasError,
+        fallbackCwd,
         deps: {
           send: ({ prompt }) => session.send({ prompt }),
           log: (line) => session.log(line),

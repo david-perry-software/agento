@@ -703,12 +703,19 @@ function ship() {
       companion: external ? branchVerdict(artifactsClone, companionList, branch, `origin/${artifactDefault}`, halves[1].half.path) : null,
     };
     const removal = removeSessionPair({ halves, workspace, branches });
-    out.teardown = { product: removal.product, companion: removal.companion, workspace, branches, occupants: removal.occupants, pausedPath: null };
+    out.teardown = { product: removal.product, companion: removal.companion, workspace, branches, occupants: removal.occupants, stoppedHosts: removal.stoppedHosts, pausedPath: null };
+    for (const { label, half } of halves) {
+      for (const host of removal.stopped[label]) {
+        act("stop-host", `stopped orphaned Mission Control host PID ${host.pid} (session ${host.sessionId.slice(0, 8)}) in ${half.path}`);
+      }
+    }
     if (removal.status === "blocked") {
       const flagged = halves.find((h) => h.label === removal.half).half.path;
       out.teardown.pausedPath = flagged;
       const summary = halves.filter((h) => removal.occupants[h.label].length).map((h) => `${h.label} half ${h.half.path}: ${removal.occupants[h.label].join(", ")}`).join("; ");
-      finish({ status: "blocked", reason: "occupied", outcome: "paused-teardown", message: `paused at teardown (worktree ${flagged} still open): ${summary}; close that VS Code window or terminal, then re-send /agento ship ${slug}`, next: [shipCommand()] });
+      const killPids = [...removal.killHosts.product, ...removal.killHosts.companion];
+      const killSentence = killPids.length ? ` Stop the orphaned Copilot SDK extension hosts with: kill ${killPids.join(" ")}.` : "";
+      finish({ status: "blocked", reason: "occupied", outcome: "paused-teardown", message: `paused at teardown (worktree ${flagged} still open): ${summary}; close that VS Code window or terminal, then re-send /agento ship ${slug}${killSentence}`, next: [shipCommand()] });
     }
     if (removal.status === "failed") fail(removal.reason, removal.message, { half: removal.half });
     const removed = halves.filter((h) => h.half.removed).map((h) => h.half.path);

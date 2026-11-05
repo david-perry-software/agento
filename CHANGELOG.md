@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed.** Ship teardown and `close-session` name a Copilot SDK extension host
+  by its extension and session instead of an anonymous `(code)`/`(node)` occupant,
+  stop an orphaned host running Agento's own Mission Control extension with
+  `SIGTERM` (no matching VS Code window and not the calling session), and end the
+  pause with the exact `kill <pid>` hint for any other host. The Mission Control
+  extension leaves its start cwd for the home directory at startup, so it no
+  longer pins a worktree open (#143).
+
 ## 0.16.0
 
 - **Added.** A `plugin` command family for VS Code's staged plugin snapshots:

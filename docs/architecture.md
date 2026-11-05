@@ -103,7 +103,9 @@ flowchart TD
   state, `blockedBy`, waves, and `next` computed from member roadmaps — the
   breakdown itself holds no progress), worktree path and per-slug port
   derivation, the session start and close (`start-session`, and `close-session`
-  with its own worktree-occupant check in `scripts/worktree-occupants.mjs` — the
+  with its own worktree-occupant check in `scripts/worktree-occupants.mjs` — which
+  labels a Copilot SDK extension host by its extension and session and stops an
+  orphaned Mission Control host with `SIGTERM` — the
   guard cannot see a removal made inside the CLI), the ship state machine
   (`agento.mjs ship`: the read-only audit with its confirmation token, the
   `--confirm` writes, both merges, the default syncs, the release wait, the

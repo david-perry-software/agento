@@ -137,7 +137,14 @@ had an upstream keeps its commits on the retained branch); its own occupant
 check, the Node port of the guard's (`scripts/worktree-occupants.mjs`: processes
 whose cwd is inside the half — a Linux-only `/proc` scan, skipped elsewhere — and
 `code --status` naming the half as a `Folder`, `Workspace`, or `Window (…
-(Workspace))`, with the guard's wording), because the guard never sees a removal
+(Workspace))`, with the guard's wording, except that a Copilot SDK extension host
+is labelled `Copilot SDK extension host: <extension>, session <id8>` and, before
+the gate, an orphaned host running Agento's own Mission Control extension — no
+matching VS Code window and not the calling session — is stopped with `SIGTERM`
+and reported in `stoppedHosts`; a remaining `foreign-extension` or `still-running`
+host still blocks, the message ending in
+`Stop the orphaned Copilot SDK extension hosts with: kill <pid>.`), because the
+guard never sees a removal
 made inside the CLI: any occupant is `status: "blocked"`, `reason: "occupied"`,
 nothing removed, unless `--ignore-occupants`, which proceeds and records the
 occupants in `warnings[]`; the removal — companion half, prune, product half,
@@ -152,7 +159,7 @@ subject, outcome: closed | already-closed | nothing-to-close | null, applied,
 product, companion: { path, branch, detached, registered, onDisk, removed } | null,
 workspace: { path, existed, removed } | null, branches: { product, companion: { name,
 upstream, remoteExists, mergedIntoDefault, action: deleted | retained | absent,
-reason } | null }, occupants, dirty, next[], reason, message, fix, reauth, allowed,
+reason } | null }, occupants, stoppedHosts, dirty, next[], reason, message, fix, reauth, allowed,
 elsewhere, warnings }` — `rejected` removes nothing (wrong window, a decision error,
 `dirty` with the files, `unpushed` with `commits`, `branch-mismatch`,
 `unregistered`, `protected-path`), `failed` names `fetch-auth` with `reauth` before
@@ -248,8 +255,11 @@ run created after `mergeDate` or `gh workflow run <w> --ref <default>` exactly o
 and return `pending`; `failed` / `no-run` → `failed` / `release-<verdict>` with
 `release.run.url`; `success`, `superseded-success`, `not-triggered`,
 `not-configured` advance), `teardown` (`removeSessionPair` over the owner's halves,
-workspace file, and merged local branches — the same occupant gate as
-`close-session`: an occupant is `status: "blocked"`, `reason: "occupied"`, `outcome:
+workspace file, and merged local branches — the same occupant gate and SDK-host
+stop rule as `close-session`: an orphaned Mission Control host is stopped with
+`SIGTERM`, recorded as one `stop-host` action and in `teardown.stoppedHosts`, and a
+remaining host's paused message ends in the `kill <pid>` hint. An occupant is
+`status: "blocked"`, `reason: "occupied"`, `outcome:
 "paused-teardown"`, `teardown.pausedPath` the flagged half, nothing removed, and the
 re-send resumes here), and `epilogue` (unticked `(manual, post-ship)` steps:
 `post-ship/<slug>` created from fresh `origin/<default>` in the artifact checkout —
@@ -265,7 +275,7 @@ companion, phase, resumedAt, outcome: awaiting-confirm | shipped | already-shipp
 paused-teardown | post-ship-pending | null, audit, gaps { hard, confirm },
 confirmToken, rejectTo, actions: [{ step, detail }], pr, companionPr, mergeSha,
 release { verdict, workflow, run, supersededBy, reason, mergeDate, dispatched } |
-null, teardown { product, companion, workspace, branches, occupants, pausedPath } |
+null, teardown { product, companion, workspace, branches, occupants, stoppedHosts, pausedPath } |
 null, postShip | null, next[], preflight, reason, message, fix, reauth, allowed,
 elsewhere, warnings }`; exit 0 for `ok`, 2 for `pending`, 3 for
 `rejected`/`blocked`/`failed`, 1 for a usage error (`--wait` 0–60, default 50;

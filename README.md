@@ -317,7 +317,12 @@ complete` inside the build worktree, marks the PR ready, waits for required chec
 with the bounded poller, merges with a normal merge commit through the ruleset, syncs
 `main`, optionally dispatches and waits on a release workflow, then tears the build
 worktree down (remove, prune, delete the merged local branch) and completes any
-`(manual, post-ship)` steps in an epilogue PR. If the secondary VS Code window is
+`(manual, post-ship)` steps in an epilogue PR. Before removing a half, teardown
+stops an orphaned Copilot SDK host running Agento's own Mission Control extension
+(`SIGTERM`, when no VS Code window holds the half and it is not the calling
+session); any other SDK host still pauses teardown, named
+`Copilot SDK extension host: <extension>, session <id8>` with the exact
+`kill <pid>` command. If the secondary VS Code window is
 still open, the delivery guard blocks the removal and ship pauses with `main` already
 merged and synced; close that window and re-send `/agento ship <slug>` to finish the
 teardown.

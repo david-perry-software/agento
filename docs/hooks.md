@@ -10,7 +10,9 @@ is a short Bash wrapper that `exec`s one Node module beside it
 (`delivery-guard.mjs`, `session-context.mjs`) with the hook input on stdin. Both
 modules share `scripts/hooks/hook-lib.mjs` (payload, git, config, and companion
 resolution helpers) and import the CLI's `agento-config.mjs` and
-`worktree-occupants.mjs`, so the config loader and the occupant check exist once.
+`worktree-occupants.mjs`, so the config loader and the occupant check exist once —
+and the guard's occupant ask shows the same Copilot SDK extension host label the
+CLI prints, though the guard itself never stops a host.
 `node` ≥ 20 is required; without `node` on `PATH` both wrappers exit 0 and print
 nothing — no guard verdicts, no session context — and `agento.mjs doctor` fails its
 `node` check.
@@ -129,7 +131,7 @@ prompts you normally see once the session `.code-workspace` settings are current
 | Committing on a `feature/`/`issue/` branch without `roadmap.md` among the files that commit would record (index, `-a` modifications, or explicit pathspecs) | ask — progress may be lost on resume |
 | Companion mode (`artifacts.repo` set): the same commit in the product checkout while the companion checkout has no pending `roadmap.md` change (untracked, unstaged, or staged) and no `roadmap.md` in its `HEAD` commit — the reason names the companion path and its current branch; the product commit's own files are never what decides. From a managed product half `<kind>-<id>` the inspected checkout is the paired companion half `<companion>-worktrees/<kind>-<id>` when it exists | ask — progress may be lost on resume |
 | Companion mode: commit, push, or merge targeting the companion checkout or any worktree of it (`git -C <companion or half> …`, `cd <companion or half> && …`) on the **product** config's default branch, or a push whose refspec targets it | deny — the product config governs the companion |
-| `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only) | ask |
+| `git worktree remove` with live occupants (processes or an open VS Code folder; Linux only). An SDK extension host is shown with its `Copilot SDK extension host: <extension>, session <id8>` label; the guard never stops hosts — only the CLI teardown/close-session does | ask |
 | `git [-C <companion clone>] worktree remove <half>` while the pair's `<kind>-<id>.code-workspace` window is open — `code --status` shows `Window (… <kind>-<id> (Workspace) …)` (observed) or `Workspace (<kind>-<id>)`; both halves share the name, so either removal asks | ask |
 | Everything else | allow |
 

@@ -7,6 +7,7 @@
 // with a fake `createCanvas` and `CanvasError`. The real wiring is
 // extension.mjs, which joins the session and passes `send`/`log` through `deps`.
 
+import os from "node:os";
 import path from "node:path";
 
 import * as cli from "./cli.mjs";
@@ -16,6 +17,19 @@ import * as store from "./store.mjs";
 import { startWatcher } from "./watch.mjs";
 
 export const TITLE = "Mission Control";
+
+// Leave the directory the extension host was started in (the session's worktree)
+// for the home directory, so a host never pins a worktree open. Returns the
+// recorded start cwd; a failing chdir is ignored — the recorded cwd still stands.
+export function leaveSessionCwd({ cwd = process.cwd, chdir = process.chdir, homedir = os.homedir } = {}) {
+  const start = cwd();
+  try {
+    chdir(homedir());
+  } catch {
+    // The host keeps its start cwd; the recorded value is still the right fallback.
+  }
+  return start;
+}
 
 const DESCRIPTION =
   "The Agento delivery kanban, initiative wave graph, timeline, worktree map, and live activity feed, with buttons that dispatch only the commands the CLI allows in this window.";
@@ -99,7 +113,7 @@ function windowsCache(run, now = () => Date.now()) {
   };
 }
 
-export function defineMissionControl({ createCanvas, CanvasError, deps = {} }) {
+export function defineMissionControl({ createCanvas, CanvasError, deps = {}, fallbackCwd }) {
   const D = { ...DEFAULT_DEPS, ...deps };
   const instances = new Map();
 
@@ -255,7 +269,7 @@ export function defineMissionControl({ createCanvas, CanvasError, deps = {} }) {
       const existing = instances.get(instanceId);
       if (existing) return { title: TITLE, status: "reopened", url: existing.url };
 
-      const cwd = ctx.session?.workingDirectory ?? process.cwd();
+      const cwd = ctx.session?.workingDirectory ?? fallbackCwd ?? process.cwd();
       const instance = { cwd, repoKey: null, copilotHome: D.copilotHome(), snapshot: null, server: null, watcher: null, url: null };
       instances.set(instanceId, instance);
 

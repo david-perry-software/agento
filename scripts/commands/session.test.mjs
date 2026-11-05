@@ -1302,6 +1302,90 @@ test("close-session occupant gate: code --status naming the half as a Folder, Wo
   assert.equal(fs.existsSync(file), false);
 });
 
+function sdkHostChild(half, { sessionId = "orphan-0000-session", extension = "agento-mission-control" } = {}) {
+  const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "agento-sdk-host-")));
+  return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", path.join(tmpDir, "preloads", "extension_bootstrap.mjs")], {
+    cwd: half,
+    env: { ...process.env, SESSION_ID: sessionId, EXTENSION_PATH: path.join(tmpDir, "extensions", extension, "extension.mjs"), COPILOT_EXTENSION_PARENT_PID: String(process.pid) },
+    stdio: "ignore",
+  });
+}
+
+test("close-session: an orphaned Mission Control SDK host is stopped and the close proceeds", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const env = { ...closeSessionEnv(), COPILOT_AGENT_SESSION_ID: "caller-0000-session" };
+  const { half, file } = planPair(pair, "20261009-2");
+  const child = sdkHostChild(half);
+  await new Promise((resolve) => child.once("spawn", resolve));
+  const exited = new Promise((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
+  try {
+    const { code, json } = closeSession(repo, env, "20261009-2");
+    assert.equal(code, 0, JSON.stringify(json));
+    assert.equal(json.outcome, "closed");
+    assert.equal(json.applied, true);
+    assert.ok(json.stoppedHosts.companion.some((l) => l.includes(`PID ${child.pid}`) && l.includes("Copilot SDK extension host: agento-mission-control")), JSON.stringify(json.stoppedHosts));
+    const exit = await exited;
+    assert.equal(exit.signal, "SIGTERM", JSON.stringify(exit));
+    assert.equal(fs.existsSync(half), false);
+    assert.equal(fs.existsSync(file), false);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  }
+});
+
+test("close-session --dry-run: an orphaned Mission Control SDK host is reported would-stop and stays alive", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const env = { ...closeSessionEnv(), COPILOT_AGENT_SESSION_ID: "caller-0000-session" };
+  const { half, file } = planPair(pair, "20261009-3");
+  const child = sdkHostChild(half);
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const before = [cloneState(repo, docs), fs.readFileSync(file, "utf8")];
+    const { code, json } = closeSession(repo, env, "20261009-3", "--dry-run");
+    assert.equal(code, 3, JSON.stringify(json));
+    assert.equal(json.status, "blocked");
+    assert.equal(json.reason, "occupied");
+    assert.equal(json.applied, false);
+    assert.ok(json.stoppedHosts.companion.some((l) => l.includes(`PID ${child.pid}`)), JSON.stringify(json.stoppedHosts));
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    assert.ok(fs.existsSync(half));
+    assert.ok(fs.existsSync(file));
+    assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+  } finally {
+    child.kill();
+  }
+  await new Promise((resolve) => child.once("exit", resolve));
+});
+
+test("close-session: a foreign-extension SDK host blocks, names the host label, and ends with the kill command", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const pair = makePairRepo();
+  const { repo, docs } = pair;
+  const env = { ...closeSessionEnv(), COPILOT_AGENT_SESSION_ID: "caller-0000-session" };
+  const { half, file } = planPair(pair, "20261009-4");
+  const child = sdkHostChild(half, { sessionId: "orphan-0001-session", extension: "other-ext" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const before = [cloneState(repo, docs), fs.readFileSync(file, "utf8")];
+    const { code, json } = closeSession(repo, env, "20261009-4");
+    assert.equal(code, 3, JSON.stringify(json));
+    assert.equal(json.status, "blocked");
+    assert.equal(json.reason, "occupied");
+    assert.deepEqual(json.stoppedHosts, { product: [], companion: [] });
+    assert.equal(json.occupants.companion.length, 1);
+    assert.match(json.occupants.companion[0], /PID \d+ \(Copilot SDK extension host: other-ext, session orphan-0/);
+    assert.match(json.message, new RegExp(`kill ${child.pid}\\.$`));
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    assert.deepEqual([cloneState(repo, docs), fs.readFileSync(file, "utf8")], before);
+  } finally {
+    child.kill();
+  }
+  await new Promise((resolve) => child.once("exit", resolve));
+});
+
 test("close-session is idempotent: a re-send is nothing-to-close or already-closed, a half removed earlier is skipped, a merged branch left behind is still deleted", () => {
   const pair = makePairRepo();
   const { repo, docs, wt, docsWt } = pair;
