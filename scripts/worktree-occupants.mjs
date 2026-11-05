@@ -126,3 +126,68 @@ export function findOccupants(target, { procDir, platform = process.platform, co
   if (sdkHosts.length) result.sdkHosts = sdkHosts;
   return result;
 }
+
+function readCurrentHost(procDir, pid) {
+  const name = String(pid);
+  const cmdline = readCmdline(procDir, name);
+  const sessionId = readHostEnviron(procDir, name).SESSION_ID ?? "";
+  return { cmdline, sessionId };
+}
+
+function pidDirExists(procDir, pid) {
+  try {
+    fs.accessSync(path.join(procDir, String(pid)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function waitForExit(procDir, pid, waitMs) {
+  const deadline = Date.now() + Math.max(0, waitMs);
+  while (Date.now() < deadline) {
+    if (!pidDirExists(procDir, pid)) return true;
+  }
+  return !pidDirExists(procDir, pid);
+}
+
+// Stop orphaned Mission Control SDK hosts whose cwd is inside `target`. Only a
+// Mission Control host, with no VS Code window holding the target, and not the
+// calling session, is signalled — with SIGTERM only, never SIGKILL.
+export function stopOrphanSdkHosts(target, { procDir, codeStatus, callerSessionId = process.env.COPILOT_AGENT_SESSION_ID, signal = process.kill, waitMs = 2000, dryRun = false } = {}) {
+  const found = findOccupants(target, { procDir, codeStatus });
+  const hosts = found.sdkHosts ?? [];
+  const stopped = [];
+  const skipped = [];
+  if (found.folderWindow || found.workspaceWindow) {
+    for (const host of hosts) skipped.push({ host, reason: "window-open" });
+    return { stopped, skipped };
+  }
+  const proc = procDir ?? "/proc";
+  for (const host of hosts) {
+    if (host.sessionId === callerSessionId) {
+      skipped.push({ host, reason: "calling-session" });
+      continue;
+    }
+    if (!isMissionControlHost(host)) {
+      skipped.push({ host, reason: "foreign-extension" });
+      continue;
+    }
+    if (dryRun) {
+      skipped.push({ host, reason: "would-stop" });
+      continue;
+    }
+    const current = readCurrentHost(proc, host.pid);
+    if (current.sessionId !== host.sessionId || !isExtensionHost(current.cmdline)) {
+      skipped.push({ host, reason: "changed" });
+      continue;
+    }
+    signal(host.pid, "SIGTERM");
+    if (waitForExit(proc, host.pid, waitMs)) {
+      stopped.push(host);
+    } else {
+      skipped.push({ host, reason: "still-running" });
+    }
+  }
+  return { stopped, skipped };
+}

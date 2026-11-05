@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { defaultCodeStatus, findOccupants, isMissionControlHost } from "./worktree-occupants.mjs";
+import { defaultCodeStatus, findOccupants, isMissionControlHost, stopOrphanSdkHosts } from "./worktree-occupants.mjs";
 
 const tmp = (prefix) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
 const noCode = () => "";
@@ -115,6 +115,100 @@ test("isMissionControlHost: true only for the agento-mission-control extension p
   assert.equal(isMissionControlHost({ extensionPath: "/home/u/.copilot/extensions/other-ext/extension.mjs" }), false);
   assert.equal(isMissionControlHost({ extensionPath: "/home/u/.copilot/extensions/agento-mission-control/not-extension.mjs" }), false);
   assert.equal(isMissionControlHost({ extensionPath: "" }), false);
+});
+
+const SDK_HOST_ENTRY = (pid, environ) => [pid, TARGET, "code", ["/usr/share/code/code", "/x/copilot-sdk-linux-x64/preloads/extension_bootstrap.mjs"], environ];
+const MC_ENVIRON = { SESSION_ID: "orphan-0001", EXTENSION_PATH: "/home/u/.copilot/extensions/agento-mission-control/extension.mjs", COPILOT_EXTENSION_PARENT_PID: "10" };
+
+test("stopOrphanSdkHosts: an orphaned Mission Control host is signalled once with SIGTERM and reported stopped", () => {
+  const procDir = fakeProc([SDK_HOST_ENTRY("601", MC_ENVIRON)]);
+  const calls = [];
+  const result = stopOrphanSdkHosts(TARGET, {
+    procDir,
+    codeStatus: noCode,
+    callerSessionId: "caller",
+    signal: (pid, sig) => {
+      calls.push([pid, sig]);
+      fs.rmSync(path.join(procDir, String(pid)), { recursive: true });
+    },
+  });
+  assert.deepEqual(calls, [[601, "SIGTERM"]]);
+  assert.deepEqual(result.stopped.map((h) => h.pid), [601]);
+  assert.deepEqual(result.skipped, []);
+});
+
+test("stopOrphanSdkHosts: a matching VS Code folder or workspace window skips every host as window-open", () => {
+  for (const status of ["|    Folder (plan-20261009-182342): 12 files", "|  Workspace (plan-20261009-182342)"]) {
+    const procDir = fakeProc([SDK_HOST_ENTRY("602", MC_ENVIRON)]);
+    const calls = [];
+    const result = stopOrphanSdkHosts(TARGET, { procDir, codeStatus: () => status, callerSessionId: "caller", signal: (pid, sig) => calls.push([pid, sig]) });
+    assert.deepEqual(calls, [], status);
+    assert.equal(result.stopped.length, 0, status);
+    assert.equal(result.skipped.length, 1, status);
+    assert.equal(result.skipped[0].reason, "window-open", status);
+  }
+});
+
+test("stopOrphanSdkHosts: the calling session's own host is skipped", () => {
+  const procDir = fakeProc([SDK_HOST_ENTRY("603", MC_ENVIRON)]);
+  const calls = [];
+  const result = stopOrphanSdkHosts(TARGET, { procDir, codeStatus: noCode, callerSessionId: "orphan-0001", signal: (pid, sig) => calls.push([pid, sig]) });
+  assert.deepEqual(calls, []);
+  assert.equal(result.stopped.length, 0);
+  assert.equal(result.skipped[0].reason, "calling-session");
+});
+
+test("stopOrphanSdkHosts: a foreign extension host is skipped and never signalled", () => {
+  const procDir = fakeProc([SDK_HOST_ENTRY("604", { SESSION_ID: "orphan-0002", EXTENSION_PATH: "/home/u/.copilot/extensions/other-ext/extension.mjs", COPILOT_EXTENSION_PARENT_PID: "11" })]);
+  const calls = [];
+  const result = stopOrphanSdkHosts(TARGET, { procDir, codeStatus: noCode, callerSessionId: "caller", signal: (pid, sig) => calls.push([pid, sig]) });
+  assert.deepEqual(calls, []);
+  assert.equal(result.stopped.length, 0);
+  assert.equal(result.skipped[0].reason, "foreign-extension");
+});
+
+test("stopOrphanSdkHosts: a host whose SESSION_ID changed between scan and signal is skipped as changed", () => {
+  const procDir = fakeProc([SDK_HOST_ENTRY("605", { SESSION_ID: "session-a", EXTENSION_PATH: "/home/u/.copilot/extensions/agento-mission-control/extension.mjs", COPILOT_EXTENSION_PARENT_PID: "12" })]);
+  const calls = [];
+  const result = stopOrphanSdkHosts(TARGET, {
+    procDir,
+    codeStatus: () => {
+      fs.writeFileSync(path.join(procDir, "605", "environ"), "SESSION_ID=session-b\0EXTENSION_PATH=/home/u/.copilot/extensions/agento-mission-control/extension.mjs\0COPILOT_EXTENSION_PARENT_PID=12\0");
+      return "";
+    },
+    callerSessionId: "caller",
+    signal: (pid, sig) => calls.push([pid, sig]),
+  });
+  assert.deepEqual(calls, []);
+  assert.equal(result.stopped.length, 0);
+  assert.equal(result.skipped[0].reason, "changed");
+});
+
+test("stopOrphanSdkHosts: dryRun reports would-stop and sends no signal", () => {
+  const procDir = fakeProc([SDK_HOST_ENTRY("606", MC_ENVIRON)]);
+  const calls = [];
+  const result = stopOrphanSdkHosts(TARGET, { procDir, codeStatus: noCode, callerSessionId: "caller", dryRun: true, signal: (pid, sig) => calls.push([pid, sig]) });
+  assert.deepEqual(calls, []);
+  assert.equal(result.stopped.length, 0);
+  assert.equal(result.skipped[0].reason, "would-stop");
+});
+
+test("stopOrphanSdkHosts: a survivor after waitMs is reported still-running", () => {
+  const procDir = fakeProc([SDK_HOST_ENTRY("607", MC_ENVIRON)]);
+  const calls = [];
+  const started = Date.now();
+  const result = stopOrphanSdkHosts(TARGET, {
+    procDir,
+    codeStatus: noCode,
+    callerSessionId: "caller",
+    signal: (pid, sig) => calls.push([pid, sig]),
+    waitMs: 50,
+  });
+  const elapsed = Date.now() - started;
+  assert.deepEqual(calls, [[607, "SIGTERM"]]);
+  assert.equal(result.stopped.length, 0);
+  assert.equal(result.skipped[0].reason, "still-running");
+  assert.ok(elapsed < 1000, `elapsed ${elapsed}ms`);
 });
 
 test("findOccupants: code --status Folder line names the target's basename", () => {
