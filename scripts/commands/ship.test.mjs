@@ -1688,6 +1688,84 @@ test("ship teardown stops an orphaned Mission Control SDK host in a closed workt
   }
 });
 
+function shipSdkHostChild(half, { sessionId = "orphan-0000-session", extension = "agento-mission-control" } = {}) {
+  const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "agento-sdk-host-")));
+  return spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", path.join(tmpDir, "preloads", "extension_bootstrap.mjs")], {
+    cwd: half,
+    env: { ...process.env, SESSION_ID: sessionId, EXTENSION_PATH: path.join(tmpDir, "extensions", extension, "extension.mjs"), COPILOT_EXTENSION_PARENT_PID: String(process.pid) },
+    stdio: "ignore",
+  });
+}
+
+test("ship teardown: a foreign-extension SDK host blocks, names the host label, and ends with the kill command", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const fx = mergedPair();
+  const { repo, docs, owner, half, workspace, stub } = fx;
+  const env = { ...stub.env, COPILOT_AGENT_SESSION_ID: "caller-1111-session" };
+  const child = shipSdkHostChild(half, { sessionId: "orphan-0001-session", extension: "other-ext" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const before = [cloneState(repo, docs), fs.readFileSync(workspace, "utf8")];
+    const { code, json } = shipRun(repo, env, "feature", "widget");
+    assert.equal(code, 3, JSON.stringify(json));
+    assert.equal(json.status, "blocked");
+    assert.equal(json.outcome, "paused-teardown");
+    assert.equal(json.teardown.pausedPath, half, "the companion half holding the host is flagged");
+    assert.match(json.message, /Copilot SDK extension host: other-ext/);
+    assert.match(json.message, new RegExp(`kill ${child.pid}\\.$`));
+    assert.deepEqual(json.actions, []);
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    assert.deepEqual([cloneState(repo, docs), fs.readFileSync(workspace, "utf8")], before);
+    assert.ok(fs.existsSync(owner) && fs.existsSync(half));
+  } finally {
+    child.kill();
+  }
+  await new Promise((resolve) => child.once("exit", resolve));
+});
+
+test("ship teardown: the calling session's own SDK host is never signalled and still blocks", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const fx = mergedPair();
+  const { repo, docs, owner, half, workspace, stub } = fx;
+  const env = { ...stub.env, COPILOT_AGENT_SESSION_ID: "caller-1111-session" };
+  const child = shipSdkHostChild(half, { sessionId: "caller-1111-session" });
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const { code, json } = shipRun(repo, env, "feature", "widget");
+    assert.equal(code, 3, JSON.stringify(json));
+    assert.equal(json.status, "blocked");
+    assert.equal(json.outcome, "paused-teardown");
+    assert.deepEqual(json.actions, []);
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    assert.ok(fs.existsSync(owner) && fs.existsSync(half));
+  } finally {
+    child.kill();
+  }
+  await new Promise((resolve) => child.once("exit", resolve));
+});
+
+test("ship teardown: a Mission Control SDK host with a matching code --status folder is never signalled and still blocks", { skip: process.platform !== "linux" && "the /proc scan is Linux-only" }, async () => {
+  const fx = mergedPair();
+  const { repo, docs, owner, half, workspace, stub } = fx;
+  fs.writeFileSync(path.join(stub.bin, "code"), "#!/bin/sh\nprintf '%s\\n' '|    Folder (feature-widget): 12 files'\n", { mode: 0o755 });
+  const env = { ...stub.env, COPILOT_AGENT_SESSION_ID: "caller-1111-session" };
+  const child = shipSdkHostChild(half);
+  await new Promise((resolve) => child.once("spawn", resolve));
+  try {
+    const { code, json } = shipRun(repo, env, "feature", "widget");
+    assert.equal(code, 3, JSON.stringify(json));
+    assert.equal(json.status, "blocked");
+    assert.equal(json.outcome, "paused-teardown");
+    assert.deepEqual(json.actions, []);
+    assert.equal(child.exitCode, null);
+    assert.equal(child.signalCode, null);
+    assert.ok(fs.existsSync(owner) && fs.existsSync(half));
+  } finally {
+    child.kill();
+  }
+  await new Promise((resolve) => child.once("exit", resolve));
+});
+
 test("ship teardown: code --status naming a half as a Folder or a Workspace window blocks with the first flagged half; a half removed earlier is skipped on the re-send", () => {
   const fx = mergedPair();
   const { repo, docs, owner, half, workspace, stub } = fx;
