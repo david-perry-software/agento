@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { defineMissionControl, TITLE } from "./canvas.mjs";
+import { defineMissionControl, leaveSessionCwd, TITLE } from "./canvas.mjs";
 
 class FakeCanvasError extends Error {
   constructor(code, message) {
@@ -191,6 +191,60 @@ test("post_note rejects empty and oversized text and persists a valid note", asy
   assert.equal(broadcasts.length, 1);
   assert.equal(broadcasts[0].type, "note");
   assert.equal(broadcasts[0].data.text, "hello");
+});
+
+test("leaveSessionCwd returns the start cwd and chdirs to the home directory", () => {
+  const chdirs = [];
+  const start = leaveSessionCwd({
+    cwd: () => "/start",
+    chdir: (dir) => chdirs.push(dir),
+    homedir: () => "/home/u",
+  });
+  assert.equal(start, "/start");
+  assert.deepEqual(chdirs, ["/home/u"]);
+});
+
+test("leaveSessionCwd returns the start cwd even when chdir throws", () => {
+  const start = leaveSessionCwd({
+    cwd: () => "/start",
+    chdir: () => {
+      throw new Error("chdir failed");
+    },
+    homedir: () => "/home/u",
+  });
+  assert.equal(start, "/start");
+});
+
+test("open without session.workingDirectory uses fallbackCwd for the dashboard and windows calls", async () => {
+  const { normalize, diff } = await import("./snapshot.mjs");
+  const dashboardCalls = [];
+  const windowsCalls = [];
+  let serverOptions = null;
+  const canvas = defineMissionControl({
+    createCanvas: (decl) => ({ declaration: decl, open: decl.open, onClose: decl.onClose }),
+    CanvasError: FakeCanvasError,
+    fallbackCwd: "/fallback-cwd",
+    deps: {
+      normalize,
+      diff,
+      runDashboard: async (options) => (dashboardCalls.push(options), DASHBOARD),
+      runWindows: async (checkouts, options) => (windowsCalls.push([checkouts, options.cwd]), checkouts.map((checkout) => ({ checkout, open: true }))),
+      startServer: async (options) => {
+        serverOptions = options;
+        return { url: "http://127.0.0.1:1/", setState() {}, broadcast() {}, close: async () => {} };
+      },
+      startWatcher: () => ({ stop() {} }),
+      send: async () => {},
+      log: async () => {},
+      copilotHome: () => fs.mkdtempSync(path.join(os.tmpdir(), "agento-canvas-")),
+      cloneRoot: () => "/primary",
+    },
+  });
+  await canvas.open({ instanceId: "fb", session: {} });
+  assert.deepEqual(dashboardCalls[0], { pr: false, cwd: "/fallback-cwd" });
+  await serverOptions.windows(["/a", "/b"]);
+  assert.deepEqual(windowsCalls[0], [["/a", "/b"], "/fallback-cwd"]);
+  await canvas.onClose({ instanceId: "fb" });
 });
 
 test("open maps a CLI runner failure to a cli CanvasError", async () => {
