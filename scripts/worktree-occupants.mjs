@@ -82,6 +82,10 @@ export function isMissionControlHost(host) {
   return path.basename(path.dirname(host.extensionPath)) === "agento-mission-control" && path.basename(host.extensionPath) === "extension.mjs";
 }
 
+export function sdkHostLabel(host) {
+  return `PID ${host.pid} (Copilot SDK extension host: ${host.extension}, session ${host.sessionId.slice(0, 8)})`;
+}
+
 const allMatches = (text, regex) => [...text.matchAll(regex)].map((m) => m[1]);
 
 export function findOccupants(target, { procDir, platform = process.platform, codeStatus = defaultCodeStatus } = {}) {
@@ -112,7 +116,7 @@ export function findOccupants(target, { procDir, platform = process.platform, co
         parentPid: proc.environ.COPILOT_EXTENSION_PARENT_PID !== undefined ? Number(proc.environ.COPILOT_EXTENSION_PARENT_PID) : null,
       };
       sdkHosts.push(host);
-      hostLabels.push(`PID ${proc.pid} (Copilot SDK extension host: ${host.extension}, session ${host.sessionId.slice(0, 8)})`);
+      hostLabels.push(sdkHostLabel(host));
     } else {
       otherLabels.push(`PID ${proc.pid} (${proc.comm})`);
     }
@@ -134,21 +138,31 @@ function readCurrentHost(procDir, pid) {
   return { cmdline, sessionId };
 }
 
-function pidDirExists(procDir, pid) {
+// A process counts as gone when its /proc entry is absent or its state is `Z`
+// (zombie: terminated, not yet reaped — the fake /proc has no stat, so fall back
+// to whether the directory still exists).
+function procAlive(procDir, pid) {
+  const dir = path.join(procDir, String(pid));
   try {
-    fs.accessSync(path.join(procDir, String(pid)));
-    return true;
+    const stat = fs.readFileSync(path.join(dir, "stat"), "utf8");
+    const lastParen = stat.lastIndexOf(")");
+    return stat.slice(lastParen + 2, lastParen + 3) !== "Z";
   } catch {
-    return false;
+    try {
+      fs.accessSync(dir);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
 function waitForExit(procDir, pid, waitMs) {
   const deadline = Date.now() + Math.max(0, waitMs);
   while (Date.now() < deadline) {
-    if (!pidDirExists(procDir, pid)) return true;
+    if (!procAlive(procDir, pid)) return true;
   }
-  return !pidDirExists(procDir, pid);
+  return !procAlive(procDir, pid);
 }
 
 // Stop orphaned Mission Control SDK hosts whose cwd is inside `target`. Only a
