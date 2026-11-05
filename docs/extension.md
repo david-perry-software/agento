@@ -380,6 +380,10 @@ mission-control`. The canvas runs only in a local Copilot-harness session with
 `chat.canvases.enabled` on and the harness canvas link installed — see
 [install.md](install.md) and [copilot-harness.md](copilot-harness.md).
 
+The extension process records its start working directory, then changes to the
+home directory at startup, so the SDK host never pins a worktree open; the canvas
+still runs every CLI call in the recorded session directory.
+
 ## Companion workspaces
 
 When `.github/agento.json` names `artifacts.repo`, delivery and initiative files live
