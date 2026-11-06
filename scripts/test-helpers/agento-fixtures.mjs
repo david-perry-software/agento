@@ -103,11 +103,13 @@ function runWith({ cwd, env, input }, ...args) {
   return { code: result.status, json };
 }
 
-// A PATH holding only node and git (plus any extra executables), so gh lookups are deterministic.
+// A PATH holding only node, git, and bash (plus any extra executables), so gh lookups
+// are deterministic and the hook-runtime doctor check can run its bash probe.
 function restrictedPath(extra = {}) {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-bin-"));
   fs.symlinkSync(process.execPath, path.join(bin, "node"));
   fs.symlinkSync(execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim(), path.join(bin, "git"));
+  fs.symlinkSync(execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim(), path.join(bin, "bash"));
   for (const [name, script] of Object.entries(extra)) fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
   return { bin, env: { ...baseEnv, PATH: bin } };
 }

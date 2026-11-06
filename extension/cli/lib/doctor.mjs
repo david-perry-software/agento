@@ -212,6 +212,32 @@ const DOCTOR_CHECKS = {
     };
   },
   // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
+  // Reproduces the hooks' node resolution in a non-interactive bash with the inherited PATH.
+  "hook-runtime"() {
+    const fallback = "install Node >= 20 on the PATH VS Code inherits (a system or user-level install, not a shell-rc-only version manager), then reload the window";
+    const script = 'node_path="$(command -v node 2>/dev/null || true)"; if [ -z "$node_path" ]; then printf "%s" "NO_NODE"; else printf "%s %s" "$node_path" "$(node --version 2>/dev/null || true)"; fi';
+    const result = probe("bash", ["-c", script]);
+    if (!result.ok) {
+      return {
+        status: "fail",
+        detail: result.missing ? "bash not found — the delivery guard and SessionStart context are inactive (fail-open)" : `hook-runtime probe failed: ${result.detail}`,
+        fallback,
+      };
+    }
+    const out = result.out.trim();
+    if (out === "" || out === "NO_NODE") {
+      return { status: "fail", detail: "hooks resolve no node on PATH — the delivery guard and SessionStart context are inactive (fail-open)", fallback };
+    }
+    const space = out.indexOf(" ");
+    const nodePath = space === -1 ? out : out.slice(0, space);
+    const version = space === -1 ? "" : out.slice(space + 1).trim();
+    const major = /^v[0-9]+/.test(version) ? Number.parseInt(version.slice(1), 10) : Number.NaN;
+    if (Number.isInteger(major) && major >= 20) {
+      return { status: "ok", detail: `hooks resolve ${nodePath} (${version})`, fallback: null };
+    }
+    return { status: "fail", detail: `hooks resolve ${nodePath} ${version || "no version reported"}, below the required 20`, fallback };
+  },
+  // Not in CAPABILITY_CHECKS: informational, so `doctor --for` never runs it.
   "harness"() {
     const facts = harnessFacts(options.pluginRoot ?? PLUGIN_ROOT);
     const install = `agento.mjs harness install --plugin-root ${facts.clone}`;
@@ -442,7 +468,7 @@ function runDoctor(ids) {
 }
 
 // The checks that run no external probe (doctorProbes) and so need no network.
-const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "mcp-servers", "turn-stalls", "plugin-snapshots"];
+const LOCAL_DOCTOR_CHECKS = ["node", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "hook-runtime", "harness", "mcp-servers", "turn-stalls", "plugin-snapshots"];
 function capabilityOf(checkId) {
   return Object.entries(CAPABILITY_CHECKS).find(([, ids]) => ids.includes(checkId))?.[0] ?? checkId;
 }
