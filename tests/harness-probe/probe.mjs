@@ -317,9 +317,15 @@ function parseOpt(args, flag) {
   return null;
 }
 
-function makeSanitizeCtx() {
-  const homeDir = process.env.HOME || homedir();
-  let username = process.env.USER || process.env.LOGNAME || "";
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function makeSanitizeCtx(overrides = {}) {
+  const homeDir = overrides.homeDir !== undefined ? overrides.homeDir : process.env.HOME || homedir();
+  let username = overrides.username !== undefined
+    ? overrides.username
+    : process.env.USER || process.env.LOGNAME || "";
   if (!username) {
     try {
       username = userInfo().username;
@@ -327,16 +333,21 @@ function makeSanitizeCtx() {
       username = "";
     }
   }
-  const repoRoot = path.resolve(here, "..", "..");
-  const probeWs = path.join(homeDir, ".cache", "agento-harness-probe", "workspace");
+  const repoRoot = overrides.repoRoot !== undefined ? overrides.repoRoot : path.resolve(here, "..", "..");
+  const probeWs = overrides.probeWs !== undefined
+    ? overrides.probeWs
+    : path.join(homeDir, ".cache", "agento-harness-probe", "workspace");
   const counters = { TS: 0, UUID: 0, HEX: 0 };
   const paths = [
     [repoRoot, "<REPO>"],
     [probeWs, "<PROBE_WS>"],
     [homeDir, "<HOME>"],
-    [username, "<USER>"],
-  ].filter(([from]) => from);
-  return { counters, paths };
+  ]
+    .filter(([from]) => from)
+    .map(([from, to]) => [path.resolve(from), to])
+    .sort(([a], [b]) => b.length - a.length)
+    .map(([from, to]) => [new RegExp(`${escapeRegExp(from)}(?![A-Za-z0-9._-])`, "g"), to]);
+  return { counters, paths, username };
 }
 
 function nextPlaceholder(ctx, kind) {
@@ -346,7 +357,8 @@ function nextPlaceholder(ctx, kind) {
 
 function scrubStrings(str, ctx) {
   let out = str;
-  for (const [from, to] of ctx.paths) out = out.split(from).join(to);
+  for (const [re, to] of ctx.paths) out = out.replace(re, () => to);
+  if (ctx.username) out = out.split(ctx.username).join("<USER>");
   return out
     .replace(
       /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})?\b/g,
