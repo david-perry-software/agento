@@ -515,8 +515,9 @@ Two hooks run outside the model on every session:
   `agento.mjs session` (window role, worktree, active delivery, lifecycle, and the
   commands allowed here versus elsewhere; the full record also carries a `hosted`
   flag for Codespaces/Actions and `worktrees[]`, which every window-sensitive
-  command checks per policy §11); without `node` on `PATH` the `Session:`
-  line is simply omitted.
+  command checks per policy §11); without `node` on `PATH` the hook fails open
+  visibly — it injects an `Agento hooks inactive: …` context warning and prints a
+  one-line stderr notice — so a missing guard and context are never silent.
 - **PreToolUse** inspects each shell command and file edit and returns `allow`,
   `ask`, or `deny`. It denies commits/pushes/merges on the default branch (including
   after a `git switch main` earlier in the same line), `git push --mirror`, force-pushes

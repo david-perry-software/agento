@@ -92,7 +92,9 @@ flowchart TD
   `allow`/`ask`/`deny` any tool call (default-branch protection, force-push and hook
   bypasses, open-ended watchers, ruleset-bypassing merges, hook self-protection,
   worktree-occupant detection). The guard is a slip guard for the model, not an
-  enforcement boundary — that is the GitHub ruleset on the default branch.
+  enforcement boundary — that is the GitHub ruleset on the default branch. When
+  `node` is missing or below 20 the hooks still fail open, but visibly: a one-line
+  stderr notice plus a SessionStart context warning.
 - **Scripts** are the deterministic helpers, fronted by `scripts/agento.mjs` — a
   thin dispatcher that maps each subcommand to `scripts/commands/<name>.mjs` via
   the `COMMAND_MODULES` table and a lazy `import()`, with shared helpers in
@@ -246,7 +248,9 @@ roadmap.
 
 No token stands for Node: Node ≥ 20 runs the CLI and both hooks (the delivery guard
 and SessionStart context) and is part of `terminal` (`doctor` check `node`). Without
-it the hooks are silent — no guard, no session context — and `doctor` fails `node`.
+it the hooks fail open visibly — a stderr notice plus a SessionStart context
+warning — and `doctor`'s `hook-runtime` check fails (the `node` check reports the
+node running doctor).
 
 **Hard versus soft.** `terminal` is hard for every command that runs anything; `gh`
 and `network` are hard for every command that pushes, opens or merges a PR, or files

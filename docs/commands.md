@@ -439,16 +439,19 @@ modified in 24 h, tail-reading 16 MB per `events.jsonl`, and missing data yields
 zeros, never a throw),
 `doctor [--for <command>]` (environment and session checks — `node`, `git-remote`, `gh`,
 `code`, `worktrees-dir`, `session-workspace`, `artifact-repo`, `model-profile`,
-`hook-wiring`, `harness`, `canvas`, `mcp-servers`, `turn-stalls`, `plugin-snapshots` — each
+`hook-wiring`, `hook-runtime`, `harness`, `canvas`, `mcp-servers`, `turn-stalls`, `plugin-snapshots` — each
 `{ id, status, detail, fallback }` with `status` ∈ `ok | warn | fail`;
 `artifact-repo` also warns when the companion's `<dir>-worktrees` directory exists
 but is not writable; `--for` runs only the checks the named command's `Needs:` line
-requires and echoes them as `for.needs`; `model-profile`, `hook-wiring`, `harness`,
+requires and echoes them as `for.needs`; `model-profile`, `hook-wiring`, `hook-runtime`, `harness`,
 `canvas`, `mcp-servers`, `turn-stalls`, and `plugin-snapshots` are informational, never part of a `--for`
 run: `model-profile` is `ok` with no plugin clone at `--plugin-root`, nothing pinned,
 or a named profile applied, `warn` on an invalid profiles file, `custom` pins, the
 BYOK tier conflict, or unqualified pins; `hook-wiring` is `warn` when the clone is
-also registered in `chat.pluginLocations`; `harness` is `ok` when the
+also registered in `chat.pluginLocations`; `hook-runtime` is `ok` when it resolves
+`node` ≥ 20 the way the hooks do (`hooks resolve <path> (<version>)`), `fail` on no
+`node` or `node` < 20, and reflects the calling environment (the extension's
+dashboard run uses the extension host env); `harness` is `ok` when the
 `~/.copilot/skills/agento` link is `installed`, `fail` otherwise with a `harness
 install` or `install --force` fallback; `mcp-servers` warns on any wildcard or
 remote MCP server in `~/.copilot/mcp-config.json` or `<root>/.vscode/mcp.json` and on
