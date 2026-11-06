@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain } from "./session-state.mjs";
+import { LIFECYCLES, NEXT_STATUSES, ROLES, SESSION_WORKSPACE_SETTINGS, SLUG_COMMANDS, classifyFetchFailure, classifyWorktrees, companionWarning, deriveAllowed, deriveDelivery, deriveLifecycle, deriveNext, deriveRole, findOwner, halfState, nextSessionId, pairFor, parseWorktreeList, resolveNextTarget, sessionWorkspaceDocument, splitPorcelain, windowVerdict } from "./session-state.mjs";
 
 const config = { branches: { default: "main", feature: "feature/", issue: "issue/", freehand: "changes/", postShip: "post-ship/" } };
 
@@ -996,4 +996,68 @@ test("resolveNextTarget: here and null → null; primary → primary path; secon
   }
   assert.equal(resolve("secondary", [primary, product], null), null, "a null branch never matches");
   assert.deepEqual(seen, ["/wt/feature-widget"], "workspaceFor runs only for the matched product entry");
+});
+
+// --- #147 allowed-window-verdict-mismatch -------------------------------------
+
+// The slug the brief passes to the §11 window check for a command + argument,
+// mirroring `briefArgs`: a bare slug, or the slug half of `<type>/<slug>`.
+const slugFor = (name, rest) => {
+  if (!SLUG_COMMANDS.has(name)) return null;
+  const tokens = rest.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  if (tokens.length === 2) return tokens[1];
+  const typed = tokens[0].match(/^(feature|issue)\/(.+)$/);
+  return typed ? typed[2] : tokens[0];
+};
+
+test("every allowed[] entry passes windowVerdict for its role and every elsewhere[] entry passes in the window it names (#147 allowed-window-verdict-mismatch)", () => {
+  const sampleDelivery = { type: "feature", slug: "widget" };
+  const representative = {
+    primary: { role: "primary", worktree: { path: "/project", branch: "main", detached: false, isPrimary: true }, delivery: null },
+    plan: { role: "plan", worktree: { path: "/wt/plan-fresh", branch: null, detached: true, dirPrefix: "plan", id: "fresh" }, delivery: null },
+    build: { role: "build", worktree: { path: "/wt/feature-widget", branch: "feature/widget", detached: false, dirPrefix: "feature", id: "widget" }, delivery: sampleDelivery },
+    freehand: { role: "freehand", worktree: { path: "/wt/freehand-tidy", branch: "changes/tidy", detached: false, dirPrefix: "freehand", id: "tidy" }, delivery: null },
+    unmanaged: { role: "unmanaged", worktree: { path: "/stray", branch: "feature/elsewhere", detached: false }, delivery: null },
+  };
+  const verdictFor = (command, record) => {
+    const m = command.match(/^\/agento (\S+)(?:\s+(.*))?$/);
+    return windowVerdict({ command: m[1], record, slug: slugFor(m[1], m[2] ?? ""), clean: true, defaultBranch: config.branches.default });
+  };
+  // Freehand and unmanaged have one fixed row for every lifecycle, so they are
+  // checked once; the delivery roles have a row per lifecycle.
+  const roleLifecycles = { primary: LIFECYCLES, build: LIFECYCLES, plan: LIFECYCLES, freehand: ["no-delivery"], unmanaged: ["no-delivery"] };
+  const failures = [];
+  for (const role of ROLES) {
+    const rep = representative[role];
+    for (const lifecycle of roleLifecycles[role]) {
+      const rowDelivery = lifecycle === "no-delivery" ? null : sampleDelivery;
+      const record = { role, worktree: rep.worktree, delivery: rowDelivery };
+      const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery: rowDelivery, worktree: rep.worktree });
+      for (const cmd of allowed) {
+        const v = verdictFor(cmd, record);
+        if (!v.match) failures.push(`${role}/${lifecycle} ${cmd} → ${v.reason}`);
+      }
+      for (const e of elsewhere) {
+        const targets = e.window === "primary" ? [representative.primary] : [representative.plan, representative.build];
+        const pass = targets.some((t) => verdictFor(e.command, { role: t.role, worktree: t.worktree, delivery: t.delivery }).match);
+        if (!pass) failures.push(`${role}/${lifecycle} ${e.command} → no ${e.window} window passes`);
+      }
+    }
+  }
+  assert.deepEqual(failures, []);
+
+  // Decision 3: a plan worktree on a delivery branch is role build (roleForManaged),
+  // so the plan role never has a delivery and derives commands only for no-delivery.
+  for (const lifecycle of LIFECYCLES) {
+    if (lifecycle === "no-delivery") continue;
+    assert.deepEqual(deriveAllowed({ role: "plan", lifecycle, delivery: sampleDelivery, worktree: { id: "fresh" } }), { allowed: [], elsewhere: [] });
+  }
+});
+
+test("deriveNext in an idle primary window points at /agento start-session (#147 allowed-window-verdict-mismatch)", () => {
+  const r = deriveNext({ ...primaryWindow, candidates: [], config });
+  assert.equal(r.status, "none");
+  assert.match(r.reason, /\/agento start-session/);
+  assert.doesNotMatch(r.reason, /start with \/agento new-feature/);
 });
