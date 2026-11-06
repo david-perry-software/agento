@@ -317,9 +317,11 @@ function parseOpt(args, flag) {
   return null;
 }
 
-function makeSanitizeCtx() {
-  const homeDir = process.env.HOME || homedir();
-  let username = process.env.USER || process.env.LOGNAME || "";
+function makeSanitizeCtx(overrides = {}) {
+  const homeDir = overrides.homeDir !== undefined ? overrides.homeDir : process.env.HOME || homedir();
+  let username = overrides.username !== undefined
+    ? overrides.username
+    : process.env.USER || process.env.LOGNAME || "";
   if (!username) {
     try {
       username = userInfo().username;
@@ -327,8 +329,10 @@ function makeSanitizeCtx() {
       username = "";
     }
   }
-  const repoRoot = path.resolve(here, "..", "..");
-  const probeWs = path.join(homeDir, ".cache", "agento-harness-probe", "workspace");
+  const repoRoot = overrides.repoRoot !== undefined ? overrides.repoRoot : path.resolve(here, "..", "..");
+  const probeWs = overrides.probeWs !== undefined
+    ? overrides.probeWs
+    : path.join(homeDir, ".cache", "agento-harness-probe", "workspace");
   const counters = { TS: 0, UUID: 0, HEX: 0 };
   const paths = [
     [repoRoot, "<REPO>"],

@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, existsSync, mkdirSync, 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { findDeny } from "./probe.mjs";
+import { findDeny, makeSanitizeCtx, sanitizeRecord } from "./probe.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const logger = path.join(here, "plugin", "log-payload.mjs");
@@ -371,6 +371,47 @@ test("collect refuses on a planted ghp_ token and writes nothing", () => {
   rmSync(logDir, { recursive: true, force: true });
   rmSync(fixturesDir, { recursive: true, force: true });
   rmSync(h, { recursive: true, force: true });
+});
+
+test("makeSanitizeCtx replaces repo and HOME paths only at a path boundary (#145 fixture-sanitizer-path-boundary)", () => {
+  const ctxA = makeSanitizeCtx({ repoRoot: "/h/me/DP/agento", homeDir: "/h/me", username: "zq9user" });
+  const ctxB = makeSanitizeCtx({ repoRoot: "/h/me/DP/agento", homeDir: "/h/me/", username: "zq9user" });
+  const ctxC = makeSanitizeCtx({ repoRoot: "/h/me/.cache/agento-harness-probe", homeDir: "/h/me" });
+
+  assert.deepEqual(
+    {
+      a: sanitizeRecord({
+        file: "/h/me/DP/agento/scripts/agento.mjs",
+        root: "/h/me/DP/agento",
+        cd: "cd /h/me/DP/agento && ls",
+        quoted: '"/h/me/DP/agento"',
+        pathVar: "PATH=/h/me/DP/agento:/usr/bin",
+        sibling: "/h/me/DP/agento-worktrees/plan-x",
+        bak: "/h/me/DP/agento.bak/x",
+        other: "/h/me2/project",
+        probeWs: "/h/me/.cache/agento-harness-probe/workspace/a",
+        encoded: "/h/me/.config/Code/agentPlugins/file-home-zq9user-DP-agento/1a",
+      }, ctxA),
+      b: sanitizeRecord({ home: "/h/me/x" }, ctxB),
+      c: sanitizeRecord({ ws: "/h/me/.cache/agento-harness-probe/workspace/a" }, ctxC),
+    },
+    {
+      a: {
+        file: "<REPO>/scripts/agento.mjs",
+        root: "<REPO>",
+        cd: "cd <REPO> && ls",
+        quoted: '"<REPO>"',
+        pathVar: "PATH=<REPO>:/usr/bin",
+        sibling: "<HOME>/DP/agento-worktrees/plan-x",
+        bak: "<HOME>/DP/agento.bak/x",
+        other: "/h/me2/project",
+        probeWs: "<PROBE_WS>/a",
+        encoded: "<HOME>/.config/Code/agentPlugins/file-home-<USER>-DP-agento/1a",
+      },
+      b: { home: "<HOME>/x" },
+      c: { ws: "<PROBE_WS>/a" },
+    },
+  );
 });
 
 test("committed fixtures contain no deny patterns", () => {
