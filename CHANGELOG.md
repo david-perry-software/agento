@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fixed.** The session record's `allowed[]` now agrees with the §11 window check:
+  the primary window no longer lists `/agento new-feature` / `/agento new-issue` as
+  runnable (they move to `elsewhere[]` as secondary-window entries naming
+  `/agento start-session`), the plan role keeps only its `no-delivery` row, and the
+  freehand row drops `commit-current-changes`. A #147 regression test in
+  `scripts/session-state.test.mjs` keeps the tables in agreement (#147).
 - **Fixed.** The harness-probe fixture sanitizer now replaces repo, probe-workspace,
   and HOME paths longest first and only at a path boundary, so a sibling such as
   `.../agento-worktrees/...` is no longer rewritten as `<REPO>-worktrees/...` and

@@ -361,7 +361,7 @@ export const ROLES = ["primary", "build", "plan", "freehand", "unmanaged"];
 const STATUS = "/agento delivery-status";
 const NEXT_FEATURE = "/agento next-feature";
 const START = "/agento start-session";
-const CREATE = [START, "/agento start-freehand", "/agento new-feature", "/agento new-issue", "/agento new-initiative", STATUS];
+const CREATE = [START, "/agento start-freehand", "/agento new-initiative", STATUS];
 const RESUME = `${START} <type>/<slug> --resume`;
 const BUILD = "/agento build-<type> <slug>";
 const REVIEW = "/agento review-<type> <slug>";
@@ -371,6 +371,11 @@ const SHIP = "/agento ship <slug>";
 
 const secondary = (command, reason) => ({ command, window: "secondary", reason });
 const primary = (command, reason) => ({ command, window: "primary", reason });
+// Planning runs in a plan worktree; the primary window opens one with start-session.
+const PLAN_ELSEWHERE = [
+  secondary("/agento new-feature", "planning runs in a plan worktree; /agento start-session opens one"),
+  secondary("/agento new-issue", "planning runs in a plan worktree; /agento start-session opens one"),
+];
 const SHIP_LATER = [
   primary(SHIP, "after Verdict: approve, ship from the primary window — ship audits here first and tears this worktree down after the merge"),
 ];
@@ -386,13 +391,13 @@ const TEARDOWN = [
 // and for abandoning a build.
 const TABLE = {
   primary: {
-    "no-delivery": { allowed: CREATE, elsewhere: [] },
+    "no-delivery": { allowed: CREATE, elsewhere: PLAN_ELSEWHERE },
     planned: { allowed: [`${START} <type>/<slug>`, STATUS], elsewhere: [secondary(BUILD, "builds run in the secondary worktree window")] },
     building: { allowed: [RESUME, STATUS], elsewhere: [secondary(BUILD, "builds run in the secondary worktree window")] },
     paused: { allowed: [RESUME, STATUS], elsewhere: [secondary(BUILD, "builds resume in the secondary worktree window")] },
     "in-review": { allowed: [RESUME, STATUS], elsewhere: [secondary(REVIEW, "reviews run in the secondary worktree window")] },
     approved: { allowed: [SHIP, CLOSE, STATUS], elsewhere: [] },
-    shipped: { allowed: CREATE, elsewhere: [] },
+    shipped: { allowed: CREATE, elsewhere: PLAN_ELSEWHERE },
     "post-ship-pending": { allowed: [SHIP, STATUS], elsewhere: [] },
   },
   build: {
@@ -405,18 +410,14 @@ const TABLE = {
     shipped: { allowed: [STATUS], elsewhere: TEARDOWN },
     "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
   },
+  // A plan worktree on a delivery branch is role build (roleForManaged), so the plan
+  // role never has a delivery: it keeps only the no-delivery row, and every other
+  // lifecycle derives { allowed: [], elsewhere: [] }.
   plan: {
     "no-delivery": { allowed: ["/agento new-feature", "/agento new-issue", STATUS], elsewhere: [] },
-    planned: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
-    building: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
-    paused: { allowed: [BUILD, AP, STATUS], elsewhere: SHIP_LATER },
-    "in-review": { allowed: [REVIEW, AP, STATUS], elsewhere: SHIP_LATER },
-    approved: { allowed: [STATUS], elsewhere: SHIP_NOW },
-    shipped: { allowed: [STATUS], elsewhere: TEARDOWN },
-    "post-ship-pending": { allowed: [STATUS], elsewhere: [primary(SHIP, "post-ship steps complete from the primary window")] },
   },
 };
-const FREEHAND = { allowed: ["/agento finish-freehand <slug>", "/agento commit-current-changes", STATUS], elsewhere: [] };
+const FREEHAND = { allowed: ["/agento finish-freehand <slug>", STATUS], elsewhere: [] };
 const UNMANAGED = { allowed: [], elsewhere: [primary(START, "this directory is neither the primary worktree nor a managed Agento worktree")] };
 
 const CONTINUE = "/agento continue";
@@ -439,12 +440,17 @@ export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
   };
 }
 
+// The commands whose argument the brief passes to the §11 window check as a slug.
+export const SLUG_COMMANDS = Object.freeze(new Set(["ap", "build-feature", "build-issue", "review-feature", "review-issue", "ship", "continue"]));
+
 // --- window check (§11) as data -----------------------------------------------
 
 // Each command's "Window check per §11: requires role …" line: `roles` (`any` = not
 // window-sensitive), the §11 step 5 conditions — `branch` (`default` | `non-default`)
 // and `clean` — and `slugRoles`, the roles in which a passed slug must equal
-// `delivery.slug`. The customizations test keeps every prompt and agent in agreement.
+// `delivery.slug`. The customizations test keeps every prompt and agent in
+// agreement; the #147 table test in `scripts/session-state.test.mjs` keeps `TABLE`
+// (and `CREATE`/`FREEHAND`) in agreement with these rules.
 const ANY = Object.freeze({ roles: ["any"] });
 const PRIMARY_DEFAULT_CLEAN = Object.freeze({ roles: ["primary"], branch: "default", clean: true });
 const BUILD_SLUG = Object.freeze({ roles: ["build"], slugRoles: ["build"] });
@@ -654,7 +660,7 @@ export function deriveNext({ role, worktree, delivery, lifecycle, owner = null, 
     if (!target) return finish("missing", `no roadmap or ready initiative member for slug ${requestedSlug}`);
   } else {
     if (candidates.length === 0) {
-      return finish("none", "nothing is in flight and no initiative member is ready; start with /agento new-feature <description>, /agento new-issue, or /agento new-initiative");
+      return finish("none", "nothing is in flight and no initiative member is ready; open a plan worktree with /agento start-session (then /agento new-feature <description> or /agento new-issue there), or start an initiative with /agento new-initiative");
     }
     if (candidates.length > 1) return finish("ambiguous", `${candidates.length} candidates could continue; pick one`, candidates);
     target = candidates[0];

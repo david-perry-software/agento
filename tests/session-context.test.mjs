@@ -130,7 +130,7 @@ test("emits exactly one Session: line with role=primary on a plain repo, right a
   const sessionLines = lines.filter((l) => l.startsWith("Session: "));
   assert.equal(sessionLines.length, 1);
   assert.equal(lines[lines.findIndex((l) => l.startsWith("Agento CLI: ")) + 1], sessionLines[0]);
-  assert.match(sessionLines[0], /^Session: role=primary worktree=\S+ branch=main delivery=none lifecycle=no-delivery allowed=\[\/agento continue; \/agento start-session; .*\/agento delivery-status; \/agento next-feature\] elsewhere=\[\]$/);
+  assert.match(sessionLines[0], /^Session: role=primary worktree=\S+ branch=main delivery=none lifecycle=no-delivery allowed=\[\/agento continue; \/agento start-session; \/agento start-freehand; \/agento new-initiative; \/agento delivery-status; \/agento next-feature\] elsewhere=\[\/agento new-feature@secondary; \/agento new-issue@secondary\]$/);
 });
 
 test("reports role=build with the delivery and lifecycle from a managed worktree", () => {
