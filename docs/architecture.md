@@ -293,7 +293,10 @@ its own brief; `doctor` reports and never repairs (no installs, no logins — §
    (`primary` | `plan` | `build` | `freehand` | `unmanaged`), `hosted`, `worktree`
    (`path`, `branch`, `detached`, `isPrimary`, `isManaged`, `dirPrefix`, `id`),
    `worktrees[]` (every registered checkout classified the same way), `delivery`,
-   `lifecycle`, `allowed[]`, `elsewhere[]`, and `warnings[]`.
+   `lifecycle`, `allowed[]`, `elsewhere[]`, and `warnings[]`. Every `allowed[]`
+   entry passes the §11 window check for the record's role and every `elsewhere[]`
+   entry passes in the window it names; the #147 test in
+   `scripts/session-state.test.mjs` enforces this.
 2. Compare `role` with the roles the command's line names (`window.match`). Match →
    proceed; from here
    on the record's `worktree`, `delivery`, and `worktrees[]` replace any further

@@ -352,7 +352,7 @@ checkout), so they are runnable only from that window; everywhere else — and f
 inert, with a tooltip naming the window to run it from. Cards carry only commands
 that name their delivery; window-wide commands (`continue`, `delivery-status`,
 `next-feature`, `start-session`, `start-freehand`, `new-feature`, `new-issue`,
-`new-initiative`, and a freehand window's `finish-freehand` / `commit-current-changes`)
+`new-initiative`, and a freehand window's `finish-freehand`)
 live in the header's **Actions** menu, enabled from this window's `session.allowed`
 and otherwise listed disabled with the reason.
 
