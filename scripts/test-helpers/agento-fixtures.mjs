@@ -402,7 +402,11 @@ die("gh stub: unsupported " + args.join(" "));
 `;
   const { env, bin } = restrictedPath({ gh: script });
   // wait-for-checks.sh needs a shell and its few coreutils beside node, git, and gh.
-  for (const tool of ["bash", "grep", "sed", "sleep"]) fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), path.join(bin, tool));
+  // (restrictedPath already provides bash; skip any tool that is already linked.)
+  for (const tool of ["bash", "grep", "sed", "sleep"]) {
+    const link = path.join(bin, tool);
+    if (!fs.existsSync(link)) fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), link);
+  }
   const calls = () => (fs.existsSync(path.join(dir, "calls.log")) ? fs.readFileSync(path.join(dir, "calls.log"), "utf8").trim().split("\n").filter(Boolean) : []);
   const read = () => JSON.parse(fs.readFileSync(stateFile, "utf8"));
   const update = (fn) => {
