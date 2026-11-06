@@ -168,6 +168,11 @@ the companion repository under
 All fields are snake_case in both harnesses. Fixture files are the sanitized
 captures committed under `tests/harness-probe/fixtures/`.
 
+Path placeholders (`<REPO>`, `<PROBE_WS>`, `<HOME>`) are replaced longest first
+and only where the match ends at a path boundary (the end of the string or any
+character outside `[A-Za-z0-9._-]`); the username placeholder (`<USER>`) is
+replaced last, everywhere.
+
 ### SessionStart
 
 | Field | Local | Copilot |

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fixed.** The harness-probe fixture sanitizer now replaces repo, probe-workspace,
+  and HOME paths longest first and only at a path boundary, so a sibling such as
+  `.../agento-worktrees/...` is no longer rewritten as `<REPO>-worktrees/...` and
+  `/home/u2/...` is no longer rewritten as `<HOME>2/...` (#145).
 - **Fixed.** Ship teardown and `close-session` name a Copilot SDK extension host
   by its extension and session instead of an anonymous `(code)`/`(node)` occupant,
   stop an orphaned host running Agento's own Mission Control extension with
