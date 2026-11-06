@@ -13,9 +13,12 @@ resolution helpers) and import the CLI's `agento-config.mjs` and
 `worktree-occupants.mjs`, so the config loader and the occupant check exist once —
 and the guard's occupant ask shows the same Copilot SDK extension host label the
 CLI prints, though the guard itself never stops a host.
-`node` ≥ 20 is required; without `node` on `PATH` both wrappers exit 0 and print
-nothing — no guard verdicts, no session context — and `agento.mjs doctor` fails its
-`node` check.
+`node` ≥ 20 is required; without `node` on `PATH` — or with `node` below 20 — both
+wrappers still fail open visibly: each prints a one-line stderr notice and the
+SessionStart wrapper injects a static `Agento hooks inactive: …` context warning,
+so a session that has lost its guard and context is never silent. `agento.mjs
+doctor`'s `hook-runtime` check fails in that case (it resolves `node` the way the
+wrappers do); the separate `node` check reports the `node` that is running doctor.
 
 ## SessionStart — `scripts/hooks/session-context.sh`
 

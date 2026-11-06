@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Fixed.** The delivery guard and SessionStart hooks no longer fail open silently
+  when `node` is missing or below 20: both print a one-line stderr notice, the
+  SessionStart hook injects an `Agento hooks inactive: …` context warning, and a new
+  `hook-runtime` doctor check reports how the hooks resolve `node` (#149).
 - **Fixed.** The session record's `allowed[]` now agrees with the §11 window check:
   the primary window no longer lists `/agento new-feature` / `/agento new-issue` as
   runnable (they move to `elsewhere[]` as secondary-window entries naming

@@ -14,8 +14,9 @@ you open.
   worktree-occupant check reads `/proc` and is skipped elsewhere. Windows is untested.
 - `git` and `gh` (GitHub CLI, authenticated) in the target project.
 - `node` ≥ 20 — required: the prompts call `scripts/agento.mjs` for slug resolution
-  and config lookups, both hooks run on it (without `node` on PATH they exit
-  silently: no delivery guard, no SessionStart context), and the test suite runs on it.
+  and config lookups, both hooks run on it, and the test suite runs on it. Without
+  `node` on PATH the hooks fail open visibly (a stderr notice plus a SessionStart
+  context warning) instead of silently dropping the guard and context.
 
 ## Option A — local clone (recommended for forkers)
 

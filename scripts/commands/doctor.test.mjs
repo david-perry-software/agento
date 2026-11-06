@@ -92,7 +92,7 @@ test("doctor artifact-repo warns when the companion worktrees dir exists but is 
   assert.equal(check().status, "ok");
 });
 
-test("doctor reports fourteen checks and includes session-workspace, model-profile, hook-wiring, harness, canvas, mcp-servers, turn-stalls, and plugin-snapshots", () => {
+test("doctor reports fifteen checks including hook-runtime after hook-wiring (#149 hooks-silent-without-node)", () => {
   const repo = makeRepo();
   const { env } = restrictedPath(okStubs);
   // --plugin-root: the model-profile check must not read the (possibly pinned) clone running the suite.
@@ -100,7 +100,7 @@ test("doctor reports fourteen checks and includes session-workspace, model-profi
   assert.equal(code, 0);
   assert.equal(json.status, "ok");
   assert.equal(json.for, null);
-  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "harness", "canvas", "mcp-servers", "turn-stalls", "plugin-snapshots"]);
+  assert.deepEqual(json.checks.map((c) => c.id), ["node", "git-remote", "gh", "code", "worktrees-dir", "session-workspace", "artifact-repo", "model-profile", "hook-wiring", "hook-runtime", "harness", "canvas", "mcp-servers", "turn-stalls", "plugin-snapshots"]);
   for (const check of json.checks) {
     assert.equal(check.status, "ok", JSON.stringify(check));
     assert.equal(typeof check.detail, "string");
@@ -115,6 +115,43 @@ test("doctor reports fourteen checks and includes session-workspace, model-profi
   assert.equal(checks["mcp-servers"].detail, "no MCP servers configured");
   assert.equal(checks["turn-stalls"].detail, "no Copilot session data");
   assert.equal(checks["plugin-snapshots"].detail, "plugin snapshots are slim");
+});
+
+test("doctor hook-runtime reflects the hooks' node resolution and stays out of --for runs (#149 hooks-silent-without-node)", () => {
+  const repo = makeRepo();
+  const real = (tool) => execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim();
+  // A controlled PATH with bash and git, plus node = real (symlink), a stub, or absent.
+  const bin = (nodeScript) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agento-hookrt-"));
+    fs.symlinkSync(real("bash"), path.join(dir, "bash"));
+    fs.symlinkSync(real("git"), path.join(dir, "git"));
+    if (nodeScript === "real") fs.symlinkSync(process.execPath, path.join(dir, "node"));
+    else if (nodeScript !== null) fs.writeFileSync(path.join(dir, "node"), nodeScript, { mode: 0o755 });
+    return { ...baseEnv, PATH: dir };
+  };
+  // Spawn process.execPath (not runWith, which resolves `node` by name) so a PATH
+  // without node still runs the CLI.
+  const doctor = (env, ...args) => {
+    const result = spawnSync(process.execPath, [cli, "doctor", ...args], { cwd: repo, encoding: "utf8", env });
+    return { code: result.status, json: JSON.parse(result.stdout) };
+  };
+  const hookRuntime = (env, ...args) => byId(doctor(env, ...args).json)["hook-runtime"];
+
+  const ok = hookRuntime(bin("real"), "--plugin-root", repo);
+  assert.equal(ok.status, "ok", JSON.stringify(ok));
+  assert.match(ok.detail, /^hooks resolve .* \(v\d+/);
+
+  const missing = hookRuntime(bin(null), "--plugin-root", repo);
+  assert.equal(missing.status, "fail", JSON.stringify(missing));
+  assert.match(missing.detail, /no node on PATH/);
+
+  const v18stub = "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'v18.19.0'; exit 0; fi\nexit 99\n";
+  const old = hookRuntime(bin(v18stub), "--plugin-root", repo);
+  assert.equal(old.status, "fail", JSON.stringify(old));
+  assert.match(old.detail, /v18\.19\.0, below the required 20/);
+
+  const forNewIssue = doctor(bin("real"), "--plugin-root", repo, "--for", "new-issue").json;
+  assert.equal(forNewIssue.checks.map((c) => c.id).includes("hook-runtime"), false);
 });
 
 test("doctor mcp-servers and turn-stalls warn on fixture data and stay ok when absent, never fail", () => {
@@ -307,7 +344,7 @@ test("doctor fails with exit 3 and the install or reauth fallback when gh is mis
   assert.match(gh.detail, /gh CLI not found on PATH/);
   assert.match(gh.fallback, /install GitHub CLI/);
   // Every other check is unaffected by the failing one.
-  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+  assert.deepEqual(missing.json.checks.filter((c) => c.id !== "gh").map((c) => c.status), ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
 
   fs.writeFileSync(path.join(bin, "gh"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'gh version 9.9.9'; exit 0; fi\necho 'You are not logged into any GitHub hosts.' >&2\nexit 1\n", { mode: 0o755 });
   const unauth = runWith({ cwd: repo, env }, "doctor");

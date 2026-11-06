@@ -67,6 +67,14 @@ function pathWithoutNode() {
   return { ...process.env, PATH: bin };
 }
 
+// Like pathWithoutNode(), plus an executable `node` stub that reports v18.19.0 for
+// `--version` and exits 99 for anything else (a node below the required 20).
+function pathWithOldNode() {
+  const env = pathWithoutNode();
+  fs.writeFileSync(path.join(env.PATH, "node"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'v18.19.0'; exit 0; fi\nexit 99\n", { mode: 0o755 });
+  return env;
+}
+
 test("reports the branch and no work on an empty repo", () => {
   const repo = makeRepo();
   const context = run(repo);
@@ -150,13 +158,34 @@ test("reports role=build with the delivery and lifecycle from a managed worktree
   assert.match(context, /Delivery work: features\/2026\/09\/widget \[status: in-progress\]/);
 });
 
-test("without node on PATH the hook exits 0 and prints nothing", () => {
+test("without node on PATH the hook fails open with a visible warning (#149 hooks-silent-without-node)", () => {
   const repo = makeRepo();
   writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");
   const env = pathWithoutNode();
   const result = spawnSync(path.join(env.PATH, "bash"), [hook], { input: JSON.stringify({ cwd: repo }), encoding: "utf8", timeout: 20000, env });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, "");
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
+  assert.equal(parsed.additionalContext, parsed.hookSpecificOutput.additionalContext, "top-level and nested additionalContext differ");
+  assert.match(parsed.additionalContext, /Agento hooks inactive: node not found on PATH/);
+  const stderr = result.stderr.trimEnd().split("\n");
+  assert.equal(stderr.length, 1);
+  assert.match(stderr[0], /^Agento: session context unavailable — node not found on PATH/);
+});
+
+test("with node below 20 the hook fails open with a below-required warning (#149 hooks-silent-without-node)", () => {
+  const repo = makeRepo();
+  writeRoadmap(repo, "features/2026/09/alpha", "status: in-progress\nbranch: feature/alpha\nnext-step: \"1.2 wire it\"");
+  const env = pathWithOldNode();
+  const result = spawnSync(path.join(env.PATH, "bash"), [hook], { input: JSON.stringify({ cwd: repo }), encoding: "utf8", timeout: 20000, env });
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.hookSpecificOutput.hookEventName, "SessionStart");
+  assert.equal(parsed.additionalContext, parsed.hookSpecificOutput.additionalContext, "top-level and nested additionalContext differ");
+  assert.match(parsed.additionalContext, /Agento hooks inactive: node v18\.19\.0 is below the required 20/);
+  const stderr = result.stderr.trimEnd().split("\n");
+  assert.equal(stderr.length, 1);
+  assert.match(stderr[0], /^Agento: session context unavailable — node v18\.19\.0 is below the required 20/);
 });
 
 test("companion: lists roadmaps from the companion checkout and ignores the product's own roots", () => {

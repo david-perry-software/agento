@@ -713,15 +713,35 @@ test("companion: a worktree whose branch sets artifacts.repo consults the compan
   assert.equal(decide("git commit -m x", { cwd: worktree }).decision, "allow");
 });
 
-test("without node on PATH the hook exits 0 and prints nothing", () => {
+function noNodeBin() {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), "agento-nonode-"));
   for (const tool of ["bash", "git", "cat", "dirname"]) {
     fs.symlinkSync(execFileSync("sh", ["-c", `command -v ${tool}`], { encoding: "utf8" }).trim(), path.join(bin, tool));
   }
+  return bin;
+}
+
+test("without node on PATH the guard fails open with a visible warning (#149 hooks-silent-without-node)", () => {
+  const bin = noNodeBin();
   const payload = { tool_name: "run_in_terminal", tool_input: { command: "git push origin main" }, cwd: os.tmpdir() };
   const result = spawnSync(path.join(bin, "bash"), [guardScript], { input: JSON.stringify(payload), encoding: "utf8", timeout: 20000, env: { ...process.env, PATH: bin } });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "");
+  const stderr = result.stderr.trimEnd().split("\n");
+  assert.equal(stderr.length, 1);
+  assert.match(stderr[0], /^Agento: delivery guard inactive — node not found on PATH/);
+});
+
+test("with node below 20 the guard fails open with a below-required warning (#149 hooks-silent-without-node)", () => {
+  const bin = noNodeBin();
+  fs.writeFileSync(path.join(bin, "node"), "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'v18.19.0'; exit 0; fi\nexit 99\n", { mode: 0o755 });
+  const payload = { tool_name: "run_in_terminal", tool_input: { command: "git push origin main" }, cwd: os.tmpdir() };
+  const result = spawnSync(path.join(bin, "bash"), [guardScript], { input: JSON.stringify(payload), encoding: "utf8", timeout: 20000, env: { ...process.env, PATH: bin } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "");
+  const stderr = result.stderr.trimEnd().split("\n");
+  assert.equal(stderr.length, 1);
+  assert.match(stderr[0], /^Agento: delivery guard inactive — node v18\.19\.0 is below the required 20/);
 });
 
 test("allows worktree removal with no occupants", () => {
