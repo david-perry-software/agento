@@ -187,7 +187,9 @@ test("session from the primary worktree reports role primary and no delivery", (
   assert.equal(json.pr, null);
   assert.equal(json.lifecycle, "no-delivery");
   assert.ok(json.allowed.includes("/agento start-session"));
-  assert.deepEqual(json.elsewhere, []);
+  assert.ok(!json.allowed.includes("/agento new-feature"), "new-feature runs in a plan window, not the primary");
+  assert.deepEqual(json.elsewhere.map((e) => [e.command, e.window]), [["/agento new-feature", "secondary"], ["/agento new-issue", "secondary"]]);
+  assert.match(json.elsewhere.map((e) => e.reason).join(" "), /start-session/);
   assert.deepEqual(json.warnings, []);
   assert.equal(json.hosted, false);
   assert.deepEqual(json.worktrees, [{ path: repo, branch: "main", detached: false, role: "primary", dirPrefix: null, id: null, isPrimary: true, isManaged: false, repo: "product" }]);

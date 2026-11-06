@@ -621,7 +621,14 @@ test("deriveAllowed: one row per role × lifecycle, concrete commands, no placeh
     for (const lifecycle of LIFECYCLES) {
       const { allowed, elsewhere } = deriveAllowed({ role, lifecycle, delivery: widget, worktree: { id: "x" } });
       assert.ok(Array.isArray(allowed) && Array.isArray(elsewhere), `${role}/${lifecycle}`);
-      assert.ok(allowed.length + elsewhere.length > 0, `${role}/${lifecycle} has no commands`);
+      const empty = allowed.length + elsewhere.length === 0;
+      // Decision 3: the plan role derives commands only for no-delivery — a plan
+      // worktree on a delivery branch is role build (roleForManaged).
+      if (role === "plan" && lifecycle !== "no-delivery") {
+        assert.deepEqual({ allowed, elsewhere }, { allowed: [], elsewhere: [] }, `${role}/${lifecycle}`);
+      } else {
+        assert.ok(!empty, `${role}/${lifecycle} has no commands`);
+      }
       for (const cmd of allowed) assert.match(cmd, /^\/agento [a-z-]+/, `${role}/${lifecycle}: ${cmd}`);
       for (const cmd of [...allowed, ...elsewhere.map((e) => e.command)]) assert.doesNotMatch(cmd, /<type>|<slug>/, `${role}/${lifecycle}: ${cmd}`);
       for (const e of elsewhere) {
@@ -629,6 +636,7 @@ test("deriveAllowed: one row per role × lifecycle, concrete commands, no placeh
         assert.ok(typeof e.reason === "string" && e.reason.length > 0);
       }
       // Delivery windows offer continue first; freehand/unmanaged never do.
+      if (empty) continue;
       if (["primary", "build", "plan"].includes(role)) assert.equal(allowed[0], "/agento continue", `${role}/${lifecycle}`);
       else assert.ok(!allowed.includes("/agento continue"), `${role}/${lifecycle}`);
     }
@@ -639,12 +647,13 @@ test("deriveAllowed: primary window rows", () => {
   const none = deriveAllowed({ role: "primary", lifecycle: "no-delivery", delivery: null, worktree: {} });
   assert.ok(none.allowed.includes("/agento start-session"));
   assert.ok(none.allowed.includes("/agento start-freehand"));
-  assert.ok(none.allowed.includes("/agento new-feature"));
-  assert.ok(none.allowed.includes("/agento new-issue"));
+  assert.ok(!none.allowed.includes("/agento new-feature"), "new-feature runs in a plan window, not the primary");
+  assert.ok(!none.allowed.includes("/agento new-issue"), "new-issue runs in a plan window, not the primary");
   assert.ok(none.allowed.includes("/agento new-initiative"));
   assert.ok(none.allowed.includes("/agento delivery-status"));
   assert.ok(none.allowed.includes("/agento next-feature"));
-  assert.deepEqual(none.elsewhere, []);
+  assert.deepEqual(none.elsewhere.map((e) => [e.command, e.window]), [["/agento new-feature", "secondary"], ["/agento new-issue", "secondary"]]);
+  for (const e of none.elsewhere) assert.match(e.reason, /start-session/);
 
   const planned = deriveAllowed({ role: "primary", lifecycle: "planned", delivery: widget });
   assert.ok(planned.allowed.includes("/agento start-session feature/widget"));
@@ -688,12 +697,10 @@ test("deriveAllowed: build worktree rows send ship (then close) to the primary w
   assert.match(approved.elsewhere[0].reason, /tears/);
   assert.doesNotMatch(approved.elsewhere.map((e) => e.command).join(" "), /close-session/, "close-session is not the normal next step for an approved build");
 
-  const planApproved = deriveAllowed({ role: "plan", lifecycle: "approved", delivery: widget });
-  assert.equal(planApproved.elsewhere[0].command, "/agento ship widget");
-  assert.match(planApproved.elsewhere[0].reason, /tears/);
-
-  const planBuilding = deriveAllowed({ role: "plan", lifecycle: "building", delivery: widget });
-  assert.deepEqual(planBuilding.allowed.slice(1, 3), ["/agento build-feature widget", "/agento ap widget"]);
+  // A plan worktree on a delivery branch is role build (roleForManaged), so the plan
+  // role never has a delivery and derives nothing for these lifecycles.
+  assert.deepEqual(deriveAllowed({ role: "plan", lifecycle: "approved", delivery: widget }), { allowed: [], elsewhere: [] });
+  assert.deepEqual(deriveAllowed({ role: "plan", lifecycle: "building", delivery: widget }), { allowed: [], elsewhere: [] });
 
   const none = deriveAllowed({ role: "build", lifecycle: "no-delivery", delivery: { type: "feature", slug: "fresh" } });
   assert.deepEqual(none.allowed, ["/agento continue", "/agento delivery-status", "/agento next-feature"]);
@@ -714,7 +721,7 @@ test("deriveAllowed: plan worktree offers the planners; freehand and unmanaged a
 
   for (const lifecycle of LIFECYCLES) {
     const freehand = deriveAllowed({ role: "freehand", lifecycle, delivery: null, worktree: { id: "tidy" } });
-    assert.deepEqual(freehand, { allowed: ["/agento finish-freehand tidy", "/agento commit-current-changes", "/agento delivery-status", "/agento next-feature"], elsewhere: [] });
+    assert.deepEqual(freehand, { allowed: ["/agento finish-freehand tidy", "/agento delivery-status", "/agento next-feature"], elsewhere: [] });
 
     const unmanaged = deriveAllowed({ role: "unmanaged", lifecycle, delivery: widget, worktree: { id: null } });
     assert.deepEqual(unmanaged.allowed, []);
@@ -936,7 +943,8 @@ test("deriveNext: primary window blocked when the primary itself owns the branch
 test("deriveNext: primary window with no slug — none, one initiative member, ambiguous; with a slug — missing", () => {
   const none = next({ ...primaryWindow, candidates: [] });
   assert.equal(none.status, "none");
-  assert.match(none.reason, /\/agento new-feature <description>, \/agento new-issue, or \/agento new-initiative/);
+  assert.match(none.reason, /\/agento start-session/);
+  assert.doesNotMatch(none.reason, /start with \/agento new-feature/);
 
   const ready = next({ ...primaryWindow, candidates: [member("continue-command", "workflow-orchestration")] });
   assert.equal(ready.status, "ok");
