@@ -439,6 +439,9 @@ export function deriveAllowed({ role, lifecycle, delivery, worktree }) {
   };
 }
 
+// The commands whose argument the brief passes to the §11 window check as a slug.
+export const SLUG_COMMANDS = Object.freeze(new Set(["ap", "build-feature", "build-issue", "review-feature", "review-issue", "ship", "continue"]));
+
 // --- window check (§11) as data -----------------------------------------------
 
 // Each command's "Window check per §11: requires role …" line: `roles` (`any` = not

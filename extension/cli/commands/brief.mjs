@@ -17,6 +17,7 @@ import { currentWindowRole, loadProfiles, loadRoles, modelsPins, modelsState, ro
 import { roleBucket } from "../model-profiles.mjs";
 import { requireSlug, requireType } from "../lib/resolve.mjs";
 import { header } from "../lib/records.mjs";
+import { SLUG_COMMANDS } from "../session-state.mjs";
 
 const commandsDir = () => path.join(PLUGIN_ROOT, "skills", "agento", "commands");
 const cliPath = () => `node ${path.join(PLUGIN_ROOT, "scripts", "agento.mjs")}`;
@@ -73,8 +74,6 @@ const IMPLIED_TYPE = {
   "review-feature": "feature",
   "review-issue": "issue",
 };
-
-const SLUG_COMMANDS = new Set(["ap", "build-feature", "build-issue", "review-feature", "review-issue", "ship", "continue"]);
 
 // Maps a command + argument to the `{ type, slug }` preflight needs. Only the
 // commands that pass their argument to preflight as a slug take one; every other
